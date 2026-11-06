@@ -124,9 +124,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let adaptiveLoopAttempted=false,adaptiveLoopFlight;
- // Independently authenticated Runner failure, never a completed Task or
- // new grant. The safe observation is bound to the ORIGINAL Engineer owner.
- let adaptiveVerifiedFailure;
+ // Retain at most two independently authenticated Runner FAILs.
+ // Neither is a completed Task or a new grant under the Engineer root.
+ const adaptiveVerifiedFailures=[];
  const adaptiveInstructions=new Map();
  let branchAdmissionAttempted=false;
  const branchTaskPins=new Map(),branchStageAttempts=new Set();
@@ -581,9 +581,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          live.authority_digest!==original.authority_digest||
          (()=>{const pending=[...stagedTaskIds.values()].filter(p=>
            !gatewayAttestedTaskIds.has(p.task_id));
-          return pending.length>0&&(!adaptiveVerifiedFailure||
-           pending.length!==1||
-           pending[0].task_id!==adaptiveVerifiedFailure.failed_task_id);
+          return pending.length!==adaptiveVerifiedFailures.length||
+           pending.some(p=>!adaptiveVerifiedFailures.some(f=>
+            f.failed_task_id===p.task_id));
          })())
        deny('adaptive next decision requires independent completion or an authenticated Test FAIL');
       const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
@@ -599,9 +599,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          .filter(p=>gatewayAttestedTaskIds.has(p.task_id))
          .map(p=>({task_id:p.task_id,agent_id:p.agent_id,
           operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)}))},
-       ...(adaptiveVerifiedFailure?{verifiedFailure:{
-        failed_phase:adaptiveVerifiedFailure.failed_phase,
-        source_evidence_sha256:adaptiveVerifiedFailure.source_evidence_sha256
+       ...(adaptiveVerifiedFailures.length?{verifiedFailure:{
+        failed_phase:adaptiveVerifiedFailures.at(-1).failed_phase,
+        source_evidence_sha256:adaptiveVerifiedFailures.at(-1).source_evidence_sha256
        }}:{})
       };
      };
@@ -632,9 +632,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          instruction:choice.instruction,effectStager:stager
         });
         if(dispatched.status==='owner_verified_native_test_failure_preflight_only'){
-         if(!adaptiveVerifiedFailure||
-            adaptiveVerifiedFailure.failed_task_id!==staged.task_id||
-            adaptiveVerifiedFailure.failed_runtime_task_id!==runtimeTaskId)
+         if(adaptiveVerifiedFailures.at(-1)?.failed_task_id!==staged.task_id||
+            adaptiveVerifiedFailures.at(-1)?.failed_runtime_task_id!==runtimeTaskId)
           deny('adaptive Test failure has no original authenticated owner proof');
          // Explicit authenticated outcome: no thrown transport exception
          // can be mistaken for a verified Runner FAIL by the adaptive loop.
@@ -645,17 +644,17 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         adaptiveInstructions.set(staged.task_id,choice.instruction.replace(/[\x00-\x1f\x7f]/gu,' '));
        },
        observeVerifiedTestFailure:async({task})=>{
-        if(!adaptiveVerifiedFailure||task.agent_id!=='test'||
-           adaptiveVerifiedFailure.failed_task_id!==task.task_id)
+        const observed=adaptiveVerifiedFailures.at(-1);
+        if(!observed||task.agent_id!=='test'||
+           observed.failed_task_id!==task.task_id)
          deny('no original authenticated Test FAIL for adaptive continuation');
         operationalCoordinator.assertTrustedGatewayAuthorityBinding();
         const flight=gateway.assertTrustedFailedRunnerFlight(
-         adaptiveVerifiedFailure.failed_task_id,
-         adaptiveVerifiedFailure.failed_runtime_task_id);
+         observed.failed_task_id,observed.failed_runtime_task_id);
         if(flight.gateway_task_completed!==false||
-           flight.runtime_task_id!==adaptiveVerifiedFailure.failed_runtime_task_id)
+           flight.runtime_task_id!==observed.failed_runtime_task_id)
          deny('adaptive Test FAIL changed original Gateway flight');
-        return adaptiveVerifiedFailure;
+        return observed;
        },
        confirmReady:async()=>{
         const latest=[...stagedTaskIds.entries()].filter(([,p])=>p.agent_id==='test'&&p.operation==='run_tests').at(-1);
@@ -1049,13 +1048,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          throw verificationError;
         }
        }
-       // R355.4: an adaptive Test may expose one native verified Runner FAIL
+       // R355.7: an adaptive Test may expose bounded verified Runner FAILs
        // without a preselected D1 repair. A2A error text never becomes proof;
        // independently check original flight, MAC, Child, root and HEAD.
        let failure=error;
        if(adaptiveLoopAttempted&&input.d1Candidate===undefined&&
           pin.agent_id==='test'&&pin.operation==='run_tests'&&
-          nativeEffectBinding?.failureObserver&&!adaptiveVerifiedFailure){
+          nativeEffectBinding?.failureObserver&&adaptiveVerifiedFailures.length<2){
         try{
          const intent=await nativeEffectBinding.runner
           .getAttemptedIntentForOwnerTask(input.runtimeTaskId);
@@ -1071,10 +1070,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
             observed.gateway_task_completed!==false||
             observed.recovery_authorized!==false)
           deny('adaptive Test FAIL does not match original authenticated Runner flight');
-         adaptiveVerifiedFailure=Object.freeze({
+         if(adaptiveVerifiedFailures.some(f=>
+           f.failed_task_id===observed.failed_task_id||
+           f.failed_runtime_task_id===observed.failed_runtime_task_id))
+          deny('adaptive Test FAIL replay or duplicate observation');
+         const verified=Object.freeze({
           ...observed,status:'owner_verified_native_test_failure_preflight_only'
          });
-         return adaptiveVerifiedFailure;
+         adaptiveVerifiedFailures.push(verified);
+         return verified;
         }catch(observeError){failure=observeError;}
        }
        dispatchFailed=true;
