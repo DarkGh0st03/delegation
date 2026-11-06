@@ -8,6 +8,8 @@ import {constants} from "node:fs";
 import {lstat,open} from "node:fs/promises";
 import {isAbsolute,resolve,join} from "node:path";
 import {GiteaClient} from "./gitea-client.ts";
+import {sanitizeTypecheckErrorCodes}
+ from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {RunnerClient,type RunnerClientRequest,type RunnerClientResult}
  from "./runner-client.ts";
 import {validateTrustedRunnerFailure}
@@ -54,6 +56,7 @@ interface FailReceipt{
  readonly request_id:string;readonly request_fingerprint:string;
  readonly repository:string;readonly branch:string;
  readonly tested_commit_sha:string;readonly first_failed_phase:string;
+ readonly typecheck_error_codes?:readonly string[];
  readonly repair_candidate:boolean;readonly runner_profile:"poc-default";
  readonly log_reference:string;readonly policy_version:string;
  readonly completed_at_ms:number;
@@ -114,7 +117,13 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
  if(!raw||typeof raw!=="object"||Array.isArray(raw))
   fail("Runner failure receipt not a structured object");
  const v=raw as Record<string,unknown>;
- if(Object.keys(v).sort().join(",")!==FIELDS||
+ const codesPresent=Object.hasOwn(v,"typecheck_error_codes");
+ if(Object.keys(v).filter(k=>k!=="typecheck_error_codes").sort().join(",")!==FIELDS||
+    (codesPresent&&(v.first_failed_phase!=="typecheck"||
+      !Array.isArray(v.typecheck_error_codes)||
+      v.typecheck_error_codes.length===0||
+      JSON.stringify(sanitizeTypecheckErrorCodes(v.typecheck_error_codes))!==
+       JSON.stringify(v.typecheck_error_codes)))||
     v.schema!=="authority-only-runner-fail-evidence-v1"||
     v.kind!=="gateway_controlled_docker_runner_fail"||
     BINDING.some(k=>v[k]!==e[k]||v[k]!==intent[k])||
@@ -198,6 +207,8 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
    repository:this.#repo,branch:this.#branch,
    tested_commit_sha:stage.tested_commit_sha,
    first_failed_phase:stage.first_failed_phase,
+   ...(stage.first_failed_phase==="typecheck"&&result.typecheck_error_codes?.length?
+    {typecheck_error_codes:sanitizeTypecheckErrorCodes(result.typecheck_error_codes)}:{}),
    repair_candidate:stage.repair_candidate,
    runner_profile:"poc-default",log_reference:result.log_reference!,
    policy_version:policyVersion,completed_at_ms:now,
@@ -236,6 +247,7 @@ export class AuthenticatedRunnerFailureObserver{
  Promise<Readonly<TrustedCompletionExpectation & {
   status:"owner_authenticated_runner_failure_observed_staged";
   tested_commit_sha:string;first_failed_phase:string;
+  typecheck_error_codes?:readonly string[];
   repair_candidate:boolean;evidence_sha256:string;
   gateway_task_completed:false;recovery_authorized:false
  }>>{
@@ -258,6 +270,8 @@ export class AuthenticatedRunnerFailureObserver{
    status:"owner_authenticated_runner_failure_observed_staged" as const,
    tested_commit_sha:v.tested_commit_sha,
    first_failed_phase:v.first_failed_phase,
+   ...(v.typecheck_error_codes?.length?
+    {typecheck_error_codes:Object.freeze([...v.typecheck_error_codes])}:{}),
    repair_candidate:v.repair_candidate,
    evidence_sha256:digest(canonical(v)),
    gateway_task_completed:false as const,recovery_authorized:false as const
