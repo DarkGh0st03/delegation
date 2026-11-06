@@ -29,7 +29,7 @@ class SingleDecisionModel extends BaseLlm{
 }
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
- constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,nextEpoch,decisionKind='agent',executionProgress}){
+ constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,verifiedFailureHistory,nextEpoch,decisionKind='agent',executionProgress}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
@@ -84,6 +84,29 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    }
    this.executionProgress=Object.freeze(structuredClone(executionProgress));
   }else if(executionProgress!==undefined)fail();
+  if(verifiedFailureHistory!==undefined){
+   const phases=new Set(['typecheck','backend_tests','frontend_tests',
+    'build','playwright_e2e','researcher_acceptance']);
+   if(decisionKind!=='adaptive'||!Array.isArray(verifiedFailureHistory)||
+      !verifiedFailureHistory.length||verifiedFailureHistory.length>2||
+      verifiedFailure===undefined)fail();
+   const seen=new Set();
+   for(const row of verifiedFailureHistory){
+    if(!exact(row,['failed_task_id','failed_phase','source_evidence_sha256','tested_commit_sha'])||
+       typeof row.failed_task_id!=='string'||!ID.test(row.failed_task_id)||
+       seen.has(row.failed_task_id)||!phases.has(row.failed_phase)||
+       typeof row.source_evidence_sha256!=='string'||
+       !/^[a-f0-9]{64}$/u.test(row.source_evidence_sha256)||
+       typeof row.tested_commit_sha!=='string'||
+       !/^[a-f0-9]{40}$/u.test(row.tested_commit_sha))fail();
+    seen.add(row.failed_task_id);
+   }
+   const last=verifiedFailureHistory.at(-1);
+   if(last.failed_phase!==verifiedFailure.failed_phase||
+      last.source_evidence_sha256!==verifiedFailure.source_evidence_sha256)
+    fail();
+   this.verifiedFailureHistory=Object.freeze(structuredClone(verifiedFailureHistory));
+  }
   if(verifiedFailure!==undefined){
    const phases=new Set(['typecheck','backend_tests','frontend_tests',
     'build','playwright_e2e','researcher_acceptance']);
@@ -133,6 +156,9 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    independently_gateway_completed_tasks:this.previous,
    next_epoch:this.nextEpoch,
    ...(this.executionProgress?{verified_execution_progress:this.executionProgress}:{}),
+   ...(this.verifiedFailureHistory?{
+    independently_verified_test_failures:this.verifiedFailureHistory
+   }:{}),
    ...(this.verifiedFailure?{
     independent_runner_failure:{
      failed_phase:this.verifiedFailure.failed_phase,
