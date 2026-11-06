@@ -812,7 +812,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      if(pullRequestAdmissionAttempted)
       deny('PR Task decision already attempted');
      pullRequestAdmissionAttempted=true; // bounded model decision, no implicit retry
-     if(++decisionCalls>8)deny('PR Task exceeds original owner decision budget');
+     // One separately bounded PR decision may follow a fully verified
+     // adaptive recovery that already consumed the ordinary eight Task
+     // decisions. This never expands Task/Child authority or permits a
+     // second PR attempt; the original root and latest Test are rechecked.
+     if(++decisionCalls>(adaptiveReady?9:8))
+      deny('PR Task exceeds original owner decision budget');
      const epoch=operationalCoordinator.registeredTaskCount+1;
      const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
       model:input.model,requirement,branch:before.branch,
