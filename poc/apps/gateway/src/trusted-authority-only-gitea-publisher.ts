@@ -2,10 +2,13 @@
  * R295 — owner-private, append-only writer for authenticated Gateway
  * read_file outcomes. This is NOT a provider executor or an execution gate.
  *
- * Important: authority-only executeAuthorization currently TERMINAL-DENIES
- * before any provider call. The only intended invocation is the trusted
- * post-provider-success hook there. It is unreachable while that denial
- * remains, even when configured. Never expose this object via HTTP/A2A/MCP.
+ * Authority-only reads are fail-closed by default. The only intended
+ * invocation is the opt-in Gateway post-provider-success hook after a
+ * durably pinned read flight, Rust VP, OPA and a real GiteaExecutor read.
+ * The read must remain at the exact owner-pinned current HEAD, corroborated
+ * by a separately authenticated read-only Gitea client before MAC signing.
+ * This is not a general ADK file-read capability: NEVER expose this
+ * object via HTTP/A2A/MCP or infer permission from update_file.
  */
 import {createHash,createHmac} from "node:crypto";
 import {constants} from "node:fs";
