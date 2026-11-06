@@ -87,8 +87,8 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
 /** R355.2: the simulated owner is the ONLY party allowed to convert the
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
-function verifiedFailureFixture({forgery,failRole='test',throwTest=false}={}){
- const done=[],events=[];let epoch=1,head='a'.repeat(40),failure,retired=false;
+function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1}={}){
+ const done=[],events=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
  const permission=grant;
  const hooks={
   async readContext(){if(retired)throw Error('retired');
@@ -109,7 +109,8 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false}={}){
   async beforeDecision(){events.push('decision');},
   async executeTask(task){
    events.push('dispatch:'+task.task_id);epoch++;
-   if(task.agent_id===failRole&&!failure){
+   if(task.agent_id===failRole&&failedAttempts<failCount){
+    failedAttempts++;
     events.push('original-runner-fail');
     if(task.agent_id!=='test'||throwTest)
      throw Error('A2A Test FAILED: untrusted error is NOT proof');
@@ -121,12 +122,14 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false}={}){
   },
   async observeVerifiedTestFailure({task,context}){
    events.push('original-owner-observe-runner-fail');
+   if(failedAttempts>2)throw Error('trusted owner recovery attempt budget exhausted');
    const original={status:'owner_verified_native_test_failure_preflight_only',
     failed_task_id:task.task_id,
     failed_runtime_task_id:'dispatch_'+'F'.repeat(22),
     gateway_task_completed:false,recovery_authorized:false,
     tested_commit_sha:context.executionProgress.current_head_sha,
-    failed_phase:'typecheck',source_evidence_sha256:'c'.repeat(64)};
+    failed_phase:'typecheck',
+    source_evidence_sha256:String.fromCharCode(98+failedAttempts).repeat(64)};
    if(forgery==='wrong-status')return {...original,status:'a2a_claimed_test_fail'};
    if(forgery==='wrong-head')return {...original,tested_commit_sha:'f'.repeat(40)};
    if(forgery==='wrong-digest')return {...original,source_evidence_sha256:'not-a-digest'};
@@ -195,6 +198,48 @@ test('R355.6 untrusted thrown Test A2A failure cannot invoke recovery observer',
  assert.equal(model.calls,1);
  assert.equal(f.retired,true);
  assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
+test('R355.7 adaptive Test FAIL twice, two different corrections, final Test PASS',async()=>{
+ const f=verifiedFailureFixture({failCount:2});
+ const backend=candidate('backend',1);
+ backend.task.depends_on=[];
+ const frontend=candidate('frontend',3);
+ frontend.task.depends_on=['task-1'];
+ const model=new Decisions([
+  candidate('test',0),backend,candidate('test',2),frontend,
+  candidate('test',4),
+  {action:'ready_for_pr',reason:'Last independent Test passes on current SHA'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,
+  maxSteps:6});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.source_test_task_id,'task-4');
+ assert.equal(result.executed_tasks,3);
+ assert.equal(f.retired,false);
+ assert.equal(model.calls,6);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,2);
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-3','task-4']);
+ const second=JSON.stringify(model.requests[1]);
+ const fourth=JSON.stringify(model.requests[3]);
+ assert.ok(second.includes('c'.repeat(64)));
+ assert.ok(fourth.includes('d'.repeat(64)));
+ assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
+});
+test('R355.7 third Test FAIL exceeds owner recovery budget and retires root',async()=>{
+ const f=verifiedFailureFixture({failCount:3});
+ const backend=candidate('backend',1);
+ backend.task.depends_on=[];
+ const frontend=candidate('frontend',3);
+ frontend.task.depends_on=['task-1'];
+ const model=new Decisions([candidate('test',0),backend,
+  candidate('test',2),frontend,candidate('test',4),
+  {action:'ready_for_pr',reason:'Do not reach readiness'}]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:6}),/recovery attempt budget exhausted/u);
+ assert.equal(f.retired,true);
+ assert.equal(model.calls,5);
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-3']);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,3);
 });
 test('R355 retirement failure is reported as unconfirmed',async()=>{
  const f=fixture(),model=new Decisions([{action:'ready_for_pr',reason:'Premature'}]);
