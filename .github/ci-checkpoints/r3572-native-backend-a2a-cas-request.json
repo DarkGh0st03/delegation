@@ -1,0 +1,27 @@
+{
+  "checkpoint": "R357.2",
+  "scenario": "Account Suspension",
+  "baseline": "unsolved main",
+  "model": "scripted ADK, zero paid inference",
+  "prerequisite": {
+    "run_id": 42283619980,
+    "result": "success",
+    "proof": "real original Engineer branch then Backend native CAS with independent MAC"
+  },
+  "must_prove": [
+    "Engineer permission-only signed approval",
+    "native Orchestrator root creates new branch",
+    "branch completion precedes Backend Child issuance",
+    "Child signed by native Rust EVM and scoped to exact Backend file",
+    "protected SDK A2A dispatch generates ADK update_file tool call",
+    "owner private IPC stages immutable update intent",
+    "Gateway native Core Rust VP and OPA gates real Gitea HEAD CAS",
+    "independently MAC-verified Gitea receipt",
+    "A2A report alone does not complete Task",
+    "independent Gateway observer completes exact Backend Task",
+    "replay blocked and main unchanged",
+    "no test-owner preseeded application",
+    "zero paid AI calls"
+  ],
+  "trigger": "single meaningful native integration, no full CI per commit"
+}
