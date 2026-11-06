@@ -285,6 +285,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       }
       throw error;
      }finally{a2aStarting=undefined;}
+     }
     });
    })();
    try{return await executionAdmissionFlight;}
@@ -306,9 +307,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(taskStageFlight)try{await taskStageFlight;}catch{/* Recheck root below. */}
     if(a2aStarting)try{await a2aStarting;}catch{/* Recheck root below. */}
     try{
-     if(a2aOwner)await a2aOwner.close();
-    }finally{if(session.phase!=='revoked')await retire();}
-    finally{
+     try{if(a2aOwner)await a2aOwner.close();}
+     finally{if(session.phase!=='revoked')await retire();}
+    }finally{
      if(server.listening)await new Promise((ok,bad)=>server.close(e=>e?bad(e):ok()));
     }
    })();return closing;
