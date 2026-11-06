@@ -332,6 +332,8 @@ try{
  const credentialPort=createTrustedEngineerCredentialPort({
   bearerToken:tokens.engineer,timeoutMs:60000
  });
+ const originalGatewaySessionStore=new TrustedOperationalSessionStore(
+  path("gateway-activation"));
  const snapshot={
   session_id:sessionId,repository:repo,base_revision:baseRevision,
   directories:[""],files:[]
@@ -417,7 +419,7 @@ try{
    activationJournal:new DurableAuthorityOnlyActivationJournal(path("root-journal")),
    taskJournal:new DurableAuthorityTaskJournal(path("coordinator-tasks")),
    operationalRecoveryStore:new TrustedOperationalRecoveryStore(path("r35013-recovery")),
-   operationalSessionStore:new TrustedOperationalSessionStore(path("gateway-activation")),
+   operationalSessionStore:originalGatewaySessionStore,
    checkpoint:{store:checkpoint,backendKeyId:"backend",
     backendPrivateKeyPem:backendProvenance.privateKey.export({format:"pem",type:"pkcs8"})},
    approval:{engineerDid,keyId:authKey,privateKeyFile:reviewerPrivate,
@@ -540,8 +542,7 @@ try{
  });
  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
   repository:repo,engineerDid,coordinator,approvals,
-  operationalSessionStore:new TrustedOperationalSessionStore(
-   path("gateway-activation")),
+  operationalSessionStore:originalGatewaySessionStore,
   taskJournal:new DurableAuthorityTaskJournal(path("gateway-tasks")),
   childJournal:new DurableAuthorityOnlyChildJournal(path("gateway-child-intents")),
   effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
