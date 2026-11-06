@@ -202,6 +202,21 @@ try{
  const staged=await execution.proposeAndStageBranchTask({model:decision,runtimeTaskId});
  assert.equal(staged.credential_id,root);assert.equal(branchPosts,0);
  assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(staged.task_id,coordinator));
+ // A pending branch Task MUST block all subsequent ADK Task decisions.
+ // A signed Engineer ceiling alone cannot serve as branch completion.
+ if(nativeBranchToBackend){
+  const tooEarly=new BackendDecision();
+  await assert.rejects(execution.proposeAndStageTask({
+   model:tooEarly,runtimeTaskId:backendRuntimeTaskId,
+   childParameters:params('urn:r357:must-not-issue',29404,500)
+  }),/next ADK Task decision requires independent Gateway completion/);
+  assert.equal(tooEarly.calls,0);
+  assert.equal(coordinator.registeredTaskCount,1);
+  assert.equal(gate.stagedCompletedTaskCount,0);
+  assert.equal((await readdir(path('children'))).length,0);
+  await assert.rejects(client.getBranchMetadata(branch),
+   e=>e instanceof ProviderNotFoundError);
+ }
  const prepared=await call('prepare',{task_id:runtimeTaskId,agent_role:'orchestrator',tool:'create_branch',arguments:{branch,base_branch:'main'}},201);
  await execution.stageEnrolledBranch({taskId:staged.task_id,runtimeTaskId,requestId:prepared.request_id});
  const vp=await invokeNativeCrypto({socketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET,token:process.env.ADAPTER_CALLER_ORCHESTRATOR,timeoutMs:60000},
