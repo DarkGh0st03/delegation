@@ -602,7 +602,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        ...(adaptiveVerifiedFailures.length?{verifiedFailure:{
         failed_phase:adaptiveVerifiedFailures.at(-1).failed_phase,
         source_evidence_sha256:adaptiveVerifiedFailures.at(-1).source_evidence_sha256
-       }}:{})
+       },verifiedFailureHistory:adaptiveVerifiedFailures.map(f=>({
+        failed_task_id:f.failed_task_id,failed_phase:f.failed_phase,
+        source_evidence_sha256:f.source_evidence_sha256,
+        tested_commit_sha:f.tested_commit_sha
+       }))}:{})
       };
      };
      adaptiveLoopFlight=runTrustedAuthorityOnlyAdaptiveWorkLoop({
