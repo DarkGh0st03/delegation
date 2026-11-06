@@ -112,7 +112,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   d1FailurePreflightFailed=false,d1VerifiedFailure,
   d1RepairProposalAttempted=false,d1RepairProposal,
   d1RepairAdmissionAttempted=false,d1RepairAdmissionFlight,
-  d1DispatchPin;
+  d1DispatchPin,d1RepairAttested=false,
+  d1RetestAttempted=false,d1RetestPin,d1RetestPassed=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let dispatchFlight,dispatchFailed=false;
@@ -261,9 +262,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       // A registered Child or completed A2A report is NOT a verified
       // Gateway result. No new model turn until all earlier Tasks have
       // independently attested durable provider/Runner completion.
-      if(stagedTaskIds.size!==gatewayAttestedTaskIds.size||
-         [...stagedTaskIds.values()].some(pin=>
-          !gatewayAttestedTaskIds.has(pin.task_id)))
+      const pending=[...stagedTaskIds.values()].filter(pin=>
+        !gatewayAttestedTaskIds.has(pin.task_id));
+      // A fresh independently passed D1 retest supersedes the old FAIL
+      // for scheduling only; it NEVER completes the original Test Task.
+      if(pending.length&&!(d1RetestPassed&&pending.length===1&&
+         pending[0].task_id===d1VerifiedFailure?.proof?.failed_task_id))
        deny('next ADK Task decision requires independent Gateway completion');
       if(!fields(input,['model','runtimeTaskId','childParameters']))
        deny('ADK choice cannot supply root, session, or Task authorization');
@@ -513,6 +517,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           input.instruction!==d1DispatchPin.instruction||
           input.d1Candidate!==undefined))
        deny('D1 dispatch requires original owner-pinned repair instruction');
+      if(d1RetestPin&&input.runtimeTaskId===d1RetestPin.runtimeTaskId&&
+         (input.taskId!==d1RetestPin.taskId||
+          input.instruction!==d1RetestPin.instruction||
+          input.d1Candidate!==undefined))
+       deny('D1 retest dispatch requires original owner-pinned Test instruction');
       if(dispatchAttempts.has(input.runtimeTaskId))
        deny('protected A2A dispatch replayed');
       dispatchAttempts.add(input.runtimeTaskId); // before sending A2A / private IPC
@@ -753,6 +762,79 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        throw error;
       }finally{d1RepairAdmissionFlight=undefined;}
      },
+     /** R352.5: owner-only ADK retest choice after independently attested
+      * D1 repair. Original failed Test remains failed; no new human grant. */
+     async proposeAndStageVerifiedD1Retest(input){
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         !d1VerifiedFailure||!d1DispatchPin||!d1RepairAttested||
+         d1RetestAttempted||d1RetestPin||d1RetestPassed||
+         taskStageFailed||taskStageFlight||dispatchFlight||completionFlight||
+         decisionFlight||d1FailurePreflightFlight||d1RepairAdmissionFlight||
+         dispatchFailed||completionFailed||
+         !fields(input,['model','runtimeTaskId','childParameters'])||
+         !fields(input.childParameters,['credential_id','credential_status',
+           'valid_from','validity_seconds']))
+       deny('new D1 Test requires independent repair and fresh private Child');
+      const original=d1VerifiedFailure.proof.failed_task_id;
+      const uncompleted=[...stagedTaskIds.values()].filter(pin=>
+       !gatewayAttestedTaskIds.has(pin.task_id));
+      if(uncompleted.length!==1||uncompleted[0].task_id!==original||
+         gatewayAttestedTaskIds.has(original)||
+         !gatewayAttestedTaskIds.has(d1DispatchPin.taskId)||
+         stagedTaskIds.size!==gatewayAttestedTaskIds.size+1)
+       deny('D1 retest requires exactly one original incomplete failed Test');
+      const failed=operationalCoordinator.assertTrustedGatewayRegisteredTask(original);
+      const repair=operationalCoordinator.assertTrustedGatewayRegisteredTask(d1DispatchPin.taskId);
+      const dependencies=[...failed.depends_on,repair.task_id];
+      if(failed.agent_id!=='test'||
+         repair.agent_id!==d1RepairProposal?.agent_id||
+         !isDeepStrictEqual(repair.permissions,d1RepairProposal.permissions)||
+         dependencies.some(id=>!gatewayAttestedTaskIds.has(id)))
+       deny('D1 retest cannot replace unverified original dependencies');
+      d1RetestAttempted=true; // one-shot before model or native issuance
+      if(++decisionCalls>8)
+       deny('D1 retest exceeds bounded original Engineer model turns');
+      const rootBefore=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      const epoch=operationalCoordinator.registeredTaskCount+1;
+      const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
+       model:input.model,requirement,branch:rootBefore.branch,
+       rootPermissions:rootBefore.root_permissions,
+       agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
+        .map(([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}])),
+       previousTasks:[...gatewayAttestedTaskIds.values()],
+       verifiedFailure:{failed_phase:d1VerifiedFailure.proof.failed_phase,
+        source_evidence_sha256:d1VerifiedFailure.proof.source_evidence_sha256}
+      });
+      decisionFlight=(async()=>{
+       const choice=await proposer.propose();
+       const current=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       if(closed||session.phase!=='operational'||
+          current.root_credential_id!==rootBefore.root_credential_id||
+          current.authority_digest!==rootBefore.authority_digest||
+          operationalCoordinator.registeredTaskCount!==epoch-1||
+          choice.agent_id!=='test'||choice.task_id===original||
+          !isDeepStrictEqual(choice.permissions,failed.permissions)||
+          !isDeepStrictEqual(choice.depends_on,dependencies))
+        deny('D1 retest ADK choice differs from authorized original Test');
+       const staged=await executionHandle.stageTask({
+        task:{task_id:choice.task_id,epoch,agent_id:'test',
+         depends_on:dependencies,permissions:failed.permissions},
+        runtimeTaskId:input.runtimeTaskId,
+        childParameters:input.childParameters
+       });
+       if(staged.status!=='owner_child_enrolled_no_provider_execution'||
+          staged.agent_id!=='test'||staged.epoch!==epoch)
+        deny('D1 Test did not enroll a fresh native Child');
+       d1RetestPin=Object.freeze({taskId:staged.task_id,
+        runtimeTaskId:staged.runtime_task_id,instruction:choice.instruction});
+       return Object.freeze({...staged,instruction:choice.instruction,
+        decision_source:'verified_d1_retest_adk_original_coordinator',
+        original_failed_test_task_id:original,
+        original_test_completed:false,gateway_execution_authorized:false});
+      })();
+      try{return await decisionFlight;}
+      finally{decisionFlight=undefined;}
+     },
      /** R350.7 — Gateway alone can confirm an actual provider/Runner
       * completion. The owner passes only IDs pinned to its own prior A2A
       * report, never a model-provided success, receipt, HEAD or signature. */
@@ -796,6 +878,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        gatewayAttestedTaskIds.set(input.taskId,Object.freeze({
         task_id:pin.task_id,agent_id:pin.agent_id
        }));
+       // Only the original independent Gateway observer can set these.
+       if(d1DispatchPin&&input.runtimeTaskId===d1DispatchPin.runtimeTaskId)
+        d1RepairAttested=true;
+       if(d1RetestPin&&input.runtimeTaskId===d1RetestPin.runtimeTaskId&&
+          input.taskId===d1RetestPin.taskId)
+        d1RetestPassed=true;
        dispatchedReports.delete(input.runtimeTaskId);
        return observed;
       })();
