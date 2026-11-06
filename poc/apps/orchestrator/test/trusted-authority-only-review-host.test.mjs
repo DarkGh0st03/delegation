@@ -887,6 +887,14 @@ test('Planning transport failure retires preliminary authority and exposes no re
  assert.deepEqual(f.log.slice(-2),['end:'+snapshot.session_id,'revoke:urn:r349:preliminary']);
  assert.equal(f.log.filter(x=>x.startsWith('issue:')).length,1);
 });
+test('R350.13 feature Planning source must match the original reviewed work branch',async t=>{
+ const f=await fixture(t);
+ await assert.rejects(createHost({...f.options,
+  snapshot:{...snapshot,planning_branch:'feature/unrelated'}}),
+  /Planning source branch differs from Engineer-reviewed work branch/);
+ assert.deepEqual(f.log,[]);
+ assert.equal(f.model.calls,0);
+});
 test('legacy override or wrong backend key fails before root issue and model invocation',async t=>{
  const f=await fixture(t);
  await assert.rejects(createHost({...f.options,approval:{...f.options.approval,trustedPlanFile:'legacy'}}),/legacy/);

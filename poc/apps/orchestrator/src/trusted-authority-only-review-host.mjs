@@ -43,6 +43,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   !fields(options.gateway,['gatewayBaseUrl','adapterBaseUrl','adapterToken','fetchFn','timeoutMs']))
   deny('explicit trusted dependencies required; legacy/context overrides forbidden');
  const snapshot=structuredClone(options.snapshot),requirement=options.requirement,branch=options.workBranch;
+ // Optional disposable feature-source Planning is a trusted snapshot pin,
+ // not a second source branch that a client or model may substitute.
+ if(snapshot.planning_branch!==undefined&&snapshot.planning_branch!==branch)
+  deny('Planning source branch differs from Engineer-reviewed work branch');
  const approval={...options.approval},checkpoint={...options.checkpoint};
  const store=checkpoint.store;
  store.assertContext(snapshot,branch,requirement);
