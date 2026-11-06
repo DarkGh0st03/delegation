@@ -2010,3 +2010,25 @@ test("R303 Test Agent may reserve only exact native Child-signed Runner profile 
   }finally{await rm(tmp,{recursive:true,force:true});}
  },signed);
 });
+
+
+test("R353.3 Orchestrator Child admission cannot widen to non-PR effects",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:{...registry,orchestrator:{
+    did:"did:thesis:orchestrator",card_ref:"trusted:orchestrator",
+    capabilities:["read_file","create_pull_request"]}},nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask({...nextTask(),agent_id:"orchestrator"});
+  const calls:ExactTrustedChildIssuance[]=[];
+  const issuer=new TrustedAuthorityOnlyChildIssuer({coordinator,
+   nativeCryptoPort:nativeChildPort(calls),journal:childJournal,nowMs:()=>nowMs});
+  await assert.rejects(issuer.issueForRegisteredTask("task-backend",
+   params("urn:r3533:non-pr-child","3533",600)),/exact repository PR Task/);
+  assert.equal(calls.length,0);
+ });
+});

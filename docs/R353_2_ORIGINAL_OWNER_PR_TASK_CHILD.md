@@ -9,3 +9,7 @@ The original Coordinator registers the PR Task and the original Child issuer and
 Free SDK integration variants cover positive original-root PR admission, missing Engineer PR grant (zero model calls), incorrect Test dependency and HEAD movement during the model call (zero new Children). The positive case rejects admission before Test attestation and replay after enrollment. Native Rust signing/provider responses remain offline fixtures in these tests; no new native EVM/Docker proof is claimed.
 
 Scope boundary: the Gateway still denies create_pull_request execution. Next connect the private PR pin to canonical Prepare, a durable one-shot effect flight, native VP/OPA validation and a Gitea POST pinned to the tested HEAD. No paid inference, merge or main-branch mutation.
+
+## R353.3 issuer role contract
+
+The first integrated positive test reached Coordinator registration but was rejected by the Child issuer's old three-specialist allowlist. The native Rust dispatcher already supports the authenticated Orchestrator role. The TypeScript port/issuer now admit that identity only for a single repository `create_pull_request` grant; all original root, epoch, status, scope and signed-response checks remain. A regression ensures this does not admit Orchestrator read/write Children. The original positive PR Task test must pass in Actions before this admission gate is considered validated.
