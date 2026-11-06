@@ -63,14 +63,23 @@ un comportamento autonomo del sistema.
   Engineer CI [42266112619](https://github.com/DarkGh0st03/delegation/actions/runs/42266112619)
   SUCCESS: 171 test principali PASS. Provider e issuer di questa prova SDK
   restano fixture; non attribuire questa evidenza a Gemini generativo o native E2E.
-- **Prossima integrazione:** portare il controller adattivo nel percorso
-  Rust/EVM + Gitea + Docker reale, unendolo a branch da main e Draft PR già
-  validati separatamente. Le decisioni devono poter utilizzare diagnosi tecniche
-  sanificate e letture autorizzate del codice; oggi il modello riceve solo fase
-  ed hash. Generalizzare anche i FAIL successivi oltre il primo e i ruoli di
-  riparazione, distinguendo sempre errori applicativi recuperabili da errori
-  infrastrutturali fail-closed. Conservare un solo scenario Account Suspension,
-  test gratuiti prima di Gemini e PR #38 Draft.
+- **R355.6–R355.9 — recovery adattivo più generale e diagnostica minima:** un
+  errore A2A/trasporto è terminale; solo un Runner FAIL confermato dalla ricevuta
+  MAC originale può sbloccare un nuovo turno. Due FAIL autenticati successivi
+  sono ora ammessi nella stessa sessione, mentre il terzo termina in sicurezza.
+  Il modello vede storia verificata dei fallimenti e, per typecheck, codici TS
+  sanificati e MAC-autenticati, mai log grezzi o credenziali. Engineer CI
+  [42270124666](https://github.com/DarkGh0st03/delegation/actions/runs/42270124666)
+  SUCCESS sul codice `0e0c4729`: 175 test principali PASS, nessun FAIL.
+  Il test SDK usa ancora provider/issuer fixture e modelli scriptati.
+- **Prossima integrazione prioritaria:** esercitare il nuovo controller adattivo
+  contro Rust/EVM, OPA, Gitea e Docker reali, poi unire *nella stessa sessione*
+  branch da main e Draft PR già validati separatamente. I codici TS sono solo
+  una diagnosi iniziale: mancano posizioni, messaggi tecnici sanificati e letture
+  di codice autorizzate tramite Gateway. Il recovery deve supportare anche altri
+  tipi di errore e specialisti, senza modificare la root firmata né fare retry
+  ciechi di provider ambigui. Conservare soltanto Account Suspension, test
+  gratuiti prima di Gemini e PR #38 Draft.
 
 Non avviare suite native complete a ogni commit. Usare test mirati e Fast CI;
 riservare la prova nativa a checkpoint di integrazione significativi. PR #38 Draft,
