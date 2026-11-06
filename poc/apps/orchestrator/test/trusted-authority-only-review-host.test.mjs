@@ -863,11 +863,31 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
     const frontendStager=execution.createEnrolledNativeEffectStager({
      runtimeTaskId:next.runtimeTaskId,expectedHeadSha:fileSha
     });
-    const frontendReport=await execution.dispatchEnrolledTask({
-     taskId:next.task.task_id,runtimeTaskId:next.runtimeTaskId,
-     instruction:'Update the Engineer-approved Frontend file',
-     effectStager:frontendStager
-    });
+    let frontendReport;
+    try{
+     frontendReport=await execution.dispatchEnrolledTask({
+      taskId:next.task.task_id,runtimeTaskId:next.runtimeTaskId,
+      instruction:'Update the Engineer-approved Frontend file',
+      effectStager:frontendStager
+     });
+    }catch(error){
+     // Only categorical local diagnostics. No native credentials, provider
+     // payload or model content are ever logged from this offline fixture.
+     const intents=(await readdir(f.dirs.mutationIntents))
+      .filter(n=>n.endsWith('.intent.json')).length;
+     const flights=(await readdir(f.dirs.flights))
+      .filter(n=>n.endsWith('.flight.json')).length;
+     const evidence=(await readdir(f.dirs.mutationEvidence))
+      .filter(n=>n.endsWith('.mutation.json')).length;
+     console.error('R351.3 offline Frontend failure stage:',JSON.stringify({
+      event_names:events.map(x=>x.replace(/^offline_.*$/,'offline_read')),
+      frontend_model_calls:frontendModel.calls,
+      prepared_requests:store.size(),mutation_intents:intents,
+      trusted_task_flights:flights,gitea_evidence_receipts:evidence,
+      error_kind:error?.constructor?.name??'unknown'
+     }));
+     throw error;
+    }
     assert.equal(frontendReport.status,'a2a_report_not_gateway_completed');
     assert.equal(frontendReport.provider_completion_attested,false);
     assert.equal(frontendReport.role,'frontend');
