@@ -98,6 +98,10 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
   provider_execution_enabled:false
  }>>{
   if(this.#inFlight)fail("concurrent evidence publication denied");
+  // Claim the one-shot publication BEFORE the first asynchronous Gitea GET.
+  // Another call cannot race an in-flight independent source inspection.
+  this.#inFlight=true;
+  try{
   const {record,verified,policy,execution}=input;
   if(!record||!verified||!policy||!execution||
      record.request.tool!=="read_file"||
@@ -166,8 +170,6 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
   const receipt:AuthenticatedGatewayGiteaRead={
    ...unsigned,mac_sha256
   };
-  this.#inFlight=true;
-  try{
    // The name is fixed by the prepared request, never a caller-supplied path.
    // A crash, cancellation or duplicate write requires manual reconciliation.
    const name=sha(expected.session_id+"\n"+expected.request_id)+".json";
