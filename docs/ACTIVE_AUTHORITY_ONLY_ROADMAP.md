@@ -98,15 +98,52 @@ un comportamento autonomo del sistema.
   dal test owner prima dell'approvazione. Questo NON prova planning
   generativo, letture autonome del codice o feature branch creato da main
   nella stessa sessione: il gate R354 branch-only è ancora separato.
-- **Prossima integrazione R357, obbligatoria per la prova gratuita unica:**
-  partire da main non risolta, approvazione permission-only, root
-  dell'Orchestrator crea e attesta il branch nella stessa sessione che
-  prosegue con Backend/Frontend/Test/recovery/PR. Eliminare l'applicazione
-  funzionale pre-seeded dal test owner; il modello deve poter leggere il
-  codice autorizzato e produrre la modifica reale. Completare diagnostica
-  sanificata (non solo fase, hash e codici TS), MCP/discovery e launcher
-  authority-only prima del pilot generativo. Zero paid Gemini senza
-  consenso esplicito, un solo scenario Account Suspension, PR #38 Draft.
+- **R357.0 — branch nativo e prima Child Backend sulla stessa root:**
+  [run 42281811050](https://github.com/DarkGh0st03/delegation/actions/runs/42281811050)
+  SUCCESS. Main non risolta, branch inizialmente assente, approvazione
+  permission-only firmata, root VP Rust/EVM e Gateway/OPA/Gitea nativi.
+  Solo dopo attestazione indipendente del branch, ADK scriptato sceglie
+  Backend e Rust emette una Child autentica limitata a un file. Sono
+  vietate l'ammissione e la decisione ADK Backend prima del branch.
+  Nessuna modifica file e nessuna app predisposta dal test owner.
+- **R357.1 — prima modifica Backend nativa da main non risolta:**
+  [run 42283619980](https://github.com/DarkGh0st03/delegation/actions/runs/42283619980)
+  SUCCESS. La stessa sessione usa l'originale root per il branch e
+  una Child Backend per un vero UPDATE Gitea con HEAD CAS e OPA;
+  una seconda lettura Gitea e ricevuta MAC verificano il file modificato.
+  Questa variante esegue manualmente il Gateway dall'harness e NON
+  completa il Task Backend senza A2A. La sorgente della modifica è
+  ancora un riferimento scriptato, non generazione autonoma.
+- **R357.2 — Backend ADK/A2A nativo, CAS e Task completato:**
+  [run 42285796338](https://github.com/DarkGh0st03/delegation/actions/runs/42285796338)
+  SUCCESS sulla SHA `0d12276e387d746ef375329b5471223bc40c7a74`;
+  Fast CI [42285796201](https://github.com/DarkGh0st03/delegation/actions/runs/42285796201)
+  SUCCESS sulla stessa SHA. Originale Engineer approva i soli permessi,
+  Orchestrator crea e attesta il branch con root VC/VP a profondità zero;
+  Backend riceve Child Rust a profondità uno e il modello ADK scriptato
+  invoca `update_file` via SDK A2A reale e staging Unix privato.
+  Gateway verifica VP/OPA, committa realmente tramite Gitea HEAD CAS;
+  riceve e verifica MAC indipendente prima di completare il Task.
+  Il report A2A non sblocca dipendenze. 2 Task registrati,
+  **2 completati con evidenza indipendente**, main invariata e nessun
+  codice funzionale preinserito; il contenuto del singolo file Backend
+  è ancora predisposto nel modello di prova (NON generato).
+  Nessuna chiamata Gemini a pagamento. Il trasporto del read preliminare
+  durante il Planning resta fixture, pur leggendo main reale.
+- **Prossima integrazione R357.3/R358, obbligatoria per il gate unico:**
+  introdurre una lettura `read_file` operativa autorizzata, stadiata,
+  verificata e resa disponibile **nel Task corrente** al Backend ADK
+  prima dell'aggiornamento. Non ricavare read da update, non riusare
+  implicitamente la prelettura del Planning. L'attuale `GatewayRuntime`
+  non installa ancora un esecutore authority-only di lettura con
+  journal/attestazione del medesimo Task; non usare bypass legacy.
+  Passare da contenuti modello predefiniti a edit costruiti sui file
+  realmente letti e autorizzati. Poi estendere a shared/frontend/test,
+  recovery dinamico e Draft PR nella stessa sessione branch-first.
+  Non trasformare suite con fixture in prova di autonomia Gemini.
+  Completare anche MCP/discovery e diagnostica tecnica sanificata,
+  mantenendo un solo Account Suspension, PR #38 Draft e zero paid Gemini
+  fino a consenso esplicito.
 
 Non avviare suite native complete a ogni commit. Usare test mirati e Fast CI;
 riservare la prova nativa a checkpoint di integrazione significativi. PR #38 Draft,
