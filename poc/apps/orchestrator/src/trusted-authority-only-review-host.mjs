@@ -636,9 +636,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
             adaptiveVerifiedFailure.failed_task_id!==staged.task_id||
             adaptiveVerifiedFailure.failed_runtime_task_id!==runtimeTaskId)
           deny('adaptive Test failure has no original authenticated owner proof');
-         // Distinct from a transport failure; only the trusted observation
-         // hook can convert this into sanitized model-facing diagnostics.
-         throw Error('Original owner observed independently verified Test FAIL');
+         // Explicit authenticated outcome: no thrown transport exception
+         // can be mistaken for a verified Runner FAIL by the adaptive loop.
+         return dispatched;
         }
         input.signal?.throwIfAborted();
         await executionHandle.attestEnrolledTaskCompletion({taskId:staged.task_id,runtimeTaskId});
