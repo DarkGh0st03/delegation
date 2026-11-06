@@ -1252,8 +1252,12 @@ test("R295 owner-only writer seals genuine GiteaExecutor read result and reader 
    challenge:()=>"challenge-r295",authorityOnlyAdmissions:gate});
   const record=store.get(prepared.request_id);
   assert.ok(record);
+  // Offline fixture explicitly pins the known exact Gitea SHA; the live
+  // authority-only path must obtain that pin from its trusted owner.
+  record.pinned_revision=hash;
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory:evidenceDir,key,admissions:gate,
+   independentGiteaClient:client,
    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
   });
   const fakePolicy={allow:true,policy_version:"offline-opa-stub"};
@@ -1334,6 +1338,12 @@ test("R295 a configured publisher never bypasses authority-only terminal Gateway
   const executor=new MockExecutor();
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory:evidenceDir,key:Buffer.alloc(32,11),admissions:gate,
+   // This negative Gateway test never invokes the provider. A separate
+   // real client is nonetheless mandatory even for the disabled path.
+   independentGiteaClient:new GiteaClient({
+    baseUrl:"http://gitea.local:3000",owner:"thesis",
+    repository:"iam-console-poc",token:"unused-read-only"
+   }),
    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
   });
   await assert.rejects(executeAuthorization({
@@ -1423,8 +1433,12 @@ test("R296 opt-in Gateway read publishes evidence and denies replay",async()=>{
    challenge:()=>"challenge-r295",authorityOnlyAdmissions:gate});
   const record=store.get(prepared.request_id);
   assert.ok(record);
+  // Offline fixture explicitly pins the known exact Gitea SHA; the live
+  // authority-only path must obtain that pin from its trusted owner.
+  record.pinned_revision=hash;
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory:evidenceDir,key,admissions:gate,
+   independentGiteaClient:client,
    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
   });
   const fakePolicy={allow:true,policy_version:"offline-opa-stub"};
@@ -1528,8 +1542,12 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
    challenge:()=>"challenge-r295",authorityOnlyAdmissions:gate});
   const record=store.get(prepared.request_id);
   assert.ok(record);
+  // Offline fixture explicitly pins the known exact Gitea SHA; the live
+  // authority-only path must obtain that pin from its trusted owner.
+  record.pinned_revision=hash;
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory:evidenceDir,key,admissions:gate,
+   independentGiteaClient:client,
    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
   });
   const fakePolicy={allow:true,policy_version:"offline-opa-stub"};
