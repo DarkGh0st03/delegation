@@ -56,13 +56,21 @@ un comportamento autonomo del sistema.
   successiva. Non riceve una lista di Task. La richiesta di PR è una readiness
   verificata sulla HEAD corrente, non una PR già creata. Si riusano i registri e
   gli esecutori esistenti; il budget originale resta invariato.
-- **Prossima integrazione:** dimostrare il nuovo ciclo con dispatch A2A effettivo
-  e provider nativi, poi unire branch da main e PR. I test del controller simulano
-  le hook di esecuzione; non sostituiscono questa prova. Restano letture autorizzate
-  di codice per il modello e recovery con diagnosi utilizzabili, senza candidato
-  predisposto dall'harness. Il nuovo ciclo attualmente ritira la root al fallimento.
-  Conservare l'unico scenario Account Suspension e distinguere sempre modelli
-  scriptati, fixture e generazione reale.
+- **R355.5 — Test FAIL osservato e riparazione adattiva SDK:** il nuovo owner
+  verifica il Runner FAIL tramite ricevuta MAC, Gateway, Child, root e HEAD,
+  senza candidato D1 preimpostato. Il modello scriptato decide Backend repair
+  e retest PASS nella stessa sessione, preservando il Test iniziale incompleto.
+  Engineer CI [42266112619](https://github.com/DarkGh0st03/delegation/actions/runs/42266112619)
+  SUCCESS: 171 test principali PASS. Provider e issuer di questa prova SDK
+  restano fixture; non attribuire questa evidenza a Gemini generativo o native E2E.
+- **Prossima integrazione:** portare il controller adattivo nel percorso
+  Rust/EVM + Gitea + Docker reale, unendolo a branch da main e Draft PR già
+  validati separatamente. Le decisioni devono poter utilizzare diagnosi tecniche
+  sanificate e letture autorizzate del codice; oggi il modello riceve solo fase
+  ed hash. Generalizzare anche i FAIL successivi oltre il primo e i ruoli di
+  riparazione, distinguendo sempre errori applicativi recuperabili da errori
+  infrastrutturali fail-closed. Conservare un solo scenario Account Suspension,
+  test gratuiti prima di Gemini e PR #38 Draft.
 
 Non avviare suite native complete a ogni commit. Usare test mirati e Fast CI;
 riservare la prova nativa a checkpoint di integrazione significativi. PR #38 Draft,
