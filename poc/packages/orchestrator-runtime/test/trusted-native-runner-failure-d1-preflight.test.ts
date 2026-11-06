@@ -10,7 +10,7 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {AuthenticatedRunnerFailureObserver}
  from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
-import {preflightNativeD1FailureCandidate}
+import {preflightNativeD1FailureCandidate,observeTrustedNativeTestFailure}
  from "../src/trusted-native-runner-failure-d1-preflight.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
@@ -166,5 +166,38 @@ test("R340 original Gateway flight must be exact, never model-reconstructed",asy
   const f=fixture({flight:{...flight,...bad}} as never);
   await assert.rejects(preflightNativeD1FailureCandidate(f.config),/NO-GO/);
   assert.equal(f.reads,0);
+ }
+});
+
+test("R355.3 authentic FAIL source is independently verifiable without a D1 candidate",async()=>{
+ const f=fixture();
+ const {candidate:unused,...source}=f.config;
+ const proof=await observeTrustedNativeTestFailure(source);
+ assert.equal(proof.status,"native_test_failure_evidence_verified_only");
+ assert.equal(proof.failed_task_id,intent.task_id);
+ assert.equal(proof.failed_runtime_task_id,intent.runtime_task_id);
+ assert.equal(proof.failed_phase,"typecheck");
+ assert.equal(proof.source_evidence_sha256,expected.evidence_sha256);
+ assert.equal(proof.tested_commit_sha,intent.expected_head_sha);
+ assert.equal(proof.gateway_task_completed,false);
+ assert.equal(proof.recovery_authorized,false);
+ assert.equal(proof.child_credential_issued,false);
+ assert.equal(proof.task_registered,false);
+ assert.equal("candidate_role" in proof,false);
+ assert.equal("candidate_permissions_sha256" in proof,false);
+ assert.equal(f.reads,1);
+});
+test("R355.3 candidate-free FAIL observation never accepts false provenance",async()=>{
+ for(const bad of [
+  {child:{...child,credential_id:"wrong-child"}},
+  {flight:{...flight,request_fingerprint:"wrong"}},
+  {expected:{...expected,first_failed_phase:"dependency_install"}},
+  {expected:{...expected,tested_commit_sha:"d".repeat(40)}},
+  {expected:{...expected,repair_candidate:false}},
+  {secondRoot:{...root,root_credential_id:"foreign-root"}}
+ ]){
+  const f=fixture(bad as never);
+  const {candidate:unused,...source}=f.config;
+  await assert.rejects(observeTrustedNativeTestFailure(source),/NO-GO/);
  }
 });
