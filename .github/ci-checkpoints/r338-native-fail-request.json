@@ -1,0 +1,17 @@
+{
+  "revision": "R338.1",
+  "request": "one-disposable-real-native-three-agent-account-suspension-rust-evm-opa-gitea-docker-typecheck-fail",
+  "source_commit": "9c3d4f19d917e96a2aac20e37b3c4a524e024fe2",
+  "paid_ai": false,
+  "production_effects": false,
+  "expected": [
+    "one real TypeScript typecheck failure from Docker after CI-owner-only injected defect",
+    "same Engineer original root and three distinct native Child credentials",
+    "Backend and Frontend protected ADK A2A Gitea CAS success",
+    "Test ADK A2A real Gateway Prepare and native Rust verified signed VP",
+    "real OPA allow and exactly one controlled Runner POST",
+    "durable authenticated FAIL receipt linked to original one-shot attempted Test Task",
+    "independent fail observer recheck of Task Child policy and exact Gitea SHA",
+    "no Test Task success, no D1 authorization, no paid model, no Gitea main mutation"
+  ]
+}
