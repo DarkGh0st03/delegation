@@ -73,7 +73,9 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
         JSON.stringify(before.executionProgress?.completed_work)||
        JSON.stringify(progress.verifiedFailure)!==JSON.stringify({
         failed_phase:observed.failed_phase,
-        source_evidence_sha256:observed.source_evidence_sha256
+        source_evidence_sha256:observed.source_evidence_sha256,
+        ...(observed.typecheck_error_codes?.length?
+         {typecheck_error_codes:[...observed.typecheck_error_codes]}:{})
        }))
      deny('verified Test FAIL did not preserve the original authority and success ledger');
     // The failed Task is registered (epoch advances), but NOT completed.
