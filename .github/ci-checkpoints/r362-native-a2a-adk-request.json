@@ -1,0 +1,11 @@
+{
+  "checkpoint": "R362.1",
+  "baseline_native_sha": "e7794546436e8c4f042655a33abad28f8a47e4a1",
+  "test": "poc/packages/orchestrator-runtime/test/r362-native-a2a-adk-mixed-read-update-e2e.mjs",
+  "intent": "Real SDK A2A HTTP dispatch -> scripted Google ADK Runner -> owner HMAC Unix IPC -> native Child Rust VP -> OPA -> disposable Gitea read+HEAD CAS -> Gateway independent completion",
+  "model": "local ScriptedReadThenCas BaseLlm; no inference API",
+  "paid_api_allowed": false,
+  "production_gitea_allowed": false,
+  "gateway_transport": "in-process controlled Gateway boundary (not external HTTP listener)",
+  "awaiting_verification": true
+}
