@@ -2517,9 +2517,23 @@ test('R357 independently completed root branch is mandatory before any Backend C
  assert.equal(nativeChildCalls,0,'direct Task staging cannot bypass the branch prerequisite');
  assert.equal(coordinator.registeredTaskCount,0);
  assert.equal(execution.gateway.stagedCompletedTaskCount,0);
- assert.equal(host.phase,'operational');
- await host.close();
+ // The adaptive controller must not even ask the model for a decision until
+ // the native branch was independently created and completed. Its rejection
+ // retires the same operational root without issuing a Child.
+ const native=nativeOfflinePreflights(execution.gateway,f.dirs);
+ execution.bindNativeGatewayEffects({
+  store:new InMemoryRequestStore(),giteaClient:native.gitea,
+  mutation:native.mutation,runner:native.runner
+ });
+ const blockedModel=new R351ScriptedDecision({action:'blocked',
+  reason:'No signed original branch has been completed'});
+ await assert.rejects(execution.runAdaptiveWorkLoop({
+  model:blockedModel,nextChildParameters:()=>{throw Error('no Child metadata allowed');}
+ }),/adaptive Executor requires independently completed original branch Task/);
+ assert.equal(blockedModel.calls,0);
+ assert.equal(nativeChildCalls,0);
  assert.equal(host.phase,'revoked');
+ await host.close();
 });
 
 for(const mode of ['pass','invalid-model','forged-pin','reader-moved']){
