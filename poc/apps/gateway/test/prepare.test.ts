@@ -103,3 +103,31 @@ test("prepare generates independent one-time bindings for repeated tool requests
     store.get(second.request_id)?.request_fingerprint
   );
 });
+
+// R360: native operational HEAD is an authenticated Gateway projection,
+// never an untrusted model-supplied field.
+test("R360 owner-authenticated operational Prepare inherits its exact Gitea HEAD",()=>{
+ const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+ const sha="a".repeat(40),path="apps/backend/users/account.ts";
+ const task={task_id:"r360-runtime",agent_role:"backend",tool:"read_file",
+  arguments:{branch:"feature/account-suspension",path}};
+ const permission={resource:
+  "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path,
+  operation:"read_file"};
+ const trustedOwner={preflightCanonicalRequest:()=>({
+  status:"gateway_permission_preflight_only",
+  authority_digest:"b".repeat(64),runtime_task_id:task.task_id,
+  required_permission:permission,agent_did:"did:thesis:backend",
+  plan_task_id:"r360-backend",gateway_execution_authorized:false,
+  pinned_revision:sha
+ })};
+ const deps={store,audit,authorityOnlyAdmissions:trustedOwner as never,
+  requestId:()=>"r360-owned-read",challenge:()=>"r360-challenge",
+  nowMs:()=>1800000000000};
+ prepareAuthorization(task,config,deps);
+ assert.equal(store.get("r360-owned-read")?.pinned_revision,sha);
+ assert.equal(audit.events[0]?.pinned_revision,sha);
+ assert.throws(()=>prepareAuthorization({...task,pinned_revision:"c".repeat(40)},
+  config,{...deps,requestId:()=>"r360-forged-read"}));
+ assert.equal(store.get("r360-forged-read"),undefined);
+});

@@ -60,7 +60,7 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
      !SHA40.test(opts.expectedHeadSha))
    deny("same trusted owner, exact native Task and pinned HEAD required");
   const started=await opts.admissions.beginTrustedSequentialReadUpdateTask(
-   opts.planTaskId,opts.runtimeTaskId);
+   opts.planTaskId,opts.runtimeTaskId,opts.expectedHeadSha);
   if(started.status!=="sequential_read_update_manifest_reserved_staged"||
      started.task_id!==opts.planTaskId||started.total_effects!==2||
      started.gateway_execution_authorized!==false)

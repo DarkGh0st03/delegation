@@ -81,6 +81,9 @@ export function prepareAuthorization(
   const pinnedRevision = dependencies.planningRevisions?.authorizePrepare(
     normalized.task_id, normalized.agent_role, normalized.request
   );
+  // R360: only the activated owner Gateway may pin an operational Task HEAD.
+  // The raw Prepare/A2A request supplies no revision or additional authority.
+  const effectivePinnedRevision = pinnedRevision ?? authorityOnlyBinding?.pinned_revision;
   // Phase-A Planning has a separate short-lived read-only DC and pinned SHA.
   // Any operational Prepare requires an authenticated approved plan when
   // the plan enforcement feature is installed.
@@ -120,7 +123,7 @@ export function prepareAuthorization(
     audience: config.audience,
     challenge,
     request_fingerprint: requestFingerprint,
-    ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {}),
+    ...(effectivePinnedRevision ? { pinned_revision:effectivePinnedRevision } : {}),
     ...(authorityOnlyBinding ? {
       authority_only_digest:authorityOnlyBinding.authority_digest,
       authority_only_plan_task_id:authorityOnlyBinding.plan_task_id,
@@ -151,7 +154,7 @@ export function prepareAuthorization(
     resource_uri: permission.resource,
     operation: permission.operation,
     prepare_ms: prepareMs,
-    ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {}),
+    ...(effectivePinnedRevision ? { pinned_revision:effectivePinnedRevision } : {}),
     ...(approvedBinding ? { approved_plan_digest:approvedBinding.plan_digest } : {})
   });
 

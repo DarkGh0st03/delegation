@@ -71,6 +71,8 @@ interface SequentialTaskProgress {
  /** Only for the original native read->CAS mixed Task. */
  readRevision?:string;
  readPath?:string;
+ /** Original owner-pinned Gitea HEAD for both immutable typed effects. */
+ pinnedHead?:string;
 }
 function assertObservedCompletion(
  expected:TrustedCompletionExpectation,observed:unknown,nowMs:number
@@ -778,13 +780,15 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   * existing file. The typed manifest is durable before any provider I/O.
   * This does not authorize either effect or expose a model/API operation.
   */
- async beginTrustedSequentialReadUpdateTask(taskId:string,runtimeTaskId:string):
+ async beginTrustedSequentialReadUpdateTask(taskId:string,runtimeTaskId:string,
+  expectedHeadSha:string):
  Promise<Readonly<{
   status:"sequential_read_update_manifest_reserved_staged";
   task_id:string;total_effects:2;gateway_execution_authorized:false
  }>>{
   const root=this.#live(),journal=this.#sequentialEffectJournal;
-  if(!journal||!(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
+  if(!journal||!SHA40.test(expectedHeadSha)||
+     !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
      this.#flightInFlight||this.#completionInFlight||this.#bindingInFlight||
      this.#sequential.has(taskId)||this.#flights.has(taskId)||
      this.#completed.has(taskId))
@@ -819,7 +823,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    this.#live();
    if(this.#now()>=Date.parse(child.expires_at))
     deny("mixed Task Child expired during manifest reservation");
-   this.#sequential.set(taskId,{manifest,completed:0,latest_evidence_sha256:null});
+   this.#sequential.set(taskId,{manifest,completed:0,latest_evidence_sha256:null,
+    pinnedHead:expectedHeadSha});
    return Object.freeze({status:"sequential_read_update_manifest_reserved_staged",
     task_id:taskId,total_effects:2,gateway_execution_authorized:false});
   }catch(error){this.#phase="failed_closed";throw error;}
@@ -850,7 +855,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!bound||!child||!state||state.active||
      this.#flights.has(taskId!)||
      state.completed>=state.manifest.total_effects||
-     (state.manifest.effect_plan!==undefined&&state.completed!==0)||
+     (state.manifest.effect_plan!==undefined&&
+      (state.completed!==0||record.pinned_revision!==state.pinnedHead))||
      this.#completed.has(taskId!)||
      record.authority_only_plan_task_id!==taskId||
      record.authority_only_agent_did!==bound.row.agent_did||
@@ -925,6 +931,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !SHA64.test(state.latest_evidence_sha256??"")||
      !SHA40.test(state.readRevision??"")||
      record.pinned_revision!==state.readRevision||
+     record.pinned_revision!==state.pinnedHead||
      record.request.arguments.path!==state.readPath||
      child.credential_id!==state.manifest.credential_id||
      child.root_credential_id!==root.root_credential_id||
@@ -1306,6 +1313,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   authority_digest:string;runtime_task_id:string;
   required_permission:Permission;
   agent_did:string;plan_task_id:string;
+  pinned_revision?:string;
   gateway_execution_authorized:false
  }>{
   this.#live();
@@ -1336,11 +1344,21 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !this.#authorizedPermissions!.some(p=>giteaPermissionCovers(p,required))||
      !this.#rootPermissions!.some(p=>giteaPermissionCovers(p,required)))
    deny("request operation or resource not in exact signed Task grant");
+  const typed=this.#sequential.get(bound.row.task_id);
+  const nativeHead=typed?.manifest.effect_plan!==undefined&&
+    typed.manifest.runtime_task_id===request.task_id&&
+    (tool==="read_file"||tool==="update_file")
+     ?typed.pinnedHead:undefined;
+  if(typed?.manifest.effect_plan!==undefined&&
+     (tool==="read_file"||tool==="update_file")&&
+     !SHA40.test(nativeHead??""))
+   deny("native read/update Prepare lacks original owner-pinned HEAD");
   return Object.freeze({
    status:"gateway_permission_preflight_only",
    authority_digest:this.#digest!,runtime_task_id:request.task_id,
    required_permission:structuredClone(required),
    agent_did:bound.row.agent_did,plan_task_id:bound.row.task_id,
+   ...(nativeHead?{pinned_revision:nativeHead}:{}),
    gateway_execution_authorized:false
   });
  }
