@@ -76,6 +76,11 @@ import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
 import {TrustedGatewayRunnerFailEvidencePublisher,
  AuthenticatedRunnerFailureObserver}
  from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
+import {DurableNativeD1FirstTaskAdmissionJournal,
+ admitFirstNativeD1RepairTask}
+ from "../src/trusted-native-d1-first-task-admission.ts";
+import {enrollFirstNativeD1ChildAtGateway}
+ from "../src/trusted-native-d1-child-gateway-bind.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
 import {stageDisposableAccountSuspensionReference}
@@ -176,7 +181,8 @@ class OfflineNativeTestModel extends BaseLlm{
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
-const r338Negative=process.env.R338_NATIVE_RUNNER_FAIL==="1";
+const r343NativeD1=process.env.R343_NATIVE_D1_ENROLL==="1";
+const r338Negative=process.env.R338_NATIVE_RUNNER_FAIL==="1"||r343NativeD1;
 let gatewayCasWrites=0;
 class ObservedGiteaClient extends GiteaClient{
  async updateFileWithHeadCas(input){gatewayCasWrites++;return super.updateFileWithHeadCas(input);}
@@ -283,7 +289,7 @@ let roleBindingServers=[];
 let a2aRoleServers=[];
 const names=["approvals","root-journal","coordinator-tasks","gateway-tasks",
  "gateway-activation","child-intents","gateway-child-intents","flights",
- "intent","receipts","runner-intent","runner-receipts","runner-fail-receipts","runner-logs"];
+ "intent","receipts","runner-intent","runner-receipts","runner-fail-receipts","runner-logs","d1-first-admissions"];
 try{
  for(const name of names)await mkdir(path(name),{mode:0o700});
  await writeFile(path("approvals")+"/"+sessionId+".json",
@@ -997,6 +1003,77 @@ try{
   assert.equal(gate.stagedCompletedTaskCount,2);
   assert.equal(gatewayCasWrites,2);
   assert.equal((await client.getBranchMetadata(branch)).commit_sha,pinnedHead);
+  if(r343NativeD1){
+   // Use the ACTUAL real Docker FAIL/Root/Child/Gateway/Runner state.
+   // This deliberately does not run a repair agent or retest yet.
+   const victim="apps/backend/src/users/user.service.ts";
+   const candidate={role:"backend",permissions:[{
+    resource:resourcePrefix+"/files/"+victim,operation:"update_file"
+   }]};
+   const d1Journal=new DurableNativeD1FirstTaskAdmissionJournal(
+    path("d1-first-admissions"));
+   const input={
+    coordinator,childIssuer:issuer,gateway:gate,failureObserver:failObserver,
+    failedRunnerIntent:runnerStaged.intent,candidate,journal:d1Journal,nowMs
+   };
+   const admitted=await admitFirstNativeD1RepairTask(input);
+   assert.equal(admitted.status,
+    "native_d1_task_registered_without_gateway_or_child");
+   assert.equal(admitted.epoch,4);
+   assert.equal(admitted.failed_test_task_id,testTaskId);
+   assert.equal(admitted.original_root_credential_id,operational.credential_id);
+   assert.equal(admitted.source_evidence_sha256,failure.evidence_sha256);
+   assert.equal(admitted.recovery_execution_authorized,false);
+   const d1=await enrollFirstNativeD1ChildAtGateway({
+    ...input,admission:admitted,
+    freshStatusEntry:{
+     statusListCredential:"https://status.example/r305",
+     statusListIndex:"29109"
+    }
+   });
+   assert.equal(d1.status,"native_d1_child_enrolled_no_provider_effect");
+   assert.equal(d1.task_id,admitted.task_id);
+   assert.equal(d1.epoch,4);
+   assert.equal(d1.gateway_child_enrolled,true);
+   assert.equal(d1.native_child_issued,true);
+   assert.equal(d1.provider_executed,false);
+   assert.equal(d1.recovery_completed,false);
+   assert.equal(d1.gateway_execution_authorized,false);
+   assert.equal(d1.original_root_credential_id,operational.credential_id);
+   const row=coordinator.assertTrustedGatewayRegisteredTask(d1.task_id);
+   assert.equal(row.agent_id,"backend");
+   assert.deepEqual(row.permissions,candidate.permissions);
+   assert.deepEqual(row.depends_on,[frontendTaskId]);
+   const childD1=issuer.assertTrustedIssuedChild(d1.task_id,coordinator);
+   assert.equal(childD1.credential_id,d1.new_child_credential_id);
+   assert.equal(childD1.agent_did,backendDid);
+   assert.notEqual(childD1.credential_id,runnerChild.credential_id);
+   assert.notEqual(childD1.credential_id,child.credential_id);
+   assert.deepEqual(childD1.permissions,candidate.permissions);
+   assert.equal(gate.registeredTaskCount,4);
+   assert.equal(gate.stagedCompletedTaskCount,2);
+   assert.equal(gatewayCasWrites,2);
+   assert.equal(runnerCalls,1);
+   assert.equal((await readdir(path("d1-first-admissions"))).length,1);
+   assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
+    pinnedHead);
+   const originalError=await independentClient.readTextFile(
+    branch,victim,pinnedHead);
+   assert.match(originalError.content,/r338TypecheckFailure: string = 2026/u);
+   await assert.rejects(admitFirstNativeD1RepairTask(input));
+   process.stdout.write(JSON.stringify({
+    event:"r343_real_native_d1_task_child_gateway_enrolled",
+    real_original_failed_runner_proof:failure.evidence_sha256,
+    original_root_unchanged:true,original_test_incomplete:true,
+    new_recovery_epoch:d1.epoch,new_child_native_rust:true,
+    new_child_gateway_enrolled:true,
+    completed_gateway_tasks:gate.stagedCompletedTaskCount,
+    provider_commits_after_failure:0,runner_posts:runnerCalls,
+    d1_provider_executed:false,d1_recovered:false,
+    paid_model_calls:0,main_unchanged:
+     (await client.getBranchMetadata("main")).commit_sha===originalMainSha
+   })+"\n");
+  }
   await credentialPort.revokeRoot(operational.credential_id);
   assert.equal((await client.getBranchMetadata("main")).commit_sha,originalMainSha);
   process.stdout.write(JSON.stringify({
