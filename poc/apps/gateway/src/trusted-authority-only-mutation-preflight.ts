@@ -59,6 +59,17 @@ export class TrustedAuthorityOnlyGiteaMutationPreflight{
   return value instanceof TrustedAuthorityOnlyGiteaMutationPreflight &&
    #admissions in value && value.#admissions===admissions;
  }
+ /** Same real Gateway, actual Gitea object, signed feature branch and
+  * repository. This checks PRIVATE fields rather than overridable helpers. */
+ static isNativeForOwner(value:unknown,
+  admissions:TrustedAuthorityOnlyGatewayAdmissions,
+  gitea:GiteaClient,repository:string,branch:string):
+  value is TrustedAuthorityOnlyGiteaMutationPreflight{
+  return value instanceof TrustedAuthorityOnlyGiteaMutationPreflight &&
+   #admissions in value && value.#admissions===admissions &&
+   value.#client===gitea && value.#repository===repository &&
+   value.#branch===branch;
+ }
  isForAdmissions(admissions:TrustedAuthorityOnlyGatewayAdmissions):boolean{
   return this.#admissions===admissions;
  }

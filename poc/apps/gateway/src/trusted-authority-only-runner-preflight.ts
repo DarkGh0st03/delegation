@@ -56,6 +56,17 @@ export class TrustedAuthorityOnlyRunnerPreflight{
   return value instanceof TrustedAuthorityOnlyRunnerPreflight &&
    #admissions in value && value.#admissions===admissions;
  }
+ /** Same real Gateway, real Gitea instance and exact signed branch;
+  * no duck-typed preflight or method override can substitute a provider. */
+ static isNativeForOwner(value:unknown,
+  admissions:TrustedAuthorityOnlyGatewayAdmissions,
+  gitea:GiteaClient,repository:string,branch:string):
+  value is TrustedAuthorityOnlyRunnerPreflight{
+  return value instanceof TrustedAuthorityOnlyRunnerPreflight &&
+   #admissions in value && value.#admissions===admissions &&
+   value.#gitea===gitea && value.#repo===repository &&
+   value.#branch===branch;
+ }
  isForAdmissions(a:TrustedAuthorityOnlyGatewayAdmissions):boolean{
   return a===this.#admissions;
  }

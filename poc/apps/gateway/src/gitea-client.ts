@@ -123,6 +123,15 @@ export class GiteaClient {
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
 
+  /** Static, class-private identity proof: caller-provided repository
+   * labels and overridable metadata methods cannot impersonate the Gitea
+   * client actually provisioned by the trusted Gateway owner. */
+  static isPinnedRepositoryClient(value: unknown,
+    owner: string, repository: string): value is GiteaClient {
+    return value instanceof GiteaClient && #owner in value &&
+      value.#owner === owner && value.#repository === repository;
+  }
+
   constructor(config: GiteaClientConfig) {
     if (config.baseUrl.trim().length === 0) throw new Error("Gitea base URL cannot be empty");
     if (config.token.trim().length === 0) throw new Error("Gitea token cannot be empty");

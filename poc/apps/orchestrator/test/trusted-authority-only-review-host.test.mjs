@@ -146,6 +146,7 @@ function nativeOfflinePreflights(gateway,dirs,events=[]){
  }
  const gitea=new PinnedGiteaReadFixture();
  return {
+  gitea,
   mutation:new TrustedAuthorityOnlyGiteaMutationPreflight({
    admissions:gateway,giteaClient:gitea,
    journal:new DurableAuthorityOnlyGiteaMutationIntentJournal(dirs.mutationIntents),
@@ -350,10 +351,10 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
   }),/native effect staging requires/);
   const nativeStore=new InMemoryRequestStore();
   const realGateway=execution.gateway;
-  const {mutation:nativeMutation,runner:nativeRunner}=
+  const {mutation:nativeMutation,runner:nativeRunner,gitea}=
    nativeOfflinePreflights(realGateway,f.dirs);
   assert.deepEqual(bindNativeGatewayEffects({
-   store:nativeStore,mutation:nativeMutation,runner:nativeRunner
+   store:nativeStore,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea
   }),{status:'owner_native_gateway_effects_bound_no_execution',
    gateway_execution_authorized:false});
   const genuineStager=createEnrolledNativeEffectStager({
@@ -366,7 +367,7 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
    runtimeTaskId:stage.runtimeTaskId,expectedHeadSha:'a'.repeat(40)
   }),/unspent Task/);
   assert.throws(()=>bindNativeGatewayEffects({
-   store:nativeStore,mutation:nativeMutation,runner:nativeRunner
+   store:nativeStore,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea
   }),/quiescent owner/);
   await assert.rejects(dispatchEnrolledTask({
    taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId,
@@ -411,10 +412,10 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
  const staged=await stageTask(task);
  assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
- const {mutation:nativeMutation,runner:nativeRunner}=
+ const {mutation:nativeMutation,runner:nativeRunner,gitea}=
   nativeOfflinePreflights(gateway,f.dirs,events);
  assert.equal(execution.bindNativeGatewayEffects({
-  store,mutation:nativeMutation,runner:nativeRunner
+  store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea
  }).gateway_execution_authorized,false);
  const nativeStager=execution.createEnrolledNativeEffectStager({
   runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
@@ -607,10 +608,10 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  const record=store.get(prepared.request_id);
  assert.equal(record.authority_only_plan_task_id,task.task.task_id);
  assert.equal(record.authority_only_agent_did,'did:thesis:backend');
- const {mutation:nativeMutation,runner:nativeRunner}=
+ const {mutation:nativeMutation,runner:nativeRunner,gitea}=
   nativeOfflinePreflights(gateway,f.dirs,nativeCalls);
  assert.equal(execution.bindNativeGatewayEffects({
-  store,mutation:nativeMutation,runner:nativeRunner}).gateway_execution_authorized,false);
+  store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea}).gateway_execution_authorized,false);
  const stager=execution.createEnrolledNativeEffectStager({
   runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
  });
@@ -724,6 +725,49 @@ test('R350.11 failed native revocation leaves pending intent until confirmed ope
  assert.equal((await f.options.operationalRecoveryStore.pending()).length,0);
 });
 
+test('R350.12 exact original Gitea instance and branch are required by both native preflights',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ await host.activateOperational(root('urn:r35012:provider',2));
+ const execution=await host.admitOperationalExecution(executionDeps(f));
+ const original=nativeOfflinePreflights(execution.gateway,f.dirs);
+ const other=new GiteaClient({
+  baseUrl:'http://foreign.invalid',token:'private-fixture-only',
+  owner:snapshot.repository.owner,repository:snapshot.repository.repository
+ });
+ const wrongRepo=new GiteaClient({
+  baseUrl:'http://foreign.invalid',token:'private-fixture-only',
+  owner:'different',repository:snapshot.repository.repository
+ });
+ assert.equal(GiteaClient.isPinnedRepositoryClient(
+  original.gitea,snapshot.repository.owner,snapshot.repository.repository),true);
+ assert.equal(GiteaClient.isPinnedRepositoryClient(
+  wrongRepo,snapshot.repository.owner,snapshot.repository.repository),false);
+ assert.equal(TrustedAuthorityOnlyGiteaMutationPreflight.isNativeForOwner(
+  original.mutation,execution.gateway,original.gitea,
+  'thesis/iam-console-poc',branch),true);
+ assert.equal(TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
+  original.runner,execution.gateway,original.gitea,
+  'thesis/iam-console-poc',branch),true);
+ assert.equal(TrustedAuthorityOnlyGiteaMutationPreflight.isNativeForOwner(
+  original.mutation,execution.gateway,other,'thesis/iam-console-poc',branch),false);
+ assert.equal(TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
+  original.runner,execution.gateway,other,'thesis/iam-console-poc',branch),false);
+ assert.equal(TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
+  original.runner,execution.gateway,original.gitea,
+  'thesis/iam-console-poc','feature/other'),false);
+ // A matching repository string on ANOTHER native client is not sufficient.
+ assert.throws(()=>execution.bindNativeGatewayEffects({
+  store:new InMemoryRequestStore(),mutation:original.mutation,
+  runner:original.runner,giteaClient:other
+ }),/not from original session/);
+ assert.throws(()=>execution.bindNativeGatewayEffects({
+  store:new InMemoryRequestStore(),mutation:original.mutation,
+  runner:original.runner,giteaClient:original.gitea
+ }),/active quiescent owner/);
+ await host.close();
+ assert.equal(host.phase,'revoked');
+});
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{
  const f=await fixture(t),host=await f.start();
  assert.equal(host.phase,'planning');assert.equal(f.model.calls,2);

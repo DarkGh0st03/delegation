@@ -22,6 +22,7 @@ import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-a
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
 import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-authority-only-runner-preflight.ts';
+import {GiteaClient} from '../../gateway/src/gitea-client.ts';
 import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
 import {startTrustedAuthorityOnlySdkA2AOwner} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-a2a-owner.ts';
@@ -352,12 +353,16 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient'])||
         !(deps.store instanceof InMemoryRequestStore)||
-        !TrustedAuthorityOnlyGiteaMutationPreflight.isNativeForAdmissions(
-         deps.mutation,gateway)||
-        !TrustedAuthorityOnlyRunnerPreflight.isNativeForAdmissions(
-         deps.runner,gateway)){
+        !GiteaClient.isPinnedRepositoryClient(
+         deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
+        !TrustedAuthorityOnlyGiteaMutationPreflight.isNativeForOwner(
+         deps.mutation,gateway,deps.giteaClient,
+         snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
+        !TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
+         deps.runner,gateway,deps.giteaClient,
+         snapshot.repository.owner+'/'+snapshot.repository.repository,branch)){
       dispatchFailed=true;
       deny('native Gateway effect dependencies are not from original session');
      }
