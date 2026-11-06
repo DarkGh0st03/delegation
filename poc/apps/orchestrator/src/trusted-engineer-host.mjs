@@ -915,7 +915,16 @@ function assertOwnerPlanningEngineerPins(planning,host){
 }
 
 /** Original first-session Planning, not a recovery or an automatic retry. */
-export async function startOwnerControlledEngineerReviewHost({planning,host}={}){
+export async function startOwnerControlledEngineerReviewHost(options={}){
+  if(options.architecture==="authority-only"){
+    if(options.planning!==undefined||options.host!==undefined||!options.authority)
+      deny("authority-only owner host requires separate explicit configuration");
+    const {startTrustedAuthorityOnlyReviewHost}=await import("./trusted-authority-only-review-host.mjs");
+    return startTrustedAuthorityOnlyReviewHost(options.authority);
+  }
+  if(options.architecture!==undefined&&options.architecture!=="legacy-signed-dag")
+    deny("unknown owner Engineer architecture");
+  const {planning,host}=options;
   const {coordinator}=assertOwnerPlanningEngineerPins(planning,host);
   // If the Planner fails it invokes closePlanning itself. If it completes
   // and Engineer host startup later fails, the strict wrapper closes it.

@@ -1,16 +1,17 @@
 /** Owner-only live Planning -> signed permission-only checkpoint.
- * Uses the existing preliminary read coordinator/port, never its legacy
+ * Uses the preliminary read coordinator/session and bound port, never legacy
  * operational signed-DAG activation. No uploaded proposal is accepted. */
 import {isDeepStrictEqual} from 'node:util';
 import {TrustedAdkReadOnlyPlanner} from './trusted-adk-planner.ts';
 import {TrustedExecutionCoordinator} from './trusted-execution-coordinator.ts';
+import {TrustedAuthorityOnlyEngineerSession} from './trusted-authority-only-engineer-session.ts';
 import {TrustedPlanningGatewayReadPort} from './trusted-planning-gateway-port.ts';
 import {AuthorityPlanningCheckpointStore,signAuthorityPlanningCheckpoint}
  from './trusted-authority-planning-checkpoint.ts';
 
 export class TrustedActiveAuthorityPlanning {
  readonly #planner:TrustedAdkReadOnlyPlanner;
- readonly #coordinator:TrustedExecutionCoordinator;
+ readonly #coordinator:TrustedExecutionCoordinator|TrustedAuthorityOnlyEngineerSession;
  readonly #port:TrustedPlanningGatewayReadPort;
  readonly #store:AuthorityPlanningCheckpointStore;
  readonly #keyId:string;readonly #key:string;
@@ -18,10 +19,11 @@ export class TrustedActiveAuthorityPlanning {
  readonly #branch:string;readonly #requirement:string;readonly #ttl:number;
  #attempted=false;
  constructor(opts:{planner:TrustedAdkReadOnlyPlanner;
-  coordinator:TrustedExecutionCoordinator;store:AuthorityPlanningCheckpointStore;
+  coordinator:TrustedExecutionCoordinator|TrustedAuthorityOnlyEngineerSession;store:AuthorityPlanningCheckpointStore;
   backendKeyId:string;backendPrivateKeyPem:string;lifetimeMs?:number}){
   if(!(opts?.planner instanceof TrustedAdkReadOnlyPlanner)||
-   !(opts.coordinator instanceof TrustedExecutionCoordinator)||
+   (!(opts.coordinator instanceof TrustedExecutionCoordinator)&&
+    !(opts.coordinator instanceof TrustedAuthorityOnlyEngineerSession))||
    !(opts.store instanceof AuthorityPlanningCheckpointStore)||
    !(opts.planner.config.readPort instanceof TrustedPlanningGatewayReadPort)||
    opts.planner.config.validateProposedPlan||opts.planner.config.pilotFullDag||

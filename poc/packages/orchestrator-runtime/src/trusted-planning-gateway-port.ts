@@ -1,7 +1,8 @@
 /**
  * Trusted Planning read-only port.
  *
- * Bind to a root actually issued by TrustedExecutionCoordinator.beginPlanning.
+ * Bind to a root actually issued by the legacy read-only Coordinator or
+ * TrustedAuthorityOnlyEngineerSession, with the exact owner snapshot.
  * Every read crosses Gateway prepare -> Adapter-signed VP -> Gateway verifier
  * -> OPA -> pinned Gitea provider. The model only sees read-only ADK tools.
  * Neither model text nor an HTTP caller can select a credential or grant.
@@ -21,10 +22,13 @@ import {OrchestratorPlanningGatewayReadClient}
   from "./orchestrator-gateway-client.ts";
 import type {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
+import {TrustedAuthorityOnlyEngineerSession}
+  from "./trusted-authority-only-engineer-session.ts";
+type PlanningAuthority=TrustedExecutionCoordinator|TrustedAuthorityOnlyEngineerSession;
 
 type ReadTool="read_repository"|"list_directory"|"read_file";
 export interface TrustedPlanningGatewayPortConfig {
-  coordinator:TrustedExecutionCoordinator;
+  coordinator:PlanningAuthority;
   snapshot:TrustedPlanningSnapshot;
   gatewayBaseUrl:string;
   /** Historical HTTP presenter only; approved Rust signer needs no URL. */
@@ -40,13 +44,15 @@ function fail():never{
   throw Error("Trusted Planning read denied: inactive or out-of-scope read");
 }
 export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
-  readonly #coordinator:TrustedExecutionCoordinator;
+  readonly #coordinator:PlanningAuthority;
   readonly #snapshot:TrustedPlanningSnapshot;
   readonly #client:OrchestratorPlanningGatewayReadClient;
   readonly #allowed:Set<string>;
   readonly #credentialId:string;
   constructor(config:TrustedPlanningGatewayPortConfig){
     const snapshot=structuredClone(config.snapshot);
+    if(config.coordinator instanceof TrustedAuthorityOnlyEngineerSession)
+      config.coordinator.assertTrustedPlanningSnapshot(snapshot);
     const root=config.coordinator.trustedPlanningAuthority();
     if(root.session_id!==snapshot.session_id||
        root.base_revision!==snapshot.base_revision)fail();
@@ -70,7 +76,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
 
   /** Private host-only binding check. This instance and its provisional
    * credential must belong to the exact active coordinator and snapshot. */
-  assertTrustedPlanningBinding(coordinator:TrustedExecutionCoordinator,
+  assertTrustedPlanningBinding(coordinator:PlanningAuthority,
     snapshot:TrustedPlanningSnapshot):void{
     if(this.#coordinator!==coordinator||
        !isDeepStrictEqual(this.#snapshot,snapshot))fail();

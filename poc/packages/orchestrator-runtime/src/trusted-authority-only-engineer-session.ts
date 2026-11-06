@@ -121,6 +121,22 @@ export class TrustedAuthorityOnlyEngineerSession{
  }
  get phase():Phase{return this.#phase;}
  get approvedAuthorityDigest():string|undefined{return this.#authorityDigest;}
+ /** Owner-only read binding to the SAME preliminary root later retired by
+  * permission-only approval. No credential or signing secret is returned. */
+ trustedPlanningAuthority(){
+  if(this.#phase!=="planning"||!this.#preliminary||
+     this.#nowMs()>=Date.parse(this.#preliminary.valid_from)+
+       this.#preliminary.validity_seconds*1000)
+   fail("preliminary root is inactive or expired");
+  return {session_id:this.#snapshot.session_id,
+   base_revision:this.#snapshot.base_revision,
+   credential_id:this.#preliminary.credential_id,
+   permissions:preliminaryReadPermissions(this.#snapshot)};
+ }
+ assertTrustedPlanningSnapshot(snapshot:TrustedPlanningSnapshot):void{
+  if(!equality(snapshot,this.#snapshot))fail("Planning snapshot mismatch");
+  this.trustedPlanningAuthority();
+ }
  /** Trusted in-process proof produced ONLY after native root issue success.
   * Root credentials or Task binding are never minted by this accessor. */
  assertLiveOperationalRoot():Readonly<{
@@ -197,6 +213,16 @@ export class TrustedAuthorityOnlyEngineerSession{
   catch{/* Never claim cancellation without native status confirmation. */}
   if(!retired||!revoked)
    fail("Planning cancellation unconfirmed; manual reconciliation required");
+  this.#phase="revoked";
+ }
+ /** Private owner teardown. Existing Coordinators immediately lose their
+  * live-root proof before the asynchronous native revocation can yield. */
+ async retireOperationalRoot():Promise<void>{
+  if(this.#phase!=="operational"||!this.#operationalRoot)
+   fail("no active operational root to retire");
+  const id=this.#operationalRoot.credential_id;
+  this.#phase="failed_closed";
+  await this.#credentials.revokeRoot(id);
   this.#phase="revoked";
  }
  /**
