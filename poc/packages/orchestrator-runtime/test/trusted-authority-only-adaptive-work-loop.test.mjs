@@ -88,7 +88,7 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
 function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1}={}){
- const done=[],events=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
+ const done=[],events=[],history=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
  const permission=grant;
  const hooks={
   async readContext(){if(retired)throw Error('retired');
@@ -103,7 +103,12 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
      task_id:p.task_id,agent_id:p.agent_id,operation:permission(p.agent_id).operation,
      instruction:p.instruction}))},
     ...(failure?{verifiedFailure:{failed_phase:failure.failed_phase,
-     source_evidence_sha256:failure.source_evidence_sha256}}:{})
+     source_evidence_sha256:failure.source_evidence_sha256},
+     verifiedFailureHistory:history.map(f=>({
+      failed_task_id:f.failed_task_id,failed_phase:f.failed_phase,
+      source_evidence_sha256:f.source_evidence_sha256,
+      tested_commit_sha:f.tested_commit_sha
+     }))}:{})
    };
   },
   async beforeDecision(){events.push('decision');},
@@ -134,6 +139,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
    if(forgery==='wrong-head')return {...original,tested_commit_sha:'f'.repeat(40)};
    if(forgery==='wrong-digest')return {...original,source_evidence_sha256:'not-a-digest'};
    failure=original;
+   history.push(original);
    return original;
   },
   async confirmReady(){events.push('independent_latest_runner_pass');
@@ -223,6 +229,8 @@ test('R355.7 adaptive Test FAIL twice, two different corrections, final Test PAS
  const fourth=JSON.stringify(model.requests[3]);
  assert.ok(second.includes('c'.repeat(64)));
  assert.ok(fourth.includes('d'.repeat(64)));
+ assert.ok(fourth.includes('c'.repeat(64)),'prior failure remains visible in bounded history');
+ assert.ok(fourth.includes('independently_verified_test_failures'));
  assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
 });
 test('R355.7 third Test FAIL exceeds owner recovery budget and retires root',async()=>{
@@ -240,6 +248,24 @@ test('R355.7 third Test FAIL exceeds owner recovery budget and retires root',asy
  assert.equal(model.calls,5);
  assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-3']);
  assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,3);
+});
+test('R355.8 untrusted malformed failure history cannot reach a model turn',async()=>{
+ const f=verifiedFailureFixture();
+ const read=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const data=await read();
+  if(data.verifiedFailureHistory)
+   data.verifiedFailureHistory[0].source_evidence_sha256='not-an-authenticated-digest';
+  return data;
+ };
+ const backend=candidate('backend',1);
+ backend.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),backend]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/);
+ assert.equal(model.calls,1);
+ assert.equal(f.retired,true);
+ assert.equal(f.done.length,0);
 });
 test('R355 retirement failure is reported as unconfirmed',async()=>{
  const f=fixture(),model=new Decisions([{action:'ready_for_pr',reason:'Premature'}]);
