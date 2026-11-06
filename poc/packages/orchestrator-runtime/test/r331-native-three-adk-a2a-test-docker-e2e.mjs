@@ -394,10 +394,13 @@ try{
       p=>p.operation==="read_file"&&p.resource.endsWith("/"+mutationPath))});
    }
    if(route.endsWith("/v1/presentations")){
-    assert.equal(body.credential_id,preliminary.credential_id);
-    return Response.json({signed_vp:"r35013-offline-planning-only"});
+    // Native workflow MUST issue a Rust VP through the private Unix socket.
+    throw Error("Forbidden legacy HTTP presentation in R350.13 native mode");
    }
    if(route.endsWith("/execute")){
+    assert.equal(body.request_id,"r35013-disposable-read");
+    assert.equal(typeof body.signed_vp,"string");
+    assert.ok(body.signed_vp.length>100,"Missing native Rust-signed preliminary VP");
     const source=await client.readTextFile(branch,mutationPath,baseRevision);
     assert.equal(source.content,oldContent);
     return Response.json({execution:{provider:"gitea",performed:true,
@@ -427,7 +430,7 @@ try{
    credentials:credentialPort,planningRevisions:revisions,
    gateway:{gatewayBaseUrl:"http://offline-planning.r35013.invalid",
     adapterBaseUrl:"http://offline-planning-crypto.r35013.invalid",
-    adapterToken:"r35013-private-planning-only",
+    adapterToken:tokens.orchestrator,
     fetchFn:planningFetch}
   });
   // Real authenticated Engineer UI, not a pre-seeded receipt file.
