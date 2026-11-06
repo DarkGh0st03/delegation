@@ -20,8 +20,8 @@ import {validatePrivateApprovedBranch}
   from "../../agent-runtime/src/approved-branch.ts";
 import {createSpecializedAgentCard}
   from "../../agent-runtime/src/cards.ts";
-import {preliminaryReadPermissions,type TrustedPlanningSnapshot}
-  from "./trusted-engineer-authority.ts";
+import {preliminaryReadPermissions,trustedPlanningSourceBranch,
+ type TrustedPlanningSnapshot} from "./trusted-engineer-authority.ts";
 
 type Role="backend"|"frontend"|"test";
 type ReadTool="read_repository"|"list_directory"|"read_file";
@@ -646,6 +646,7 @@ export class TrustedAdkReadOnlyPlanner {
     const planningDeadline=AbortSignal.timeout(cfg.maxPlanningMs??900000);
     const model=new BudgetedModel(cfg.model,cfg.maxModelTurns??96,
       cfg.maxModelCallMs??120000,planningDeadline,cfg.onObservation);
+    const sourceBranch=trustedPlanningSourceBranch(sp);
     const files=new Set(sp.files),directories=new Set(sp.directories);
     let calls=0,bytes=0,readCount=0,denied=false;
     let cardReadCount=0;
@@ -664,9 +665,9 @@ export class TrustedAdkReadOnlyPlanner {
         return refuse("planning_deadline");
       }
       if(++calls>64)return refuse("read_budget");
-      if((tool==="read_file"&&(!files.has(args.path as string)||args.branch!=="main"))||
-         (tool==="list_directory"&&(!directories.has(args.path as string)||args.branch!=="main"))||
-         (tool==="read_repository"&&Object.keys(args).length!==0)){
+      if((tool==="read_file"&&(!files.has(args.path as string)||args.branch!==sourceBranch))||
+         (tool==="list_directory"&&(!directories.has(args.path as string)||args.branch!==sourceBranch))||
+         (tool==="read_repository"&&(sourceBranch!=="main"||Object.keys(args).length!==0))){
         return refuse("outside_planning_scope");
       }
       try{
@@ -738,7 +739,7 @@ export class TrustedAdkReadOnlyPlanner {
           };
         }
       }),
-      new FunctionTool({
+      ...(sourceBranch==="main"?[new FunctionTool({
         name:"read_repository",
         description:"Read only pinned trusted repository metadata.",
         // Google Gemini FunctionDeclaration forbids an OBJECT with empty
@@ -748,21 +749,21 @@ export class TrustedAdkReadOnlyPlanner {
           repository:z.enum([sp.repository.repository])
         }).strict(),
         execute:async()=>read("read_repository",{})
-      }),
+      })]:[]),
       new FunctionTool({
         name:"list_directory",
-        description:"List only approved main directories at the trusted SHA.",
+        description:"List only approved snapshot directories at the trusted SHA.",
         // The trusted root directory is the empty string. Gemini rejects
         // enum entries equal to "", so validate the directory at the
         // trusted read boundary instead of encoding that enum in the model.
-        parameters:z.object({branch:z.enum(["main"]),
+        parameters:z.object({branch:z.enum([sourceBranch]),
           path:z.string()}).strict(),
         execute:async(args)=>read("list_directory",args)
       }),
       ...(sp.files.length?[new FunctionTool({
         name:"read_file",
-        description:"Read an explicitly authorized main file at the trusted SHA.",
-        parameters:z.object({branch:z.enum(["main"]),
+        description:"Read an explicitly authorized snapshot file at the trusted SHA.",
+        parameters:z.object({branch:z.enum([sourceBranch]),
           path:z.enum(sp.files as [string,...string[]])}).strict(),
         execute:async(args)=>read("read_file",args)
       })]:[])

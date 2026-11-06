@@ -27,6 +27,10 @@ export interface TrustedPlanningSnapshot {
   session_id:string;
   repository:{authority:string;owner:string;repository:string};
   base_revision:string;
+  /** Optional owner-signed, revision-pinned feature baseline for a disposable
+   * already-created branch. Omitted means the historical main read boundary.
+   * NEVER supplied by ADK/tool arguments or inferred from a model response. */
+  planning_branch?:string;
   /** Trusted operator/Gitea-discovery-derived, not model-proposed paths. */
   directories:readonly string[];
   files:readonly string[];
@@ -116,6 +120,15 @@ function equality(a:unknown,b:unknown):boolean {
   return JSON.stringify(a)===JSON.stringify(b);
 }
 
+export function trustedPlanningSourceBranch(snapshot:TrustedPlanningSnapshot):string{
+  const branch=snapshot.planning_branch??"main";
+  if(typeof branch!=="string"||
+     (branch!=="main"&&(!/^feature\/[a-z0-9][a-z0-9._/-]*$/u.test(branch)||
+      branch.endsWith("/")||branch.includes("..")||branch.includes("//"))))
+    fail("invalid trusted Planning source branch");
+  return branch;
+}
+
 export function preliminaryReadPermissions(
   snapshot:TrustedPlanningSnapshot
 ):DelegatedPermission[] {
@@ -126,21 +139,24 @@ export function preliminaryReadPermissions(
     !!repo[k as keyof typeof repo].trim()))fail("repository identity missing");
   if(typeof snapshot.base_revision!=="string" ||
      !SHA.test(snapshot.base_revision))fail("unpinned Git base revision");
+  const sourceBranch=trustedPlanningSourceBranch(snapshot);
   distinct(snapshot.directories,"directory list");
   distinct(snapshot.files,"file list");
   if(!snapshot.directories.includes(""))fail("planning snapshot must include root directory");
-  const permissions:DelegatedPermission[]=[
-    {resource:canonicalRepositoryUri(repo),operation:"read_repository"}
-  ];
+  // Reading the default repository metadata at an unrelated feature HEAD
+  // cannot be revision pinned; feature snapshots authorize only exact
+  // feature list/read operations, never an ambiguous main HEAD read.
+  const permissions:DelegatedPermission[]=sourceBranch==="main"?
+    [{resource:canonicalRepositoryUri(repo),operation:"read_repository"}]:[];
   for(const dir of snapshot.directories) {
     path(dir,true);
     // Apply exactly the Gateway's normalizer and canonical resource mapping.
     const request=validatePrepareAuthorizationRequest({
       task_id:"trusted-planning-read",agent_role:"orchestrator",
-      tool:"list_directory",arguments:{branch:"main",path:dir}
+      tool:"list_directory",arguments:{branch:sourceBranch,path:dir}
     });
     permissions.push({
-      resource:canonicalDirectoryUri(repo,"main",request.request.arguments.path),
+      resource:canonicalDirectoryUri(repo,sourceBranch,request.request.arguments.path),
       operation:"list_directory"
     });
   }
@@ -148,10 +164,10 @@ export function preliminaryReadPermissions(
     path(file,false);
     const request=validatePrepareAuthorizationRequest({
       task_id:"trusted-planning-read",agent_role:"orchestrator",
-      tool:"read_file",arguments:{branch:"main",path:file}
+      tool:"read_file",arguments:{branch:sourceBranch,path:file}
     });
     permissions.push({
-      resource:canonicalFileUri(repo,"main",request.request.arguments.path),
+      resource:canonicalFileUri(repo,sourceBranch,request.request.arguments.path),
       operation:"read_file"
     });
   }

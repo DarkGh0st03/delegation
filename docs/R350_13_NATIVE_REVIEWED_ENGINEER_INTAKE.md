@@ -6,11 +6,12 @@ The existing R331 native end-to-end harness now accepts the explicit
 `workflow_dispatch` input `authority_mode=reviewed_native`. Its original
 `original_fixture` path is unchanged and remains available for regression.
 
-In the reviewed-native path a disposable Gitea fixture is seeded on local
-**main** before branching; the newly created feature branch and `main`
-share an identical immutable baseline revision. This avoids the previous
-incompatibility where R349's read-only Planner required `main` at the
-revision pinned for R331's already-seeded feature branch.
+In the reviewed-native path the owner-only disposable Gitea
+fixture is staged **only on the feature branch**, preserving immutable
+`main` exactly as R331 requires. The trusted, backend-signed Planning
+snapshot now explicitly selects that feature branch as its source at
+the exact pinned feature HEAD. Historical Planning snapshots without
+this field remain strictly bound to `main`.
 
 A real Google ADK Runner (with a scripted, non-billable Planning model)
 reads the pinned source and proposes ONLY maximum permission pairs. The
@@ -30,8 +31,8 @@ the owner host, with a durable recovery intent. No paid model is contacted.
 ## Explicit trust and validation boundaries
 
 The **Planning Gateway HTTP + VP read transport** in this first bridge is
-still an offline fixture; however, the Planner's actual requested source
-text is read from real disposable Gitea at the exact baseline revision,
+still an offline fixture; however, the Planner's requested source
+text is read from real disposable Gitea at the exact feature revision,
 and the Engineer root itself is issued/revoked by native Rust/EVM. The
 reviewed mode is therefore an incremental integration—not a full proof
 that preliminary Planning VP traversed core Rust/OPA/Gateway.

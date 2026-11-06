@@ -33,7 +33,7 @@ import {createTrustedPlanIpcServer}
 import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import type {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {
-  TrustedEngineerAuthoritySession,
+  TrustedEngineerAuthoritySession,preliminaryReadPermissions,trustedPlanningSourceBranch,
   type EngineerCredentialPort,type RootParameters
 } from "../src/trusted-engineer-authority.ts";
 import type {IssuedDelegationCredential}
@@ -106,6 +106,23 @@ const proposal={
   ],
   assumptions:[],uncertainties:[]
 };
+test("R350.13 trusted feature Planning permissions never authorize main read",()=>{
+  const feature={...snapshot,planning_branch:"feature/account-suspension"};
+  const permissions=preliminaryReadPermissions(feature);
+  assert.equal(permissions.length,feature.directories.length+feature.files.length);
+  assert.ok(permissions.every(p=>p.resource.includes(
+    "/branches/feature%2Faccount-suspension/")));
+  assert.equal(permissions.some(p=>p.operation==="read_repository"),false);
+  assert.equal(permissions.some(p=>p.resource.includes("/branches/main/")),false);
+  assert.equal(trustedPlanningSourceBranch(feature),"feature/account-suspension");
+  assert.equal(trustedPlanningSourceBranch(snapshot),"main");
+  for(const bad of ["feature/../main","feature//other","feature/",
+    "refs/heads/main","main/feature","feature/%2Fmain"]){
+    assert.throws(()=>preliminaryReadPermissions({...snapshot,planning_branch:bad}),
+      /trusted Planning source branch/);
+  }
+});
+
 class ScriptedPlanner extends BaseLlm {
   requests:LlmRequest[]=[];
   constructor(){super({model:"offline-planner-with-gateway"});}

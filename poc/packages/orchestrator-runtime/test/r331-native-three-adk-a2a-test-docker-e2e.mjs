@@ -185,16 +185,16 @@ class OfflineNativeTestModel extends BaseLlm{
  * The first turn reads the source baseline; the second proposes only the
  * directory and Test authority ceiling (no DAG or agent IDs). */
 class OfflineR35013AuthorityModel extends BaseLlm{
- constructor(file){
+ constructor(file,sourceBranch){
   super({model:"r35013-native-reviewed-offline-planner"});
-  this.file=file;this.requests=[];
+  this.file=file;this.sourceBranch=sourceBranch;this.requests=[];
  }
  async *generateContentAsync(req){
   this.requests.push(req);
   if(this.requests.length===1){
    yield {content:{role:"model",parts:[{functionCall:{
     id:"r35013-review-read",name:"read_file",
-    args:{branch:"main",path:this.file}
+    args:{branch:this.sourceBranch,path:this.file}
    }}]}};
   }else{
    yield {content:{role:"model",parts:[{text:JSON.stringify({
@@ -224,14 +224,12 @@ const independentClient=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL
 // Disposable CI owner provisioning, outside delegated execution.
 const originalMainSha=(await client.getBranchMetadata("main")).commit_sha;
 const branch="feature/account-suspension";
-// In the R350.13 review test the Planner MUST read the SAME immutable
-// revision that the actual native Gateway later uses as feature HEAD.
-// Seed disposable main before branching, never bypass the revision pin.
-if(!reviewedNative){
- const created=await client.createBranch("main",branch);
- assert.match(created.commit_sha,/^[a-f0-9]{40}$/u);
-}
-const fixtureBranch=reviewedNative?"main":branch;
+// The reference fixture is authorized only on a disposable feature
+// branch, never on main. R350.13 instead pins the Planning read source
+// explicitly to this feature HEAD in the signed trusted snapshot.
+const created=await client.createBranch("main",branch);
+assert.match(created.commit_sha,/^[a-f0-9]{40}$/u);
+const fixtureBranch=branch;
 const mutationPath="apps/backend/users/account.ts";
 const frontendPath="apps/frontend/permissions/r305-staged.ts";
 const originalFrontend="export const uiPending = true;\n";
@@ -256,12 +254,8 @@ const seededFrontend=await client.createFile(fixtureBranch,frontendPath,
 const baseRevision=seededFrontend.commit_sha;
 assert.notEqual(baseRevision,seeded.commit_sha);
 assert.match(baseRevision,/^[a-f0-9]{40}$/u);
-if(reviewedNative){
- const created=await client.createBranch("main",branch);
- assert.equal(created.commit_sha,baseRevision);
- assert.equal((await client.getBranchMetadata("main")).commit_sha,baseRevision);
-}
 assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
+assert.equal((await client.getBranchMetadata("main")).commit_sha,originalMainSha);
 const pinnedDisposableMainSha=(await client.getBranchMetadata("main")).commit_sha;
 const requirement="R305 disposable EVM proof for account suspension permission";
 const resourcePrefix="gitea://gitea.local/thesis/iam-console-poc/branches/"+
@@ -373,7 +367,7 @@ try{
   const reviewerPrivate=path("r35013-keys")+"/engineer.pem";
   await writeFile(reviewerPrivate,privateKey.export({format:"pem",type:"pkcs8"}),
    {mode:0o600,flag:"wx"});
-  const reviewSnapshot={...snapshot,
+  const reviewSnapshot={...snapshot,planning_branch:branch,
    files:[mutationPath,frontendPath],
    directories:["","apps","apps/backend","apps/backend/users",
     "apps/frontend","apps/frontend/permissions"]};
@@ -387,12 +381,12 @@ try{
     expectedRequirement:requirement
    }
   });
-  const reviewModel=new OfflineR35013AuthorityModel(mutationPath);
+  const reviewModel=new OfflineR35013AuthorityModel(mutationPath,branch);
   const planningFetch=async(url,init)=>{
    const route=String(url),body=JSON.parse(String(init.body));
    if(route.endsWith("/prepare")){
     assert.equal(body.tool,"read_file");
-    assert.equal(body.arguments.branch,"main");
+    assert.equal(body.arguments.branch,branch);
     assert.equal(body.arguments.path,mutationPath);
     return Response.json({request_id:"r35013-disposable-read",
      audience:"cloud-access-gateway",challenge:"r35013-nonce",
@@ -404,10 +398,10 @@ try{
     return Response.json({signed_vp:"r35013-offline-planning-only"});
    }
    if(route.endsWith("/execute")){
-    const source=await client.readTextFile("main",mutationPath,baseRevision);
+    const source=await client.readTextFile(branch,mutationPath,baseRevision);
     assert.equal(source.content,oldContent);
     return Response.json({execution:{provider:"gitea",performed:true,
-     tool:"read_file",branch:"main",path:mutationPath,
+     tool:"read_file",branch,path:mutationPath,
      revision:baseRevision,content:source.content}});
    }
    throw Error("Unauthorized preliminary Planning transport");
@@ -473,7 +467,7 @@ try{
   assert.equal(reviewModel.requests.length,2);
   // Both provider source reads and feature HEAD are pinned to the same
   // disposable base; no silent main/feature revision substitution.
-  assert.equal((await client.getBranchMetadata("main")).commit_sha,baseRevision);
+  assert.equal((await client.getBranchMetadata("main")).commit_sha,originalMainSha);
   assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
  }else{
   const session=new TrustedAuthorityOnlyEngineerSession({

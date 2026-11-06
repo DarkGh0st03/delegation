@@ -16,7 +16,7 @@ import type {GatewayRepositoryConfig,NormalizedToolRequest}
 import type {PlanningReadPort} from "./trusted-adk-planner.ts";
 import type {TrustedPlanningSnapshot}
   from "./trusted-engineer-authority.ts";
-import {preliminaryReadPermissions}
+import {preliminaryReadPermissions,trustedPlanningSourceBranch}
   from "./trusted-engineer-authority.ts";
 import {OrchestratorPlanningGatewayReadClient}
   from "./orchestrator-gateway-client.ts";
@@ -103,11 +103,13 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
       }).request;
     }catch{fail();}
     if(request.tool!==tool)fail();
+    const sourceBranch=trustedPlanningSourceBranch(this.#snapshot);
+    if(tool==="read_repository"&&sourceBranch!=="main")fail();
     if(tool==="read_file" &&
-       (request.tool!=="read_file"||request.arguments.branch!=="main"||
+       (request.tool!=="read_file"||request.arguments.branch!==sourceBranch||
         !this.#snapshot.files.includes(request.arguments.path)))fail();
     if(tool==="list_directory" &&
-       (request.tool!=="list_directory"||request.arguments.branch!=="main"||
+       (request.tool!=="list_directory"||request.arguments.branch!==sourceBranch||
         !this.#snapshot.directories.includes(request.arguments.path)))fail();
     const required=deriveRequiredPermission(
       this.#snapshot.repository as GatewayRepositoryConfig,request);
@@ -134,7 +136,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     }else {
       const requested=request as Extract<NormalizedToolRequest,
         {tool:"list_directory"|"read_file"}>;
-      if(response.branch!=="main"||response.path!==requested.arguments.path)fail();
+      if(response.branch!==sourceBranch||response.path!==requested.arguments.path)fail();
     }
     // The Planner also enforces file and aggregate byte budgets.
     // No VP, Adapter token or root ID is included in this provider output.
