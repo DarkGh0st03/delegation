@@ -186,12 +186,12 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
    const dirfd=await open(this.#directory,
     constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
    try{await dirfd.sync();}finally{await dirfd.close();}
+   return Object.freeze({
+    status:"gateway_read_evidence_published_staged",
+    request_id:expected.request_id,
+    evidence_sha256:sha(canonical(receipt)),
+    provider_execution_enabled:false
+   });
   }finally{this.#inFlight=false;}
-  return Object.freeze({
-   status:"gateway_read_evidence_published_staged",
-   request_id:expected.request_id,
-   evidence_sha256:sha(canonical(receipt)),
-   provider_execution_enabled:false
-  });
  }
 }
