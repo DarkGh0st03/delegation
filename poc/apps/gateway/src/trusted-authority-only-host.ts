@@ -1,4 +1,6 @@
 import {TrustedAuthorityOnlyBranchExecutor} from './trusted-authority-only-branch-executor.ts';
+import {TrustedGatewayGiteaReadEvidencePublisher}
+ from './trusted-authority-only-gitea-publisher.ts';
 /**
  * R310 — explicit owner-assembled authority-only Gateway HTTP entrypoint.
  *
@@ -31,6 +33,8 @@ export interface TrustedAuthorityOnlyGatewayOwner {
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   mutationExecutor:TrustedAuthorityOnlyGiteaMutationExecutor;
   runnerExecutor:TrustedAuthorityOnlyRunnerExecutor;
+  /** Explicit owner-only read evidence opt-in; absent means fail closed. */
+  readPublisher?:TrustedGatewayGiteaReadEvidencePublisher;
   branchExecutor?:TrustedAuthorityOnlyBranchExecutor;
   pullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
   store:InMemoryRequestStore;
@@ -85,6 +89,10 @@ export function createTrustedAuthorityOnlyGatewayServer(
   if(!owner.mutationExecutor.isForAdmissions(owner.admissions)||
      !owner.runnerExecutor.isForAdmissions(owner.admissions))
     deny("effect executors belong to another Gateway owner");
+  if(owner.readPublisher!==undefined&&
+     (!(owner.readPublisher instanceof TrustedGatewayGiteaReadEvidencePublisher)||
+      !owner.readPublisher.isForAdmissions(owner.admissions)))
+    deny("read evidence publisher differs from original Gateway owner");
   if(owner.branchExecutor!==undefined&&
      !TrustedAuthorityOnlyBranchExecutor.isNativeForAdmissions(owner.branchExecutor,owner.admissions))
     deny("branch executor belongs to another Gateway owner");
@@ -107,6 +115,8 @@ export function createTrustedAuthorityOnlyGatewayServer(
     authorityOnlyMutationExecutor:owner.mutationExecutor,
     authorityOnlyRunnerEnabled:true,
     authorityOnlyRunnerExecutor:owner.runnerExecutor,
+    ...(owner.readPublisher?{authorityOnlyReadEnabled:true,
+     authorityOnlyReceiptWriter:owner.readPublisher}:{}),
     ...(owner.branchExecutor?{authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:owner.branchExecutor}:{}),
     ...(owner.pullRequestExecutor?{authorityOnlyPullRequestEnabled:true,
      authorityOnlyPullRequestExecutor:owner.pullRequestExecutor}:{})
