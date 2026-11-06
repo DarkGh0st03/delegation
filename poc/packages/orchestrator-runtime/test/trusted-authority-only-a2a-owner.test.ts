@@ -127,14 +127,16 @@ function fixture(patch?:{
     delegation_evidence:{credential:string;credential_id:string;
      presenter_id:string};
     trusted_gateway_task_id:string;agent_base_url:string};
-  assert.equal(sent.agent_base_url,"http://127.0.0.1:8101");
+  const isTest=patch?.row?.agent_id==="test";
+  assert.equal(sent.agent_base_url,isTest?
+   "http://127.0.0.1:8103":"http://127.0.0.1:8101");
   assert.equal(sent.trusted_gateway_task_id,runtimeTaskId);
   assert.equal(sent.subtask.branch,branch);
-  assert.deepEqual(sent.subtask.relevant_paths,[file]);
-  assert.deepEqual(sent.subtask.approved_file_permissions,[{
+  assert.deepEqual(sent.subtask.relevant_paths,isTest?[]:[file]);
+  assert.deepEqual(sent.subtask.approved_file_permissions,isTest?[]:[{
    path:file,operation:"update_file"
   }]);
-  assert.equal(sent.subtask.approved_run_tests,false);
+  assert.equal(sent.subtask.approved_run_tests,isTest);
   assert.equal(sent.delegation_evidence.credential_id,id);
   assert.equal(sent.delegation_evidence.presenter_id,did);
   assert.deepEqual(JSON.parse(sent.delegation_evidence.credential),patch?.signed??signed);
@@ -265,5 +267,45 @@ test("R326 rejected A2A report never reaches independent Gateway observer",async
  await assert.rejects(f.owner.dispatchIssuedTask(request()));
  await assert.rejects(f.owner.attestIndependentGatewayCompletion(
   taskId,runtimeTaskId),/no matching previous A2A report/u);
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+});
+
+test("R334 Test FAIL report never reaches independent Gateway success observer",async()=>{
+ const branchPermission={resource:canonicalBranchUri(repo,branch),
+  operation:"run_tests" as const};
+ const testDid="did:thesis:test-agent";
+ const testRow={...row,agent_id:"test",agent_did:testDid,
+  permissions:[branchPermission]};
+ const testChild={...child,agent_id:"test",agent_did:testDid,
+  permissions:[branchPermission]};
+ const testReceipt={...receipt,agent_id:"test",agent_did:testDid};
+ const testSigned={...signed,credentialSubject:{
+  sub:testDid,per:[branchPermission]
+ }};
+ const failedTestArtifact={
+  ...artifact,role:"test",summary:"Runner returned a failing test result",
+  files_modified:[],test_outcome:"fail"
+ };
+ const response={card:{name:"Test Agent"},task:{
+  ...goodResponse().task,
+  artifacts:[{parts:[{content:{$case:"data",value:failedTestArtifact}}]}]
+ }};
+ const f=fixture({row:testRow as never,child:testChild as never,
+  receipt:testReceipt as never,signed:testSigned as never,
+  root:{...root,root_permissions:[branchPermission]} as never,
+  response});
+ const report=await f.owner.dispatchIssuedTask(request());
+ assert.equal(report.role,"test");
+ assert.equal(report.artifact.test_outcome,"fail");
+ assert.equal(report.provider_completion_attested,false);
+ await assert.rejects(
+  f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /nonpassing Test report needs independently verified D1 failure gate/u
+ );
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+ await assert.rejects(
+  f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /nonpassing Test report needs independently verified D1 failure gate/u
+ );
  assert.deepEqual(f.calls,["private_bind","a2a_send"]);
 });

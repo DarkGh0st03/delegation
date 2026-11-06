@@ -255,6 +255,10 @@ export class TrustedAuthorityOnlyA2AOwner {
      reported.status!=="a2a_report_not_gateway_completed"||
      reported.provider_completion_attested!==false)
    deny("no matching previous A2A report to corroborate independently");
+  // R334: Test FAIL is a D1 candidate, not a successful provider effect.
+  // Reject before touching the success observer; D1 needs separate proof.
+  if(reported.role==="test"&&reported.artifact.test_outcome!=="pass")
+   deny("nonpassing Test report needs independently verified D1 failure gate");
   this.#attestAttempted.add(runtimeTaskId); // before any async I/O
   // Gateway does NOT inspect this report; it observes its own durable
   // native-verified provider flight and trusted completion evidence.
