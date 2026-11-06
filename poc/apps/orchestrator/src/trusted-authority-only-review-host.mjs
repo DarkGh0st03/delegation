@@ -281,7 +281,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        )),
        previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({
         task_id:p.task_id,agent_id:p.agent_id
-       }))
+       })),
+       nextEpoch:epoch
       });
       decisionFlight=(async()=>{
        const choice=await proposer.propose();
@@ -621,6 +622,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
         .map(([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}])),
        previousTasks:[...gatewayAttestedTaskIds.values()],
+       nextEpoch:operationalCoordinator.registeredTaskCount+1,
        verifiedFailure:{
         failed_phase:proof.failed_phase,
         source_evidence_sha256:proof.source_evidence_sha256
@@ -802,6 +804,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
         .map(([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}])),
        previousTasks:[...gatewayAttestedTaskIds.values()],
+       nextEpoch:epoch,
        verifiedFailure:{failed_phase:d1VerifiedFailure.proof.failed_phase,
         source_evidence_sha256:d1VerifiedFailure.proof.source_evidence_sha256}
       });
