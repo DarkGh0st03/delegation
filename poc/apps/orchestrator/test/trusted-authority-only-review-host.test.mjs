@@ -688,23 +688,25 @@ for(const mode of ['missing','backend','frontend','test','failure',
      assert.equal(init.method,'POST');
      assert.equal(init.headers.authorization,'Bearer owner-private-offline-runner-token');
      const request=JSON.parse(String(init.body));
-     assert.equal(request.request_id,testRequestId);
+     const retest=d1Retest&&request.request_id===retestRequestId;
+      const failed=throughFailure&&!retest;
+      assert.equal(request.request_id,retest?retestRequestId:testRequestId);
      assert.equal(request.repository,'gitea://gitea.local/thesis/iam-console-poc');
      assert.equal(request.branch,branch);
-     assert.equal(request.commit_sha,frontendSha);
+     assert.equal(request.commit_sha,retest?repairSha:frontendSha);
      assert.equal(request.profile,'poc-default');
      // This fixture simulates the HTTP controller; real RunnerClient
      // validates response shape and binds its original request provenance.
      const phases=[...runnerPhases,'researcher_acceptance'].map((phase,i)=>({
-      phase,status:throughFailure?
+      phase,status:failed?
        i===0?'pass':i===1?'fail':'skipped':'pass'
      }));
      return Response.json({
       request_id:request.request_id,repository:request.repository,
-      branch,tested_commit_sha:frontendSha,runner_profile:'poc-default',
-      status:throughFailure?'fail':'pass',
+      branch,tested_commit_sha:retest?repairSha:frontendSha,runner_profile:'poc-default',
+      status:failed?'fail':'pass',
       phases,
-      project_tests:{status:throughFailure?'fail':'pass',
+      project_tests:{status:failed?'fail':'pass',
        phases:phases.slice(0,-1)},
       researcher_acceptance:phases.at(-1),
       log_reference:'runner-log://12345678-1234-1234-1234-123456789abc'
@@ -718,7 +720,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
     ...runnerProof,giteaClient:reader
    });
    deps.completionObserver=new TrustedAuthorityOnlyCompletionObserver({
-    readVerifiedCompletion:e=>e.task_id==='r3513-test'?
+    readVerifiedCompletion:e=>(e.task_id==='r3513-test'||
+       e.task_id===d1RetestTask?.task_id)?
      runnerObserver.observe(e):giteaObserver.observe(e)
    });
    runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(f.dirs.runnerIntents);
