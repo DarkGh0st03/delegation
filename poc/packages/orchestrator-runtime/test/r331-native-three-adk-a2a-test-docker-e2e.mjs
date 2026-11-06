@@ -978,7 +978,8 @@ try{
   assert.equal(reviewExecution.bindNativeGatewayEffects({
    store,mutation:preflight,runner:runnerPreflight,giteaClient:client,
    ...(reviewedD1?{failureObserver:failObserver}:{}),
-   ...(prExecutor?{runnerPassObserver:runnerObserver,pullRequestExecutor:prExecutor}:{})
+   ...((prExecutor||nativeAdaptiveRepair)?{runnerPassObserver:runnerObserver}:{}),
+   ...(prExecutor?{pullRequestExecutor:prExecutor}:{})
   }).gateway_execution_authorized,false);
   const started=await reviewExecution.startSdkA2AOwner({
    stageChannels:ownerStageChannels,agentBindingChannels:roleBindings,
