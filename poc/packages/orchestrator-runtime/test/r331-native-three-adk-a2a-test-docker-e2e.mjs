@@ -134,10 +134,14 @@ const reviewedNative=process.env.R35013_NATIVE_REVIEW==="1";
 const reviewedD1=process.env.R3528_NATIVE_D1_RETEST==="1";
 const nativePr=process.env.R3537_NATIVE_PR==="1";
 const nativeAdaptiveFail=process.env.R356_NATIVE_ADAPTIVE_FAIL==="1";
-if(nativeAdaptiveFail)assert.equal(reviewedD1,true,
- "R356 native adaptive Test FAIL requires the disposable broken Docker HEAD");
-if(nativeAdaptiveFail)assert.equal(nativePr,false,
- "R356 failure-observation gate must not authorize or create a PR");
+const nativeAdaptiveRepair=process.env.R356_NATIVE_ADAPTIVE_REPAIR==="1";
+const nativeAdaptive=nativeAdaptiveFail||nativeAdaptiveRepair;
+if(nativeAdaptive)assert.equal(reviewedD1,true,
+ "R356 adaptive native Test requires the disposable broken Docker HEAD");
+if(nativeAdaptive)assert.equal(nativePr,false,
+ "R356 adaptive native gate must not preauthorize a Draft PR");
+if(nativeAdaptiveFail&&nativeAdaptiveRepair)
+ throw Error("R356 native sub-gates must not run simultaneously");
 if(nativePr)assert.equal(reviewedD1,true,"Native PR gate requires original reviewed D1 session");
 if(reviewedD1)assert.equal(reviewedNative,true,
  "Reviewed D1 requires the original authenticated Engineer host");
