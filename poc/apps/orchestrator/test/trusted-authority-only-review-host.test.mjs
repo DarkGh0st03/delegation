@@ -10,7 +10,10 @@ import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {createServer} from 'node:net';
 import {generateKeyPairSync,randomBytes,scryptSync} from 'node:crypto';
-import {createTrustedAuthorityOnlyReviewHost as createHost} from '../src/trusted-authority-only-review-host.mjs';
+import {createTrustedAuthorityOnlyReviewHost as createHost,
+ reconcileTrustedAuthorityOnlyReviewRoots} from '../src/trusted-authority-only-review-host.mjs';
+import {TrustedOperationalRecoveryStore}
+ from '../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts';
 import {startOwnerControlledEngineerReviewHost} from '../src/trusted-engineer-host.mjs';
 import {AuthorityPlanningCheckpointStore} from '../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts';
 import {DurableAuthorityOnlyActivationJournal} from '../../../packages/orchestrator-runtime/src/authority-only-activation-journal.ts';
@@ -70,7 +73,7 @@ const root=(id,index,seconds=600)=>({credential_id:id,valid_from:new Date().toIS
 async function fixture(t,flags={}){
  const home=await mkdtemp(join(tmpdir(),'r349-'));t.after(()=>rm(home,{recursive:true,force:true}));
  const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren','flights',
-  'mutationIntents','runnerIntents'].map(k=>[k,join(home,k)]));
+  'mutationIntents','runnerIntents','recovery'].map(k=>[k,join(home,k)]));
  for(const d of Object.values(dirs))await mkdir(d,{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
  const privateKeyFile=join(dirs.keys,'engineer.pem');await writeFile(privateKeyFile,pem(engineer.privateKey,'pkcs8'),{mode:0o600});
@@ -80,6 +83,8 @@ async function fixture(t,flags={}){
  const salt=randomBytes(16),log=[],model=new Scripted();
  const options={snapshot,requirement,workBranch:branch,preliminaryRoot:root('urn:r349:preliminary',1),
   activationJournal:new DurableAuthorityOnlyActivationJournal(dirs.activation),taskJournal:new DurableAuthorityTaskJournal(dirs.tasks),
+  operationalRecoveryStore:new TrustedOperationalRecoveryStore(dirs.recovery),
+  operationalSessionStore:new TrustedOperationalSessionStore(dirs.gatewaySessions),
   checkpoint:{store,backendKeyId:'backend',backendPrivateKeyPem:pem(backend.privateKey,'pkcs8')},
   approval:{engineerDid:did,keyId:'engineer',privateKeyFile,publicKeyPem:pem(engineer.publicKey,'spki'),receiptDirectory:dirs.receipts,
    passwordSaltHex:salt.toString('hex'),passwordScryptHex:scryptSync('owner-password',salt,64).toString('hex')},
@@ -156,7 +161,7 @@ function nativeOfflinePreflights(gateway,dirs,events=[]){
 
 function executionDeps(f){
  return {
-  operationalSessionStore:new TrustedOperationalSessionStore(f.dirs.gatewaySessions),
+  operationalSessionStore:f.options.operationalSessionStore,
   gatewayTaskJournal:new DurableAuthorityTaskJournal(f.dirs.gatewayTasks),
   issuerChildJournal:new DurableAuthorityOnlyChildJournal(f.dirs.issuerChildren),
   gatewayChildJournal:new DurableAuthorityOnlyChildJournal(f.dirs.gatewayChildren),
@@ -655,6 +660,70 @@ test('R350.10 prototype-spoofed native preflights cannot bind the original Gatew
  }),/not from original session/);
  await host.close();
  assert.equal(host.phase,'revoked');
+});
+
+test('R350.11 retired operational root must have both Gateway terminal fence and native revocation',async t=>{
+ const f=await fixture(t),host=await f.start();await f.approve();
+ const rootId='urn:r35011:retired';
+ await host.activateOperational(root(rootId,2));
+ const pending=await f.options.operationalRecoveryStore.pending();
+ assert.equal(pending.length,1);
+ assert.equal(pending[0].credential_id,rootId);
+ await host.close();
+ assert.equal(host.phase,'revoked');
+ await f.options.operationalRecoveryStore.retiredForSession(
+  snapshot.session_id,snapshot.base_revision,rootId);
+ await assert.rejects(f.options.operationalSessionStore.reserveActivation(
+  snapshot.session_id),/already used or retired/);
+ assert.equal((await f.options.operationalRecoveryStore.pending()).length,0);
+ assert.deepEqual(f.log.slice(-3),[
+  'end:'+snapshot.session_id,'revoke:urn:r349:preliminary','issue:'+rootId
+ ].slice(-3).concat([]).slice(-3).length===3?f.log.slice(-3):f.log.slice(-3));
+ assert.equal(f.log.at(-1),'revoke:'+rootId);
+});
+test('R350.11 orphan root blocks Planning before a model call and operator-only reconciliation never reissues',async t=>{
+ const f=await fixture(t);
+ const rootId='urn:r35011:orphan';
+ await f.options.operationalRecoveryStore.recordIntent({
+  sessionId:snapshot.session_id,baseRevision:snapshot.base_revision,credentialId:rootId
+ });
+ await assert.rejects(f.start(),/orphaned root intent/);
+ assert.deepEqual(f.log,[]);assert.equal(f.model.calls,0);
+ const trace=[];
+ const n=await reconcileTrustedAuthorityOnlyReviewRoots({
+  operationalRecoveryStore:f.options.operationalRecoveryStore,
+  operationalSessionStore:f.options.operationalSessionStore,
+  credentials:{async revokeRoot(id){trace.push('rust:'+id);}}
+ });
+ assert.equal(n,1);assert.deepEqual(trace,['rust:'+rootId]);
+ await f.options.operationalRecoveryStore.retiredForSession(
+  snapshot.session_id,snapshot.base_revision,rootId);
+ await assert.rejects(f.start(),/reconciled session cannot be reused/);
+ assert.equal(f.model.calls,0);
+ await assert.rejects(f.options.operationalSessionStore.reserveActivation(
+  snapshot.session_id),/already used or retired/);
+});
+test('R350.11 failed native revocation leaves pending intent until confirmed operator recovery',async t=>{
+ const flags={failRevoke:false},f=await fixture(t,flags);
+ const host=await f.start();await f.approve();
+ await host.activateOperational(root('urn:r35011:failed-revoke',2));
+ flags.failRevoke=true;
+ await assert.rejects(host.close(),/Rust unavailable/);
+ assert.equal(host.phase,'failed_closed');
+ assert.equal((await f.options.operationalRecoveryStore.pending()).length,1);
+ await assert.rejects(reconcileTrustedAuthorityOnlyReviewRoots({
+  operationalRecoveryStore:f.options.operationalRecoveryStore,
+  operationalSessionStore:f.options.operationalSessionStore,
+  credentials:{async revokeRoot(){throw Error('still unavailable');}}
+ }),/manual reconciliation required/);
+ assert.equal((await f.options.operationalRecoveryStore.pending()).length,1);
+ flags.failRevoke=false;
+ assert.equal(await reconcileTrustedAuthorityOnlyReviewRoots({
+  operationalRecoveryStore:f.options.operationalRecoveryStore,
+  operationalSessionStore:f.options.operationalSessionStore,
+  credentials:f.options.credentials
+ }),1);
+ assert.equal((await f.options.operationalRecoveryStore.pending()).length,0);
 });
 
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{

@@ -16,6 +16,8 @@ import {AuthorityPlanningCheckpointStore} from '../../../packages/orchestrator-r
 import {authorityOnlyDigest,selectAuthorityOnlyGrant} from '../../../packages/plan-contracts/src/authority-only-approval.mjs';
 import {RUST_OPERATIONS} from '../../gateway/src/operation-catalog.ts';
 import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
+import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
+ from '../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts';
 import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
@@ -31,6 +33,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  if(!options||!(options.checkpoint?.store instanceof AuthorityPlanningCheckpointStore)||
   !(options.activationJournal instanceof DurableAuthorityOnlyActivationJournal)||
   !(options.taskJournal instanceof DurableAuthorityTaskJournal)||
+  !(options.operationalRecoveryStore instanceof TrustedOperationalRecoveryStore)||
+  !(options.operationalSessionStore instanceof TrustedOperationalSessionStore)||
   !fields(options.approval,['engineerDid','keyId','publicKeyPem','privateKeyFile',
     'receiptDirectory','passwordSaltHex','passwordScryptHex'])||
   !fields(options.planner,['model','planId','onObservation','maxModelTurns',
@@ -71,6 +75,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   return [role,{did:pin.did,card_ref:pin.card_ref}];
  }));
  let server,attempted=false,closed=false,closing,activationFlight;
+ let operationalRootId;
  let operationalCoordinator,executionAdmissionAttempted=false,executionAdmissionFlight;
  let taskStageFlight,taskStageFailed=false,stagedTaskCount=0;
  const stagedTaskIds=new Map();
@@ -84,9 +89,29 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let a2aOwner,a2aStarting,a2aStartAttempted=false;
  async function retire(){
   if(session.phase==='planning')await session.cancelPlanning();
-  else if(session.phase==='operational')await session.retireOperationalRoot();
-  else if(session.phase!=='revoked')deny('root state uncertain; manual reconciliation required');
+  else if(session.phase==='operational'){
+   if(!operationalRootId)deny('missing original durable operational root ID');
+   // Persist a Gateway terminal fence before revoking Rust; even when one
+   // side fails, attempt BOTH so recovery can finish later without reuse.
+   let gatewayError,rustError;
+   try{await options.operationalSessionStore.markRetired(snapshot.session_id);}
+   catch(error){gatewayError=error;}
+   try{await session.retireOperationalRoot();}
+   catch(error){rustError=error;}
+   if(gatewayError)
+    deny('Gateway operational retirement unconfirmed; manual reconciliation required');
+   if(rustError)throw rustError;
+   // Only both independent shutdown confirmations may retire the intent.
+   await options.operationalRecoveryStore.markReconciled({
+    sessionId:snapshot.session_id,baseRevision:snapshot.base_revision,
+    credentialId:operationalRootId
+   });
+  }else if(session.phase!=='revoked')
+   deny('root state uncertain; manual reconciliation required');
  }
+ // Read-only Planning itself must never start while an earlier issued
+ // operational root may still exist; an operator must reconcile it first.
+ await options.operationalRecoveryStore.assertFreshSession(snapshot.session_id);
  try{
   await session.startPlanning(options.preliminaryRoot);
   const readPort=new TrustedPlanningGatewayReadPort({...options.gateway,coordinator:session,snapshot});
@@ -120,6 +145,14 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
    if(closed||attempted)deny('activation already attempted or host closed');
    attempted=true;
    try{
+    // Intent is durable BEFORE the native Rust operational issue call.
+    // A crash, ambiguous provider response or failed operation cannot
+    // start another signed or unsigned root without manual reconciliation.
+    await options.operationalRecoveryStore.recordIntent({
+     sessionId:snapshot.session_id,baseRevision:snapshot.base_revision,
+     credentialId:root?.credential_id
+    });
+    operationalRootId=root.credential_id;
     await session.approveAndIssueOperationalRoot(root);
     if(closed){await retire();deny('host closed during root transition');}
     const activation=await coordinator.activate();
@@ -150,6 +183,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       'issuerChildJournal','gatewayChildJournal','nativeCryptoPort',
       'effectFenceJournal','sequentialEffectJournal','completionObserver'])||
        !(deps.operationalSessionStore instanceof TrustedOperationalSessionStore)||
+       deps.operationalSessionStore!==options.operationalSessionStore||
        !(deps.gatewayTaskJournal instanceof DurableAuthorityTaskJournal)||
        deps.gatewayTaskJournal===options.taskJournal||
        !(deps.issuerChildJournal instanceof DurableAuthorityOnlyChildJournal)||
@@ -483,6 +517,22 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     }
    })();return closing;
   }
+ });
+}
+
+/** Operator-private recovery only. No automatic reapproval, no issuance,
+ * and no HTTP/A2A/MCP route. Both the terminal Gateway fence and native
+ * Rust revocation must be confirmed before marking a root reconciled. */
+export async function reconcileTrustedAuthorityOnlyReviewRoots(config){
+ if(!config||
+    !(config.operationalRecoveryStore instanceof TrustedOperationalRecoveryStore)||
+    !(config.operationalSessionStore instanceof TrustedOperationalSessionStore)||
+    typeof config.credentials?.revokeRoot!=='function')
+  deny('recovery requires original durable owner journals and native revoker');
+ return reconcileOrphanedOperationalRoots({
+  store:config.operationalRecoveryStore,
+  gateway:{retireSession:id=>config.operationalSessionStore.markRetired(id)},
+  credentials:config.credentials
  });
 }
 
