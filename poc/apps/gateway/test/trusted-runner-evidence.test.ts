@@ -152,3 +152,68 @@ test("R303.3 foreign Child, SHA, fake or failed Runner result cannot publish PAS
   assert.equal((await readdir(dir)).length,0);
  },{...success(),status:"fail"});
 });
+
+
+test("R353.0 original authenticated PASS exposes only independently current tested HEAD",async()=>{
+ await fixture(async({runner,publisher,observer,setHead})=>{
+  await assert.rejects(observer.observeTestedHead(expected),/ENOENT/);
+  const result=await runner.run(request);
+  const digest=await publisher.publish(intent,expected,request,result,"opa");
+  const proof=await observer.observeTestedHead(expected);
+  assert.equal(proof.tested_commit_sha,head);
+  assert.equal(proof.repository,"thesis/iam-console-poc");
+  assert.equal(proof.branch,branch);
+  assert.equal(proof.project_tests,"pass");
+  assert.equal(proof.researcher_acceptance,"pass");
+  assert.equal(proof.completion.evidence_sha256,digest);
+  assert.deepEqual(proof.completion,await observer.observe(expected));
+  assert.equal(Object.isFrozen(proof),true);
+  assert.equal(Object.isFrozen(proof.completion),true);
+  await assert.rejects(observer.observeTestedHead({...expected,
+   root_credential_id:"foreign-root"}),/differs from signed Task/);
+  setHead("d".repeat(40));
+  await assert.rejects(observer.observeTestedHead(expected),/stale or moved/);
+ });
+});
+test("R353.0 a tampered PASS cannot provide a PR tested SHA",async()=>{
+ await fixture(async({runner,publisher,observer,dir})=>{
+  const result=await runner.run(request);
+  await publisher.publish(intent,expected,request,result,"opa");
+  const [filename]=await readdir(dir);
+  const path=join(dir,filename);
+  const row=JSON.parse(await readFile(path,"utf8"));
+  row.tested_commit_sha="e".repeat(40);
+  await writeFile(path,JSON.stringify(row)+"\n");
+  await assert.rejects(observer.observeTestedHead(expected),/invalid owner MAC/);
+ });
+});
+test("R353.0 observer owner binding rejects foreign repository, branch and prototype spoof",async()=>{
+ await fixture(async({observer})=>{
+  assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
+   observer,"thesis/iam-console-poc",branch),true);
+  assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
+   observer,"thesis/other",branch),false);
+  assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
+   observer,"thesis/iam-console-poc","feature/other"),false);
+  assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
+   Object.create(AuthenticatedRunnerCompletionObserver.prototype),
+   "thesis/iam-console-poc",branch),false);
+ });
+});
+
+test("R353.0 public projection override cannot replace existing completion verification",async()=>{
+ await fixture(async({runner,publisher,observer,dir})=>{
+  const result=await runner.run(request);
+  await publisher.publish(intent,expected,request,result,"opa");
+  Object.defineProperty(observer,"observeTestedHead",{value:async()=>{
+   throw Error("overridden projection must not run");
+  }});
+  assert.equal((await observer.observe(expected)).status,"owner_verified_provider_result");
+  const [filename]=await readdir(dir);
+  const path=join(dir,filename);
+  const row=JSON.parse(await readFile(path,"utf8"));
+  row.tested_commit_sha="f".repeat(40);
+  await writeFile(path,JSON.stringify(row)+"\n");
+  await assert.rejects(observer.observe(expected),/invalid owner MAC/);
+ });
+});

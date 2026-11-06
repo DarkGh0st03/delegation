@@ -193,7 +193,26 @@ export class AuthenticatedRunnerCompletionObserver{
   this.#repo=opts.repository;this.#branch=opts.branch;
   this.#now=opts.nowMs??Date.now;
  }
+ /** Owner-only evidence projection for the subsequent application PR gate.
+  * A PASS is useful only while Gitea still points at the exact tested SHA. */
+ static isForRepository(value:unknown,repository:string,branch:string):
+  value is AuthenticatedRunnerCompletionObserver{
+  return value instanceof AuthenticatedRunnerCompletionObserver &&
+   #repo in value && value.#repo===repository && value.#branch===branch &&
+   GiteaClient.isPinnedRepositoryClient(value.#client,
+    repository.split("/")[0],repository.split("/")[1]);
+ }
  async observe(e:TrustedCompletionExpectation):Promise<ObservedTrustedTaskCompletion>{
+  return (await this.#readTestedHead(e)).completion;
+ }
+ async observeTestedHead(e:TrustedCompletionExpectation){
+  return this.#readTestedHead(e);
+ }
+ async #readTestedHead(e:TrustedCompletionExpectation):Promise<Readonly<{
+  completion:ObservedTrustedTaskCompletion;
+  repository:string;branch:string;tested_commit_sha:string;
+  project_tests:"pass";researcher_acceptance:"pass";
+ }>>{
   const raw=await readReceipt(this.#directory,receiptName(e));
   const r=assertFields(raw,e,this.#repo,this.#branch);
   const {mac_sha256,...without}=r;
@@ -207,10 +226,15 @@ export class AuthenticatedRunnerCompletionObserver{
   // Independent of the RunnerService and the publishing client.
   await assertHead(this.#client,r.branch,r.tested_commit_sha);
   await assertHead(this.#client,r.branch,r.tested_commit_sha);
-  return Object.freeze({...e,
-   status:"owner_verified_provider_result" as const,
-   evidence_sha256:sha(canonical(r)),
-   completed_at_ms:r.completed_at_ms
+  return Object.freeze({
+   completion:Object.freeze({...e,
+    status:"owner_verified_provider_result" as const,
+    evidence_sha256:sha(canonical(r)),
+    completed_at_ms:r.completed_at_ms
+   }),
+   repository:r.repository,branch:r.branch,
+   tested_commit_sha:r.tested_commit_sha,
+   project_tests:r.project_tests,researcher_acceptance:r.researcher_acceptance
   });
  }
  toTrustedObserver():TrustedAuthorityOnlyCompletionObserver{

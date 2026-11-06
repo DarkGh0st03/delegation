@@ -682,7 +682,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
   blob:oldBlob,content:'export const suspended=false;\n'};
  let publisher,frontendStaged,next,testTask,testStaged,runnerClient,
-  runnerPublisher,runnerJournal,failureObserver,failurePublisher,nativeD1,
+  runnerPublisher,runnerJournal,runnerPassObserver,failureObserver,failurePublisher,nativeD1,
    d1RetestTask,d1RetestStaged;
  const frontendModel=new R3513ScriptedFrontend();
  const testAgentModel=new R3514ScriptedTest(d1Retest);
@@ -757,7 +757,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
    runnerPublisher=new TrustedGatewayRunnerPassEvidencePublisher({
     ...runnerProof,runnerClient,independentGiteaClient:reader
    });
-   const runnerObserver=new AuthenticatedRunnerCompletionObserver({
+   const runnerObserver=runnerPassObserver=new AuthenticatedRunnerCompletionObserver({
     ...runnerProof,giteaClient:reader
    });
    deps.completionObserver=new TrustedAuthorityOnlyCompletionObserver({
@@ -811,7 +811,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
    runnerJournal);
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea,
-  ...(throughFailure?{failureObserver}:{})
+  ...(throughFailure?{failureObserver}:{}),
+  ...(throughTest?{runnerPassObserver}:{})
  }).gateway_execution_authorized,false);
  const nativeStager=execution.createEnrolledNativeEffectStager({
   runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
@@ -1389,6 +1390,14 @@ for(const mode of ['missing','backend','frontend','test','failure',
           assert.equal(coordinator.registeredTaskCount,5);
           assert.equal(testAgentModel.calls,4);
           assert.equal(events.at(-1),'retest_gateway_execute_fixture');
+          const retestHead=await execution.inspectVerifiedPullRequestHead({
+           taskId:d1RetestTask.task_id,runtimeTaskId:d1RetestTask.runtime_task_id
+          });
+          assert.equal(retestHead.tested_commit_sha,repairSha);
+          assert.equal(retestHead.gateway_execution_authorized,false);
+          await assert.rejects(execution.inspectVerifiedPullRequestHead({
+           taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+          }),/independently completed original Test/);
           assert.equal((await readdir(f.dirs.runnerEvidence))
            .filter(n=>n.endsWith('.runner-fail.json')).length,1);
           assert.equal((await readdir(f.dirs.runnerEvidence))
@@ -1469,11 +1478,32 @@ for(const mode of ['missing','backend','frontend','test','failure',
      assert.equal(confirmed.length,1);
      assert.equal((await readdir(f.dirs.runnerEvidence))
       .filter(n=>n.endsWith('.runner.json')).length,1);
+     await assert.rejects(execution.inspectVerifiedPullRequestHead({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+     }),/independently completed original Test/);
      const attestedTest=await execution.attestEnrolledTaskCompletion({
       taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
      });
      assert.equal(attestedTest.status,'owner_gateway_completion_independently_observed');
      assert.equal(gateway.stagedCompletedTaskCount,3);
+     const ready=await execution.inspectVerifiedPullRequestHead({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+     });
+     assert.equal(ready.status,'owner_verified_tested_head_not_pr_authorized');
+     assert.equal(ready.tested_commit_sha,frontendSha);
+     assert.equal(ready.project_tests,'pass');
+     assert.equal(ready.researcher_acceptance,'pass');
+     assert.equal(ready.gateway_execution_authorized,false);
+     await assert.rejects(execution.inspectVerifiedPullRequestHead({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId,
+      tested_commit_sha:'f'.repeat(40)
+     }),/live original owner/);
+     provider.head='7'.repeat(40);
+     await assert.rejects(execution.inspectVerifiedPullRequestHead({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+     }),/stale or moved feature branch/);
+     provider.head=frontendSha;
+     assert.equal(host.phase,'operational');
      await assert.rejects(execution.dispatchEnrolledTask({
       taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId,
       instruction:'Replay Docker',effectStager:testStager
@@ -1484,6 +1514,20 @@ for(const mode of ['missing','backend','frontend','test','failure',
      const prompt=JSON.stringify(testAgentModel.requests);
      for(const secret of [testVp,testStaged.credential_id,testRequestId])
       assert.equal(prompt.includes(secret),false);
+     // A newer unfinished Test invalidates selection of an older PASS.
+     const later=new R351ScriptedDecision({
+      task_id:'r3530-later-test',agent_id:'test',depends_on:['r3513-test'],
+      permissions:[coordinator.assertTrustedGatewayAuthorityBinding()
+       .root_permissions.find(p=>p.operation==='run_tests')],
+      instruction:'A newer Test must finish before PR readiness can be inspected'
+     });
+     await execution.proposeAndStageTask({model:later,
+      runtimeTaskId:'dispatch_'+'V'.repeat(22),
+      childParameters:root('urn:r3530:later-test-child',29116,90)
+     });
+     await assert.rejects(execution.inspectVerifiedPullRequestHead({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+     }),/latest original Test/);
      }
     }
     assert.equal(host.phase,'operational');

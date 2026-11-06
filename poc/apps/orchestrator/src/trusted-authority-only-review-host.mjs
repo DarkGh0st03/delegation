@@ -35,6 +35,8 @@ import {DurableNativeD1FirstTaskAdmissionJournal,
  from '../../../packages/orchestrator-runtime/src/trusted-native-d1-first-task-admission.ts';
 import {enrollFirstNativeD1ChildAtGateway}
  from '../../../packages/orchestrator-runtime/src/trusted-native-d1-child-gateway-bind.ts';
+import {AuthenticatedRunnerCompletionObserver}
+ from '../../gateway/src/trusted-authority-only-runner-evidence.ts';
 import {AuthenticatedRunnerFailureObserver}
  from '../../gateway/src/trusted-authority-only-runner-failure-evidence.ts';
 import {DurableAuthorityOnlyRunnerIntentJournal}
@@ -439,7 +441,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver'])||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
          deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
@@ -449,6 +451,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
          deps.runner,gateway,deps.giteaClient,
          snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
+        (deps.runnerPassObserver!==undefined&&
+         !AuthenticatedRunnerCompletionObserver.isForRepository(
+          deps.runnerPassObserver,
+          snapshot.repository.owner+'/'+snapshot.repository.repository,branch))||
         (deps.failureObserver!==undefined&&
          (!(deps.failureObserver instanceof AuthenticatedRunnerFailureObserver)||
           !deps.runner.isForFailureObserver(deps.failureObserver)))){
@@ -460,6 +466,73 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       status:'owner_native_gateway_effects_bound_no_execution',
       gateway_execution_authorized:false
      });
+    },
+    /** R353.0: original owner IDs only, never caller/model PASS or SHA.
+     * Reopens the authenticated original Runner receipt after the Gateway
+     * completion. This is evidence for a future PR, not PR authorization. */
+    async inspectVerifiedPullRequestHead(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||
+        taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
+        d1FailurePreflightFlight||d1RepairAdmissionFlight||
+        !nativeEffectBinding?.runnerPassObserver||
+        !fields(input,['taskId','runtimeTaskId']))
+      deny('PR tested HEAD requires live original owner and installed Runner observer');
+     const pin=stagedTaskIds.get(input.runtimeTaskId);
+     if(!pin||pin.task_id!==input.taskId||pin.agent_id!=='test'||
+        gatewayAttestedTaskIds.get(input.taskId)?.agent_id!=='test')
+      deny('PR tested HEAD requires independently completed original Test');
+     const task=operationalCoordinator.assertTrustedGatewayRegisteredTask(input.taskId);
+     const rootBefore=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+     const taskCount=operationalCoordinator.registeredTaskCount;
+     // A later failed or unfinished Test cannot be hidden by an older PASS.
+     for(const p of stagedTaskIds.values()){
+      if(p.agent_id==='test'&&
+         operationalCoordinator.assertTrustedGatewayRegisteredTask(p.task_id).epoch>task.epoch)
+       deny('PR tested HEAD requires latest original Test');
+     }
+     completionFlight=(async()=>{
+      const intent=await nativeEffectBinding.runner
+       .getAttemptedIntentForOwnerTask(input.runtimeTaskId);
+      const child=childIssuer.assertTrustedIssuedChild(input.taskId,operationalCoordinator);
+      const expected=Object.fromEntries([
+       'session_id','authority_digest','root_credential_id','task_id',
+       'runtime_task_id','epoch','agent_did','credential_id',
+       'request_id','request_fingerprint'
+      ].map(k=>[k,intent[k]]));
+      if(intent.task_id!==task.task_id||intent.runtime_task_id!==input.runtimeTaskId||
+         intent.epoch!==task.epoch||intent.agent_did!==task.agent_did||
+         intent.credential_id!==child.credential_id||
+         intent.session_id!==rootBefore.session_id||
+         intent.authority_digest!==rootBefore.authority_digest||
+         intent.root_credential_id!==rootBefore.root_credential_id||
+         intent.branch!==branch||
+         intent.repository!==snapshot.repository.owner+'/'+snapshot.repository.repository)
+       deny('PR tested HEAD differs from original Test Runner flight');
+      const proof=await AuthenticatedRunnerCompletionObserver.prototype
+       .observeTestedHead.call(nativeEffectBinding.runnerPassObserver,expected);
+      const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         live.root_credential_id!==rootBefore.root_credential_id||
+         live.authority_digest!==rootBefore.authority_digest||
+         operationalCoordinator.registeredTaskCount!==taskCount||
+         proof.repository!==intent.repository||proof.branch!==intent.branch||
+         proof.tested_commit_sha!==intent.expected_head_sha||
+         proof.project_tests!=='pass'||proof.researcher_acceptance!=='pass'||
+         !Object.keys(expected).every(k=>proof.completion[k]===expected[k]))
+       deny('PR tested HEAD changed during independent verification');
+      return Object.freeze({
+       status:'owner_verified_tested_head_not_pr_authorized',
+       task_id:input.taskId,runtime_task_id:input.runtimeTaskId,
+       repository:proof.repository,branch:proof.branch,
+       tested_commit_sha:proof.tested_commit_sha,
+       evidence_sha256:proof.completion.evidence_sha256,
+       project_tests:'pass',researcher_acceptance:'pass',
+       gateway_execution_authorized:false
+      });
+     })();
+     try{return await completionFlight;}
+     finally{completionFlight=undefined;}
     },
     /** Obtain a unique one-shot owner stager after enrolling the Child.
      * Pin exact original Gateway, Task ID, role/tool and owner-selected HEAD. */
