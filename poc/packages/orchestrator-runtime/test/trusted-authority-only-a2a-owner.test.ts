@@ -79,7 +79,7 @@ const goodResponse=()=>{
 function fixture(patch?:{
  row?:typeof row;child?:typeof child;root?:typeof root;
  receipt?:typeof receipt;signed?:typeof signed;
- response?:unknown;failBind?:boolean
+ response?:unknown;failBind?:boolean;mixedComplete?:boolean
  }){
  const calls:string[]=[];
  let takes=0,roots=0;
@@ -99,6 +99,13 @@ function fixture(patch?:{
  const gateway=Object.assign(Object.create(
   TrustedAuthorityOnlyGatewayAdmissions.prototype),{
   assertTrustedOwnerRemoteEffectBinding:()=>patch?.receipt??receipt,
+  assertTrustedCompletedSequentialReadUpdateTask:(task:string,rt:string)=>{
+   calls.push("gateway_sequential_completion");
+   if(patch?.mixedComplete===false)throw Error("mixed Task not independently finalized");
+   assert.equal(task,taskId);assert.equal(rt,runtimeTaskId);
+   return {status:"sequential_read_update_task_completed_staged",
+    task_id:task,runtime_task_id:rt,gateway_execution_authorized:false};
+  },
   attestTrustedTaskCompletion:async(task:string,rt:string)=>{
    calls.push("gateway_independent_observer");
    assert.equal(task,taskId);assert.equal(rt,runtimeTaskId);
@@ -133,9 +140,13 @@ function fixture(patch?:{
   assert.equal(sent.trusted_gateway_task_id,runtimeTaskId);
   assert.equal(sent.subtask.branch,branch);
   assert.deepEqual(sent.subtask.relevant_paths,isTest?[]:[file]);
-  assert.deepEqual(sent.subtask.approved_file_permissions,isTest?[]:[{
-   path:file,operation:"update_file"
-  }]);
+  const isMixed=patch?.row?.permissions.length===2&&
+   patch.row.permissions.some(p=>p.operation==="read_file");
+  assert.deepEqual(sent.subtask.approved_file_permissions,isTest?[]:
+   isMixed?[{path:file,operation:"read_file"},
+    {path:file,operation:"update_file"}]:[{
+     path:file,operation:"update_file"
+    }]);
   assert.equal(sent.subtask.approved_run_tests,isTest);
   assert.equal(sent.delegation_evidence.credential_id,id);
   assert.equal(sent.delegation_evidence.presenter_id,patch?.row?.agent_did??did);
@@ -308,4 +319,35 @@ test("R334 Test FAIL report never reaches independent Gateway success observer",
   /nonpassing Test report needs independently verified D1 failure gate/u
  );
  assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+});
+
+test("R359.6 a signed mixed A2A report cannot bypass native two-effect finalization",async()=>{
+ const read={...effect,operation:"read_file" as const};
+ const permissions=[read,effect];
+ const patch={root:{...root,root_permissions:permissions},
+  row:{...row,permissions},child:{...child,permissions},
+  signed:{...signed,credentialSubject:{sub:did,per:permissions}}
+ };
+ const f=fixture({...patch,mixedComplete:false} as never);
+ const mixed={taskId,runtimeTaskId,instruction:"Read then update one approved file",
+  effectStager:{stagedTool:"read_then_update" as const,
+   async stage(){},async attest(){}}
+ };
+ const result=await f.owner.dispatchIssuedTask(mixed);
+ assert.equal(result.provider_completion_attested,false);
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+ await assert.rejects(f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /mixed Task not independently finalized/u);
+ assert.deepEqual(f.calls,["private_bind","a2a_send","gateway_sequential_completion"]);
+ await assert.rejects(f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /repeated independent completion/u);
+ const ok=fixture(patch as never);
+ await ok.owner.dispatchIssuedTask(mixed);
+ const verified=await ok.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId);
+ assert.equal(verified.status,"owner_gateway_completion_independently_observed");
+ assert.deepEqual(ok.calls,["private_bind","a2a_send","gateway_sequential_completion"]);
+ const wrong=fixture(patch as never);
+ await assert.rejects(wrong.owner.dispatchIssuedTask(request()),
+  /requires owner-controlled mixed staging/u);
+ assert.deepEqual(wrong.calls,[]);
 });

@@ -10,6 +10,13 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {TrustedOwnerEffectStagingRegistry}
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
+import {TrustedAuthorityOnlySequentialReadUpdateStager}
+ from "../../../apps/gateway/src/trusted-authority-only-sequential-read-update-stager.ts";
+import {TrustedAuthorityOnlyGiteaMutationPreflight}
+ from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
+import {AuthenticatedGiteaMutationCompletionObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
+import {InMemoryRequestStore} from "../../../apps/gateway/src/prepare.ts";
 import {canonicalBranchUri,canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
 
@@ -75,7 +82,7 @@ function fixture(patch?:{
   coordinator:coord,childIssuer:issuer,gateway,
   ownerStageRegistry:registry,agentBindingClient:binder
  } as never);
- return {owner,calls,registry};
+ return {owner,calls,registry,gateway};
 }
 const port={async stage(_id:string){return {provider_write_authorized:false};}};
 test("R323 real owner proof objects derive exact signed Backend file permission",async()=>{
@@ -155,4 +162,41 @@ test("R323 runner requires Test Child and exact branch-level grant",async()=>{
  assert.equal(Object.hasOwn(pins,"path"),false);
  await f.owner.fence(runtimeTaskId);
  assert.equal(f.calls.at(-1),"fence");
+});
+
+test("R359.6 native owner binds exactly one authenticated read->update Task",async()=>{
+ const read={...permission,operation:"read_file" as const};
+ const permissions=[read,permission];
+ const f=fixture({row:{...row,permissions} as never,
+  child:{...child,permissions} as never});
+ Object.assign(f.gateway,{async beginTrustedSequentialReadUpdateTask(){
+  return {status:"sequential_read_update_manifest_reserved_staged",
+   task_id:taskId,total_effects:2,gateway_execution_authorized:false};
+ }});
+ const mutation=Object.assign(Object.create(
+  TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
+   isForAdmissions:(v:unknown)=>v===f.gateway
+ });
+ const observer=Object.create(AuthenticatedGiteaMutationCompletionObserver.prototype);
+ const stager=await TrustedAuthorityOnlySequentialReadUpdateStager.begin({
+  store:new InMemoryRequestStore(),admissions:f.gateway,
+  mutation,mutationObserver:observer,planTaskId:taskId,
+  runtimeTaskId,expectedHeadSha:"a".repeat(40)
+ });
+ const result=await f.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:stager
+ });
+ assert.equal(result.status,"owner_remote_effect_task_prebound_not_executed");
+ const pins=JSON.parse(f.calls[1]!);
+ assert.equal(pins.operation,"read_then_update");
+ assert.equal(pins.path,file);
+ assert.equal(pins.childCredentialId,credentialId);
+ const fake=fixture({row:{...row,permissions} as never,
+  child:{...child,permissions} as never});
+ await assert.rejects(fake.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:{
+   stagedTool:"read_then_update",async stage(){},async attest(){}
+  }
+ }),/original native owner read\/update stager/u);
+ assert.deepEqual(fake.calls,[]);
 });
