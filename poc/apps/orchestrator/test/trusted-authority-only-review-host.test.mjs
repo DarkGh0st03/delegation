@@ -280,7 +280,14 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
   });
   assert.equal(typeof owner.dispatchIssuedTask,'function');
   const {dispatchEnrolledTask,bindNativeGatewayEffects,
-   createEnrolledNativeEffectStager}=execution;
+   createEnrolledNativeEffectStager,attestEnrolledTaskCompletion}=execution;
+  await assert.rejects(attestEnrolledTaskCompletion({
+   taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId
+  }),/no matching original A2A dispatch report/);
+  await assert.rejects(attestEnrolledTaskCompletion({
+   taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId,
+   claimed_success:true
+  }),/cannot accept model or provider success claims/);
   // An arbitrary callback is not a native owner-bound effect stager.
   await assert.rejects(dispatchEnrolledTask({
    taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId,

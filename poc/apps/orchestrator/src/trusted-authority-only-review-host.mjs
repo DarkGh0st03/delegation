@@ -76,6 +76,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  const stagedTaskIds=new Map();
  const dispatchAttempts=new Set();
  const issuedEffectStagers=new Map();
+ const dispatchedReports=new Map();
+ const completionAttempts=new Set();
+ let completionFlight,completionFailed=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let dispatchFlight,dispatchFailed=false;
  let a2aOwner,a2aStarting,a2aStartAttempted=false;
@@ -385,6 +388,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           report.runtime_task_id!==input.runtimeTaskId||
           report.provider_completion_attested!==false)
         deny('untrusted or mismatched A2A Task report');
+       // This is NOT completion. A2A metadata cannot release dependencies.
+       dispatchedReports.set(input.runtimeTaskId,Object.freeze({
+        task_id:report.task_id,runtime_task_id:report.runtime_task_id
+       }));
        return report;
       })();
       try{return await dispatchFlight;}
@@ -396,6 +403,50 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        }
        throw error;
       }finally{dispatchFlight=undefined;}
+     },
+     /** R350.7 — Gateway alone can confirm an actual provider/Runner
+      * completion. The owner passes only IDs pinned to its own prior A2A
+      * report, never a model-provided success, receipt, HEAD or signature. */
+     async attestEnrolledTaskCompletion(input){
+      if(closed||session.phase!=='operational'||!a2aOwner||
+         gateway.phase!=='active'||dispatchFailed||completionFailed||
+         taskStageFailed||taskStageFlight||dispatchFlight||
+         completionFlight)
+       deny('independent Task completion requires a live quiescent owner');
+      if(!fields(input,['taskId','runtimeTaskId'])||
+         typeof input?.taskId!=='string'||
+         typeof input?.runtimeTaskId!=='string')
+       deny('completion cannot accept model or provider success claims');
+      const pinned=dispatchedReports.get(input.runtimeTaskId);
+      if(!pinned||pinned.task_id!==input.taskId||
+         completionAttempts.has(input.runtimeTaskId))
+       deny('completion has no matching original A2A dispatch report');
+      completionAttempts.add(input.runtimeTaskId); // before any async observer read
+      completionFlight=(async()=>{
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       const observed=await a2aOwner.attestIndependentGatewayCompletion(
+        input.taskId,input.runtimeTaskId);
+       if(closed||session.phase!=='operational'||
+          gateway.phase!=='active')
+        deny('Engineer retired during independent completion');
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       if(observed.status!=='owner_gateway_completion_independently_observed'||
+          observed.task_id!==input.taskId||
+          observed.runtime_task_id!==input.runtimeTaskId||
+          observed.gateway_execution_authorized!==false)
+        deny('independent Gateway completion receipt differs from Task');
+       dispatchedReports.delete(input.runtimeTaskId);
+       return observed;
+      })();
+      try{return await completionFlight;}
+      catch(error){
+       completionFailed=true;
+       if(session.phase==='operational'){
+        try{await session.retireOperationalRoot();}
+        catch{deny('independent completion failed and root retirement unconfirmed');}
+       }
+       throw error;
+      }finally{completionFlight=undefined;}
      }
     });
    })();
@@ -418,6 +469,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(taskStageFlight)try{await taskStageFlight;}catch{/* Recheck root below. */}
     if(a2aStarting)try{await a2aStarting;}catch{/* Recheck root below. */}
     if(dispatchFlight)try{await dispatchFlight;}catch{/* Recheck root below. */}
+    if(completionFlight)try{await completionFlight;}catch{/* Recheck root below. */}
     try{
      try{if(a2aOwner)await a2aOwner.close();}
      finally{if(session.phase!=='revoked')await retire();}
