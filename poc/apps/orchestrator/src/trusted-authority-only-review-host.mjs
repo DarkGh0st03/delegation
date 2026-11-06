@@ -320,10 +320,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      nativeEffectBindingAttempted=true;
      if(!fields(deps,['store','mutation','runner'])||
         !(deps.store instanceof InMemoryRequestStore)||
-        !(deps.mutation instanceof TrustedAuthorityOnlyGiteaMutationPreflight)||
-        !(deps.runner instanceof TrustedAuthorityOnlyRunnerPreflight)||
-        !deps.mutation.isForAdmissions(gateway)||
-        !deps.runner.isForAdmissions(gateway)){
+        !TrustedAuthorityOnlyGiteaMutationPreflight.isNativeForAdmissions(
+         deps.mutation,gateway)||
+        !TrustedAuthorityOnlyRunnerPreflight.isNativeForAdmissions(
+         deps.runner,gateway)){
       dispatchFailed=true;
       deny('native Gateway effect dependencies are not from original session');
      }

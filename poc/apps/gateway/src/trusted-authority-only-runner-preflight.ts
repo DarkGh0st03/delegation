@@ -49,6 +49,13 @@ export class TrustedAuthorityOnlyRunnerPreflight{
   this.#branch=opts.branch;
   this.#nowMs=opts.nowMs??Date.now;
  }
+ /** Genuine class-private Gateway ownership (not structural impersonation). */
+ static isNativeForAdmissions(value:unknown,
+  admissions:TrustedAuthorityOnlyGatewayAdmissions):
+  value is TrustedAuthorityOnlyRunnerPreflight{
+  return value instanceof TrustedAuthorityOnlyRunnerPreflight &&
+   #admissions in value && value.#admissions===admissions;
+ }
  isForAdmissions(a:TrustedAuthorityOnlyGatewayAdmissions):boolean{
   return a===this.#admissions;
  }

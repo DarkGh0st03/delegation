@@ -20,6 +20,11 @@ import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operatio
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
 import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-authority-only-runner-preflight.ts';
+import {DurableAuthorityOnlyGiteaMutationIntentJournal}
+ from '../../gateway/src/trusted-authority-only-mutation-intent-journal.ts';
+import {DurableAuthorityOnlyRunnerIntentJournal}
+ from '../../gateway/src/trusted-authority-only-runner-intent-journal.ts';
+import {GiteaClient} from '../../gateway/src/gitea-client.ts';
 import {InMemoryRequestStore,InMemoryAuditSink,prepareAuthorization} from '../../gateway/src/prepare.ts';
 import {DurableAuthorityOnlyTaskFenceJournal}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts';
@@ -64,7 +69,8 @@ const root=(id,index,seconds=600)=>({credential_id:id,valid_from:new Date().toIS
  credential_status:{type:'BitstringStatusListEntry',statusPurpose:'revocation',statusListIndex:String(index),statusListCredential:'https://status.invalid/list'}});
 async function fixture(t,flags={}){
  const home=await mkdtemp(join(tmpdir(),'r349-'));t.after(()=>rm(home,{recursive:true,force:true}));
- const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren','flights'].map(k=>[k,join(home,k)]));
+ const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren','flights',
+  'mutationIntents','runnerIntents'].map(k=>[k,join(home,k)]));
  for(const d of Object.values(dirs))await mkdir(d,{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
  const privateKeyFile=join(dirs.keys,'engineer.pem');await writeFile(privateKeyFile,pem(engineer.privateKey,'pkcs8'),{mode:0o600});
@@ -112,6 +118,40 @@ async function fixture(t,flags={}){
  async function review(){const r=await call('/api/login',{body:{password:'owner-password'}});assert.equal(r.status,200);const cookie=r.headers.get('set-cookie').split(';')[0];const packet=await (await call('/api/review',{cookie})).json();return {cookie,packet};}
  async function approve(ids=['permission-1']){const {cookie,packet}=await review();const r=await call('/api/approve',{cookie,csrf:packet.csrf_token,body:{proposal_digest:packet.proposal_digest,approved_permission_ids:ids,confirmation:'APPROVE '+packet.proposal_digest}});assert.equal(r.status,201);return packet;}
  return {options,start,log,model,call,review,approve,dirs,store,engineer};
+}
+
+/** Real native preflight classes and durable journals; only Gitea reads
+ * are supplied by a no-network fixture for these cheap offline regressions. */
+function nativeOfflinePreflights(gateway,dirs,events=[]){
+ class PinnedGiteaReadFixture extends GiteaClient{
+  constructor(){super({baseUrl:'http://offline-gitea.invalid',
+   token:'offline-no-network',owner:'thesis',repository:'iam-console-poc'});}
+  async getBranchMetadata(workBranch){
+   assert.equal(workBranch,branch);
+   return {name:workBranch,commit_sha:snapshot.base_revision};
+  }
+  async readTextFile(workBranch,path,revision){
+   assert.equal(workBranch,branch);
+   assert.equal(path,'apps/user.ts');
+   assert.equal(revision,snapshot.base_revision);
+   events.push('offline_pinned_gitea_read');
+   return {branch:workBranch,path,revision,blob_sha:'b'.repeat(40),
+    content:'export const suspended=false;\n'};
+  }
+ }
+ const gitea=new PinnedGiteaReadFixture();
+ return {
+  mutation:new TrustedAuthorityOnlyGiteaMutationPreflight({
+   admissions:gateway,giteaClient:gitea,
+   journal:new DurableAuthorityOnlyGiteaMutationIntentJournal(dirs.mutationIntents),
+   repository:'thesis/iam-console-poc',branch
+  }),
+  runner:new TrustedAuthorityOnlyRunnerPreflight({
+   admissions:gateway,giteaClient:gitea,
+   journal:new DurableAuthorityOnlyRunnerIntentJournal(dirs.runnerIntents),
+   repository:'thesis/iam-console-poc',branch
+  })
+ };
 }
 
 function executionDeps(f){
@@ -305,14 +345,8 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
   }),/native effect staging requires/);
   const nativeStore=new InMemoryRequestStore();
   const realGateway=execution.gateway;
-  const nativeMutation=Object.assign(
-   Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
-    isForAdmissions:g=>g===realGateway
-   });
-  const nativeRunner=Object.assign(
-   Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
-    isForAdmissions:g=>g===realGateway
-   });
+  const {mutation:nativeMutation,runner:nativeRunner}=
+   nativeOfflinePreflights(realGateway,f.dirs);
   assert.deepEqual(bindNativeGatewayEffects({
    store:nativeStore,mutation:nativeMutation,runner:nativeRunner
   }),{status:'owner_native_gateway_effects_bound_no_execution',
@@ -372,21 +406,8 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
  const staged=await stageTask(task);
  assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
- const nativeMutation=Object.assign(
-  Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
-   isForAdmissions:g=>g===gateway,
-   async stageUpdate(record,head){
-    assert.equal(record.request_id,requestId);
-    assert.equal(head,snapshot.base_revision);
-    events.push('offline_mutation_intent_fixture');
-    return {provider_write_authorized:false};
-   }
-  });
- const nativeRunner=Object.assign(
-  Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
-   isForAdmissions:g=>g===gateway,
-   async stageRunner(){throw Error('Backend must not reach Test Runner');}
-  });
+ const {mutation:nativeMutation,runner:nativeRunner}=
+  nativeOfflinePreflights(gateway,f.dirs,events);
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:nativeMutation,runner:nativeRunner
  }).gateway_execution_authorized,false);
@@ -481,8 +502,15 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
   assert.deepEqual(report.artifact.files_modified,['apps/user.ts']);
   assert.deepEqual(events,[
    'native_child_fixture','gateway_prepare_canonical',
-   'offline_mutation_intent_fixture','private_vp_fixture',
+   'offline_pinned_gitea_read','private_vp_fixture',
    'gateway_execute_fixture']);
+  const intents=(await readdir(f.dirs.mutationIntents))
+   .filter(n=>n.endsWith('.intent.json'));
+  assert.equal(intents.length,1);
+  const intent=JSON.parse(await readFile(join(f.dirs.mutationIntents,intents[0]),'utf8'));
+  assert.equal(intent.request_id,requestId);
+  assert.equal(intent.expected_head_sha,snapshot.base_revision);
+  assert.equal(intent.credential_id,staged.credential_id);
   const flights=(await readdir(f.dirs.flights)).filter(n=>n.endsWith('.flight.json'));
   assert.equal(flights.length,1);
   const flight=JSON.parse(await readFile(join(f.dirs.flights,flights[0]),'utf8'));
@@ -523,10 +551,10 @@ test('R350.6 never binds a foreign preflight to the same-session Gateway',async 
  const foreign={
   store:new InMemoryRequestStore(),
   mutation:Object.assign(Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
-   isForAdmissions:()=>false
+   isForAdmissions:()=>true
   }),
   runner:Object.assign(Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
-   isForAdmissions:()=>false
+   isForAdmissions:()=>true
   })
  };
  assert.throws(()=>execution.bindNativeGatewayEffects(foreign),
@@ -574,20 +602,8 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  const record=store.get(prepared.request_id);
  assert.equal(record.authority_only_plan_task_id,task.task.task_id);
  assert.equal(record.authority_only_agent_did,'did:thesis:backend');
- const nativeMutation=Object.assign(
-  Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
-   isForAdmissions:g=>g===gateway,
-   async stageUpdate(actual,head){
-    assert.equal(actual,record);assert.equal(head,snapshot.base_revision);
-    nativeCalls.push('offline_mutation_intent_reserved');
-    return {provider_write_authorized:false};
-   }
-  });
- const nativeRunner=Object.assign(
-  Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
-   isForAdmissions:g=>g===gateway,
-   async stageRunner(){throw Error('Test Runner cannot stage Backend Task');}
-  });
+ const {mutation:nativeMutation,runner:nativeRunner}=
+  nativeOfflinePreflights(gateway,f.dirs,nativeCalls);
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:nativeMutation,runner:nativeRunner}).gateway_execution_authorized,false);
  const stager=execution.createEnrolledNativeEffectStager({
@@ -595,7 +611,10 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  });
  const staged=await stager.stage(prepared.request_id);
  assert.equal(staged.provider_write_authorized,false);
- assert.deepEqual(nativeCalls,['native_child_fixture','offline_mutation_intent_reserved']);
+ assert.equal(staged.status,'gitea_update_intent_reserved_without_execution');
+ assert.deepEqual(nativeCalls,['native_child_fixture','offline_pinned_gitea_read']);
+ assert.equal((await readdir(f.dirs.mutationIntents))
+  .filter(n=>n.endsWith('.intent.json')).length,1);
  const files=(await readdir(f.dirs.flights)).filter(n=>n.endsWith('.flight.json'));
  assert.equal(files.length,1);
  const durable=JSON.parse(await readFile(join(f.dirs.flights,files[0]),'utf8'));
@@ -615,6 +634,27 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  await host.close();
  assert.equal(host.phase,'revoked');
  assert.equal(f.log.at(-1),'revoke:urn:r3508:operational');
+});
+
+test('R350.10 prototype-spoofed native preflights cannot bind the original Gateway',async t=>{
+ const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);
+ await host.activateOperational(root('urn:r35010:brand',2));
+ const execution=await host.admitOperationalExecution(executionDeps(f));
+ const fakeMutation=Object.assign(Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
+  isForAdmissions:()=>true,stageUpdate:async()=>({provider_write_authorized:false})
+ });
+ const fakeRunner=Object.assign(Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
+  isForAdmissions:()=>true,stageRunner:async()=>({runner_execution_authorized:false})
+ });
+ assert.equal(TrustedAuthorityOnlyGiteaMutationPreflight.isNativeForAdmissions(
+  fakeMutation,execution.gateway),false);
+ assert.equal(TrustedAuthorityOnlyRunnerPreflight.isNativeForAdmissions(
+  fakeRunner,execution.gateway),false);
+ assert.throws(()=>execution.bindNativeGatewayEffects({
+  store:new InMemoryRequestStore(),mutation:fakeMutation,runner:fakeRunner
+ }),/not from original session/);
+ await host.close();
+ assert.equal(host.phase,'revoked');
 });
 
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{
