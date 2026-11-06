@@ -1,5 +1,5 @@
 {
-  "checkpoint": "R364.1",
+  "checkpoint": "R364.2",
   "baseline_native_sha": "ce6ba4113d9d230bd4c20d0ad33cc4e0e8a9411b",
   "scenario": "account-suspension",
   "roles": [
@@ -10,5 +10,7 @@
   "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
   "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
   "excluded": "no Test/Docker or PR claim",
-  "status": "requested, test outcome not confirmed"
+  "status": "one native run requested; PASS must be independently verified",
+  "previous_sha": "c41d989d431d1a3a4723732e70a34c30e5156c52",
+  "fix": "Fix invalid YAML job name colon and actually integrate both role dispatch paths in the E2E executable"
 }

@@ -400,152 +400,204 @@ try{
   assert.equal(typeof signed.signed_vp,"string");
   return signed.signed_vp;
  };
- // The owner creates a REAL privileged staging server. The Agent hosts
- // their own bind server and trusted registry; nothing comes from A2A data.
- const stageSecret=path("stage-secret.hex"),bindSecret=path("bind-secret.hex");
- for(const secretFile of [stageSecret,bindSecret])
-  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
-   {mode:0o600,flag:"wx"});
- const stageSocket=path("owner-stage.sock"),bindSocket=path("agent-bind.sock");
- const agentRegistry=new TrustedEffectStagingTaskRegistry();
- const stageClient=await connectTrustedOwnerEffectStagingClient({
-  socketPath:stageSocket,secretFile:stageSecret
- });
- const bindingServer=await createTrustedEffectAgentBindingServer({
-  socketPath:bindSocket,secretFile:bindSecret,
-  registry:agentRegistry,ownerStageClient:stageClient,expectedRole:"frontend"
- });
- const roleServers=[],urls={},prepared=[],events=[];
- const model=new ScriptedReadThenCas(branch,mutationPath,oldContent,newContent);
+ // R364: three distinct pairs of role-pinned HMAC IPC channels; separate
+ // agent registries and signing keys, but one original native Engineer root.
+ const roles=["backend","frontend","test"],stageChannels={},agentBindingChannels={};
+ const registries={},bindingServers=[],roleServers=[],urls={},events=[],prepared=[];
+ const models={
+  backend:new ScriptedReadThenCas(branch,backendPath,
+   backendOldContent,backendNewContent),
+  frontend:new ScriptedReadThenCas(branch,mutationPath,oldContent,newContent)
+ };
  let owner;
  try{
-  await bindingServer.start();
+  for(const role of roles){
+   const stageSocket=path("stage-"+role+".sock");
+   const stageSecret=path("stage-"+role+".hex");
+   const bindingSocket=path("bind-"+role+".sock");
+   const bindingSecret=path("bind-"+role+".hex");
+   for(const secretFile of [stageSecret,bindingSecret])
+    await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+     {mode:0o600,flag:"wx"});
+   stageChannels[role]={socketPath:stageSocket,secretFile:stageSecret};
+   agentBindingChannels[role]={socketPath:bindingSocket,
+    secretFile:bindingSecret};
+   const registry=new TrustedEffectStagingTaskRegistry();
+   registries[role]=registry;
+   const stageClient=await connectTrustedOwnerEffectStagingClient({
+    socketPath:stageSocket,secretFile:stageSecret
+   });
+   const binder=await createTrustedEffectAgentBindingServer({
+    socketPath:bindingSocket,secretFile:bindingSecret,
+    registry,ownerStageClient:stageClient,expectedRole:role
+   });
+   bindingServers.push(binder);await binder.start();
+  }
   const gatewayTransport=async(url,init)=>{
    const body=JSON.parse(String(init?.body));
    if(String(url).endsWith("/v1/authorization/prepare")){
     const response=prepareAuthorization(body,{
      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
-    prepared.push({tool:body.tool,response});
-    events.push("prepare_"+body.tool);
+    prepared.push({role:body.agent_role,tool:body.tool,response});
+    events.push("prepare_"+body.agent_role+"_"+body.tool);
     return Response.json(response,{status:201});
    }
    if(String(url).endsWith("/v1/authorization/execute")){
     const record=store.get(body.request_id);
-    const tool=record?.request?.tool;
-    if(!["read_file","update_file"].includes(tool))
-     throw Error("unrecognized signed Gateway Task operation");
-    events.push("execute_"+tool);
-    try{
-     return Response.json(await executeAuthorization(body,deps),{status:200});
-    }catch(error){
-     // Log class only; no provider source, credentials or signed VP.
-     process.stderr.write("R364 native Gateway rejected "+tool+": "+
+    const tool=record?.request?.tool,role=record?.request?.agent_role;
+    if(!["read_file","update_file"].includes(tool)||
+       !["backend","frontend"].includes(role))
+     throw Error("unrecognized role or native Gateway effect");
+    events.push("execute_"+role+"_"+tool);
+    try{return Response.json(await executeAuthorization(body,deps),{status:200});}
+    catch(error){
+     process.stderr.write("R364 denied "+role+" "+tool+": "+
       (error?.constructor?.name??"UnknownError")+"\n");
-     return Response.json({error:"native_authorization_rejected"},{status:403});
+     return Response.json({error:"native_authorization_denied"},{status:403});
     }
    }
-   throw Error("unexpected native Gateway transport route");
+   throw Error("unrecognized Gateway route");
   };
-  const roles=["backend","frontend","test"];
   for(const role of roles){
-   const options={
-    role,host:"127.0.0.1",port:await freeRolePort(),
-    capabilityProfile:"approved-plan",delegatedAuthorization:true
-   };
-   if(role==="frontend"){
+   const opts={role,host:"127.0.0.1",port:await freeRolePort(),
+    capabilityProfile:"approved-plan",delegatedAuthorization:true};
+   if(role!=="test"){
     const keys=generateKeyPairSync("ed25519");
-    options.mcpTaskSigning={
+    opts.mcpTaskSigning={
      signingPrivateKeyPem:keys.privateKey.export({
-      type:"pkcs8",format:"pem"
-     }).toString(),
+      type:"pkcs8",format:"pem"}).toString(),
      signingPublicKeyPem:keys.publicKey.export({
-      type:"spki",format:"pem"
-     }).toString()
+      type:"spki",format:"pem"}).toString()
     };
-    options.adk={
-     model,gatewayBaseUrl:"http://gateway.fixture.invalid",
-     adapterToken:tokens.frontend,maxModelTurns:4,
-     maxModelCallMs:15000,gatewayTimeoutMs:60000,
-     scopeModelPaths:true,trustedEffectTaskRegistry:agentRegistry,
-     fetchFn:gatewayTransport
+    opts.adk={
+     model:models[role],gatewayBaseUrl:"http://gateway.fixture.invalid",
+     adapterToken:tokens[role],maxModelTurns:4,maxModelCallMs:15000,
+     gatewayTimeoutMs:60000,scopeModelPaths:true,
+     trustedEffectTaskRegistry:registries[role],fetchFn:gatewayTransport
     };
    }
-   const server=await startSpecializedAgentServer(options);
+   const server=await startSpecializedAgentServer(opts);
    roleServers.push(server);urls[role]=server.baseUrl;
   }
   owner=await startTrustedAuthorityOnlySdkA2AOwner({
    coordinator,childIssuer:issuer,gateway:gate,
-   stageSocketPath:stageSocket,stageSecretFile:stageSecret,
-   agentBindingSocketPath:bindSocket,agentBindingSecretFile:bindSecret,
-   agentBaseUrls:urls,
+   stageChannels,agentBindingChannels,agentBaseUrls:urls,
    a2aPolling:{deadlineMs:120000,initialIntervalMs:40,maxIntervalMs:250}
   });
-  assert.equal(model.requests.length,0);
-  assert.throws(()=>gate.assertTrustedCompletedSequentialReadUpdateTask(
-   taskId,runtimeTaskId),/mixed Task lacks independently finalized/u);
-  // Only the genuine owner has the native Child and may bind then dispatch
-  // via SDK A2A. Model text cannot bind a Task or stage a second operation.
-  // Cross-role requests are denied at canonical preflight; no agent- or
-  // model-supplied Task/role can enlarge this native Frontend Child grant.
-  const forbiddenBackendPath="apps/backend/users/account.ts";
+  assert.equal(models.backend.requests.length,0);
+  assert.equal(models.frontend.requests.length,0);
+  assert.equal(gate.stagedCompletedTaskCount,0);
+  const backendReport=await owner.dispatchIssuedTask({
+   taskId:backendTaskId,runtimeTaskId:backendRuntimeId,
+   instruction:"Read and CAS-update only the signed Backend account source",
+   effectStager:backendStager
+  });
+  assert.equal(backendReport.status,"a2a_report_not_gateway_completed");
+  assert.equal(backendReport.provider_completion_attested,false);
+  assert.equal(backendReport.role,"backend");
+  assert.deepEqual(backendReport.artifact.files_modified,[backendPath]);
+  assert.equal(models.backend.requests.length,3);
+  assert.equal(models.frontend.requests.length,0);
+  assert.equal(gatewayCasWrites,1);
+  const backendHead=backendReport.artifact.commit_sha;
+  assert.match(backendHead,/^[a-f0-9]{40}$/u);
+  assert.notEqual(backendHead,baseRevision);
+  assert.equal((await independentClient.readTextFile(
+   branch,backendPath,backendHead)).content,backendNewContent);
+  assert.equal((await independentClient.readTextFile(
+   branch,mutationPath,backendHead)).content,oldContent);
+  const backendConfirmed=await owner.attestIndependentGatewayCompletion(
+   backendTaskId,backendRuntimeId
+  );
+  assert.equal(backendConfirmed.status,"owner_gateway_completion_independently_observed");
+  assert.equal(gate.assertTrustedCompletedSequentialReadUpdateTask(
+   backendTaskId,backendRuntimeId).status,"sequential_read_update_task_completed_staged");
+  assert.equal(gate.stagedCompletedTaskCount,1);
+  // The predecessor's actual Gitea commit is the ONLY new Frontend HEAD.
+  const frontendStager=await TrustedAuthorityOnlySequentialReadUpdateStager.begin({
+   store,admissions:gate,mutation:preflight,mutationObserver:observer,
+   planTaskId:taskId,runtimeTaskId,expectedHeadSha:backendHead
+  });
+  assert.equal(frontendStager.stagedTool,"read_then_update");
+  assert.equal(gate.stagedSequentialTaskCount,2);
+  // Reject both cross-role impersonation and access to the other source.
   assert.throws(()=>gate.preflightCanonicalRequest({
    task_id:runtimeTaskId,agent_role:"frontend",tool:"read_file",
-   arguments:{branch,path:forbiddenBackendPath}
+   arguments:{branch,path:backendPath}
   }));
   assert.throws(()=>gate.preflightCanonicalRequest({
-   task_id:runtimeTaskId,agent_role:"backend",tool:"update_file",
+   task_id:backendRuntimeId,agent_role:"backend",tool:"update_file",
    arguments:{branch,path:mutationPath,content:newContent}
   }));
-  const report=await owner.dispatchIssuedTask({
+  const frontendReport=await owner.dispatchIssuedTask({
    taskId,runtimeTaskId,
-   instruction:"Read actual account source, then CAS-update the same file",
-   effectStager:native
+   instruction:"Read and CAS-update Frontend after independently completed Backend",
+   effectStager:frontendStager
   });
-  assert.equal(report.status,"a2a_report_not_gateway_completed");
-  assert.equal(report.provider_completion_attested,false);
-  assert.equal(report.role,"frontend");
-  assert.deepEqual(report.artifact.files_modified,[mutationPath]);
-  assert.equal(report.artifact.commit_sha!==null,true);
-  assert.equal(model.requests.length,3);
-  assert.equal(gatewayCasWrites,1);
+  assert.equal(frontendReport.status,"a2a_report_not_gateway_completed");
+  assert.equal(frontendReport.provider_completion_attested,false);
+  assert.equal(frontendReport.role,"frontend");
+  assert.deepEqual(frontendReport.artifact.files_modified,[mutationPath]);
+  assert.equal(models.frontend.requests.length,3);
+  assert.equal(gatewayCasWrites,2);
   assert.equal(legacyWriteCalls,0);
-  assert.equal(gate.stagedCompletedTaskCount,1);
+  const frontendHead=frontendReport.artifact.commit_sha;
+  assert.match(frontendHead,/^[a-f0-9]{40}$/u);
+  assert.notEqual(frontendHead,backendHead);
   assert.equal((await independentClient.readTextFile(
-   branch,mutationPath,report.artifact.commit_sha)).content,newContent);
-  assert.deepEqual(prepared.map(p=>p.tool),["read_file","update_file"]);
-  assert.notEqual(prepared[0].response.request_id,
-   prepared[1].response.request_id);
-  for(const item of prepared)
-   assert.equal(store.get(item.response.request_id).pinned_revision,baseRevision);
-  assert.deepEqual(events,[
-   "prepare_read_file","execute_read_file",
-   "prepare_update_file","execute_update_file"
+   branch,backendPath,frontendHead)).content,backendNewContent);
+  assert.equal((await independentClient.readTextFile(
+   branch,mutationPath,frontendHead)).content,newContent);
+  assert.deepEqual(prepared.map(p=>[p.role,p.tool]),[
+   ["backend","read_file"],["backend","update_file"],
+   ["frontend","read_file"],["frontend","update_file"]
   ]);
-  // A completed A2A task is still NOT independent authorization evidence.
-  const confirmed=await owner.attestIndependentGatewayCompletion(
+  assert.equal(new Set(prepared.map(p=>p.response.request_id)).size,4);
+  for(const p of prepared)
+   assert.equal(store.get(p.response.request_id).pinned_revision,
+    p.role==="backend"?baseRevision:backendHead);
+  assert.deepEqual(events,[
+   "prepare_backend_read_file","execute_backend_read_file",
+   "prepare_backend_update_file","execute_backend_update_file",
+   "prepare_frontend_read_file","execute_frontend_read_file",
+   "prepare_frontend_update_file","execute_frontend_update_file"
+  ]);
+  const frontendConfirmed=await owner.attestIndependentGatewayCompletion(
    taskId,runtimeTaskId
   );
-  assert.equal(confirmed.status,"owner_gateway_completion_independently_observed");
-  assert.equal(confirmed.gateway_execution_authorized,false);
-  await assert.rejects(owner.attestIndependentGatewayCompletion(
-   taskId,runtimeTaskId),/closed or repeated independent completion/u);
+  assert.equal(frontendConfirmed.status,"owner_gateway_completion_independently_observed");
+  assert.equal(gate.stagedCompletedTaskCount,2);
   assert.equal(gate.assertTrustedCompletedSequentialReadUpdateTask(
    taskId,runtimeTaskId).status,"sequential_read_update_task_completed_staged");
-  await assert.rejects(executeAuthorization({
-   request_id:prepared[1].response.request_id,
-   signed_vp:await sign(prepared[1].response,updatePermission)
-  },deps),error=>error?.code==="replay_detected");
-  assert.equal(gatewayCasWrites,1);
-  const prompts=JSON.stringify(model.requests);
-  for(const forbidden of [
-   tokens.frontend,child.credential_id,operational.credential_id,
-   process.env.ADAPTER_EVM_PRIVATE_KEY_FRONTEND
-  ].filter(Boolean))
-   assert.equal(prompts.includes(forbidden),false);
+  await assert.rejects(owner.attestIndependentGatewayCompletion(
+   taskId,runtimeTaskId),/closed or repeated independent completion/u);
+  for(const [index,role,permission] of [
+   [1,"backend",backendUpdatePermission],[3,"frontend",updatePermission]
+  ]){
+   const request=prepared[index].response;
+   const signed=await invokeNativeCrypto({
+    socketPath,token:tokens[role],timeoutMs:60000
+   },"create_presentation",{
+    credential_id:role==="backend"?backendChild.credential_id:child.credential_id,
+    disclosed_permissions:[permission],audience:request.audience,
+    challenge:request.challenge
+   });
+   await assert.rejects(executeAuthorization({
+    request_id:request.request_id,signed_vp:signed.signed_vp
+   },deps),err=>err?.code==="replay_detected");
+  }
+  assert.equal(gatewayCasWrites,2);
+  for(const role of ["backend","frontend"]){
+   const prompts=JSON.stringify(models[role].requests);
+   for(const forbidden of [tokens[role],backendChild.credential_id,
+    child.credential_id,operational.credential_id,
+    process.env["ADAPTER_EVM_PRIVATE_KEY_"+role.toUpperCase()]
+   ].filter(Boolean))assert.equal(prompts.includes(forbidden),false);
+  }
  }finally{
   const results=await Promise.allSettled([
-   owner?.close(),bindingServer.close(),
+   owner?.close(),...bindingServers.reverse().map(b=>b.close()),
    ...roleServers.reverse().map(s=>s.close())
   ]);
   for(const result of results)

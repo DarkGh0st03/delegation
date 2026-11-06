@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   direct-rust-live-evm:
-    name: R364 One signed plan: Backend then Frontend native ADK/A2A
+    name: "R364 One signed plan: Backend then Frontend native ADK/A2A"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
