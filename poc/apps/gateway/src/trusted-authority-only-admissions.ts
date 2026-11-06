@@ -904,6 +904,65 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#flightInFlight=false;}
  }
  /**
+  * R359.3: the trusted owner admits the second typed effect only after
+  * independently sealed read evidence and a fresh native CAS preflight.
+  * No provider write happens here: Rust/OPA/Gitea execute separately.
+  */
+ async stageTrustedSequentialMutationEffect(record:PreparedRequestRecord):
+ Promise<Readonly<{
+  status:"sequential_mutation_effect_reserved_staged";
+  task_id:string;sequence:2;gateway_execution_authorized:false
+ }>>{
+  const root=this.#live(),journal=this.#sequentialEffectJournal;
+  if(!journal||this.#flightInFlight||this.#completionInFlight||
+     !record||record.consumed!==false||record.request.tool!=="update_file")
+   deny("mixed second effect requires fresh owner-prepared update");
+  const binding=this.assertTrustedGiteaUpdateIntentBinding(record);
+  const state=this.#sequential.get(binding.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  if(!state||!child||state.manifest.effect_plan===undefined||
+     state.manifest.total_effects!==2||state.completed!==1||state.active||
+     !SHA64.test(state.latest_evidence_sha256??"")||
+     !SHA40.test(state.readRevision??"")||
+     record.pinned_revision!==state.readRevision||
+     record.request.arguments.path!==state.readPath||
+     child.credential_id!==state.manifest.credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     this.#completed.has(binding.task_id)||this.#flights.has(binding.task_id))
+   deny("mixed update not chained to the independently verified read");
+  const canonical=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  if(pair(canonical.required_permission)!==pair(record.required_permission))
+   deny("mixed update differs from original native CAS permission");
+  const {effect_plan:_plan,...base}=state.manifest;
+  const next:TrustedSequentialFlight=Object.freeze({
+   ...base,sequence:2,operation:"update_file" as const,
+   request_id:record.request_id,
+   request_fingerprint:record.request_fingerprint,
+   previous_evidence_sha256:state.latest_evidence_sha256
+  });
+  this.#flightInFlight=true;
+  try{
+   await journal.reserveEffect(next);
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("mixed update Child expired during durable reservation");
+   state.active=next;
+   this.#flights.set(binding.task_id,{
+    session_id:next.session_id,authority_digest:next.authority_digest,
+    root_credential_id:next.root_credential_id,
+    task_id:next.task_id,runtime_task_id:next.runtime_task_id,
+    epoch:next.epoch,credential_id:next.credential_id,
+    request_id:next.request_id,request_fingerprint:next.request_fingerprint
+   });
+   return Object.freeze({status:"sequential_mutation_effect_reserved_staged",
+    task_id:binding.task_id,sequence:2,gateway_execution_authorized:false});
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
+ /**
   * The observer (not the agent) rechecks a real Gitea outcome against
   * each original prepared request and the protected authenticated receipt.
   * A Task dependency is NOT unlocked by completing an intermediate effect.
@@ -961,6 +1020,59 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
     task_id:taskId,sequence:active.sequence,
     gateway_execution_authorized:false
    });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#completionInFlight=false;}
+ }
+ /**
+  * R359.3: authenticated independent Gitea CAS evidence must match the
+  * original native second flight. A2A/HTTP text cannot finalize a Task.
+  */
+ async attestTrustedSequentialMutationEffect(taskId:string,runtimeTaskId:string,
+  observer:TrustedAuthorityOnlyCompletionObserver):Promise<Readonly<{
+   status:"sequential_mutation_effect_attested_staged";
+   task_id:string;sequence:2;gateway_execution_authorized:false
+  }>>{
+  const root=this.#live(),journal=this.#sequentialEffectJournal;
+  const state=this.#sequential.get(taskId),active=state?.active;
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const flight=this.#flights.get(taskId);
+  if(!journal||!(observer instanceof TrustedAuthorityOnlyCompletionObserver)||
+     this.#completionInFlight||this.#flightInFlight||!state||!active||
+     !bound||!child||!flight||bound.row.task_id!==taskId||
+     state.manifest.effect_plan===undefined||state.completed!==1||
+     !SHA64.test(state.latest_evidence_sha256??"")||
+     active.operation!=="update_file"||active.sequence!==2||
+     active.previous_evidence_sha256!==state.latest_evidence_sha256||
+     active.runtime_task_id!==runtimeTaskId||
+     active.root_credential_id!==root.root_credential_id||
+     active.authority_digest!==root.authority_digest||
+     active.credential_id!==child.credential_id||
+     child.epoch!==bound.row.epoch||
+     flight.request_id!==active.request_id||
+     flight.request_fingerprint!==active.request_fingerprint||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("mixed CAS evidence lacks original second native flight");
+  const expected:TrustedCompletionExpectation=Object.freeze({
+   ...flight,agent_did:bound.row.agent_did
+  });
+  this.#completionInFlight=true;
+  try{
+   const observed=await observer.observe(expected);
+   assertObservedCompletion(expected,observed,this.#now());
+   await journal.reserveEvidence({
+    ...active,evidence_sha256:observed.evidence_sha256,
+    completed_at_ms:observed.completed_at_ms
+   });
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("Child expired while sealing verified mixed CAS");
+   state.completed=2;
+   state.latest_evidence_sha256=observed.evidence_sha256;
+   delete state.active;
+   this.#flights.delete(taskId);
+   return Object.freeze({status:"sequential_mutation_effect_attested_staged",
+    task_id:taskId,sequence:2,gateway_execution_authorized:false});
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
  }
@@ -1348,13 +1460,20 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const bound=this.#tasks.get(record.task_id);
   const child=this.#enrolledChildren.get(record.task_id);
   const taskId=bound?.row.task_id;
+  const sequential=taskId?this.#sequential.get(taskId):undefined;
+  const readAttested=sequential?.manifest.effect_plan!==undefined&&
+    sequential.completed===1&&!sequential.active&&
+    SHA64.test(sequential.latest_evidence_sha256??"")&&
+    SHA40.test(sequential.readRevision??"")&&
+    record.pinned_revision===sequential.readRevision&&
+    record.request.arguments.path===sequential.readPath;
   if(!bound||!child||!taskId||
      record.authority_only_plan_task_id!==taskId||
      record.authority_only_agent_did!==bound.row.agent_did||
      bound.row.agent_id!==record.agent_role||
      bound.row.permissions.every(p=>p.operation!=="update_file")||
      bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
-     this.#flights.has(taskId)||this.#sequential.has(taskId)||
+     this.#flights.has(taskId)||(sequential!==undefined&&!readAttested)||
      this.#completed.has(taskId)||
      child.credential_id===root.root_credential_id||
      child.epoch!==bound.row.epoch||
@@ -1441,7 +1560,12 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      child.epoch!==bound.row.epoch||
      this.#now()>=Date.parse(child.expires_at)||
      bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
-     this.#sequential.has(taskId)||this.#completed.has(taskId))
+     (this.#sequential.has(taskId)&&!(tool==="update_file"&&
+       this.#sequential.get(taskId)?.manifest.effect_plan!==undefined&&
+       this.#sequential.get(taskId)?.completed===1&&
+       this.#sequential.get(taskId)?.active?.sequence===2&&
+       this.#sequential.get(taskId)?.active?.operation==="update_file"))||
+     this.#completed.has(taskId))
    deny("verified native mutation Child or Task authority differs");
   const flight=this.#flights.get(taskId);
   if(!flight||
