@@ -75,6 +75,7 @@ export class TrustedAuthorityOnlyA2AOwner {
  readonly #attempted=new Set<string>();
  /** Actual owner dispatch reports, never A2A supplied evidence. */
  readonly #reported=new Map<string,OwnerA2AReport>();
+ readonly #mixedReports=new Set<string>();
  readonly #attestAttempted=new Set<string>();
  #closed=false;
 
@@ -169,6 +170,16 @@ export class TrustedAuthorityOnlyA2AOwner {
   }
   if(effects!==1||filePermissions.length>32)
    deny("Task needs one native read, mutation or Runner effect");
+  const typedMixed=filePermissions.length===2&&
+    filePermissions.some(p=>p.operation==="read_file")&&
+    filePermissions.some(p=>p.operation==="update_file")&&
+    filePermissions[0]?.path===filePermissions[1]?.path;
+  if(typedMixed&&
+     (role==="test"||input.effectStager.stagedTool!=="read_then_update"||
+      typeof input.effectStager.attest!=="function"))
+   deny("same-file read/update Task requires owner-controlled mixed staging");
+  if(!typedMixed&&input.effectStager.stagedTool==="read_then_update")
+   deny("mixed staging cannot replace an ordinary Task grant");
   const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
   const paths=[...new Set(filePermissions.map(x=>x.path))];
   const subtask:DeterministicSubtask=Object.freeze({
@@ -232,6 +243,7 @@ export class TrustedAuthorityOnlyA2AOwner {
      provider_completion_attested:false as const
     });
     this.#reported.set(input.runtimeTaskId,report);
+    if(typedMixed)this.#mixedReports.add(input.runtimeTaskId);
     return report;
    }
   });
@@ -263,15 +275,17 @@ export class TrustedAuthorityOnlyA2AOwner {
   this.#attestAttempted.add(runtimeTaskId); // before any async I/O
   // Gateway does NOT inspect this report; it observes its own durable
   // native-verified provider flight and trusted completion evidence.
-  const confirmed=await this.#gateway.attestTrustedTaskCompletion(
-   taskId,runtimeTaskId
-  );
-  if(confirmed.status!=="task_completion_observed_staged"||
+  const confirmed=this.#mixedReports.has(runtimeTaskId)
+   ?this.#gateway.assertTrustedCompletedSequentialReadUpdateTask(taskId,runtimeTaskId)
+   :await this.#gateway.attestTrustedTaskCompletion(taskId,runtimeTaskId);
+  if(!["task_completion_observed_staged",
+       "sequential_read_update_task_completed_staged"].includes(confirmed.status)||
      confirmed.task_id!==taskId||
      confirmed.runtime_task_id!==runtimeTaskId||
      confirmed.gateway_execution_authorized!==false)
    deny("independent Gateway completion receipt mismatches original Task");
   this.#reported.delete(runtimeTaskId);
+  this.#mixedReports.delete(runtimeTaskId);
   return Object.freeze({
    status:"owner_gateway_completion_independently_observed" as const,
    task_id:taskId,runtime_task_id:runtimeTaskId,
@@ -280,11 +294,13 @@ export class TrustedAuthorityOnlyA2AOwner {
  }
  cancelTask(runtimeTaskId:string){
   this.#reported.delete(runtimeTaskId);
+  this.#mixedReports.delete(runtimeTaskId);
   return this.#bootstrap.cancelTask(runtimeTaskId);
  }
  close():Promise<void>{
   this.#closed=true;
   this.#reported.clear();
+  this.#mixedReports.clear();
   return this.#bootstrap.close();
  }
 }

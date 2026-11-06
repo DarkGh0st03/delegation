@@ -1110,6 +1110,39 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
  }
+ /**
+  * R359.6 post-dispatch assertion of TWO independently sealed provider
+  * effects. An A2A artifact is never a source of trusted completion.
+  */
+ assertTrustedCompletedSequentialReadUpdateTask(taskId:string,runtimeTaskId:string):
+ Readonly<{
+  status:"sequential_read_update_task_completed_staged";
+  task_id:string;runtime_task_id:string;gateway_execution_authorized:false
+ }>{
+  const root=this.#live();
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const state=this.#sequential.get(taskId);
+  if(this.#flightInFlight||this.#completionInFlight||this.#bindingInFlight||
+     !bound||!child||!state||bound.row.task_id!==taskId||
+     state.manifest.runtime_task_id!==runtimeTaskId||
+     state.manifest.session_id!==root.session_id||
+     state.manifest.authority_digest!==root.authority_digest||
+     state.manifest.root_credential_id!==root.root_credential_id||
+     state.manifest.credential_id!==child.credential_id||
+     state.manifest.effect_plan?.join(",")!=="read_file,update_file"||
+     state.manifest.total_effects!==2||state.completed!==2||
+     state.active!==undefined||this.#flights.has(taskId)||
+     !SHA64.test(state.latest_evidence_sha256??"")||
+     !this.#completed.has(taskId)||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("mixed Task lacks independently finalized read and CAS evidence");
+  return Object.freeze({
+   status:"sequential_read_update_task_completed_staged",
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   gateway_execution_authorized:false
+  });
+ }
  #rootBranchAuthority(runtimeTaskId:string){
   const root=this.#live(),task=this.#tasks.get(runtimeTaskId);
   if(!task||task.row.agent_id!=="orchestrator"||task.row.epoch!==1||this.#epoch!==1||
