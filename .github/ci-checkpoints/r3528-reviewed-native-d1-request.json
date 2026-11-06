@@ -1,7 +1,6 @@
 {
-  "revision": "R352.8",
+  "revision": "R352.9",
   "request": "One original reviewed Engineer session: native Docker FAIL, ADK D1 proposal and repair, fresh Test and independent Docker PASS",
-  "source_commit": "6732b32e1eb1bc8a24a491bfe6b58a4c776c4ff2",
   "mode": "reviewed_native_d1",
   "paid_ai": false,
   "production_effects": false,
@@ -17,5 +16,9 @@
     "five registered Tasks and four completed Tasks",
     "three CAS writes and two Runner calls",
     "zero paid inference and unchanged main"
-  ]
+  ],
+  "source_parent": "004451f5ec1a298b1441373f193d948b8ee4d9cc",
+  "replaces_failed_native_run": 42238450802,
+  "fix": "Pin FAIL publisher and observer to original Runner Gitea client and journal",
+  "local_targeted_tests_pass": 15
 }

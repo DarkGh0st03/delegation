@@ -800,12 +800,12 @@ try{
  });
  const failObserver=reviewedD1?new AuthenticatedRunnerFailureObserver({
   directory:path("runner-fail-receipts"),key:evidenceKey,
-  giteaClient:independentClient,journal:runnerJournal,
+  giteaClient:client,journal:runnerJournal,
   repository:"thesis/iam-console-poc",branch,nowMs
  }):null;
  const failPublisher=reviewedD1?new TrustedGatewayRunnerFailEvidencePublisher({
   directory:path("runner-fail-receipts"),key:evidenceKey,
-  runnerClient,independentGiteaClient:independentClient,journal:runnerJournal,
+  runnerClient,independentGiteaClient:client,journal:runnerJournal,
   repository:"thesis/iam-console-poc",branch,nowMs
  }):null;
  const ownedRunnerExecutor=new TrustedAuthorityOnlyRunnerExecutor({
