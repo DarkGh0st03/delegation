@@ -88,7 +88,7 @@ test("runtime wires mutable gitea mode without contacting the provider at startu
 });
 
 test("canonical runtime refuses authority-only effects with no enrolled owner", () => {
-  for(const name of ["authorityOnlyMutationEnabled","authorityOnlyRunnerEnabled","authorityOnlyBranchEnabled","authorityOnlyPullRequestEnabled"] as const){
+  for(const name of ["authorityOnlyReadEnabled","authorityOnlyMutationEnabled","authorityOnlyRunnerEnabled","authorityOnlyBranchEnabled","authorityOnlyPullRequestEnabled"] as const){
     assert.throws(() => new GatewayRuntime(
       {...baseConfig, provider_mode:"mock" as const},
       {verifier,policy,[name]:true}
@@ -131,6 +131,37 @@ test("canonical authority-only runtime fails closed without explicit native veri
     ...config,provider_mode:"mock" as const,verifier_mode:"core-rust" as const
   },{authorityOnlyAdmissions:gate,verifier,policy}),
   /requires mutable Gitea/u);
+});
+
+test("R357.3 native read receipt cannot be enabled without matching original Gateway publisher",()=>{
+ const gate=Object.create(
+  TrustedAuthorityOnlyGatewayAdmissions.prototype
+ ) as TrustedAuthorityOnlyGatewayAdmissions;
+ const config={
+  ...baseConfig,provider_mode:"gitea" as const,
+  verifier_mode:"core-rust" as const,
+  gitea_base_url:"http://gitea:3000",
+  gitea_gateway_token:"test-only"
+ };
+ assert.throws(()=>new GatewayRuntime(config,{
+  authorityOnlyAdmissions:gate,policy,
+  authorityOnlyReadEnabled:true
+ }),/matching explicit enablement and owner executor/u);
+ assert.throws(()=>new GatewayRuntime(config,{
+  authorityOnlyAdmissions:gate,policy,
+  authorityOnlyReceiptWriter:{isForAdmissions:()=>true} as never
+ }),/matching explicit enablement and owner executor/u);
+ assert.throws(()=>new GatewayRuntime(config,{
+  authorityOnlyAdmissions:gate,policy,
+  authorityOnlyReadEnabled:true,
+  authorityOnlyReceiptWriter:{isForAdmissions:()=>true} as never
+ }),/read publisher differs from enrolled owner/u);
+ assert.throws(()=>new GatewayRuntime({
+  ...config,provider_mode:"mock" as const
+ },{
+  policy,authorityOnlyReadEnabled:true,
+  authorityOnlyReceiptWriter:{isForAdmissions:()=>true} as never
+ }),/require enrolled native authority/u);
 });
 
 test("canonical authority-only runtime rejects simulated native verifier or provider",()=>{
