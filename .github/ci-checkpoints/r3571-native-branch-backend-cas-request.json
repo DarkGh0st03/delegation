@@ -1,0 +1,25 @@
+{
+  "checkpoint": "R357.1",
+  "scenario": "Account Suspension",
+  "source_baseline": "unsolved main",
+  "model": "scripted; no paid inference",
+  "prior_native_gate": {
+    "run_id": 42281811050,
+    "conclusion": "success"
+  },
+  "evidence_required": [
+    "actual Engineer-approved branch created after signature",
+    "same original native root",
+    "native Rust Backend Child VP with exact file grant",
+    "owner-preflight pins original branch HEAD before effects",
+    "OPA authorization at Gateway",
+    "real Gitea atomic HEAD CAS update of baseline Backend file",
+    "different Gitea feature HEAD and unchanged main",
+    "independently verified MAC receipt for Backend update",
+    "one-shot replay denied",
+    "Backend Task remains incomplete without actual A2A owner report",
+    "zero paid AI calls"
+  ],
+  "scope": "Single first delegated provider write; no fabricated Test PASS, no pre-seeded functional app",
+  "trigger": "one free native milestone"
+}
