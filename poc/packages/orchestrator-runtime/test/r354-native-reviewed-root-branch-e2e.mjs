@@ -345,7 +345,133 @@ try{
   assert.equal(backendProof.root_credential_id,root);
   assert.equal(backendProof.hierarchy_depth,1);
   assert.deepEqual(backendProof.permissions,[{resource:scopedFile,operation:'update_file'}]);
-  if(nativeBackendCas){
+  if(nativeBackendA2A){
+   // The original owner, NOT the test fixture, dispatches the Backend
+   // through genuine SDK A2A. Agent ADK decides to call update_file,
+   // private IPC stages the trusted original Gateway/HEAD intent, and
+   // the native Gateway checks the signed Child VP and OPA before CAS.
+   const source=await reader.readTextFile(branch,sourcePath,baseRevision);
+   assert.equal(source.content,ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sourcePath]);
+   const content=ACCOUNT_SUSPENSION_REFERENCE_FILES[sourcePath];
+   assert.notEqual(source.content,content);
+   const model=new BackendSdkEditModel(content);
+   const roleBindings={},stageChannels={},roleEndpoints={};
+   let backendPrepared,backendExecuted,backendSignedVp;
+   for(const role of ['backend','frontend','test']){
+    const binding={
+     socketPath:path('r3572-'+role+'-binding.sock'),
+     secretFile:path('r3572-'+role+'-binding.hex')
+    };
+    const stage={
+     socketPath:path('r3572-'+role+'-stage.sock'),
+     secretFile:path('r3572-'+role+'-stage.hex')
+    };
+    await writeFile(binding.secretFile,randomBytes(32).toString('hex')+'\n',
+     {mode:0o600,flag:'wx'});
+    await writeFile(stage.secretFile,randomBytes(32).toString('hex')+'\n',
+     {mode:0o600,flag:'wx'});
+    roleBindings[role]=binding;stageChannels[role]=stage;
+    const registry=new TrustedEffectStagingTaskRegistry();
+    const bindingServer=await createTrustedEffectAgentBindingServer({
+     ...binding,registry,expectedRole:role,
+     ownerStageClient:await connectTrustedOwnerEffectStagingClient(stage)
+    });
+    await bindingServer.start();roleBindingServers.push(bindingServer);
+    const keys=generateKeyPairSync('ed25519');
+    const options={
+     role,host:'127.0.0.1',port:await freeRolePort(),
+     capabilityProfile:'approved-plan',delegatedAuthorization:true,
+     mcpTaskSigning:{
+      signingPrivateKeyPem:keys.privateKey.export({
+       type:'pkcs8',format:'pem'}).toString(),
+      signingPublicKeyPem:keys.publicKey.export({
+       type:'spki',format:'pem'}).toString()
+     },
+     adk:{
+      model:role==='backend'?model:new InertSdkModel(role),
+      gatewayBaseUrl:api,adapterToken:process.env['ADAPTER_CALLER_'+role.toUpperCase()],
+      maxModelTurns:4,maxModelCallMs:10000,gatewayTimeoutMs:120000,
+      scopeModelPaths:true,trustedEffectTaskRegistry:registry,
+      fetchFn:role!=='backend'?fetch:async(url,init)=>{
+       const route=String(url),response=await fetch(url,init);
+       if(route.endsWith('/v1/authorization/prepare')&&response.ok)
+        backendPrepared=await response.clone().json();
+       if(route.endsWith('/v1/authorization/execute')){
+        backendSignedVp=JSON.parse(String(init?.body)).signed_vp;
+        backendExecuted=await response.clone().json();
+       }
+       return response;
+      }
+     }
+    };
+    const server=await startSpecializedAgentServer(options);
+    a2aRoleServers.push(server);roleEndpoints[role]=server.baseUrl;
+   }
+   const started=await execution.startSdkA2AOwner({
+    agentBaseUrls:roleEndpoints,stageChannels,
+    agentBindingChannels:roleBindings,
+    a2aPolling:{deadlineMs:240000,initialIntervalMs:50,maxIntervalMs:250}
+   });
+   assert.equal(started.status,'owner_protected_a2a_started_no_provider_execution');
+   const stager=execution.createEnrolledNativeEffectStager({
+    runtimeTaskId:backendRuntimeTaskId,expectedHeadSha:baseRevision
+   });
+   await assert.rejects(execution.attestEnrolledTaskCompletion({
+    taskId:backendTaskId,runtimeTaskId:backendRuntimeTaskId
+   }),/completion has no matching original A2A dispatch report/);
+   assert.equal(gate.stagedCompletedTaskCount,1);
+   const report=await execution.dispatchEnrolledTask({
+    taskId:backendTaskId,runtimeTaskId:backendRuntimeTaskId,
+    instruction:'Implement the Account Suspension change in the approved Backend source file',
+    effectStager:stager
+   });
+   assert.equal(report.status,'a2a_report_not_gateway_completed');
+   assert.equal(report.provider_completion_attested,false);
+   assert.equal(report.task_id,backendTaskId);
+   assert.equal(report.runtime_task_id,backendRuntimeTaskId);
+   assert.deepEqual(report.artifact.files_modified,[sourcePath]);
+   assert.equal(report.artifact.test_outcome,'not_run');
+   assert.equal(model.requests.length,2);
+   assert.ok(backendPrepared&&backendExecuted&&backendSignedVp);
+   assert.equal(backendExecuted.execution.tool,'update_file');
+   assert.equal(backendExecuted.verified_delegation.root_credential_id,root);
+   assert.equal(backendExecuted.verified_delegation.credential_id,backend.credential_id);
+   assert.equal(backendExecuted.verified_delegation.hierarchy_depth,1);
+   assert.equal(backendExecuted.execution.commit_sha,report.artifact.commit_sha);
+   const committed=backendExecuted.execution.commit_sha;
+   assert.match(committed,/^[a-f0-9]{40}$/u);
+   assert.notEqual(committed,baseRevision);
+   assert.equal((await reader.getBranchMetadata(branch)).commit_sha,committed);
+   assert.equal((await reader.readTextFile(branch,sourcePath,committed)).content,content);
+   assert.equal(gate.stagedCompletedTaskCount,1,'A2A report cannot attest a provider result');
+   const completed=await execution.attestEnrolledTaskCompletion({
+    taskId:backendTaskId,runtimeTaskId:backendRuntimeTaskId
+   });
+   assert.equal(completed.status,'owner_gateway_completion_independently_observed');
+   assert.equal(gate.stagedCompletedTaskCount,2);
+   await assert.rejects(execution.attestEnrolledTaskCompletion({
+    taskId:backendTaskId,runtimeTaskId:backendRuntimeTaskId
+   }),/completion has no matching original A2A dispatch report/);
+   assert.equal((await readdir(path('mutationEvidence')))
+    .filter(name=>name.endsWith('.mutation.json')).length,1);
+   const modelText=JSON.stringify(model.requests);
+   for(const secret of [process.env.ADAPTER_CALLER_BACKEND,
+    backend.credential_id,root,backendSignedVp])
+    assert.equal(modelText.includes(secret),false);
+   assert.equal((await reader.getBranchMetadata('main')).commit_sha,baseRevision);
+   assert.equal((await reader.getBranchMetadata(branch)).commit_sha,committed);
+   process.stdout.write(JSON.stringify({
+    event:'r3572_native_branch_first_backend_protected_a2a_cas_completed',
+    real_branch_created_after_engineer_approval:true,
+    original_root_unchanged:true,backend_child_signed_vp_depth:1,
+    actual_sdk_a2a_backend_task:true,actual_adk_tool_call:true,
+    gateway_native_rust_opa_verified:true,provider_head_cas:true,
+    independent_mac_receipt:true,independent_task_completion:true,
+    registered_tasks:gate.registeredTaskCount,completed_tasks:gate.stagedCompletedTaskCount,
+    unsolved_main_unchanged:true,owner_preseeded_functional_app:false,
+    scripted_model_source_edit:true,paid_ai_calls:0
+   })+'\n');
+  }else if(nativeBackendCas){
    // No test-owner pre-seeding: start from exact independently pinned
    // UNSOLVED main bytes. This source is a SCRIPTED Backend edit (not
    // LLM-generated), and the Gateway itself must commit it using atomic
@@ -439,10 +565,12 @@ try{
    child_permissions_scoped_to_backend_file:true,
    original_root_unchanged:true,operational_tasks:2,completed_tasks:1,
    main_unsolved_unchanged:true,feature_mutation_not_yet_executed:!nativeBackendCas,
+   backend_protected_a2a_completed:nativeBackendA2A,
    paid_model_calls:0
   })+'\n');
  }
  assert.equal((await client.getBranchMetadata('main')).commit_sha,baseRevision);
+ if(nativeBackendA2A)assert.equal(gate.stagedCompletedTaskCount,2);
  if(!nativeBackendCas)assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
  await host.close();
  const verifier=loadDirectCoreRustVerifier({allowGiteaScopeCoverage:true});
