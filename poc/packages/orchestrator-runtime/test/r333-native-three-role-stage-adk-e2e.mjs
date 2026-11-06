@@ -73,6 +73,9 @@ import {TrustedAuthorityOnlyRunnerExecutor} from "../../../apps/gateway/src/trus
 import {TrustedGatewayRunnerPassEvidencePublisher,
  AuthenticatedRunnerCompletionObserver} from "../../../apps/gateway/src/trusted-authority-only-runner-evidence.ts";
 import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
+import {TrustedGatewayRunnerFailEvidencePublisher,
+ AuthenticatedRunnerFailureObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
 import {stageDisposableAccountSuspensionReference}
@@ -173,6 +176,7 @@ class OfflineNativeTestModel extends BaseLlm{
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
+const r338Negative=process.env.R338_NATIVE_RUNNER_FAIL==="1";
 let gatewayCasWrites=0;
 class ObservedGiteaClient extends GiteaClient{
  async updateFileWithHeadCas(input){gatewayCasWrites++;return super.updateFileWithHeadCas(input);}
@@ -200,6 +204,20 @@ const functionalFixture=await stageDisposableAccountSuspensionReference({
 });
 assert.equal(functionalFixture.engineer_approved,false);
 assert.equal(functionalFixture.delegated_agent_writes,0);
+if(r338Negative){
+ // Inject a deterministic TypeScript type error into disposable Gitea,
+ // BEFORE independent Engineer approval. CI owner only, never ADK edits.
+ const victim="apps/backend/src/users/user.service.ts";
+ const before=await client.readTextFile(
+  branch,victim,functionalFixture.base_revision);
+ const broken=before.content+
+  "\nexport const r338TypecheckFailure: string = 2026;\n";
+ const injected=await client.updateFile(
+  branch,victim,broken,"R338 disposable CI-only compiler failure");
+ assert.notEqual(injected.commit_sha,functionalFixture.base_revision);
+ assert.equal((await client.readTextFile(
+  branch,victim,injected.commit_sha)).content,broken);
+}
 // A distinct non-functional file is now provisioned for the genuine
 // permission-only Backend atomic CAS Task after approval.
 const seeded=await client.createFile(branch,mutationPath,oldContent,
@@ -265,7 +283,7 @@ let roleBindingServers=[];
 let a2aRoleServers=[];
 const names=["approvals","root-journal","coordinator-tasks","gateway-tasks",
  "gateway-activation","child-intents","gateway-child-intents","flights",
- "intent","receipts","runner-intent","runner-receipts","runner-logs"];
+ "intent","receipts","runner-intent","runner-receipts","runner-fail-receipts","runner-logs"];
 try{
  for(const name of names)await mkdir(path(name),{mode:0o700});
  await writeFile(path("approvals")+"/"+sessionId+".json",
@@ -498,6 +516,16 @@ try{
   baseUrl:"http://127.0.0.1:"+port,
   gatewayToken:bearer,timeoutMs:900000
  });
+ const failObserver=r338Negative?new AuthenticatedRunnerFailureObserver({
+  directory:path("runner-fail-receipts"),key:evidenceKey,
+  giteaClient:client,journal:runnerJournal,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ }):null;
+ const failPublisher=r338Negative?new TrustedGatewayRunnerFailEvidencePublisher({
+  directory:path("runner-fail-receipts"),key:evidenceKey,
+  runnerClient,independentGiteaClient:client,journal:runnerJournal,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ }):null;
  const ownedRunnerExecutor=new TrustedAuthorityOnlyRunnerExecutor({
   admissions:gate,preflight:runnerPreflight,
   journal:runnerJournal,giteaClient:client,runnerClient,
@@ -506,6 +534,8 @@ try{
    independentGiteaClient:independentClient,
    repository:"thesis/iam-console-poc",branch,nowMs
   }),observer:runnerObserver,
+  ...(r338Negative?{failurePublisher:failPublisher,
+   failureObserver:failObserver}:{}),
   repository:"thesis/iam-console-poc",branch
  });
  // R312: use one canonical owner HTTP listener for Test prepare and execute.
@@ -916,7 +946,8 @@ try{
   runtimeTaskId:testRuntimeId,tool:"run_tests",expectedHeadSha:pinnedHead
  });
  let runnerStaged;
- const testReport=await a2aOwner.dispatchIssuedTask({
+ let testReport=null,testDispatchError=null;
+ try{testReport=await a2aOwner.dispatchIssuedTask({
   taskId:testTaskId,runtimeTaskId:testRuntimeId,
   instruction:"Run the exact approved poc-default Docker acceptance suite",
   effectStager:{
@@ -926,6 +957,58 @@ try{
    }
   }
  });
+ }catch(error){testDispatchError=error;}
+ if(r338Negative){
+  assert.equal(runnerCalls,1,"one real controlled Docker run required");
+  assert.ok(runnerPreparedFromAgent&&testSignedVpFromAgent&&runnerStaged,
+   "Test ADK must reach real Gateway Prepare/VP and one-shot Runner intent");
+  assert.equal(runnerStaged.intent.expected_head_sha,pinnedHead);
+  assert.equal(runnerStaged.intent.credential_id,runnerChild.credential_id);
+  const runnerRecord=store.get(runnerPreparedFromAgent.request_id);
+  assert.ok(runnerRecord?.consumed,"native Test VP must be consumed");
+  const checkedVp=await verifier.verify({
+   presenter:"test",audience:runnerPreparedFromAgent.audience,
+   challenge:runnerPreparedFromAgent.challenge,
+   required_permission:testTaskPermission,signed_vp:testSignedVpFromAgent
+  });
+  assert.equal(checkedVp.root_credential_id,operational.credential_id);
+  assert.equal(checkedVp.credential_id,runnerChild.credential_id);
+  await runnerJournal.assertAttempted(runnerStaged.intent);
+  const binding=Object.fromEntries([
+   "session_id","authority_digest","root_credential_id","task_id",
+   "runtime_task_id","epoch","agent_did","credential_id",
+   "request_id","request_fingerprint"
+  ].map(key=>[key,runnerStaged.intent[key]]));
+  const failure=await failObserver.observe(runnerStaged.intent,binding);
+  assert.equal(failure.first_failed_phase,"typecheck");
+  assert.equal(failure.repair_candidate,true);
+  assert.equal(failure.tested_commit_sha,pinnedHead);
+  assert.equal(failure.recovery_authorized,false);
+  assert.equal(failure.gateway_task_completed,false);
+  assert.equal(gate.stagedCompletedTaskCount,2);
+  assert.equal((await readdir(path("runner-fail-receipts"))).length,1);
+  assert.equal((await readdir(path("runner-receipts"))).length,0);
+  if(testReport){
+   assert.equal(testReport.provider_completion_attested,false);
+   assert.notEqual(testReport.artifact.test_outcome,"pass");
+  }
+  await assert.rejects(
+   a2aOwner.attestIndependentGatewayCompletion(testTaskId,testRuntimeId));
+  assert.equal(gate.stagedCompletedTaskCount,2);
+  assert.equal(gatewayCasWrites,2);
+  assert.equal((await client.getBranchMetadata(branch)).commit_sha,pinnedHead);
+  await credentialPort.revokeRoot(operational.credential_id);
+  assert.equal((await client.getBranchMetadata("main")).commit_sha,originalMainSha);
+  process.stdout.write(JSON.stringify({
+   event:"r338_real_native_docker_typecheck_fail",
+   original_root_verified:true,original_test_child_verified:true,
+   gitea_cas_changes:gatewayCasWrites,runner_posts:runnerCalls,
+   real_opa:true,real_docker_fail_phase:failure.first_failed_phase,
+   durable_failure_sha256:failure.evidence_sha256,
+   independent_fail_observation:true,gateway_completed_tasks:2,
+   d1_authorized:false,paid_model_calls:0,original_main_unchanged:true
+  })+"\n");
+ }else{
  assert.equal(testReport.status,"a2a_report_not_gateway_completed");
  assert.equal(testReport.provider_completion_attested,false);
  assert.equal(testReport.role,"test");
@@ -1065,6 +1148,7 @@ try{
   completed_app_source:"owner_only_fixture",
   delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
+ }
 }finally{
  // Revoke private owner effect grants before closing native Gateway/Rust.
  if(a2aOwner)await a2aOwner.close();
