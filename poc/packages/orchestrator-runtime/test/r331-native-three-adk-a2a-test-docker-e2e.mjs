@@ -80,6 +80,11 @@ import {DurableAuthorityOnlyRunnerIntentJournal} from "../../../apps/gateway/src
 import {TrustedAuthorityOnlyRunnerExecutor} from "../../../apps/gateway/src/trusted-authority-only-runner-executor.ts";
 import {TrustedGatewayRunnerPassEvidencePublisher,
  AuthenticatedRunnerCompletionObserver} from "../../../apps/gateway/src/trusted-authority-only-runner-evidence.ts";
+import {TrustedGatewayRunnerFailEvidencePublisher,
+ AuthenticatedRunnerFailureObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
+import {DurableNativeD1FirstTaskAdmissionJournal}
+ from "../src/trusted-native-d1-first-task-admission.ts";
 import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
@@ -124,6 +129,9 @@ function assertSameExactPermissionPairs(actual,expected){
   "Engineer authority must match exactly without missing or extra permission pairs");
 }
 const reviewedNative=process.env.R35013_NATIVE_REVIEW==="1";
+const reviewedD1=process.env.R3528_NATIVE_D1_RETEST==="1";
+if(reviewedD1)assert.equal(reviewedNative,true,
+ "Reviewed D1 requires the original authenticated Engineer host");
 const sessionId=reviewedNative?
  "r35013-reviewed-native-three-adk-a2a-e2e":
  "r331-authority-native-three-adk-a2a-e2e";
@@ -147,7 +155,7 @@ class OfflineNativeBackendModel extends BaseLlm{
  }
  async *generateContentAsync(req){
   this.requests.push(req);
-  if(this.requests.length===1){
+  if(this.requests.length===1||(reviewedD1&&this.requests.length===3)){
    yield {content:{role:"model",parts:[{functionCall:{
     id:"r329-native-backend-update",name:"update_file",
     args:{branch:this.branch,path:this.path,content:this.content}
@@ -184,7 +192,7 @@ class OfflineNativeTestModel extends BaseLlm{
  }
  async *generateContentAsync(req){
   this.requests.push(req);
-  if(this.requests.length===1){
+  if(this.requests.length===1||(reviewedD1&&this.requests.length===3)){
    yield {content:{role:"model",parts:[{functionCall:{
     id:"r331-native-test-docker",name:"run_tests",
     args:{branch:this.branch,profile:"poc-default"}
@@ -271,6 +279,13 @@ const functionalFixture=await stageDisposableAccountSuspensionReference({
 });
 assert.equal(functionalFixture.engineer_approved,false);
 assert.equal(functionalFixture.delegated_agent_writes,0);
+const repairPath="apps/backend/src/users/user.service.ts";
+if(reviewedD1){
+ const before=await client.readTextFile(branch,repairPath,functionalFixture.base_revision);
+ await client.updateFile(branch,repairPath,before.content+
+  "\nexport const r338TypecheckFailure: string = 2026;\n",
+  "R352.8 disposable compiler failure before Engineer approval");
+}
 // A distinct non-functional file is now provisioned for the genuine
 // permission-only Backend atomic CAS Task after approval.
 const seeded=await client.createFile(fixtureBranch,mutationPath,oldContent,
@@ -339,7 +354,8 @@ let a2aRoleServers=[];
 const names=["approvals","root-journal","coordinator-tasks","gateway-tasks",
  "gateway-activation","child-intents","gateway-child-intents","flights",
  "intent","receipts","runner-intent","runner-receipts","runner-logs",
- "r35013-checkpoints","r35013-keys","r35013-recovery"];
+ "r35013-checkpoints","r35013-keys","r35013-recovery",
+ "runner-fail-receipts","d1-first-admissions"];
 try{
  for(const name of names)await mkdir(path(name),{mode:0o700});
  if(!reviewedNative)await writeFile(path("approvals")+"/"+sessionId+".json",
@@ -587,11 +603,13 @@ try{
   repository:"thesis/iam-console-poc",branch,
   giteaClient:independentClient,nowMs
  });
+ const mutationTaskIds=new Set([taskId,frontendTaskId]);
+ const runnerTaskIds=new Set([testTaskId]);
  const completionObserver=new TrustedAuthorityOnlyCompletionObserver({
   readVerifiedCompletion:expected=>{
-   if(expected.task_id===taskId||expected.task_id===frontendTaskId)
+   if(mutationTaskIds.has(expected.task_id))
     return mutationObserver.observe(expected);
-   if(expected.task_id===testTaskId)return runnerObserver.observe(expected);
+   if(runnerTaskIds.has(expected.task_id))return runnerObserver.observe(expected);
    throw Error("Unknown Task attempted completion");
   }
  });
@@ -780,6 +798,16 @@ try{
   baseUrl:"http://127.0.0.1:"+port,
   gatewayToken:bearer,timeoutMs:900000
  });
+ const failObserver=reviewedD1?new AuthenticatedRunnerFailureObserver({
+  directory:path("runner-fail-receipts"),key:evidenceKey,
+  giteaClient:independentClient,journal:runnerJournal,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ }):null;
+ const failPublisher=reviewedD1?new TrustedGatewayRunnerFailEvidencePublisher({
+  directory:path("runner-fail-receipts"),key:evidenceKey,
+  runnerClient,independentGiteaClient:independentClient,journal:runnerJournal,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ }):null;
  const ownedRunnerExecutor=new TrustedAuthorityOnlyRunnerExecutor({
   admissions:gate,preflight:runnerPreflight,
   journal:runnerJournal,giteaClient:client,runnerClient,
@@ -788,6 +816,7 @@ try{
    independentGiteaClient:independentClient,
    repository:"thesis/iam-console-poc",branch,nowMs
   }),observer:runnerObserver,
+  ...(reviewedD1?{failurePublisher:failPublisher,failureObserver:failObserver}:{}),
   repository:"thesis/iam-console-poc",branch
  });
  // R312: use one canonical owner HTTP listener for Test prepare and execute.
@@ -925,7 +954,8 @@ try{
  }
  if(reviewedNative){
   assert.equal(reviewExecution.bindNativeGatewayEffects({
-   store,mutation:preflight,runner:runnerPreflight,giteaClient:client
+   store,mutation:preflight,runner:runnerPreflight,giteaClient:client,
+   ...(reviewedD1?{failureObserver:failObserver}:{})
   }).gateway_execution_authorized,false);
   const started=await reviewExecution.startSdkA2AOwner({
    stageChannels:ownerStageChannels,agentBindingChannels:roleBindings,
@@ -1259,6 +1289,137 @@ try{
    runtimeTaskId:testRuntimeId,tool:"run_tests",expectedHeadSha:pinnedHead
   });
  let runnerStaged;
+ if(reviewedD1){
+  const rootBefore=coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id;
+  const candidate={role:"backend",permissions:[{
+   resource:resourcePrefix+"/files/"+repairPath,operation:"update_file"
+  }]};
+  const failed=await reviewExecution.dispatchEnrolledTask({
+   taskId:testTaskId,runtimeTaskId:testRuntimeId,
+   instruction:"Run exact approved Docker suite on the broken disposable HEAD",
+   effectStager:nativeTestStager,d1Candidate:candidate
+  });
+  assert.equal(failed.status,"owner_verified_native_test_failure_preflight_only");
+  assert.equal(failed.failed_phase,"typecheck");
+  assert.equal(failed.gateway_task_completed,false);
+  assert.equal(failed.recovery_authorized,false);
+  assert.equal(runnerCalls,1);
+  assert.equal(gate.stagedCompletedTaskCount,2);
+  await assert.rejects(reviewExecution.attestEnrolledTaskCompletion({
+   taskId:testTaskId,runtimeTaskId:testRuntimeId
+  }));
+  const originalFailure=await independentClient.readTextFile(branch,repairPath,pinnedHead);
+  const repaired=originalFailure.content.replace(
+   "export const r338TypecheckFailure: string = 2026;",
+   "export const r338TypecheckFailure: number = 2026;");
+  assert.notEqual(repaired,originalFailure.content);
+  const proposal=new OfflineR3515TaskDecisionModel({
+   task_id:"r3528-repair-proposal",agent_id:"backend",
+   depends_on:[frontendTaskId],permissions:candidate.permissions,
+   instruction:"Repair the verified compiler failure within the original Engineer scope"
+  });
+  await reviewExecution.proposeVerifiedD1RepairTask({model:proposal});
+  const d1=await reviewExecution.admitVerifiedD1RepairTask({
+   journal:new DurableNativeD1FirstTaskAdmissionJournal(path("d1-first-admissions")),
+   freshStatusEntry:{statusListCredential:"https://status.example/r305",
+    statusListIndex:"29109"}
+  });
+  assert.equal(d1.original_root_credential_id,rootBefore);
+  assert.equal(d1.epoch,4);
+  mutationTaskIds.add(d1.task_id);
+  nativeBackendModel.path=repairPath;
+  nativeBackendModel.content=repaired;
+  const repairStager=reviewExecution.createEnrolledNativeEffectStager({
+   runtimeTaskId:d1.runtime_task_id,expectedHeadSha:pinnedHead
+  });
+  await assert.rejects(reviewExecution.dispatchEnrolledTask({
+   taskId:d1.task_id,runtimeTaskId:d1.runtime_task_id,
+   instruction:d1.instruction+" forged",effectStager:repairStager
+  }),/owner-pinned repair instruction/);
+  const report=await reviewExecution.dispatchEnrolledTask({
+   taskId:d1.task_id,runtimeTaskId:d1.runtime_task_id,
+   instruction:d1.instruction,effectStager:repairStager
+  });
+  assert.equal(report.provider_completion_attested,false);
+  assert.equal(gate.stagedCompletedTaskCount,2);
+  const repairedHead=backendGatewayExecution.execution.commit_sha;
+  assert.notEqual(repairedHead,pinnedHead);
+  assert.equal((await independentClient.readTextFile(branch,repairPath,repairedHead)).content,repaired);
+  const retestModel=new OfflineR3515TaskDecisionModel({
+   task_id:"r3528-retest",agent_id:"test",
+   depends_on:[frontendTaskId,d1.task_id],permissions:[testTaskPermission],
+   instruction:"Retest the independently repaired HEAD using the approved Docker suite"
+  });
+  const retestInput={model:retestModel,runtimeTaskId:nativeTaskRef("R"),
+   childParameters:freshChildParams("urn:r3528:child:retest",29110)};
+  await assert.rejects(reviewExecution.proposeAndStageVerifiedD1Retest(retestInput),
+   /independent repair/);
+  assert.equal(retestModel.requests.length,0);
+  await reviewExecution.attestEnrolledTaskCompletion({
+   taskId:d1.task_id,runtimeTaskId:d1.runtime_task_id
+  });
+  assert.equal(gate.stagedCompletedTaskCount,3);
+  // Refresh validity after real Docker latency, never from model output.
+  retestInput.childParameters=freshChildParams("urn:r3528:child:retest",29110);
+  const retest=await reviewExecution.proposeAndStageVerifiedD1Retest(retestInput);
+  runnerTaskIds.add(retest.task_id);
+  assert.equal(retest.epoch,5);
+  const retestChild=issuer.assertTrustedIssuedChild(retest.task_id,coordinator);
+  const repairChild=issuer.assertTrustedIssuedChild(d1.task_id,coordinator);
+  assert.equal(new Set([child.credential_id,frontendChild.credential_id,
+   runnerChild.credential_id,repairChild.credential_id,retestChild.credential_id]).size,5);
+  assert.equal(retestChild.root_credential_id,rootBefore);
+  const retestStager=reviewExecution.createEnrolledNativeEffectStager({
+   runtimeTaskId:retest.runtime_task_id,expectedHeadSha:repairedHead
+  });
+  await assert.rejects(reviewExecution.dispatchEnrolledTask({
+   taskId:retest.task_id,runtimeTaskId:retest.runtime_task_id,
+   instruction:retest.instruction+" forged",effectStager:retestStager
+  }),/owner-pinned Test instruction/);
+  const retestReport=await reviewExecution.dispatchEnrolledTask({
+   taskId:retest.task_id,runtimeTaskId:retest.runtime_task_id,
+   instruction:retest.instruction,effectStager:retestStager
+  });
+  assert.equal(retestReport.provider_completion_attested,false);
+  assert.equal(gate.stagedCompletedTaskCount,3);
+  const result=testGatewayExecution.execution;
+  assert.equal(result.status,"pass");
+  assert.equal(result.tested_commit_sha,repairedHead);
+  assert.equal(result.project_tests.status,"pass");
+  assert.equal(result.researcher_acceptance.status,"pass");
+  await reviewExecution.attestEnrolledTaskCompletion({
+   taskId:retest.task_id,runtimeTaskId:retest.runtime_task_id
+  });
+  assert.equal(gate.stagedCompletedTaskCount,4);
+  assert.equal(gate.registeredTaskCount,5);
+  assert.equal(runnerCalls,2);
+  assert.equal(gatewayCasWrites,3);
+  assert.equal(legacyWriteCalls,0);
+  await assert.rejects(reviewExecution.dispatchEnrolledTask({
+   taskId:retest.task_id,runtimeTaskId:retest.runtime_task_id,
+   instruction:retest.instruction,effectStager:retestStager
+  }),/dispatch replayed/);
+  await assert.rejects(reviewExecution.attestEnrolledTaskCompletion({
+   taskId:testTaskId,runtimeTaskId:testRuntimeId
+  }));
+  assert.equal((await readdir(path("runner-fail-receipts")))
+   .filter(n=>n.endsWith(".runner-fail.json")).length,1);
+  assert.equal((await readdir(path("runner-receipts")))
+   .filter(n=>n.endsWith(".runner.json")).length,1);
+  assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,rootBefore);
+  assert.equal((await client.getBranchMetadata("main")).commit_sha,pinnedDisposableMainSha);
+  await reviewHost.close();
+  assert.equal(reviewHost.phase,"revoked");
+  process.stdout.write(JSON.stringify({
+   event:"r3528_reviewed_native_fail_repair_retest_pass",
+   original_engineer_owner:true,original_root_unchanged:true,
+   original_test_incomplete:true,fresh_native_children:true,
+   independent_repair_completion:true,independent_retest_pass:true,
+   registered_tasks:5,completed_tasks:4,runner_posts:2,provider_commits:3,
+   main_unchanged:true,paid_model_calls:0,
+   autonomous_functional_generation:false,completed_app_source:"owner_only_fixture"
+  })+"\n");
+ }else{
  const testReport=reviewedNative?
   await reviewExecution.dispatchEnrolledTask({
    taskId:testTaskId,runtimeTaskId:testRuntimeId,
@@ -1352,7 +1513,9 @@ try{
  assert.equal(runnerCalls,1);
  assert.equal(gatewayCasWrites,2);
 
+ } // Existing R351.5 successful-path proof.
 
+ if(!reviewedD1){
  // An independently valid Child under the same root MUST NOT substitute
  // for the Child enrolled for this Task. This negative probe is test-only.
  const foreign=await nativePort.issueChild({
@@ -1425,6 +1588,7 @@ try{
   completed_app_source:"owner_only_fixture",
   delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
+ }
 }finally{
  // Revoke private owner effect grants before closing native Gateway/Rust.
  if(a2aOwner)await a2aOwner.close();
