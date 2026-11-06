@@ -1215,8 +1215,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
       assert.equal(suggestion.gateway_task_completed,false);
       assert.equal(suggestion.child_credential_issued,false);
       assert.equal(candidate.calls,1);
-      assert.equal(coordinator.registeredTaskCount,3);
-      assert.equal(gateway.registeredTaskCount,3);
+      assert.equal(coordinator.registeredTaskCount,
+       mode==='failure'?4:3);
+      assert.equal(gateway.registeredTaskCount,
+       mode==='failure'?4:3);
       assert.equal(gateway.stagedCompletedTaskCount,2);
       const prompt=JSON.stringify(candidate.requests);
       assert.ok(prompt.includes('independent_runner_failure'));
