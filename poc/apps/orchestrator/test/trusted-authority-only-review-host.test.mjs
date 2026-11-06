@@ -92,11 +92,11 @@ class R3513ScriptedFrontend extends BaseLlm{
 }
 class R3514ScriptedTest extends BaseLlm{
  calls=0; requests=[];
- constructor(){super({model:'r3514-scripted-test-no-inference'});}
+ constructor(allowRetest=false){super({model:'r3514-scripted-test-no-inference'});this.allowRetest=allowRetest;}
  async *generateContentAsync(request){
   this.calls++;this.requests.push(request);
-  if(this.calls===1)yield {content:{role:'model',parts:[{functionCall:{
-   id:'r3514-test-run',name:'run_tests',
+  if(this.calls===1||(this.allowRetest&&this.calls===3))yield {content:{role:'model',parts:[{functionCall:{
+   id:this.calls===3?'r3525-retest-run':'r3514-test-run',name:'run_tests',
    args:{branch:'feature/account-suspension',profile:'poc-default'}
   }}]}};
   else yield {content:{role:'model',parts:[{text:'Test Runner result received'}]}};
@@ -590,12 +590,14 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
 });
 
 for(const mode of ['missing','backend','frontend','test','failure',
- 'failure-d1-effect','failure-no-receipt','failure-model-denied'])test(
+ 'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied'])test(
  mode==='failure-no-receipt'?
  'R352.1 Test FAIL without MAC receipt retires original Engineer root':
  mode==='failure-model-denied'?
  'R352.1 verified FAIL does not permit a model-selected foreign D1 role':
- mode==='failure-d1-effect'?
+ mode==='failure-d1-retest'?
+  'R352.5 original D1 repair and independent Runner retest PASS':
+  mode==='failure-d1-effect'?
  'R352.4 admitted D1 Backend repairs through original A2A/Gateway and independent Gitea evidence':
  mode==='failure'?
  'R352.1 actual A2A Test FAIL is independently verified and permits only a bounded D1 candidate':
@@ -612,7 +614,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
   foreignD1Model=mode==='failure-model-denied',
   throughTest=mode==='test'||throughFailure,
   throughFrontend=mode==='frontend'||throughTest,
-  d1Effect=mode==='failure-d1-effect';
+  d1Retest=mode==='failure-d1-retest',
+   d1Effect=mode==='failure-d1-effect'||d1Retest;
  const f=await fixture(t,throughFrontend?{includeTestPermission:true}:{});
  const host=await f.start();
  await f.approve(throughFrontend?['permission-1','permission-2','permission-3']:
@@ -632,13 +635,16 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const repairSha='9'.repeat(40),repairBlob='8'.repeat(40),
   repairContent='export const suspended=true; export const ui="ready";\n',
   repairRequestId='r3524-prepared-d1-repair',repairChallenge='r3524-d1-challenge',
-  repairVp='r3524-private-d1-vp';
+  repairVp='r3524-private-d1-vp',
+   retestRequestId='r3525-prepared-retest',
+   retestChallenge='r3525-retest-challenge',retestVp='r3525-private-test-vp';
  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
   blob:oldBlob,content:'export const suspended=false;\n'};
  let publisher,frontendStaged,next,testTask,testStaged,runnerClient,
-  runnerPublisher,runnerJournal,failureObserver,failurePublisher,nativeD1;
+  runnerPublisher,runnerJournal,failureObserver,failurePublisher,nativeD1,
+   d1RetestTask,d1RetestStaged;
  const frontendModel=new R3513ScriptedFrontend();
- const testAgentModel=new R3514ScriptedTest();
+ const testAgentModel=new R3514ScriptedTest(d1Retest);
  const runnerPhases=['dependency_install','typecheck','backend_tests',
   'frontend_tests','build','playwright_e2e'];
  if(verified){
