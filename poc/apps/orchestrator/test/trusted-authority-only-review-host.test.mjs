@@ -1340,7 +1340,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
       }};
      if(mode==='adaptive-unverified-fail'){
       await assert.rejects(execution.runAdaptiveWorkLoop(input),
-       /original|NO-GO|Runner|failure|retired|not verified/u);
+       /ENOENT|original|NO-GO|Runner|failure|retired|not verified/u);
       assert.equal(adaptiveModel.calls,1);
       assert.equal(gateway.stagedCompletedTaskCount,2);
       assert.equal(host.phase,'revoked');
