@@ -85,7 +85,7 @@ async function fixture(t,flags={}){
   host.server.emit('request',req,res);
  });
  async function review(){const r=await call('/api/login',{body:{password:'owner-password'}});assert.equal(r.status,200);const cookie=r.headers.get('set-cookie').split(';')[0];const packet=await (await call('/api/review',{cookie})).json();return {cookie,packet};}
- async function approve(){const {cookie,packet}=await review();const r=await call('/api/approve',{cookie,csrf:packet.csrf_token,body:{proposal_digest:packet.proposal_digest,approved_permission_ids:['permission-1'],confirmation:'APPROVE '+packet.proposal_digest}});assert.equal(r.status,201);return packet;}
+ async function approve(ids=['permission-1']){const {cookie,packet}=await review();const r=await call('/api/approve',{cookie,csrf:packet.csrf_token,body:{proposal_digest:packet.proposal_digest,approved_permission_ids:ids,confirmation:'APPROVE '+packet.proposal_digest}});assert.equal(r.status,201);return packet;}
  return {options,start,log,model,call,review,approve,dirs,store,engineer};
 }
 
@@ -125,6 +125,80 @@ test('R350 rejects shared Child journal and retires the original operational roo
  await assert.rejects(host.admitOperationalExecution(deps),/distinct owner-private journals/);
  assert.equal(host.phase,'revoked');
  assert.equal(f.log.at(-1),'revoke:urn:r350:invalid');
+ await host.close();
+});
+
+
+function stagedBackend(rootBinding,{taskId='r350-backend',epoch=1,childId='urn:r350:child:backend',permission}={}){
+ const approved=permission??rootBinding.root_permissions.find(p=>p.operation==='update_file');
+ assert.ok(approved,'authenticated Engineer review must contain update_file');
+ return {
+  task:{task_id:taskId,epoch,agent_id:'backend',depends_on:[],permissions:[approved]},
+  runtimeTaskId:'dispatch_'+'Q'.repeat(22),
+  childParameters:{credential_id:childId,valid_from:new Date().toISOString(),
+   validity_seconds:90,credential_status:{type:'BitstringStatusListEntry',
+    statusPurpose:'revocation',statusListCredential:'https://status.invalid/r350-child',
+    statusListIndex:'3'}}
+ };
+}
+test('R350.2 same Engineer root registers Task, binds Gateway, issues native Child and enrolls it',async t=>{
+ const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r350:operational-task',2));
+ const signed=[],deps=executionDeps(f);
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  signed.push(req);
+  return {id:req.credential_id,validFrom:req.valid_from,
+   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialStatus:structuredClone(req.credential_status)};
+ }};
+ const {gateway,childIssuer,stageTask}=await host.admitOperationalExecution(deps);
+ const rootBinding=coordinator.assertTrustedGatewayAuthorityBinding();
+ const staged=await stageTask(stagedBackend(rootBinding));
+ assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
+ assert.equal(staged.gateway_execution_authorized,false);
+ assert.equal(staged.agent_id,'backend');
+ assert.equal(coordinator.registeredTaskCount,1);
+ assert.equal(gateway.registeredTaskCount,1);
+ assert.equal(signed.length,1);
+ assert.equal(signed[0].parent_credential_id,rootBinding.root_credential_id);
+ assert.deepEqual(signed[0].permissions,rootBinding.root_permissions.filter(p=>p.operation==='update_file'));
+ const child=childIssuer.assertTrustedIssuedChild(staged.task_id,coordinator);
+ assert.equal(child.credential_id,staged.credential_id);
+ assert.equal(child.root_credential_id,rootBinding.root_credential_id);
+ await assert.rejects(stageTask(stagedBackend(rootBinding)),/Task|epoch|replayed|invalid/);
+ assert.equal(host.phase,'revoked');
+ await host.close();
+});
+test('R350.2 rejects out-of-root Task before native signing or Gateway provider effects',async t=>{
+ const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r350:invalid-task',2));
+ let signed=0;const deps=executionDeps(f);
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(){signed++;throw Error('must never be reached');}};
+ const {gateway,stageTask}=await host.admitOperationalExecution(deps);
+ const live=coordinator.assertTrustedGatewayAuthorityBinding();
+ const task=stagedBackend(live);
+ task.task.permissions=[{...task.task.permissions[0],
+  resource:task.task.permissions[0].resource.replace('apps/user.ts','apps/other.ts')}];
+ await assert.rejects(stageTask(task),/authority escalation/);
+ assert.equal(signed,0);assert.equal(gateway.registeredTaskCount,0);
+ assert.equal(host.phase,'revoked');
+ assert.equal(f.log.at(-1),'revoke:urn:r350:invalid-task');
+ await host.close();
+});
+test('R350.2 treats a mismatched native Child signature response as terminal',async t=>{
+ const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r350:bad-child',2));
+ const deps=executionDeps(f);
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  return {id:'urn:foreign:child',validFrom:req.valid_from,
+   credentialSubject:{sub:'did:thesis:backend',per:req.permissions},
+   credentialStatus:req.credential_status};
+ }};
+ const {gateway,stageTask}=await host.admitOperationalExecution(deps);
+ await assert.rejects(stageTask(stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding())),
+  /native Child credential differs/);
+ assert.equal(gateway.registeredTaskCount,1);
+ assert.equal(host.phase,'revoked');
  await host.close();
 });
 

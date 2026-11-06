@@ -67,6 +67,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  }));
  let server,attempted=false,closed=false,closing,activationFlight;
  let operationalCoordinator,executionAdmissionAttempted=false,executionAdmissionFlight;
+ let taskStageFlight,taskStageFailed=false;
  async function retire(){
   if(session.phase==='planning')await session.cancelPlanning();
   else if(session.phase==='operational')await session.retireOperationalRoot();
@@ -168,7 +169,81 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(live.root_credential_id!==root.root_credential_id||
        live.authority_digest!==root.authority_digest)
      deny('operational root changed during Gateway admission');
-    return Object.freeze({admission,gateway,childIssuer});
+    return Object.freeze({admission,gateway,childIssuer,
+     /** R350.2: owner-private Task -> Gateway -> native Child -> enrollment.
+     * The caller supplies only Task choices and fresh Child metadata;
+     * session, revision, requirement, root and DID come from trusted state.
+     * Every ambiguous effect is terminal for this operational session. */
+    async stageTask(input){
+     if(closed||session.phase!=='operational'||taskStageFailed||
+        gateway.phase!=='active'||taskStageFlight)
+      deny('Task staging requires quiescent live owner, root and Gateway');
+     if(!fields(input,['task','runtimeTaskId','childParameters'])||
+        !fields(input.task,['task_id','epoch','agent_id','depends_on','permissions'])||
+        !fields(input.childParameters,['credential_id','credential_status',
+          'valid_from','validity_seconds']))
+      deny('Task input cannot supply root, authority or private identity');
+     taskStageFlight=(async()=>{
+      const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      const proposal={
+       session_id:live.session_id,
+       requirement_sha256:live.requirement_sha256,
+       base_revision:live.base_revision,
+       branch:live.branch,
+       task_id:input.task.task_id,
+       epoch:input.task.epoch,
+       agent_id:input.task.agent_id,
+       depends_on:input.task.depends_on,
+       permissions:input.task.permissions
+      };
+      const check=()=>{
+       if(closed||session.phase!=='operational')
+        deny('Task staging stopped by Engineer retirement');
+       const current=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       if(current.root_credential_id!==live.root_credential_id||
+          current.authority_digest!==live.authority_digest)
+        deny('Task staging cannot change operational root');
+      };
+      check();
+      const registered=await operationalCoordinator.registerTask(proposal);
+      check();
+      const bound=await gateway.bindTrustedTask(
+       registered.task_id,input.runtimeTaskId,registered.agent_id);
+      check();
+      const child=await childIssuer.issueForRegisteredTask(
+       registered.task_id,input.childParameters);
+      check();
+      const enrolled=await gateway.enrollTrustedIssuedChild(
+       registered.task_id,input.runtimeTaskId,childIssuer);
+      check();
+      if(registered.authority_digest!==live.authority_digest||
+         bound.authority_digest!==live.authority_digest||
+         child.root_credential_id!==live.root_credential_id||
+         child.credential_id!==enrolled.credential_id||
+         enrolled.runtime_task_id!==input.runtimeTaskId||
+         enrolled.gateway_execution_authorized!==false)
+       deny('Task, native Child and Gateway enrollment disagree');
+      return Object.freeze({
+       status:'owner_child_enrolled_no_provider_execution',
+       task_id:registered.task_id,
+       runtime_task_id:input.runtimeTaskId,
+       epoch:registered.epoch,
+       agent_id:registered.agent_id,
+       credential_id:child.credential_id,
+       gateway_execution_authorized:false
+      });
+     })();
+     try{return await taskStageFlight;}
+     catch(error){
+      taskStageFailed=true;
+      if(session.phase==='operational'){
+       try{await session.retireOperationalRoot();}
+       catch{deny('Task admission failed and root retirement unconfirmed');}
+      }
+      throw error;
+     }finally{taskStageFlight=undefined;}
+    }
+    });
    })();
    try{return await executionAdmissionFlight;}
    catch(error){
@@ -186,6 +261,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     // Await the transition owner before deciding which root to retire.
     if(activationFlight)try{await activationFlight;}catch{/* Recheck state below. */}
     if(executionAdmissionFlight)try{await executionAdmissionFlight;}catch{/* Fail closed below. */}
+    if(taskStageFlight)try{await taskStageFlight;}catch{/* Recheck root below. */}
     try{if(session.phase!=='revoked')await retire();}
     finally{
      if(server.listening)await new Promise((ok,bad)=>server.close(e=>e?bad(e):ok()));
