@@ -663,6 +663,18 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
   if(u.endsWith('/v1/authorization/prepare')){
    const frontendRequest=throughFrontend&&next&&
     body.task_id===next.runtimeTaskId;
+   if(throughFrontend&&body.agent_role==='frontend'){
+    const checks={
+     expected_frontend_task:body.task_id===next?.runtimeTaskId,
+     expected_role:body.agent_role==='frontend',
+     expected_tool:body.tool==='update_file',
+     expected_branch:body.arguments?.branch===branch,
+     expected_path:body.arguments?.path==='apps/user.ts',
+     expected_content:body.arguments?.content===frontendContent
+    };
+    if(Object.values(checks).some(x=>!x))
+     console.error('R351.3 frontend prepare contract mismatch',JSON.stringify(checks));
+   }
    assert.equal(body.task_id,frontendRequest?next.runtimeTaskId:task.runtimeTaskId);
    assert.equal(body.agent_role,frontendRequest?'frontend':'backend');
    assert.equal(body.tool,'update_file');
