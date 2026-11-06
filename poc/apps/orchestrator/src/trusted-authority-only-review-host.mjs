@@ -3,6 +3,7 @@
  * The caller owns listener binding; this factory never starts inference until
  * invoked with an explicitly provisioned model and trusted service ports. */
 import {isDeepStrictEqual} from 'node:util';
+import {createHash} from 'node:crypto';
 import {createAuthenticatedEngineerServer} from './engineer-approval-server.mjs';
 import {TrustedAuthorityOnlyEngineerSession} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-engineer-session.ts';
 import {SignedAuthorityOnlyFileStore} from '../../../packages/orchestrator-runtime/src/signed-authority-only-store.ts';
@@ -103,7 +104,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  // A verified Runner FAIL is NOT a successful Test completion.
  // This separate one-shot D1 preflight can never unlock normal Task decisions.
  let d1FailurePreflightAttempted=false,d1FailurePreflightFlight,
-  d1FailurePreflightFailed=false;
+  d1FailurePreflightFailed=false,d1VerifiedFailure,
+  d1RepairProposalAttempted=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let dispatchFlight,dispatchFailed=false;
@@ -425,7 +427,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner','giteaClient'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver'])||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
          deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
@@ -434,7 +436,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
         !TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
          deps.runner,gateway,deps.giteaClient,
-         snapshot.repository.owner+'/'+snapshot.repository.repository,branch)){
+         snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
+        (deps.failureObserver!==undefined&&
+         (!(deps.failureObserver instanceof AuthenticatedRunnerFailureObserver)||
+          !deps.runner.isForFailureObserver(deps.failureObserver)))){
       dispatchFailed=true;
       deny('native Gateway effect dependencies are not from original session');
      }
@@ -479,7 +484,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          d1FailurePreflightFlight||d1FailurePreflightFailed||
          taskStageFlight||gateway.phase!=='active')
        deny('protected A2A dispatch requires quiescent live original session');
-      if(!fields(input,['taskId','runtimeTaskId','instruction','effectStager']))
+      if(!fields(input,['taskId','runtimeTaskId','instruction','effectStager','d1Candidate']))
        deny('protected A2A dispatch rejects credentials or authority overrides');
       const pin=stagedTaskIds.get(input.runtimeTaskId);
       if(!pin||pin.task_id!==input.taskId||
@@ -488,6 +493,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          issuedEffectStagers.get(input.runtimeTaskId)!==input.effectStager||
          !input.effectStager.isForOwnerTask(gateway,input.runtimeTaskId,pin.operation))
        deny('protected A2A dispatch requires an original owner-bound effect stager');
+      if(input.d1Candidate!==undefined&&
+         (pin.operation!=='run_tests'||pin.agent_id!=='test'||
+          !nativeEffectBinding?.failureObserver||
+          d1FailurePreflightAttempted))
+       deny('D1 failure observer must be installed before original Test dispatch');
       if(dispatchAttempts.has(input.runtimeTaskId))
        deny('protected A2A dispatch replayed');
       dispatchAttempts.add(input.runtimeTaskId); // before sending A2A / private IPC
@@ -513,13 +523,102 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       })();
       try{return await dispatchFlight;}
       catch(error){
+       if(input.d1Candidate!==undefined&&
+          pin.operation==='run_tests'&&
+          nativeEffectBinding?.failureObserver){
+        // A Test agent finishes A2A in FAILED state after controlled Docker
+        // FAIL. Never treat that A2A error as evidence; cross-check the
+        // exact original immutable Runner POST, MAC, native Gateway flight,
+        // Gitea HEAD, signed root and Child BEFORE preserving this root.
+        d1FailurePreflightAttempted=true;
+        try{
+         const intent=await nativeEffectBinding.runner
+          .getAttemptedIntentForOwnerTask(input.runtimeTaskId);
+         const proof=await preflightNativeD1FailureCandidate({
+          coordinator:operationalCoordinator,childIssuer,gateway,
+          failureObserver:nativeEffectBinding.failureObserver,
+          failedRunnerIntent:intent,candidate:input.d1Candidate
+         });
+         if(closed||session.phase!=='operational'||
+            gateway.phase!=='active'||
+            proof.status!=='native_d1_failure_source_preflight_only'||
+            proof.failed_task_id!==input.taskId||
+            proof.failed_runtime_task_id!==input.runtimeTaskId||
+            proof.gateway_task_completed!==false||
+            proof.child_credential_issued!==false||
+            proof.recovery_authorized!==false||
+            proof.task_registered!==false)
+          deny('authenticated failure flight differs from dispatched Test');
+         d1VerifiedFailure=Object.freeze({
+          proof,candidate:structuredClone(input.d1Candidate)
+         });
+         // The failed Test Task is NEVER put in the successful dependency
+         // ledger, and no model/agent response is returned as a PASS.
+         return Object.freeze({
+          ...proof,status:'owner_verified_native_test_failure_preflight_only',
+          gateway_task_completed:false,recovery_authorized:false,
+          child_credential_issued:false,task_registered:false
+         });
+        }catch(verificationError){
+         dispatchFailed=true;
+         if(session.phase==='operational'){
+          try{await retire();}
+          catch{deny('unverified native Test FAIL and root retirement unconfirmed');}
+         }
+         throw verificationError;
+        }
+       }
        dispatchFailed=true;
        if(session.phase==='operational'){
-        try{await session.retireOperationalRoot();}
+        try{await retire();}
         catch{deny('A2A dispatch failed and operational retirement unconfirmed');}
        }
        throw error;
       }finally{dispatchFlight=undefined;}
+     },
+     /** R352.1: a verified failure may invite ONE bounded ADK proposal.
+      * The output is intentionally NOT a Task, a Child, a new permission,
+      * a Test PASS, or a Gateway recovery admission. */
+     async proposeVerifiedD1RepairTask(input){
+      if(closed||session.phase!=='operational'||
+         gateway.phase!=='active'||!d1VerifiedFailure||
+         d1RepairProposalAttempted||dispatchFlight||completionFlight||
+         d1FailurePreflightFlight||decisionFlight||
+         !fields(input,['model']))
+       deny('D1 model proposal requires authenticated original Runner failure');
+      d1RepairProposalAttempted=true; // irreversible decision budget
+      const {proof,candidate}=d1VerifiedFailure;
+      const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
+       model:input.model,requirement,branch:live.branch,
+       rootPermissions:live.root_permissions,
+       agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
+        .map(([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}])),
+       previousTasks:[...gatewayAttestedTaskIds.values()],
+       verifiedFailure:{
+        failed_phase:proof.failed_phase,
+        source_evidence_sha256:proof.source_evidence_sha256
+       }
+      });
+      const choice=await proposer.propose();
+      const current=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      if(closed||session.phase!=='operational'||
+         current.root_credential_id!==live.root_credential_id||
+         current.authority_digest!==live.authority_digest||
+         choice.agent_id!==candidate.role||
+         createHash('sha256').update(JSON.stringify(choice.permissions))
+          .digest('hex')!==proof.candidate_permissions_sha256)
+       deny('model D1 candidate not identical to original preflighted permission pair');
+      return Object.freeze({
+       status:'d1_model_candidate_not_recovery_authorized',
+       task_id:choice.task_id,agent_id:choice.agent_id,
+       depends_on:choice.depends_on,permissions:choice.permissions,
+       instruction:choice.instruction,
+       failed_phase:proof.failed_phase,
+       source_evidence_sha256:proof.source_evidence_sha256,
+       recovery_authorized:false,child_credential_issued:false,
+       task_registered:false,gateway_task_completed:false
+      });
      },
      /** R350.7 — Gateway alone can confirm an actual provider/Runner
       * completion. The owner passes only IDs pinned to its own prior A2A

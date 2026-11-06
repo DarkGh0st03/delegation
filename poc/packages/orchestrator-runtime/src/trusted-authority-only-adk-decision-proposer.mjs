@@ -29,7 +29,7 @@ class SingleDecisionModel extends BaseLlm{
 }
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
- constructor({model,requirement,branch,rootPermissions,agents,previousTasks}){
+ constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
@@ -61,6 +61,16 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   this.model=model;this.requirement=requirement;this.branch=branch;
   this.roots=Object.freeze(roots);this.agents=Object.freeze(pins);
   this.previous=Object.freeze(prior);
+  if(verifiedFailure!==undefined){
+   const phases=new Set(['typecheck','backend_tests','frontend_tests',
+    'build','playwright_e2e','researcher_acceptance']);
+   if(!exact(verifiedFailure,['failed_phase','source_evidence_sha256'])||
+      !phases.has(verifiedFailure.failed_phase)||
+      typeof verifiedFailure.source_evidence_sha256!=='string'||
+      !/^[a-f0-9]{64}$/u.test(verifiedFailure.source_evidence_sha256))
+    fail();
+   this.verifiedFailure=Object.freeze({...verifiedFailure});
+  }
  }
  async propose(){
   if(this.#attempted)fail();
@@ -91,7 +101,14 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    })),
    root_permission_ceiling:this.roots,
    independently_gateway_completed_tasks:this.previous,
-   next_epoch:this.previous.length+1
+   next_epoch:this.previous.length+1,
+   ...(this.verifiedFailure?{
+    independent_runner_failure:{
+     failed_phase:this.verifiedFailure.failed_phase,
+     source_evidence_sha256:this.verifiedFailure.source_evidence_sha256,
+     status:'verified_failure_preflight_only_not_approval'
+    }
+   }:{})
   };
   let text='',failed=false;
   for await(const event of runner.runAsync({userId,sessionId,

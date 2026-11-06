@@ -8,6 +8,8 @@
 import {GiteaClient} from "./gitea-client.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions}
  from "./trusted-authority-only-admissions.ts";
+import {AuthenticatedRunnerFailureObserver}
+ from "./trusted-authority-only-runner-failure-evidence.ts";
 import {DurableAuthorityOnlyRunnerIntentJournal,
  type TrustedAuthorityOnlyRunnerIntent}
  from "./trusted-authority-only-runner-intent-journal.ts";
@@ -26,6 +28,10 @@ export class TrustedAuthorityOnlyRunnerPreflight{
  readonly #nowMs:()=>number;
  readonly #reserved=new WeakMap<PreparedRequestRecord,
   TrustedAuthorityOnlyRunnerIntent>();
+ // Owner-readable index is available only after the ORIGINAL immutable
+ // Runner request has been reserved; the journal is independently checked
+ // for an irreversible POST attempt before returning any intent.
+ readonly #byRuntimeTask=new Map<string,TrustedAuthorityOnlyRunnerIntent>();
  #inFlight=false;
  constructor(opts:{
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
@@ -71,6 +77,21 @@ export class TrustedAuthorityOnlyRunnerPreflight{
   return a===this.#admissions;
  }
  isForGitea(g:GiteaClient):boolean{return g===this.#gitea;}
+ /** Real private fields prevent a spoofed or copied failure observer from
+  * being installed for this original Runner journal and Gitea source. */
+ isForFailureObserver(observer:AuthenticatedRunnerFailureObserver):boolean{
+  return observer instanceof AuthenticatedRunnerFailureObserver &&
+   observer.isForJournal(this.#journal)&&observer.isForGitea(this.#gitea);
+ }
+ /** Called only after protected A2A returns an error: a fake model/A2A
+  * FAIL cannot invent an attempted native Runner intent. */
+ async getAttemptedIntentForOwnerTask(runtimeTaskId:string){
+  const intent=this.#byRuntimeTask.get(runtimeTaskId);
+  if(!intent||intent.runtime_task_id!==runtimeTaskId)
+   deny("no original failed Runner Task intent");
+  await this.#journal.assertAttempted(intent);
+  return intent;
+ }
  /** Only the ORIGINAL in-memory Prepare may retrieve this immutable intent. */
  getReservedIntent(record:PreparedRequestRecord):TrustedAuthorityOnlyRunnerIntent{
   const intent=this.#reserved.get(record);
@@ -124,6 +145,9 @@ export class TrustedAuthorityOnlyRunnerPreflight{
    });
    await this.#journal.reserve(intent);
    this.#reserved.set(record,intent);
+   if(this.#byRuntimeTask.has(intent.runtime_task_id))
+    deny("Runner runtime Task intent cannot be replaced");
+   this.#byRuntimeTask.set(intent.runtime_task_id,intent);
    return Object.freeze({
     status:"test_runner_commit_reserved_staged",
     intent,runner_execution_authorized:false
