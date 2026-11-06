@@ -382,9 +382,15 @@ try{
    }
   });
   const reviewModel=new OfflineR35013AuthorityModel(mutationPath,branch);
+  // R350.13 forensic counters are categorical only: NO prompts, code,
+  // native credentials, bearer tokens or provider response values.
+  const readDiagnostics={prepare:0,execute:0,legacyVp:0,
+   modelTurns:0,readsVerified:0,readsDenied:0,
+   lastReadReason:null,modelFailureCategory:null,proposalRejected:null};
   const planningFetch=async(url,init)=>{
    const route=String(url),body=JSON.parse(String(init.body));
    if(route.endsWith("/prepare")){
+    readDiagnostics.prepare++;
     assert.equal(body.tool,"read_file");
     assert.equal(body.arguments.branch,branch);
     assert.equal(body.arguments.path,mutationPath);
@@ -394,10 +400,12 @@ try{
       p=>p.operation==="read_file"&&p.resource.endsWith("/"+mutationPath))});
    }
    if(route.endsWith("/v1/presentations")){
+    readDiagnostics.legacyVp++;
     // Native workflow MUST issue a Rust VP through the private Unix socket.
     throw Error("Forbidden legacy HTTP presentation in R350.13 native mode");
    }
    if(route.endsWith("/execute")){
+    readDiagnostics.execute++;
     assert.equal(body.request_id,"r35013-disposable-read");
     assert.equal(typeof body.signed_vp,"string");
     assert.ok(body.signed_vp.length>100,"Missing native Rust-signed preliminary VP");
@@ -409,6 +417,7 @@ try{
    }
    throw Error("Unauthorized preliminary Planning transport");
   };
+  try{
   reviewHost=await startTrustedAuthorityOnlyReviewHost({
    snapshot:reviewSnapshot,requirement,workBranch:branch,
    preliminaryRoot:preliminary,
@@ -425,7 +434,19 @@ try{
     passwordSaltHex:salt.toString("hex"),
     passwordScryptHex:scryptSync(password,salt,64).toString("hex")},
    planner:{model:reviewModel,planId:"r35013-owner-reviewed-scope",
-    maxModelTurns:3,maxProposalRevisions:0},
+    maxModelTurns:3,maxProposalRevisions:0,
+    onObservation(event){
+     if(event.kind==="model_turn"&&event.status==="started")
+      readDiagnostics.modelTurns++;
+     if(event.kind==="read"){
+      if(event.status==="verified")readDiagnostics.readsVerified++;
+      else{readDiagnostics.readsDenied++;readDiagnostics.lastReadReason=event.reason;}
+     }
+     if(event.kind==="model_failure")
+      readDiagnostics.modelFailureCategory=event.category;
+     if(event.kind==="plan_rejection")
+      readDiagnostics.proposalRejected=event.reason;
+    }},
    trustedAgentRegistry:registry,
    credentials:credentialPort,planningRevisions:revisions,
    gateway:{gatewayBaseUrl:"http://offline-planning.r35013.invalid",
@@ -433,6 +454,18 @@ try{
     adapterToken:tokens.orchestrator,
     fetchFn:planningFetch}
   });
+  }catch(error){
+   process.stdout.write(JSON.stringify({
+    event:"r35013_review_startup_safe_diagnostic",
+    model_requests:reviewModel.requests.length,
+    ...readDiagnostics,
+    error_class:error?.constructor?.name??"unknown"
+   })+"\n");
+   throw error;
+  }
+  assert.equal(readDiagnostics.readsVerified,1);
+  assert.equal(readDiagnostics.readsDenied,0);
+  assert.equal(readDiagnostics.legacyVp,0);
   // Real authenticated Engineer UI, not a pre-seeded receipt file.
   const ui=reviewHost.engineerUrl;
   const call=async(route,body,cookie,csrf)=>{
