@@ -29,7 +29,7 @@ class SingleDecisionModel extends BaseLlm{
 }
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
- constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,nextEpoch}){
+ constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,nextEpoch,decisionKind='agent'}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
@@ -40,6 +40,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      (nextEpoch!==undefined&&(!Number.isSafeInteger(nextEpoch)||
       nextEpoch<1||nextEpoch>256)))
    fail();
+  if(!['agent','pull_request'].includes(decisionKind))fail();
+  this.decisionKind=decisionKind;
   const roots=rootPermissions.map(p=>{
    if(!exact(p,['resource','operation'])||
       typeof p.resource!=='string'||typeof p.operation!=='string')
@@ -87,7 +89,9 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    description:'Suggest one Task; trusted Coordinator validates and owns all grants',
    model,
    instruction:[
-    'Propose exactly ONE next software engineering Task; never claim approval or completion.',
+    this.decisionKind==='pull_request'?
+     'Propose exactly ONE orchestrator create_pull_request Task depending on the independently completed Test; never claim that a PR exists.':
+     'Propose exactly ONE next software engineering Task; never claim approval or completion.',
     'Return JSON only with exactly task_id,agent_id,depends_on,permissions,instruction.',
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
@@ -149,8 +153,12 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
       !this.roots.some(parent=>giteaPermissionCovers(parent,p)))fail();
    seen.add(pair(p));selected.push(Object.freeze({...p}));
   }
-  // The current native A2A dispatch admits one mutation OR one Runner effect.
-  if(selected.filter(p=>p.operation==='update_file'||p.operation==='run_tests').length!==1)
+  // The owner chooses the decision kind; model output cannot opt into PR authority.
+  if(this.decisionKind==='pull_request'){
+   if(raw.agent_id!=='orchestrator'||selected.length!==1||
+      selected[0].operation!=='create_pull_request')fail();
+  }else if(selected.some(p=>p.operation==='create_pull_request')||
+    selected.filter(p=>p.operation==='update_file'||p.operation==='run_tests').length!==1)
    fail();
   return Object.freeze({task_id:raw.task_id,agent_id:raw.agent_id,
    depends_on:Object.freeze([...raw.depends_on]),

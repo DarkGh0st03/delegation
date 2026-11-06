@@ -118,6 +118,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   d1RetestAttempted=false,d1RetestPin,d1RetestPassed=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
+ let pullRequestAdmissionAttempted=false;
+ const pullRequestTaskPins=new Map();
  let dispatchFlight,dispatchFailed=false;
  let a2aOwner,a2aStarting,a2aStartAttempted=false;
  async function retire(){
@@ -364,7 +366,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       stagedTaskIds.set(input.runtimeTaskId,Object.freeze({
        task_id:registered.task_id,agent_id:registered.agent_id,
        operation:registered.permissions.find(p=>
-        p.operation==='update_file'||p.operation==='run_tests')?.operation
+        p.operation==='update_file'||p.operation==='run_tests'||
+        p.operation==='create_pull_request')?.operation
       }));
       return Object.freeze({
        status:'owner_child_enrolled_no_provider_execution',
@@ -535,6 +538,82 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      })();
      try{return await completionFlight;}
      finally{completionFlight=undefined;}
+    },
+    /** R353.2: ADK may propose a PR Task only after original Test evidence.
+     * Root/epoch/Child and exact tested SHA stay with the original owner.
+     * Admission is not permission to issue a provider POST. */
+    async proposeAndStageVerifiedPullRequestTask(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||
+        pullRequestAdmissionAttempted||taskStageFlight||dispatchFlight||
+        completionFlight||decisionFlight||d1FailurePreflightFlight||
+        d1RepairAdmissionFlight||
+        !fields(input,['model','sourceTestTaskId','sourceTestRuntimeTaskId',
+         'runtimeTaskId','childParameters']))
+      deny('PR Task admission requires quiescent original owner and one decision');
+     const pending=[...stagedTaskIds.values()].filter(p=>!gatewayAttestedTaskIds.has(p.task_id));
+     if(pending.length&&!(d1RetestPassed&&pending.length===1&&
+        pending[0].task_id===d1VerifiedFailure?.proof?.failed_task_id))
+      deny('PR Task requires independent completion of earlier work');
+     const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+     const permission=before.root_permissions.find(p=>p.operation==='create_pull_request');
+     const owner=options.trustedAgentRegistry.orchestrator;
+     if(!permission||!owner?.capabilities.includes('create_pull_request'))
+      deny('PR Task requires original Engineer create_pull_request grant and owner identity');
+     const source={taskId:input.sourceTestTaskId,runtimeTaskId:input.sourceTestRuntimeTaskId};
+     const first=await executionHandle.inspectVerifiedPullRequestHead(source);
+     if(pullRequestAdmissionAttempted)
+      deny('PR Task decision already attempted');
+     pullRequestAdmissionAttempted=true; // bounded model decision, no implicit retry
+     if(++decisionCalls>8)deny('PR Task exceeds original owner decision budget');
+     const epoch=operationalCoordinator.registeredTaskCount+1;
+     const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
+      model:input.model,requirement,branch:before.branch,
+      rootPermissions:before.root_permissions,decisionKind:'pull_request',
+      agents:{orchestrator:{capabilities:owner.capabilities},
+       ...Object.fromEntries(Object.entries(options.trustedAgentRegistry)
+        .filter(([id])=>id!=='orchestrator')
+        .map(([id,pin])=>[id,{capabilities:pin.capabilities}]))},
+      previousTasks:[...gatewayAttestedTaskIds.values()],nextEpoch:epoch
+     });
+     decisionFlight=proposer.propose();
+     let choice;
+     try{choice=await decisionFlight;}
+     finally{decisionFlight=undefined;}
+     if(choice.agent_id!=='orchestrator'||
+        !isDeepStrictEqual(choice.permissions,[permission])||
+        !isDeepStrictEqual(choice.depends_on,[input.sourceTestTaskId]))
+      deny('PR Task differs from exact owner grant or verified Test dependency');
+     // Reopen the actual receipt/HEAD after the model turn, before native issuance.
+     const current=await executionHandle.inspectVerifiedPullRequestHead(source);
+     const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+     if(current.tested_commit_sha!==first.tested_commit_sha||
+        current.evidence_sha256!==first.evidence_sha256||
+        live.root_credential_id!==before.root_credential_id||
+        live.authority_digest!==before.authority_digest||
+        operationalCoordinator.registeredTaskCount!==epoch-1)
+      deny('PR Task source changed before original Child issuance');
+     const staged=await executionHandle.stageTask({
+      task:{task_id:choice.task_id,epoch,agent_id:'orchestrator',
+       depends_on:[input.sourceTestTaskId],permissions:[permission]},
+      runtimeTaskId:input.runtimeTaskId,childParameters:input.childParameters
+     });
+     const pin=Object.freeze({task_id:staged.task_id,
+      runtime_task_id:staged.runtime_task_id,instruction:choice.instruction,
+      source_test_task_id:input.sourceTestTaskId,
+      source_test_runtime_task_id:input.sourceTestRuntimeTaskId,
+      tested_commit_sha:current.tested_commit_sha,
+      runner_evidence_sha256:current.evidence_sha256,
+      root_credential_id:before.root_credential_id,
+      authority_digest:before.authority_digest});
+     pullRequestTaskPins.set(input.runtimeTaskId,pin);
+     return Object.freeze({...staged,
+      status:'owner_pr_child_enrolled_no_provider_execution',
+      decision_source:'verified_test_adk_original_pr_task',
+      instruction:pin.instruction,source_test_task_id:pin.source_test_task_id,
+      tested_commit_sha:pin.tested_commit_sha,
+      provider_executed:false,pull_request_created:false
+     });
     },
     /** Obtain a unique one-shot owner stager after enrolling the Child.
      * Pin exact original Gateway, Task ID, role/tool and owner-selected HEAD. */

@@ -128,7 +128,8 @@ async function fixture(t,flags={}){
   expectedRepository:snapshot.repository,expectedBaseRevision:snapshot.base_revision,expectedWorkBranch:branch,expectedRequirement:requirement}});
  const proposal=flags.includeTestPermission?{...draft,requested_permissions:[
   ...draft.requested_permissions,
-  {operation:'run_tests',resource_type:'branch',path:null}
+  {operation:'run_tests',resource_type:'branch',path:null},
+  ...(flags.includePullRequestPermission?[{operation:'create_pull_request',resource_type:'repository',path:null}]:[])
  ]}:draft;
  const salt=randomBytes(16),log=[],model=new Scripted(proposal);
  const options={snapshot,requirement,workBranch:branch,preliminaryRoot:root('urn:r349:preliminary',1),
@@ -139,7 +140,10 @@ async function fixture(t,flags={}){
   approval:{engineerDid:did,keyId:'engineer',privateKeyFile,publicKeyPem:pem(engineer.publicKey,'spki'),receiptDirectory:dirs.receipts,
    passwordSaltHex:salt.toString('hex'),passwordScryptHex:scryptSync('owner-password',salt,64).toString('hex')},
   planner:{model,planId:'owner-authority-review',maxModelTurns:3,maxProposalRevisions:0},
-  trustedAgentRegistry:Object.fromEntries(['backend','frontend','test'].map(role=>[role,{did:'did:thesis:'+role,card_ref:'trusted:'+role,capabilities:[role==='test'?'run_tests':'update_file']} ])),
+  trustedAgentRegistry:Object.fromEntries(['backend','frontend','test',
+   ...(flags.includePullRequestPermission?['orchestrator']:[])].map(role=>[role,{
+    did:'did:thesis:'+role,card_ref:'trusted:'+role,
+    capabilities:[role==='orchestrator'?'create_pull_request':role==='test'?'run_tests':'update_file']} ])),
   credentials:{async issueScopedOrchestratorRoot(req){
    log.push('issue:'+req.credential_id);await flags.onIssue?.(req);
    return {id:req.credential_id,credentialSubject:{per:structuredClone(req.permissions)}};
@@ -631,7 +635,10 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
 });
 
 for(const mode of ['missing','backend','frontend','test','failure',
- 'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied'])test(
+ 'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied',
+ 'pr','pr-denied','pr-invalid','pr-stale'])test(
+ mode.startsWith('pr')?
+  'R353.2 original Engineer PR Task admission '+mode:
  mode==='failure-no-receipt'?
  'R352.1 Test FAIL without MAC receipt retires original Engineer root':
  mode==='failure-model-denied'?
@@ -653,13 +660,15 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const verified=mode!=='missing',throughFailure=mode.startsWith('failure'),
   noFailureReceipt=mode==='failure-no-receipt',
   foreignD1Model=mode==='failure-model-denied',
-  throughTest=mode==='test'||throughFailure,
+  throughTest=mode==='test'||mode.startsWith('pr')||throughFailure,
   throughFrontend=mode==='frontend'||throughTest,
   d1Retest=mode==='failure-d1-retest',
    d1Effect=mode==='failure-d1-effect'||d1Retest;
- const f=await fixture(t,throughFrontend?{includeTestPermission:true}:{});
+ const f=await fixture(t,throughFrontend?{includeTestPermission:true,
+  includePullRequestPermission:mode.startsWith('pr')&&mode!=='pr-denied'}:{});
  const host=await f.start();
- await f.approve(throughFrontend?['permission-1','permission-2','permission-3']:
+ await f.approve(throughFrontend?['permission-1','permission-2','permission-3',
+  ...(mode.startsWith('pr')&&mode!=='pr-denied'?['permission-4']:[])]:
   ['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:real-a2a-root',2));
  const deps=executionDeps(f),events=[],model=new R3504ScriptedBackend(d1Effect);
@@ -1481,6 +1490,19 @@ for(const mode of ['missing','backend','frontend','test','failure',
      await assert.rejects(execution.inspectVerifiedPullRequestHead({
       taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
      }),/independently completed original Test/);
+     if(mode==='pr'){
+      const early=new R351ScriptedDecision({task_id:'r3532-premature-pr',
+       agent_id:'orchestrator',depends_on:['r3513-test'],
+       permissions:[coordinator.assertTrustedGatewayAuthorityBinding()
+        .root_permissions.find(p=>p.operation==='create_pull_request')],
+       instruction:'Premature PR must not reach the model'});
+      await assert.rejects(execution.proposeAndStageVerifiedPullRequestTask({
+       model:early,sourceTestTaskId:'r3513-test',sourceTestRuntimeTaskId:testTask.runtimeTaskId,
+       runtimeTaskId:'dispatch_'+'P'.repeat(22),
+       childParameters:root('urn:r3532:premature-pr',29117,90)
+      }),/independent completion of earlier work/);
+      assert.equal(early.calls,0);
+     }
      const attestedTest=await execution.attestEnrolledTaskCompletion({
       taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
      });
@@ -1514,6 +1536,63 @@ for(const mode of ['missing','backend','frontend','test','failure',
      const prompt=JSON.stringify(testAgentModel.requests);
      for(const secret of [testVp,testStaged.credential_id,testRequestId])
       assert.equal(prompt.includes(secret),false);
+     if(mode.startsWith('pr')){
+      const binding=coordinator.assertTrustedGatewayAuthorityBinding();
+      const permission=binding.root_permissions.find(p=>p.operation==='create_pull_request');
+      const candidate={task_id:'r3532-final-pr',agent_id:'orchestrator',
+       depends_on:mode==='pr-invalid'?[]:['r3513-test'],
+       permissions:[permission??{operation:'create_pull_request',
+        resource:'gitea://gitea.local/thesis/iam-console-poc'}],
+       instruction:'Open the application PR from the independently tested feature HEAD'};
+      const chooser=mode==='pr-stale'?new(class extends R351ScriptedDecision{
+       async *generateContentAsync(req){
+        provider.head='7'.repeat(40);
+        yield* super.generateContentAsync(req);
+       }
+      })(candidate):new R351ScriptedDecision(candidate);
+      const prInput={model:chooser,sourceTestTaskId:'r3513-test',
+       sourceTestRuntimeTaskId:testTask.runtimeTaskId,
+       runtimeTaskId:'dispatch_'+'P'.repeat(22),
+       childParameters:root('urn:r3532:pr-child',29118,90)};
+      const issuedBefore=events.filter(e=>e==='native_child_fixture').length;
+      if(mode!=='pr'){
+       await assert.rejects(execution.proposeAndStageVerifiedPullRequestTask(prInput),
+        mode==='pr-denied'?/Engineer create_pull_request grant/:
+        mode==='pr-invalid'?/verified Test dependency/:/stale or moved feature branch/);
+       assert.equal(chooser.calls,mode==='pr-denied'?0:1);
+       assert.equal(events.filter(e=>e==='native_child_fixture').length,issuedBefore);
+       assert.equal(coordinator.registeredTaskCount,3);
+      }else{
+       const admitted=await execution.proposeAndStageVerifiedPullRequestTask(prInput);
+       assert.equal(admitted.status,'owner_pr_child_enrolled_no_provider_execution');
+       assert.equal(admitted.agent_id,'orchestrator');
+       assert.equal(admitted.epoch,4);
+       assert.equal(admitted.tested_commit_sha,frontendSha);
+       assert.equal(admitted.source_test_task_id,'r3513-test');
+       assert.equal(admitted.provider_executed,false);
+       assert.equal(admitted.pull_request_created,false);
+       assert.equal(admitted.gateway_execution_authorized,false);
+       const row=coordinator.assertTrustedGatewayRegisteredTask(admitted.task_id);
+       assert.deepEqual(row.permissions,[permission]);
+       assert.deepEqual(row.depends_on,['r3513-test']);
+       const child=execution.childIssuer.assertTrustedIssuedChild(admitted.task_id,coordinator);
+       assert.equal(child.root_credential_id,binding.root_credential_id);
+       assert.equal(child.agent_did,'did:thesis:orchestrator');
+       assert.equal(events.filter(e=>e==='native_child_fixture').length,issuedBefore+1);
+       assert.equal(coordinator.registeredTaskCount,4);
+       assert.equal(gateway.registeredTaskCount,4);
+       assert.equal(gateway.stagedCompletedTaskCount,3);
+       const replay=new R351ScriptedDecision(candidate);
+       await assert.rejects(execution.proposeAndStageVerifiedPullRequestTask({
+        ...prInput,model:replay
+       }),/one decision/);
+       assert.equal(replay.calls,0);
+       assert.throws(()=>gateway.preflightCanonicalRequest({
+        task_id:prInput.runtimeTaskId,agent_role:'orchestrator',tool:'create_pull_request',
+        arguments:{head_branch:branch,base_branch:'main',title:'Review change',body:'Tested'}
+       }),/trusted Runner acceptance required before PR/);
+      }
+     }else{
      // A newer unfinished Test invalidates selection of an older PASS.
      const later=new R351ScriptedDecision({
       task_id:'r3530-later-test',agent_id:'test',depends_on:['r3513-test'],
@@ -1528,6 +1607,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
      await assert.rejects(execution.inspectVerifiedPullRequestHead({
       taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
      }),/latest original Test/);
+     }
      }
     }
     assert.equal(host.phase,'operational');
@@ -1999,4 +2079,22 @@ test('explicit canonical owner entry serves real HTTP review and transitions onl
  const result=await host.activateOperational(root('urn:r349:operational',2));
  assert.equal(result.coordinator.phase,'active');assert.equal(host.phase,'operational');
  await host.close();assert.equal(host.phase,'revoked');
+});
+
+test('R353.2 only owner-selected PR decisions may propose the exact PR effect',async()=>{
+ const permission={operation:'create_pull_request',resource:'gitea://gitea.local/thesis/iam-console-poc'};
+ const candidate={task_id:'r3532-pr',agent_id:'orchestrator',depends_on:['verified-test'],
+  permissions:[permission],instruction:'Open the tested application PR'};
+ const config={requirement:'Implement authorized change',branch,
+  rootPermissions:[permission],agents:{orchestrator:{capabilities:['create_pull_request']},
+   test:{capabilities:['run_tests']}},
+  previousTasks:[{task_id:'verified-test',agent_id:'test'}],nextEpoch:2};
+ const chosen=await new TrustedAuthorityOnlyAdkDecisionProposer({...config,
+  model:new R351ScriptedDecision(candidate),decisionKind:'pull_request'}).propose();
+ assert.equal(chosen.agent_id,'orchestrator');
+ assert.deepEqual(chosen.permissions,[permission]);
+ await assert.rejects(new TrustedAuthorityOnlyAdkDecisionProposer({...config,
+  model:new R351ScriptedDecision(candidate)}).propose(),/Task choice denied/);
+ assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer({...config,
+  model:new R351ScriptedDecision(candidate),decisionKind:'model-selected'}),/Task choice denied/);
 });
