@@ -1166,7 +1166,7 @@ test('R352.0 original owner refuses Test D1 failure claims without an original A
  await assert.rejects(execution.preflightNativeD1Repair({
   failureObserver:{},failedRunnerIntent:fake,
   candidate:{role:'backend',permissions:[runPermission]}
- }),/D1 cannot accept unverified model\/provider failure evidence/);
+ }),/native D1 preflight needs one quiescent original Engineer owner/);
  assert.equal(host.phase,'operational');
  assert.equal(coordinator.registeredTaskCount,1);
  assert.equal(execution.gateway.stagedCompletedTaskCount,0);
