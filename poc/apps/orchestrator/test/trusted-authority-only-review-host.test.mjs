@@ -676,9 +676,7 @@ test('R350.11 retired operational root must have both Gateway terminal fence and
  await assert.rejects(f.options.operationalSessionStore.reserveActivation(
   snapshot.session_id),/already used or retired/);
  assert.equal((await f.options.operationalRecoveryStore.pending()).length,0);
- assert.deepEqual(f.log.slice(-3),[
-  'end:'+snapshot.session_id,'revoke:urn:r349:preliminary','issue:'+rootId
- ].slice(-3).concat([]).slice(-3).length===3?f.log.slice(-3):f.log.slice(-3));
+ assert.equal(f.log.filter(x=>x==='issue:'+rootId).length,1);
  assert.equal(f.log.at(-1),'revoke:'+rootId);
 });
 test('R350.11 orphan root blocks Planning before a model call and operator-only reconciliation never reissues',async t=>{
