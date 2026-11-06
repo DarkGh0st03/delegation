@@ -18,5 +18,11 @@
     "no-paid-API",
     "main-unchanged"
   ],
-  "trigger": "one free native integration milestone; do not repeat entire suite on subsequent commits"
+  "trigger": "one free native integration milestone; do not repeat entire suite on subsequent commits",
+  "retest": {
+    "prior_run": 42280592263,
+    "reason": "review packet uses canonical signed resource URI, and owner branch guard has its own fail-closed diagnostic",
+    "paid_model_calls": 0,
+    "revision": "R357.0-native-branch-first-retest-01"
+  }
 }
