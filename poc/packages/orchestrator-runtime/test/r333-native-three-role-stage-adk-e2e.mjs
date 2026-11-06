@@ -181,7 +181,8 @@ class OfflineNativeTestModel extends BaseLlm{
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
-const r344NativeEdit=process.env.R344_NATIVE_D1_EDIT==="1";
+const r345NativeRetest=process.env.R345_NATIVE_D1_RETEST==="1";
+const r344NativeEdit=process.env.R344_NATIVE_D1_EDIT==="1"||r345NativeRetest;
 const r343NativeD1=process.env.R343_NATIVE_D1_ENROLL==="1"||r344NativeEdit;
 const r338Negative=process.env.R338_NATIVE_RUNNER_FAIL==="1"||r343NativeD1;
 let gatewayCasWrites=0;
@@ -395,6 +396,7 @@ try{
   giteaClient:independentClient,nowMs
  });
  const observedMutationTaskIds=new Set([taskId,frontendTaskId]);
+ const observedRunnerTaskIds=new Set([testTaskId]);
  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
   repository:repo,engineerDid,coordinator,approvals,
   operationalSessionStore:new TrustedOperationalSessionStore(
@@ -406,7 +408,7 @@ try{
    readVerifiedCompletion:expected=>{
     if(observedMutationTaskIds.has(expected.task_id))
      return mutationObserver.observe(expected);
-    if(expected.task_id===testTaskId)return runnerObserver.observe(expected);
+    if(observedRunnerTaskIds.has(expected.task_id))return runnerObserver.observe(expected);
     throw Error("Unknown Task attempted completion");
    }
   }),
@@ -1135,6 +1137,75 @@ try{
      independent_gateway_completion:true,runner_posts:runnerCalls,
      recovery_pass_attested:false,paid_model_calls:0
     })+"\n");
+    if(r345NativeRetest){
+     // Fresh Test Task/Child: the consumed failed Test is never reused.
+     const retestId="r345-d1-retest",retestRuntimeId=nativeTaskRef("R");
+     const repairedHead=result.execution.commit_sha;
+     await coordinator.registerTask({
+      session_id:sessionId,requirement_sha256:createHash("sha256")
+       .update(requirement).digest("hex"),base_revision:baseRevision,
+      branch,task_id:retestId,epoch:5,agent_id:"test",
+      depends_on:[d1.task_id],permissions:[testTaskPermission]
+     });
+     const retestChild=await issuer.issueForRegisteredTask(retestId,
+      params("urn:r345:child:retest",29110,600));
+     assert.notEqual(retestChild.credential_id,runnerChild.credential_id);
+     assert.equal(retestChild.root_credential_id,operational.credential_id);
+     await gate.bindTrustedTask(retestId,retestRuntimeId,"test");
+     await gate.enrollTrustedIssuedChild(retestId,retestRuntimeId,issuer);
+     observedRunnerTaskIds.add(retestId);
+     nativeTestModel.requests=[];
+     const retestStager=new TrustedAuthorityOnlyEffectStager({
+      store,admissions:gate,mutation:preflight,runner:runnerPreflight,
+      runtimeTaskId:retestRuntimeId,tool:"run_tests",expectedHeadSha:repairedHead
+     });
+     const retestReport=await a2aOwner.dispatchIssuedTask({
+      taskId:retestId,runtimeTaskId:retestRuntimeId,
+      instruction:"Retest the independently attested D1 repair using poc-default",
+      effectStager:retestStager
+     });
+     assert.equal(retestReport.provider_completion_attested,false);
+     assert.equal(retestReport.artifact.test_outcome,"pass");
+     assert.equal(gate.stagedCompletedTaskCount,3);
+     const retestResult=testGatewayExecution;
+     assert.equal(retestResult.decision,"allow");
+     assert.equal(retestResult.execution.status,"pass");
+     assert.equal(retestResult.execution.tested_commit_sha,repairedHead);
+     assert.equal(retestResult.execution.project_tests.status,"pass");
+     assert.equal(retestResult.execution.researcher_acceptance.status,"pass");
+     const retestVp=await verifier.verify({
+      presenter:"test",audience:runnerPreparedFromAgent.audience,
+      challenge:runnerPreparedFromAgent.challenge,
+      required_permission:testTaskPermission,signed_vp:testSignedVpFromAgent
+     });
+     assert.equal(retestVp.credential_id,retestChild.credential_id);
+     assert.equal(retestVp.root_credential_id,operational.credential_id);
+     await a2aOwner.attestIndependentGatewayCompletion(retestId,retestRuntimeId);
+     assert.equal(gate.stagedCompletedTaskCount,4);
+     assert.equal(gate.registeredTaskCount,5);
+     assert.equal(runnerCalls,2);
+     assert.equal(gatewayCasWrites,3);
+     assert.equal((await readdir(path("runner-fail-receipts"))).length,1);
+     assert.equal((await readdir(path("runner-receipts"))).length,1);
+     assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
+      repairedHead);
+     await assert.rejects(a2aOwner.dispatchIssuedTask({
+      taskId:retestId,runtimeTaskId:retestRuntimeId,
+      instruction:"duplicate retest",effectStager:retestStager
+     }));
+     assert.equal(runnerCalls,2);
+     assert.equal(coordinator.assertTrustedGatewayAuthorityBinding()
+      .root_credential_id,operational.credential_id);
+     process.stdout.write(JSON.stringify({
+      event:"r345_native_fail_repair_retest_pass",
+      original_root_unchanged:true,original_test_failed:true,
+      fresh_repair_and_retest_children:true,repair_commits:1,
+      runner_posts:runnerCalls,completed_tasks:gate.stagedCompletedTaskCount,
+      independent_retest_pass:true,paid_model_calls:0,
+      autonomous_functional_generation:false
+     })+"\n");
+    }
+
    }
   }
   await credentialPort.revokeRoot(operational.credential_id);
