@@ -78,7 +78,9 @@ export class TrustedAuthorityOnlyRunnerExecutor{
        !(opts.failureObserver instanceof AuthenticatedRunnerFailureObserver)||
        !opts.failurePublisher.isForRunner(opts.runnerClient)||
        !opts.failurePublisher.isForGitea(opts.giteaClient)||
-       !opts.failureObserver.isForGitea(opts.giteaClient)
+       !opts.failurePublisher.isForJournal(opts.journal)||
+       !opts.failureObserver.isForGitea(opts.giteaClient)||
+       !opts.failureObserver.isForJournal(opts.journal)
      ))||
      !/^[a-z0-9._-]+\/[a-z0-9._-]+$/u.test(opts.repository)||
      !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(opts.branch)||

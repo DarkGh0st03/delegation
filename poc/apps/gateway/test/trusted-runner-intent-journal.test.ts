@@ -127,3 +127,18 @@ test("R303.3 verified PASS may finish exactly once after durable POST attempt",a
    "f".repeat(64)),/EEXIST/);
  });
 });
+
+test("R337 exact durable POST attempt is required and PASS excludes FAIL",async()=>{
+ await fixture(async({journal})=>{
+  await journal.reserve(intent);
+  await assert.rejects(journal.assertAttempted(intent),/ENOENT|no such file/);
+  await journal.reserveAttempt(intent);
+  await journal.assertAttempted(intent);
+  await assert.rejects(journal.assertAttempted({
+   ...intent,request_fingerprint:"d".repeat(64)
+  }),/differs from original/);
+  await journal.reserveCompletedEvidence(intent,"f".repeat(64));
+  await assert.rejects(journal.assertAttempted(intent),
+   /successful Runner completion excludes a conflicting FAIL receipt/);
+ });
+});

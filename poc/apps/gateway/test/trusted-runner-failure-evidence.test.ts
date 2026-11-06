@@ -5,6 +5,8 @@ import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {RunnerClient} from "../src/runner-client.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
+import {DurableAuthorityOnlyRunnerIntentJournal}
+ from "../src/trusted-authority-only-runner-intent-journal.ts";
 import {TrustedGatewayRunnerFailEvidencePublisher,
  AuthenticatedRunnerFailureObserver}
  from "../src/trusted-authority-only-runner-failure-evidence.ts";
@@ -43,9 +45,14 @@ async function fixture(action:(p:{
  publisher:TrustedGatewayRunnerFailEvidencePublisher;
  observer:AuthenticatedRunnerFailureObserver;
  runner:RunnerClient;directory:string;move:(head:string)=>void;
- })=>Promise<void>,body:unknown=failure()){
+ })=>Promise<void>,body:unknown=failure(),attempted=true){
  const temp=await mkdtemp(join(tmpdir(),"r336-"));
  const directory=join(temp,"proofs");await mkdir(directory,{mode:0o700});
+ const attemptDirectory=join(temp,"attempts");
+ await mkdir(attemptDirectory,{mode:0o700});
+ const journal=new DurableAuthorityOnlyRunnerIntentJournal(attemptDirectory);
+ await journal.reserve(intent);
+ if(attempted)await journal.reserveAttempt(intent);
  let head=sha;
  const gitea=new GiteaClient({
   baseUrl:"http://gitea.local:3000",token:"independent-only",
@@ -67,11 +74,11 @@ async function fixture(action:(p:{
  try{
   await action({
    publisher:new TrustedGatewayRunnerFailEvidencePublisher({
-    directory,key,runnerClient:runner,independentGiteaClient:gitea,
+    directory,key,runnerClient:runner,journal,independentGiteaClient:gitea,
     repository:intent.repository,branch,nowMs
    }),
    observer:new AuthenticatedRunnerFailureObserver({
-    directory,key,giteaClient:gitea,
+    directory,key,giteaClient:gitea,journal,
     repository:intent.repository,branch,nowMs
    }),
    runner,directory,move:value=>{head=value;}
@@ -124,4 +131,15 @@ test("R336 status PASS cannot publish FAIL evidence",async()=>{
    /differs from original immutable Test intent/);
   assert.deepEqual(await readdir(directory),[]);
  },{...failure(),status:"pass"});
+});
+
+test("R337 missing durable original POST attempt cannot publish or observe FAIL",async()=>{
+ await fixture(async({runner,publisher,observer,directory})=>{
+  const result=await runner.run(request);
+  await assert.rejects(publisher.publish(intent,binding,request,result,"opa"),
+   /ENOENT|no such file/);
+  await assert.rejects(observer.observe(intent,binding),
+   /ENOENT|no such file/);
+  assert.deepEqual(await readdir(directory),[]);
+ },failure(),false);
 });

@@ -162,6 +162,34 @@ export class DurableAuthorityOnlyRunnerIntentJournal{
   if(!isDeepStrictEqual(saved,intent))
    deny("Runner intent differs from original durable commitment");
  }
+ /**
+  * R337: independent, read-only exact-Task proof of the original one-shot
+  * Runner POST reservation. A prepared intent alone is insufficient.
+  */
+ async assertAttempted(intent:TrustedAuthorityOnlyRunnerIntent):Promise<void>{
+  await this.assertReserved(intent);
+  const actual=await this.#read(this.#filename(intent,"attempt"));
+  const expected={
+   schema:"authority-only-runner-attempt-v1",
+   session_id:intent.session_id,task_id:intent.task_id,
+   authority_digest:intent.authority_digest,
+   credential_id:intent.credential_id,
+   request_id:intent.request_id,
+   request_fingerprint:intent.request_fingerprint,
+   expected_head_sha:intent.expected_head_sha,
+   runner_profile:intent.runner_profile
+  };
+  if(!isDeepStrictEqual(actual,expected))
+   deny("Runner attempt differs from original immutable Test Task");
+  // A single Task can never simultaneously have PASS and FAIL proof.
+  try{
+   await lstat(join(this.#dir,this.#filename(intent,"completed")));
+  }catch(err){
+   if((err as NodeJS.ErrnoException).code==="ENOENT")return;
+   throw err;
+  }
+  deny("successful Runner completion excludes a conflicting FAIL receipt");
+ }
  /** Reservation must precede all Runner HTTP POSTs. No automatic recovery. */
  async reserveAttempt(intent:TrustedAuthorityOnlyRunnerIntent):Promise<void>{
   if(this.#inFlight)deny("concurrent Test Task runner launch");

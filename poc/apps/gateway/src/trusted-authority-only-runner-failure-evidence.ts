@@ -156,15 +156,19 @@ function config(opts:{directory:string;key:Buffer;giteaClient:GiteaClient;
     resolve(opts.directory)!==opts.directory)fail("noncanonical receipt directory");
 }
 export class TrustedGatewayRunnerFailEvidencePublisher{
+ readonly #journal:DurableAuthorityOnlyRunnerIntentJournal;
  readonly #directory:string;readonly #key:Buffer;readonly #runner:RunnerClient;
  readonly #gitea:GiteaClient;readonly #repo:string;readonly #branch:string;
  readonly #now:()=>number;
  constructor(opts:{directory:string;key:Buffer;runnerClient:RunnerClient;
+  journal:DurableAuthorityOnlyRunnerIntentJournal;
   independentGiteaClient:GiteaClient;repository:string;branch:string;
   nowMs?:()=>number}){
   config({...opts,giteaClient:opts.independentGiteaClient});
-  if(!(opts.runnerClient instanceof RunnerClient))
-   fail("concrete authenticated RunnerClient required");
+  if(!(opts.runnerClient instanceof RunnerClient)||
+     !(opts.journal instanceof DurableAuthorityOnlyRunnerIntentJournal))
+   fail("concrete Runner and original durable attempt journal required");
+  this.#journal=opts.journal;
   this.#directory=opts.directory;this.#key=Buffer.from(opts.key);
   this.#runner=opts.runnerClient;this.#gitea=opts.independentGiteaClient;
   this.#repo=opts.repository;this.#branch=opts.branch;
@@ -172,6 +176,7 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
  }
  isForRunner(r:RunnerClient){return r===this.#runner;}
  isForGitea(g:GiteaClient){return g===this.#gitea;}
+ isForJournal(j:DurableAuthorityOnlyRunnerIntentJournal){return j===this.#journal;}
  async publish(intent:TrustedAuthorityOnlyRunnerIntent,e:TrustedCompletionExpectation,
   request:RunnerClientRequest,result:RunnerClientResult,policyVersion:string
  ):Promise<string>{
@@ -182,6 +187,7 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
      policyVersion.length>128)
    fail("owner FAIL receipt requested for foreign Task or invalid policy");
   const stage=validateTrustedRunnerFailure(this.#runner,request,result,intent);
+  await this.#journal.assertAttempted(intent);
   await headMatches(this.#gitea,intent.branch,intent.expected_head_sha);
   const now=this.#now();
   if(!Number.isSafeInteger(now)||now<=0)
@@ -204,21 +210,28 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
    .update(canonical(unsigned)).digest("hex");
   const receipt:FailReceipt={...unsigned,mac_sha256};
   await headMatches(this.#gitea,intent.branch,intent.expected_head_sha);
+  await this.#journal.assertAttempted(intent);
   await writeOnce(this.#directory,filename(intent),receipt);
   return digest(canonical(receipt));
  }
 }
 export class AuthenticatedRunnerFailureObserver{
+ readonly #journal:DurableAuthorityOnlyRunnerIntentJournal;
  readonly #directory:string;readonly #key:Buffer;readonly #gitea:GiteaClient;
  readonly #repo:string;readonly #branch:string;readonly #now:()=>number;
  constructor(opts:{directory:string;key:Buffer;giteaClient:GiteaClient;
+  journal:DurableAuthorityOnlyRunnerIntentJournal;
   repository:string;branch:string;nowMs?:()=>number}){
   config(opts);
+  if(!(opts.journal instanceof DurableAuthorityOnlyRunnerIntentJournal))
+   fail("observer requires original durable Runner attempt journal");
+  this.#journal=opts.journal;
   this.#directory=opts.directory;this.#key=Buffer.from(opts.key);
   this.#gitea=opts.giteaClient;this.#repo=opts.repository;
   this.#branch=opts.branch;this.#now=opts.nowMs??Date.now;
  }
  isForGitea(g:GiteaClient){return g===this.#gitea;}
+ isForJournal(j:DurableAuthorityOnlyRunnerIntentJournal){return j===this.#journal;}
  async observe(intent:TrustedAuthorityOnlyRunnerIntent,e:TrustedCompletionExpectation):
  Promise<Readonly<TrustedCompletionExpectation & {
   status:"owner_authenticated_runner_failure_observed_staged";
@@ -227,6 +240,7 @@ export class AuthenticatedRunnerFailureObserver{
   gateway_task_completed:false;recovery_authorized:false
  }>>{
   DurableAuthorityOnlyRunnerIntentJournal.assertValid(intent);
+  await this.#journal.assertAttempted(intent);
   const raw=await readOnce(this.#directory,filename(intent));
   const v=validateRow(raw,intent,e,this.#repo,this.#branch);
   const {mac_sha256,...unsigned}=v;
@@ -239,6 +253,7 @@ export class AuthenticatedRunnerFailureObserver{
    fail("stale or future FAIL receipt");
   await headMatches(this.#gitea,v.branch,v.tested_commit_sha);
   await headMatches(this.#gitea,v.branch,v.tested_commit_sha);
+  await this.#journal.assertAttempted(intent);
   return Object.freeze({...e,
    status:"owner_authenticated_runner_failure_observed_staged" as const,
    tested_commit_sha:v.tested_commit_sha,
