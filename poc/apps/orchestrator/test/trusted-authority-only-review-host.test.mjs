@@ -810,6 +810,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
       request_id:request.request_id,repository:request.repository,
       branch,tested_commit_sha:retest?repairSha:frontendSha,runner_profile:'poc-default',
       status:failed?'fail':'pass',
+      ...(failed&&mode==='adaptive-repair-and-retest'?
+       {typecheck_error_codes:['TS2322','TS2345']}:{}),
       phases,
       project_tests:{status:failed?'fail':'pass',
        phases:phases.slice(0,-1)},
@@ -1349,6 +1351,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
      const outcome=await execution.runAdaptiveWorkLoop(input);
      if(mode==='adaptive-repair-and-retest'){
       assert.equal(outcome.status,'owner_adaptive_work_ready_for_pr');
+      const secondPrompt=JSON.stringify(adaptiveModel.requests[1]);
+      assert.match(secondPrompt,/TS2322/u);
+      assert.match(secondPrompt,/TS2345/u);
+      assert.equal(secondPrompt.includes('private-test-vp'),false);
       assert.equal(outcome.executed_tasks,2);
       assert.equal(outcome.source_test_task_id,'r3555-adaptive-retest');
       assert.equal(outcome.tested_commit_sha,repairSha);
