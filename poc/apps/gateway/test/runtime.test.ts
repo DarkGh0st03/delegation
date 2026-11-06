@@ -88,7 +88,7 @@ test("runtime wires mutable gitea mode without contacting the provider at startu
 });
 
 test("canonical runtime refuses authority-only effects with no enrolled owner", () => {
-  for(const name of ["authorityOnlyMutationEnabled","authorityOnlyRunnerEnabled"] as const){
+  for(const name of ["authorityOnlyMutationEnabled","authorityOnlyRunnerEnabled","authorityOnlyBranchEnabled","authorityOnlyPullRequestEnabled"] as const){
     assert.throws(() => new GatewayRuntime(
       {...baseConfig, provider_mode:"mock" as const},
       {verifier,policy,[name]:true}

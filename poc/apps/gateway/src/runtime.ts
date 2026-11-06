@@ -1,3 +1,4 @@
+import {TrustedAuthorityOnlyBranchExecutor} from './trusted-authority-only-branch-executor.ts';
 import { AdapterVerifierClient } from "./adapter-client.ts";
 import {loadDirectCoreRustVerifier} from "./direct-core-loader.ts";
 import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
@@ -63,6 +64,8 @@ export interface GatewayRuntimeDependencies {
   /** Canonical runtime only: owner-prestaged native Docker Test. */
   authorityOnlyRunnerEnabled?: boolean;
   authorityOnlyRunnerExecutor?: TrustedAuthorityOnlyRunnerExecutor;
+  authorityOnlyBranchEnabled?:boolean;
+  authorityOnlyBranchExecutor?:TrustedAuthorityOnlyBranchExecutor;
   authorityOnlyPullRequestEnabled?:boolean;
   authorityOnlyPullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
 }
@@ -117,6 +120,8 @@ export class GatewayRuntime {
   readonly #authorityOnlyMutationEnabled:boolean;
   readonly #authorityOnlyRunnerEnabled:boolean;
   readonly #authorityOnlyPullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
+  readonly #authorityOnlyBranchEnabled:boolean;
+  readonly #authorityOnlyBranchExecutor?:TrustedAuthorityOnlyBranchExecutor;
   readonly #authorityOnlyPullRequestEnabled:boolean;
 
   constructor(config: GatewayRuntimeConfig, dependencies: GatewayRuntimeDependencies = {}) {
@@ -124,15 +129,17 @@ export class GatewayRuntime {
     const mutation=dependencies.authorityOnlyMutationExecutor;
     const runner=dependencies.authorityOnlyRunnerExecutor;
     const pr=dependencies.authorityOnlyPullRequestExecutor;
+    const branch=dependencies.authorityOnlyBranchExecutor;
     if(gate&&
        (!(gate instanceof TrustedAuthorityOnlyGatewayAdmissions)||
         dependencies.approvedPlans||dependencies.planningRevisions))
       throw Error("Authority-only Gateway requires distinct trusted runtime without legacy gates");
     if((dependencies.authorityOnlyMutationEnabled===true)!==Boolean(mutation)||
        (dependencies.authorityOnlyRunnerEnabled===true)!==Boolean(runner)||
-       (dependencies.authorityOnlyPullRequestEnabled===true)!==Boolean(pr))
+       (dependencies.authorityOnlyPullRequestEnabled===true)!==Boolean(pr)||
+       (dependencies.authorityOnlyBranchEnabled===true)!==Boolean(branch))
       throw Error("Authority-only Gateway effects require matching explicit enablement and owner executor");
-    if((mutation||runner||pr)&&!gate)
+    if((mutation||runner||pr||branch)&&!gate)
       throw Error("Authority-only Gateway effects require enrolled native authority");
     if(gate&&(config.provider_mode!=="gitea"||config.verifier_mode!=="core-rust"))
       throw Error("Authority-only Gateway requires mutable Gitea and explicit independent Core Rust verification");
@@ -151,6 +158,10 @@ export class GatewayRuntime {
       throw Error("Authority-only Gateway Runner executor differs from enrolled owner");
     if(pr&&!TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(pr,gate!))
       throw Error("Authority-only PR executor differs from enrolled owner");
+    if(branch&&!TrustedAuthorityOnlyBranchExecutor.isNativeForAdmissions(branch,gate!))
+      throw Error("Authority-only branch executor differs from enrolled owner");
+    this.#authorityOnlyBranchEnabled=dependencies.authorityOnlyBranchEnabled===true;
+    this.#authorityOnlyBranchExecutor=branch;
     this.#authorityOnlyPullRequestEnabled=dependencies.authorityOnlyPullRequestEnabled===true;
     this.#authorityOnlyPullRequestExecutor=pr;
     this.#config = config;
@@ -286,6 +297,8 @@ export class GatewayRuntime {
         authorityOnlyRunnerEnabled:true,
         authorityOnlyRunnerExecutor:this.#authorityOnlyRunnerExecutor
       } : {}),
+      ...(this.#authorityOnlyBranchEnabled?{authorityOnlyBranchEnabled:true,
+       authorityOnlyBranchExecutor:this.#authorityOnlyBranchExecutor}:{}),
       ...(this.#authorityOnlyPullRequestEnabled?{
        authorityOnlyPullRequestEnabled:true,
        authorityOnlyPullRequestExecutor:this.#authorityOnlyPullRequestExecutor

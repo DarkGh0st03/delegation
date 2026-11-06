@@ -40,7 +40,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      (nextEpoch!==undefined&&(!Number.isSafeInteger(nextEpoch)||
       nextEpoch<1||nextEpoch>256)))
    fail();
-  if(!['agent','pull_request'].includes(decisionKind))fail();
+  if(!['agent','pull_request','branch'].includes(decisionKind))fail();
   this.decisionKind=decisionKind;
   const roots=rootPermissions.map(p=>{
    if(!exact(p,['resource','operation'])||
@@ -89,6 +89,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    description:'Suggest one Task; trusted Coordinator validates and owns all grants',
    model,
    instruction:[
+    this.decisionKind==='branch'?
+     'Propose exactly ONE orchestrator create_branch Task with no dependencies; never claim that a branch exists.':
     this.decisionKind==='pull_request'?
      'Propose exactly ONE orchestrator create_pull_request Task depending on the independently completed Test; never claim that a PR exists.':
      'Propose exactly ONE next software engineering Task; never claim approval or completion.',
@@ -154,7 +156,10 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    seen.add(pair(p));selected.push(Object.freeze({...p}));
   }
   // The owner chooses the decision kind; model output cannot opt into PR authority.
-  if(this.decisionKind==='pull_request'){
+  if(this.decisionKind==='branch'){
+   if(raw.agent_id!=='orchestrator'||selected.length!==1||
+      selected[0].operation!=='create_branch'||raw.depends_on.length!==0)fail();
+  }else if(this.decisionKind==='pull_request'){
    if(raw.agent_id!=='orchestrator'||selected.length!==1||
       selected[0].operation!=='create_pull_request')fail();
   }else if(selected.some(p=>p.operation==='create_pull_request')||

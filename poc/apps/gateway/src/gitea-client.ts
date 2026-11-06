@@ -333,6 +333,42 @@ export class GiteaClient {
     };
   }
 
+  /** Create only at the Engineer-pinned main revision, never a moving ref. */
+  async createPinnedBranch(baseBranch:string,branch:string,expectedBaseSha:string):Promise<GiteaCreatedBranch>{
+    if(baseBranch!=="main"||!/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
+       branch.includes("..")||branch.includes("//")||branch.endsWith(".lock")||
+       branch.endsWith("/")||branch.endsWith(".")||branch.length>100||
+       !/^[a-f0-9]{40}$/u.test(expectedBaseSha))
+      throw new ProviderUnavailableError("Invalid pinned branch context");
+    const base=await this.getBranchMetadata(baseBranch);
+    if(base.commit_sha!==expectedBaseSha)
+      throw new ProviderConflictError("Approved main revision changed before branch creation");
+    try{
+      await this.getBranchMetadata(branch);
+      throw new ProviderConflictError("Approved feature branch already exists");
+    }catch(error){if(!(error instanceof ProviderNotFoundError))throw error;}
+    const body=object(await this.#requestJson(this.#repoApi("/branches"),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({new_branch_name:branch,old_ref_name:expectedBaseSha})
+    }),"Gitea pinned branch response");
+    if(requiredString(body.name,"branch.name")!==branch||
+       requiredString(object(body.commit,"branch.commit").id,"branch.commit.id")!==expectedBaseSha)
+      throw new ProviderUnavailableError("Created branch differs from approved revision");
+    await this.inspectPinnedBranch(baseBranch,branch,expectedBaseSha);
+    return {name:branch,base_branch:baseBranch,base_revision:expectedBaseSha,commit_sha:expectedBaseSha};
+  }
+  async inspectPinnedBranch(baseBranch:string,branch:string,expectedBaseSha:string){
+    if(baseBranch!=="main"||!branch.startsWith("feature/")||!/^[a-f0-9]{40}$/u.test(expectedBaseSha))
+      throw new ProviderUnavailableError("Invalid branch observation context");
+    const base=await this.getBranchMetadata(baseBranch);
+    const created=await this.getBranchMetadata(branch);
+    const fresh=await this.getBranchMetadata(baseBranch);
+    if(base.commit_sha!==expectedBaseSha||fresh.commit_sha!==expectedBaseSha||
+       created.commit_sha!==expectedBaseSha)
+      throw new ProviderConflictError("Independent branch or main revision changed");
+    return Object.freeze({name:branch,base_branch:baseBranch,base_revision:expectedBaseSha,commit_sha:expectedBaseSha});
+  }
+
   async createPullRequest(
     headBranch: string,
     baseBranch: string,

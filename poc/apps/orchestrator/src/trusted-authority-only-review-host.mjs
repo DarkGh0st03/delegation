@@ -1,3 +1,4 @@
+import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
 /** Owner-assembled permission-only Planning -> authenticated Engineer review
  * -> independent native root -> dynamic Coordinator. No public root issuer.
  * The caller owns listener binding; this factory never starts inference until
@@ -120,6 +121,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   d1RetestAttempted=false,d1RetestPin,d1RetestPassed=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
+ let branchAdmissionAttempted=false;
+ const branchTaskPins=new Map(),branchStageAttempts=new Set();
  let pullRequestAdmissionAttempted=false;
  const pullRequestTaskPins=new Map();
  const pullRequestStageAttempts=new Set();
@@ -447,7 +450,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor'])||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
          deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
@@ -457,6 +460,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
          deps.runner,gateway,deps.giteaClient,
          snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
+        (deps.branchExecutor!==undefined&&
+         !TrustedAuthorityOnlyBranchExecutor.isNativeForOwner(deps.branchExecutor,gateway,deps.giteaClient))||
         (deps.pullRequestExecutor!==undefined&&
          !TrustedAuthorityOnlyPullRequestExecutor.isNativeForOwner(
           deps.pullRequestExecutor,gateway,deps.giteaClient,deps.runnerPassObserver))||
@@ -548,6 +553,93 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     /** R353.2: ADK may propose a PR Task only after original Test evidence.
      * Root/epoch/Child and exact tested SHA stay with the original owner.
      * Admission is not permission to issue a provider POST. */
+    async proposeAndStageBranchTask(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||branchAdmissionAttempted||
+        taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
+        stagedTaskCount!==0||operationalCoordinator.registeredTaskCount!==0||
+        !nativeEffectBinding?.branchExecutor||!fields(input,['model','runtimeTaskId']))
+      deny('branch requires first Task of original quiescent owner and installed executor');
+     const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+     const permission=before.root_permissions.find(p=>p.operation==='create_branch');
+     const owner=options.trustedAgentRegistry.orchestrator;
+     if(!permission||!owner?.capabilities.includes('create_branch'))
+      deny('branch requires original Engineer grant and Orchestrator identity');
+     branchAdmissionAttempted=true;
+     if(++decisionCalls>8)deny('branch exceeds original decision budget');
+     const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({model:input.model,
+      requirement,branch:before.branch,rootPermissions:before.root_permissions,
+      agents:{orchestrator:{capabilities:owner.capabilities}},previousTasks:[],
+      nextEpoch:1,decisionKind:'branch'});
+     decisionFlight=proposer.propose();
+     let choice;
+     try{choice=await decisionFlight;}finally{decisionFlight=undefined;}
+     if(choice.agent_id!=='orchestrator'||!isDeepStrictEqual(choice.permissions,[permission])||
+        choice.depends_on.length!==0)deny('branch decision differs from exact approved owner grant');
+     taskStageFlight=(async()=>{
+      const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      if(closed||session.phase!=='operational'||live.root_credential_id!==before.root_credential_id||
+         live.authority_digest!==before.authority_digest||operationalCoordinator.registeredTaskCount!==0)
+       deny('branch authority changed during model decision');
+      const registered=await operationalCoordinator.registerTask({session_id:live.session_id,
+       requirement_sha256:live.requirement_sha256,base_revision:live.base_revision,branch:live.branch,
+       task_id:choice.task_id,epoch:1,agent_id:'orchestrator',depends_on:[],permissions:[permission]});
+      await gateway.bindTrustedTask(registered.task_id,input.runtimeTaskId,'orchestrator');
+      const pin=TrustedAuthorityOnlyBranchExecutor.prototype.pinTask.call(
+       nativeEffectBinding.branchExecutor,registered.task_id,input.runtimeTaskId);
+      if(pin.base_revision!==before.base_revision||pin.credential_id!==before.root_credential_id)
+       deny('branch pin differs from original Engineer baseline');
+      operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      stagedTaskCount++;
+      stagedTaskIds.set(input.runtimeTaskId,Object.freeze({task_id:registered.task_id,
+       agent_id:'orchestrator',operation:'create_branch'}));
+      branchTaskPins.set(input.runtimeTaskId,pin);
+      return Object.freeze({status:'owner_branch_root_task_bound_no_provider_execution',
+       task_id:registered.task_id,runtime_task_id:input.runtimeTaskId,epoch:1,
+       credential_id:before.root_credential_id,base_revision:before.base_revision,
+       provider_executed:false,gateway_execution_authorized:false});
+     })();
+     try{return await taskStageFlight;}
+     catch(error){taskStageFailed=true;if(session.phase==='operational')await retire();throw error;}
+     finally{taskStageFlight=undefined;}
+    },
+    async stageEnrolledBranch(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||
+        taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
+        !nativeEffectBinding?.branchExecutor||!fields(input,['taskId','runtimeTaskId','requestId']))
+      deny('branch staging requires original active owner and installed executor');
+     const pin=branchTaskPins.get(input.runtimeTaskId),record=nativeEffectBinding.store.get(input.requestId);
+     if(!pin||pin.task_id!==input.taskId||!record||record.consumed||
+        record.task_id!==input.runtimeTaskId||record.request.tool!=='create_branch'||
+        branchStageAttempts.has(input.runtimeTaskId))deny('branch staging differs from original one-shot Task');
+     branchStageAttempts.add(input.runtimeTaskId);
+     return TrustedAuthorityOnlyBranchExecutor.prototype.stage.call(nativeEffectBinding.branchExecutor,record);
+    },
+    async attestEnrolledBranchCompletion(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||
+        taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
+        !nativeEffectBinding?.branchExecutor||!fields(input,['taskId','runtimeTaskId']))
+      deny('branch completion requires original active owner and independent reader');
+     const pin=branchTaskPins.get(input.runtimeTaskId);
+     if(!pin||pin.task_id!==input.taskId||!branchStageAttempts.has(input.runtimeTaskId)||
+        completionAttempts.has(input.runtimeTaskId))deny('branch completion requires original staged flight exactly once');
+     completionAttempts.add(input.runtimeTaskId);
+     completionFlight=(async()=>{
+      const observer=TrustedAuthorityOnlyBranchExecutor.prototype.createCompletionObserver.call(nativeEffectBinding.branchExecutor);
+      const observed=await gateway.attestTrustedBranchCompletion(input.taskId,input.runtimeTaskId,observer);
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         observed.task_id!==input.taskId||observed.runtime_task_id!==input.runtimeTaskId||
+         observed.status!=='task_completion_observed_staged')deny('branch completion differs from original Task');
+      operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      gatewayAttestedTaskIds.set(input.taskId,Object.freeze({task_id:input.taskId,agent_id:'orchestrator'}));
+      return Object.freeze({...observed,status:'owner_branch_completion_independently_observed'});
+     })();
+     try{return await completionFlight;}
+     catch(error){completionFailed=true;if(session.phase==='operational')await retire();throw error;}
+     finally{completionFlight=undefined;}
+    },
     async proposeAndStageVerifiedPullRequestTask(input){
      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
         taskStageFailed||dispatchFailed||completionFailed||

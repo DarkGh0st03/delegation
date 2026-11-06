@@ -2050,6 +2050,7 @@ test("R353.8 root PR fence remains separate from specialist Child flights",async
   await assert.rejects(effectFenceJournal.reserveCompletion(completion),/invalid pinned/);
   await assert.rejects(effectFenceJournal.reserveRootPullRequestCompletion({
    ...completion,request_fingerprint:"d".repeat(64)}),/no matching crash-durable/);
+  await assert.rejects(effectFenceJournal.reserveRootBranchCompletion(completion),/no matching crash-durable/);
   await effectFenceJournal.reserveRootPullRequestCompletion(completion);
   await assert.rejects(effectFenceJournal.reserveRootPullRequestFlight(flight),/EEXIST/);
   await assert.rejects(effectFenceJournal.reserveRootPullRequestCompletion(completion),/EEXIST/);
@@ -2081,3 +2082,102 @@ test("R353.8 even a signed Orchestrator PR grant cannot issue an Orchestrator Ch
   assert.equal(calls.length,0);
  },receipt);
 });
+
+// The verifier/provider responses below are explicit offline fixtures, not native proof.
+import {TrustedAuthorityOnlyBranchExecutor} from '../../../apps/gateway/src/trusted-authority-only-branch-executor.ts';
+import {DirectCoreRustVerifier} from '../../../apps/gateway/src/direct-core-verifier.ts';
+import {OpaPolicyClient} from '../../../apps/gateway/src/policy-client.ts';
+for(const mode of ['pass','no-stage','foreign-root','child-depth','opa-denied','vp-denied',
+ 'main-moved','existing-branch','post-lost','wrong-post-sha','reader-moved','generic-completion']){
+ test('R354 original root branch through canonical Gateway '+mode,async()=>{
+  await fixture(async({session,approvals,taskJournal,gatewayTaskJournal,gatewaySessionStore,
+   gatewayChildJournal,effectFenceJournal})=>{
+   await session.startPlanning(preliminary);await session.approveAndIssueOperationalRoot(operational);
+   const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({sessionId,engineer:session,
+    approvals,journal:taskJournal,trustedAgentRegistry:{...registry,orchestrator:{
+     did:'did:thesis:orchestrator',card_ref:'trusted:orchestrator',capabilities:['create_branch']}},
+    nowMs:()=>nowMs});
+   await coordinator.activate();
+   await coordinator.registerTask({...nextTask(),agent_id:'orchestrator',permissions:[pairs[0]!]});
+   const gate=new TrustedAuthorityOnlyGatewayAdmissions({repository:repo,engineerDid:did,
+    coordinator,approvals,operationalSessionStore:gatewaySessionStore,taskJournal:gatewayTaskJournal,
+    childJournal:gatewayChildJournal,effectFenceJournal,nowMs:()=>nowMs});
+   await gate.activate(sessionId,hash);
+   await gate.bindTrustedTask('task-backend','runtime-branch','orchestrator');
+   let posts=0,exists=mode==='existing-branch',head=hash,main=hash,readerGets=0;
+   const makeClient=(reader=false)=>new GiteaClient({baseUrl:'http://gitea.local:3000',
+    token:reader?'independent-reader':'writer',owner:repo.owner,repository:repo.repository,
+    fetchFn:(async(raw:URL|string,init?:RequestInit)=>{
+     const path=new URL(String(raw)).pathname;
+     if(reader){readerGets++;assert.equal(init?.method??'GET','GET');}
+     if(init?.method==='POST'){
+      posts++;
+      assert.deepEqual(JSON.parse(String(init.body)),{new_branch_name:branch,old_ref_name:hash});
+      exists=true;
+      if(mode==='post-lost')throw Error('lost provider response');
+      return Response.json({name:branch,commit:{id:mode==='wrong-post-sha'?'f'.repeat(40):hash}});
+     }
+     if(path.endsWith('/branches/main'))return Response.json({name:'main',commit:{id:main}});
+     assert.ok(path.endsWith('/branches/feature%2Faccount-suspension'));
+     if(!exists)return Response.json({message:'not found'},{status:404});
+     return Response.json({name:branch,commit:{id:head}});
+    }) as typeof fetch});
+   const client=makeClient(),reader=makeClient(true);
+   const executor=new TrustedAuthorityOnlyBranchExecutor({admissions:gate,giteaClient:client,
+    independentGiteaClient:reader,repository:repo.owner+'/'+repo.repository,nowMs:()=>nowMs});
+   assert.equal(executor.pinTask('task-backend','runtime-branch').base_revision,hash);
+   assert.throws(()=>executor.pinTask('task-backend','runtime-branch'),/quiescent/);
+   const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+   const prepared=prepareAuthorization({task_id:'runtime-branch',agent_role:'orchestrator',
+    tool:'create_branch',arguments:{branch,base_branch:'main'}},
+    {audience:'cloud-access-gateway',request_ttl_ms:120000,repository:repo},
+    {store,audit,authorityOnlyAdmissions:gate,nowMs:()=>nowMs,requestId:()=> 'request-root-branch',
+     challenge:()=> 'challenge-root-branch'});
+   const record=store.get(prepared.request_id)!;
+   if(mode==='main-moved'){
+    main='e'.repeat(40);await assert.rejects(executor.stage(record),/main revision changed/);
+    assert.equal(posts,0);return;
+   }
+   if(mode!=='no-stage')await executor.stage(record);
+   const verifier=new DirectCoreRustVerifier({verify_verifiable_presentation:async()=>{
+    if(mode==='vp-denied')throw new VerificationRejectedError('fixture denied');
+    return JSON.stringify({presenter_id:'did:thesis:orchestrator',issuer_id:did,
+     credential_id:mode==='foreign-root'?'urn:foreign:root':operational.credential_id,
+     root_credential_id:operational.credential_id,permissions:[pairs[0]],
+     hierarchy_depth:mode==='child-depth'?1:0,expiration:'1900000000000000000'});
+   }},Object.fromEntries(['orchestrator','backend','frontend','test'].map(r=>[r,'did:thesis:'+r])) as
+    Record<'orchestrator'|'backend'|'frontend'|'test',string>);
+   const policy=new OpaPolicyClient({baseUrl:'http://offline-opa.invalid',fetchFn:(async()=>
+    Response.json({result:{allow:mode!=='opa-denied',policy_version:'offline-branch'}})) as typeof fetch});
+   const deps={store,audit,verifier,policy,repository:repo,executor:new GiteaExecutor(client),
+    authorityOnlyAdmissions:gate,authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:executor,
+    nowMs:()=>nowMs};
+   const request={request_id:prepared.request_id,signed_vp:'offline-root-vp'};
+   const denied=['no-stage','foreign-root','child-depth','opa-denied','vp-denied','existing-branch','post-lost','wrong-post-sha'];
+   if(denied.includes(mode)){
+    await assert.rejects(executeAuthorization(request,deps));
+    assert.equal(posts,['post-lost','wrong-post-sha'].includes(mode)?1:0);
+   }else{
+    const result=await executeAuthorization(request,deps);
+    assert.equal(result.execution.tool,'create_branch');assert.equal(posts,1);
+    assert.equal(gate.stagedCompletedTaskCount,0);
+    assert.throws(()=>executor.assertExecutionResult(record,structuredClone(result.execution)),/not original/);
+    if(mode==='reader-moved')head='d'.repeat(40);
+    if(mode==='generic-completion'){
+     await assert.rejects(gate.attestTrustedTaskCompletion('task-backend','runtime-branch'));
+     assert.equal(gate.stagedCompletedTaskCount,0);return;
+    }
+    if(mode==='reader-moved'){
+     await assert.rejects(gate.attestTrustedBranchCompletion('task-backend','runtime-branch',
+      executor.createCompletionObserver()),/revision changed/);
+     assert.equal(gate.stagedCompletedTaskCount,0);
+    }else{
+     await gate.attestTrustedBranchCompletion('task-backend','runtime-branch',executor.createCompletionObserver());
+     assert.equal(gate.stagedCompletedTaskCount,1);assert.ok(readerGets>=3);
+    }
+   }
+   await assert.rejects(executeAuthorization(request,deps),e=>(e as {code?:string}).code==='replay_detected');
+   assert.equal(main,hash);
+  });
+ });
+}

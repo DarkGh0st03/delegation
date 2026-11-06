@@ -1,3 +1,4 @@
+import {TrustedAuthorityOnlyBranchExecutor} from './trusted-authority-only-branch-executor.ts';
 import { GiteaExecutor } from "./gitea-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
 import {TrustedAuthorityOnlyGiteaMutationExecutor}
@@ -122,6 +123,8 @@ export interface ExecuteDependencies {
   /** Opt-in owner-controlled native Test Runner; never the legacy Runner. */
   authorityOnlyRunnerExecutor?:TrustedAuthorityOnlyRunnerExecutor;
   authorityOnlyRunnerEnabled?:boolean;
+  authorityOnlyBranchExecutor?:TrustedAuthorityOnlyBranchExecutor;
+  authorityOnlyBranchEnabled?:boolean;
   authorityOnlyPullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
   authorityOnlyPullRequestEnabled?:boolean;
   nowMs?: () => number;
@@ -149,6 +152,11 @@ export async function executeAuthorization(
        dependencies.authorityOnlyAdmissions)))
     throw new GatewayError(403,"authority_only_binding_denied",
       "Atomic mutation owner differs from trusted Gateway authority");
+  if(dependencies.authorityOnlyBranchExecutor&&
+     (!dependencies.authorityOnlyAdmissions||
+      !TrustedAuthorityOnlyBranchExecutor.isNativeForAdmissions(
+       dependencies.authorityOnlyBranchExecutor,dependencies.authorityOnlyAdmissions)))
+    throw new GatewayError(403,"authority_only_binding_denied","branch owner differs from original Gateway");
   if(dependencies.authorityOnlyPullRequestExecutor&&
      (!dependencies.authorityOnlyAdmissions||
       !TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(
@@ -361,6 +369,15 @@ export async function executeAuthorization(
         // never a legacy RunnerClient fallback or agent-chosen tested SHA.
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedRunnerEvidenceBinding(
           record,verified);
+      }else if(record.request.tool==="create_branch"&&record.agent_role==="orchestrator"&&
+         dependencies.authorityOnlyBranchEnabled===true&&
+         TrustedAuthorityOnlyBranchExecutor.isNativeForAdmissions(
+          dependencies.authorityOnlyBranchExecutor,dependencies.authorityOnlyAdmissions)&&
+         dependencies.verifier instanceof DirectCoreRustVerifier&&
+         dependencies.policy instanceof OpaPolicyClient&&
+         dependencies.executor instanceof GiteaExecutor&&
+         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+        dependencies.authorityOnlyAdmissions.assertTrustedCompletedBranchEvidenceBinding(record,verified);
       }else if(record.request.tool==="create_pull_request"&&record.agent_role==="orchestrator"&&
          dependencies.authorityOnlyPullRequestEnabled===true&&
          TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(
@@ -452,6 +469,11 @@ export async function executeAuthorization(
       // A FAIL or ambiguous provider response is terminal, never retried.
       execution=await dependencies.authorityOnlyRunnerExecutor
         .executeAfterVerifiedRustOpa(record,verified,policyDecision);
+    }else if(record.authority_only_digest&&record.request.tool==="create_branch"){
+      if(dependencies.authorityOnlyBranchEnabled!==true||!dependencies.authorityOnlyBranchExecutor)
+       throw new ProviderOperationUnavailableError("Original branch executor is not configured");
+      execution=await TrustedAuthorityOnlyBranchExecutor.prototype.executeAfterVerifiedRustOpa.call(
+       dependencies.authorityOnlyBranchExecutor,record,verified,policyDecision);
     }else if(record.authority_only_digest&&record.request.tool==="create_pull_request"){
       if(dependencies.authorityOnlyPullRequestEnabled!==true||
          !dependencies.authorityOnlyPullRequestExecutor)
@@ -548,6 +570,12 @@ export async function executeAuthorization(
              !!dependencies.authorityOnlyRunnerExecutor&&
              dependencies.authorityOnlyRunnerEnabled===true){
       // Runner PASS receipt already independently attested and sealed.
+    }else if(execution.provider==="gitea"&&execution.tool==="create_branch"&&
+             dependencies.authorityOnlyBranchEnabled===true&&dependencies.authorityOnlyAdmissions&&
+             TrustedAuthorityOnlyBranchExecutor.isNativeForAdmissions(
+              dependencies.authorityOnlyBranchExecutor,dependencies.authorityOnlyAdmissions)){
+      TrustedAuthorityOnlyBranchExecutor.prototype.assertExecutionResult.call(
+       dependencies.authorityOnlyBranchExecutor,record,execution);
     }else if(execution.provider==="gitea"&&execution.tool==="create_pull_request"&&
              dependencies.authorityOnlyPullRequestEnabled===true&&
              dependencies.authorityOnlyAdmissions&&

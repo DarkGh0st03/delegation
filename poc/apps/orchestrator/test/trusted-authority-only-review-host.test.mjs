@@ -1,3 +1,4 @@
+import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
 import {TrustedAuthorityOnlyPullRequestExecutor} from '../../gateway/src/trusted-authority-only-pull-request-executor.ts';
 import {executeAuthorization} from '../../gateway/src/execute.ts';
 import {GiteaExecutor} from '../../gateway/src/gitea-executor.ts';
@@ -131,7 +132,9 @@ async function fixture(t,flags={}){
  const store=new AuthorityPlanningCheckpointStore({directory:dirs.checkpoints,trust:{
   trustedKeys:{backend:{public_key_pem:pem(backend.publicKey,'spki')}},expectedSessionId:snapshot.session_id,
   expectedRepository:snapshot.repository,expectedBaseRevision:snapshot.base_revision,expectedWorkBranch:branch,expectedRequirement:requirement}});
- const proposal=flags.includeTestPermission?{...draft,requested_permissions:[
+ const proposal=flags.includeBranchPermission?{...draft,requested_permissions:[
+  ...draft.requested_permissions,{operation:'create_branch',resource_type:'repository',path:null}
+ ]}:flags.includeTestPermission?{...draft,requested_permissions:[
   ...draft.requested_permissions,
   {operation:'run_tests',resource_type:'branch',path:null},
   ...(flags.includePullRequestPermission?[{operation:'create_pull_request',resource_type:'repository',path:null}]:[])
@@ -146,9 +149,9 @@ async function fixture(t,flags={}){
    passwordSaltHex:salt.toString('hex'),passwordScryptHex:scryptSync('owner-password',salt,64).toString('hex')},
   planner:{model,planId:'owner-authority-review',maxModelTurns:3,maxProposalRevisions:0},
   trustedAgentRegistry:Object.fromEntries(['backend','frontend','test',
-   ...(flags.includePullRequestPermission?['orchestrator']:[])].map(role=>[role,{
+   ...(flags.includePullRequestPermission||flags.includeBranchPermission?['orchestrator']:[])].map(role=>[role,{
     did:'did:thesis:'+role,card_ref:'trusted:'+role,
-    capabilities:[role==='orchestrator'?'create_pull_request':role==='test'?'run_tests':'update_file']} ])),
+    capabilities:role==='orchestrator'?[...(flags.includeBranchPermission?['create_branch']:[]),...(flags.includePullRequestPermission?['create_pull_request']:[])]:[role==='test'?'run_tests':'update_file']} ])),
   credentials:{async issueScopedOrchestratorRoot(req){
    log.push('issue:'+req.credential_id);await flags.onIssue?.(req);
    return {id:req.credential_id,credentialSubject:{per:structuredClone(req.permissions)}};
@@ -2247,3 +2250,86 @@ test('R353.2 only owner-selected PR decisions may propose the exact PR effect',a
  assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer({...config,
   model:new R351ScriptedDecision(candidate),decisionKind:'model-selected'}),/Task choice denied/);
 });
+
+for(const mode of ['pass','invalid-model','forged-pin','reader-moved']){
+ test('R354 original Engineer ADK branch root lifecycle '+mode,async t=>{
+  const f=await fixture(t,{includeBranchPermission:true}),host=await f.start();
+  await f.approve(['permission-1','permission-2','permission-3']);
+  const {coordinator}=await host.activateOperational(root('urn:r354:original-root',2));
+  const deps=executionDeps(f);
+  deps.effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(f.dirs.flights);
+  let childCalls=0;
+  deps.nativeCryptoPort={kind:'rust-native',issueChild:async()=>{childCalls++;throw Error('no self-delegation');}};
+  const execution=await host.admitOperationalExecution(deps),gateway=execution.gateway;
+  let exists=false,head=snapshot.base_revision,posts=0,independentGets=0;
+  const repository=snapshot.repository.owner+'/'+snapshot.repository.repository;
+  const client=reader=>new GiteaClient({baseUrl:'http://offline-gitea.invalid',
+   token:reader?'reader':'writer',owner:snapshot.repository.owner,repository:snapshot.repository.repository,
+   fetchFn:async(raw,init)=>{
+    if(reader){independentGets++;assert.equal(init?.method??'GET','GET');}
+    const path=new URL(String(raw)).pathname;
+    if(init?.method==='POST'){
+     posts++;exists=true;
+     assert.deepEqual(JSON.parse(init.body),{new_branch_name:branch,old_ref_name:snapshot.base_revision});
+     return Response.json({name:branch,commit:{id:snapshot.base_revision}});
+    }
+    if(path.endsWith('/branches/main'))return Response.json({name:'main',commit:{id:snapshot.base_revision}});
+    if(!exists)return Response.json({message:'not found'},{status:404});
+    return Response.json({name:branch,commit:{id:head}});
+   }});
+  const gitea=client(false),reader=client(true),store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const branchExecutor=new TrustedAuthorityOnlyBranchExecutor({admissions:gateway,giteaClient:gitea,
+   independentGiteaClient:reader,repository});
+  execution.bindNativeGatewayEffects({store,giteaClient:gitea,branchExecutor,
+   mutation:new TrustedAuthorityOnlyGiteaMutationPreflight({admissions:gateway,giteaClient:gitea,
+    journal:new DurableAuthorityOnlyGiteaMutationIntentJournal(f.dirs.mutationIntents),repository,branch}),
+   runner:new TrustedAuthorityOnlyRunnerPreflight({admissions:gateway,giteaClient:gitea,
+    journal:new DurableAuthorityOnlyRunnerIntentJournal(f.dirs.runnerIntents),repository,branch})});
+  const original=coordinator.assertTrustedGatewayAuthorityBinding();
+  const permission=original.root_permissions.find(p=>p.operation==='create_branch');
+  const choice={task_id:'r354-initial-branch',agent_id:'orchestrator',depends_on:[],permissions:[
+   mode==='invalid-model'?{operation:'create_branch',resource:'gitea://gitea.local/foreign/repo'}:permission],
+   instruction:'Create approved feature branch from the reviewed main revision'};
+  const model=new R351ScriptedDecision(choice),input={model,runtimeTaskId:'dispatch_'+'C'.repeat(22)};
+  if(mode==='forged-pin'){
+   await assert.rejects(execution.proposeAndStageBranchTask({...input,base_revision:'e'.repeat(40)}),/first Task/);
+   assert.equal(model.calls,0);assert.equal(coordinator.registeredTaskCount,0);await host.close();return;
+  }
+  if(mode==='invalid-model'){
+   await assert.rejects(execution.proposeAndStageBranchTask(input),/model Task choice denied/);
+   assert.equal(coordinator.registeredTaskCount,0);assert.equal(childCalls,0);await host.close();return;
+  }
+  const staged=await execution.proposeAndStageBranchTask(input);
+  assert.equal(staged.status,'owner_branch_root_task_bound_no_provider_execution');
+  assert.equal(staged.credential_id,original.root_credential_id);assert.equal(childCalls,0);
+  assert.equal(posts,0);assert.equal(model.calls,1);
+  await assert.rejects(execution.proposeAndStageBranchTask(input),/first Task/);
+  const prepared=prepareAuthorization({task_id:input.runtimeTaskId,agent_role:'orchestrator',
+   tool:'create_branch',arguments:{branch,base_branch:'main'}},
+   {audience:'cloud-access-gateway',request_ttl_ms:120000,repository:snapshot.repository},
+   {store,audit,authorityOnlyAdmissions:gateway,requestId:()=> 'r354-branch-request',challenge:()=> 'r354-challenge'});
+  await execution.stageEnrolledBranch({taskId:staged.task_id,runtimeTaskId:input.runtimeTaskId,requestId:prepared.request_id});
+  const verifier=new DirectCoreRustVerifier({verify_verifiable_presentation:async()=>JSON.stringify({
+   presenter_id:'did:thesis:orchestrator',issuer_id:did,credential_id:original.root_credential_id,
+   root_credential_id:original.root_credential_id,permissions:[permission],hierarchy_depth:0,
+   expiration:'1900000000000000000'})},Object.fromEntries(['orchestrator','backend','frontend','test'].map(r=>[r,'did:thesis:'+r])));
+  const policy=new OpaPolicyClient({baseUrl:'http://offline-opa.invalid',fetchFn:async()=>
+   Response.json({result:{allow:true,policy_version:'offline-branch'}})});
+  await executeAuthorization({request_id:prepared.request_id,signed_vp:'offline-root-vp'},
+   {store,audit,verifier,policy,repository:snapshot.repository,executor:new GiteaExecutor(gitea),
+    authorityOnlyAdmissions:gateway,authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:branchExecutor});
+  assert.equal(posts,1);assert.equal(gateway.stagedCompletedTaskCount,0);
+  const complete={taskId:staged.task_id,runtimeTaskId:input.runtimeTaskId};
+  if(mode==='reader-moved'){
+   head='e'.repeat(40);await assert.rejects(execution.attestEnrolledBranchCompletion(complete),/revision changed/);
+   assert.equal(host.phase,'revoked');assert.equal(gateway.stagedCompletedTaskCount,0);
+  }else{
+   const result=await execution.attestEnrolledBranchCompletion(complete);
+   assert.equal(result.status,'owner_branch_completion_independently_observed');
+   assert.equal(gateway.stagedCompletedTaskCount,1);assert.ok(independentGets>=3);
+   await assert.rejects(execution.attestEnrolledBranchCompletion(complete),/exactly once/);
+   assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,original.root_credential_id);
+  }
+  assert.equal(childCalls,0);await host.close();
+ });
+}

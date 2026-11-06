@@ -31,7 +31,7 @@ export class DurableAuthorityOnlyTaskFenceJournal {
    deny("absolute provisioned owner-private directory required");
   this.#directory=directory;
  }
- async #reserve(kind:"flight"|"completion",record:TrustedTaskFlight|TrustedTaskCompletion,rootPr=false){
+ async #reserve(kind:"flight"|"completion",record:TrustedTaskFlight|TrustedTaskCompletion,rootKind?:"pr"|"branch"){
   const expected=[
    "authority_digest","credential_id","epoch","request_fingerprint",
    "request_id","root_credential_id","runtime_task_id","session_id","task_id",
@@ -42,7 +42,7 @@ export class DurableAuthorityOnlyTaskFenceJournal {
      !ID.test(record.session_id)||!ID.test(record.root_credential_id)||
      !ID.test(record.task_id)||!ID.test(record.runtime_task_id)||
      !ID.test(record.credential_id)||!ID.test(record.request_id)||
-     (rootPr?record.credential_id!==record.root_credential_id:
+     (rootKind?record.credential_id!==record.root_credential_id:
       record.credential_id===record.root_credential_id)||
      !SHA.test(record.authority_digest)||!SHA.test(record.request_fingerprint)||
      !Number.isSafeInteger(record.epoch)||record.epoch<1||record.epoch>256)
@@ -74,7 +74,7 @@ export class DurableAuthorityOnlyTaskFenceJournal {
     const parsed=JSON.parse(await fd.readFile("utf8")) as Record<string,unknown>;
     const candidate=record as TrustedTaskCompletion;
     if(parsed.schema!==1||parsed.kind!=="flight"||
-       parsed.authority_kind!==(rootPr?"operational-root-pr":undefined)||
+       parsed.authority_kind!==(rootKind?"operational-root-"+rootKind:undefined)||
        ![
         "session_id","authority_digest","root_credential_id",
         "task_id","runtime_task_id","epoch","credential_id",
@@ -92,19 +92,25 @@ export class DurableAuthorityOnlyTaskFenceJournal {
    const stat=await fd.stat();
    if(!stat.isFile()||stat.nlink!==1||(stat.mode&0o777)!==0o600)
     deny("unsafe Task fence entry");
-   await fd.writeFile(JSON.stringify({schema:1,kind,...(rootPr?{authority_kind:"operational-root-pr"}:{}),...record})+"\n","utf8");
+   await fd.writeFile(JSON.stringify({schema:1,kind,...(rootKind?{authority_kind:"operational-root-"+rootKind}:{}),...record})+"\n","utf8");
    await fd.sync();
   }finally{await fd.close();}
   const dirfd=await open(this.#directory,
    constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
   try{await dirfd.sync();}finally{await dirfd.close();}
  }
+ async reserveRootBranchFlight(record:TrustedTaskFlight):Promise<void>{
+  await this.#reserve("flight",record,"branch");
+ }
+ async reserveRootBranchCompletion(record:TrustedTaskCompletion):Promise<void>{
+  await this.#reserve("completion",record,"branch");
+ }
  /** Root authority is reserved only by the dedicated Gateway PR path. */
  async reserveRootPullRequestFlight(record:TrustedTaskFlight):Promise<void>{
-  await this.#reserve("flight",record,true);
+  await this.#reserve("flight",record,"pr");
  }
  async reserveRootPullRequestCompletion(record:TrustedTaskCompletion):Promise<void>{
-  await this.#reserve("completion",record,true);
+  await this.#reserve("completion",record,"pr");
  }
  async reserveFlight(record:TrustedTaskFlight):Promise<void>{
   await this.#reserve("flight",record);

@@ -115,6 +115,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #sequential=new Map<string,SequentialTaskProgress>();
  readonly #completed=new Set<string>();
  readonly #completionEvidence=new Map<string,string>();
+ readonly #branchPins=new Map<string,Readonly<{
+  task_id:string;epoch:number;credential_id:string;base_revision:string;
+ }>>();
  readonly #prPins=new Map<string,Readonly<{
   task_id:string;epoch:number;credential_id:string;
   source:TrustedCompletionExpectation;tested_commit_sha:string;
@@ -539,6 +542,31 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#flightInFlight=false;}
  }
+ async stageTrustedRootBranchFlight(record:PreparedRequestRecord){
+  const root=this.#live();
+  const pin=this.assertTrustedBranchIntentBinding(record);
+  const bound=this.#tasks.get(record.task_id)!;
+  if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal)||
+     this.#flightInFlight||this.#completionInFlight||
+     this.#flights.has(pin.task_id)||this.#sequential.has(pin.task_id))
+   deny("root branch requires original durable one-flight reservation");
+  const flight:TrustedTaskFlight=Object.freeze({
+   session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,credential_id:root.root_credential_id,
+   task_id:pin.task_id,runtime_task_id:record.task_id,epoch:bound.row.epoch,
+   request_id:record.request_id,request_fingerprint:record.request_fingerprint
+  });
+  this.#flightInFlight=true;
+  try{
+   await this.#effectFenceJournal.reserveRootBranchFlight(flight);
+   this.#assertBranchPin(record.task_id);
+   this.#flights.set(pin.task_id,flight);
+   return Object.freeze({status:"task_flight_reserved_no_provider_execution",
+    task_id:pin.task_id,runtime_task_id:record.task_id,
+    gateway_execution_authorized:false});
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
  /**
   * R295 owner-only provenance projection. Not an execution permission.
   * Called exclusively AFTER a real Gateway verifier+OPA decision and a
@@ -619,8 +647,14 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(pin.task_id!==taskId)deny("PR completion differs from original Task");
   return this.#attestTaskCompletion(taskId,runtimeTaskId,observer,true);
  }
+ async attestTrustedBranchCompletion(taskId:string,runtimeTaskId:string,
+  observer:TrustedAuthorityOnlyCompletionObserver){
+  if(this.#assertBranchPin(runtimeTaskId).task_id!==taskId)
+   deny("branch completion differs from original Task");
+  return this.#attestTaskCompletion(taskId,runtimeTaskId,observer,"branch");
+ }
  async #attestTaskCompletion(taskId:string,runtimeTaskId:string,
-  observer:TrustedAuthorityOnlyCompletionObserver|undefined,pullRequest:boolean){
+  observer:TrustedAuthorityOnlyCompletionObserver|undefined,pullRequest:boolean|"branch"){
   const root=this.#live();
   if(this.#sequential.has(taskId))
    deny("sequential Task completion must use explicit finalization");
@@ -630,7 +664,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(this.#completionInFlight||this.#completed.has(taskId))
    deny("concurrent or duplicate Task completion attestation");
   const bound=this.#tasks.get(runtimeTaskId);
-  const child=pullRequest?this.#rootPullRequestAuthority(runtimeTaskId):
+  const child=pullRequest==="branch"?this.#rootBranchAuthority(runtimeTaskId):
+   pullRequest?this.#rootPullRequestAuthority(runtimeTaskId):
    this.#enrolledChildren.get(runtimeTaskId);
   const flight=this.#flights.get(taskId);
   if(!bound||!child||!flight||
@@ -656,9 +691,11 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
     deny("PR completion requires its independent original provider observer");
    const observation=await observer.observe(expectation);
    assertObservedCompletion(expectation,observation,this.#now());
-   if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
-   await (pullRequest?
-    this.#effectFenceJournal.reserveRootPullRequestCompletion.bind(this.#effectFenceJournal):
+   if(pullRequest==="branch")this.#assertBranchPin(runtimeTaskId);
+   else if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
+   await (pullRequest==="branch"?
+    this.#effectFenceJournal.reserveRootBranchCompletion.bind(this.#effectFenceJournal):
+    pullRequest?this.#effectFenceJournal.reserveRootPullRequestCompletion.bind(this.#effectFenceJournal):
     this.#effectFenceJournal.reserveCompletion.bind(this.#effectFenceJournal))({
     ...flight,evidence_sha256:observation.evidence_sha256,
     completed_at_ms:observation.completed_at_ms
@@ -666,7 +703,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    this.#live();
    if(this.#now()>=Date.parse(child.expires_at))
     deny("native Child expired during completion attestation");
-   if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
+   if(pullRequest==="branch")this.#assertBranchPin(runtimeTaskId);
+   else if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
    this.#completed.add(taskId);
    this.#completionEvidence.set(taskId,observation.evidence_sha256);
    return Object.freeze({
@@ -897,6 +935,54 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
  }
+ #rootBranchAuthority(runtimeTaskId:string){
+  const root=this.#live(),task=this.#tasks.get(runtimeTaskId);
+  if(!task||task.row.agent_id!=="orchestrator"||task.row.epoch!==1||this.#epoch!==1||
+     this.#tasks.size!==1||this.#enrolledChildren.has(runtimeTaskId)||
+     task.row.depends_on.length!==0||task.row.permissions.length!==1||
+     task.row.permissions[0]?.operation!=="create_branch"||
+     !root.root_permissions.some(p=>pair(p)===pair(task.row.permissions[0]!)))
+   deny("branch requires original first Orchestrator Task and exact root grant");
+  return Object.freeze({credential_id:root.root_credential_id,
+   root_credential_id:root.root_credential_id,authority_digest:root.authority_digest,
+   epoch:task.row.epoch,agent_did:task.row.agent_did,expires_at:root.root_expires_at});
+ }
+ pinTrustedBranchTask(taskId:string,runtimeTaskId:string){
+  const root=this.#live(),authority=this.#rootBranchAuthority(runtimeTaskId);
+  if(this.#bindingInFlight||this.#flightInFlight||this.#completionInFlight||
+     this.#branchPins.has(runtimeTaskId)||this.#completed.size||
+     this.#tasks.get(runtimeTaskId)!.row.task_id!==taskId)
+   deny("branch Task admission requires original quiescent owner");
+  this.#branchPins.set(runtimeTaskId,Object.freeze({task_id:taskId,
+   epoch:authority.epoch,credential_id:authority.credential_id,base_revision:root.base_revision}));
+  return this.#assertBranchPin(runtimeTaskId);
+ }
+ #assertBranchPin(runtimeTaskId:string){
+  const root=this.#live(),pin=this.#branchPins.get(runtimeTaskId);
+  const authority=this.#rootBranchAuthority(runtimeTaskId),task=this.#tasks.get(runtimeTaskId)!;
+  if(!pin||pin.task_id!==task.row.task_id||pin.epoch!==authority.epoch||
+     pin.credential_id!==root.root_credential_id||pin.base_revision!==root.base_revision||
+     this.#completed.has(pin.task_id))
+   deny("original pinned branch Task is missing, changed or complete");
+  return pin;
+ }
+ assertTrustedBranchIntentBinding(record:PreparedRequestRecord){
+  const pin=this.#assertBranchPin(record.task_id);
+  if(record.consumed!==false||record.request.tool!=="create_branch"||
+     record.agent_role!=="orchestrator"||record.expires_at_ms<=this.#now())
+   deny("branch intent requires original fresh Orchestrator Prepare");
+  const canonical=this.preflightCanonicalRequest({task_id:record.task_id,
+   agent_role:record.agent_role,tool:record.request.tool,arguments:record.request.arguments});
+  const digest=createHash("sha256").update(JSON.stringify({task_id:record.task_id,
+   agent_role:record.agent_role,request:record.request})).digest("hex");
+  if(record.authority_only_plan_task_id!==pin.task_id||
+     record.authority_only_digest!==canonical.authority_digest||
+     record.authority_only_agent_did!==canonical.agent_did||
+     pair(record.required_permission)!==pair(canonical.required_permission)||
+     record.request_fingerprint!==digest)
+   deny("branch intent differs from original canonical Task");
+  return pin;
+ }
  #rootPullRequestAuthority(runtimeTaskId:string){
   const root=this.#live(),pr=this.#tasks.get(runtimeTaskId);
   if(!pr||pr.row.agent_id!=="orchestrator"||pr.row.epoch!==this.#epoch||
@@ -1026,6 +1112,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    case "create_branch":
     if(args.branch!==this.#branch||args.base_branch!=="main")
      deny("branch creation outside approved feature branch");
+    this.#assertBranchPin(request.task_id);
     break;
    case "create_pull_request":
     if(args.head_branch!==this.#branch||args.base_branch!=="main")
@@ -1248,6 +1335,12 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  ):Readonly<TrustedCompletionExpectation>{
   return this.#assertConsumedEffectBinding(record,verified,"update_file");
  }
+ assertTrustedCompletedBranchEvidenceBinding(
+  record:PreparedRequestRecord,verified:VerifiedDelegation
+ ):Readonly<TrustedCompletionExpectation>{
+  this.#assertBranchPin(record.task_id);
+  return this.#assertConsumedEffectBinding(record,verified,"create_branch");
+ }
  assertTrustedCompletedPullRequestEvidenceBinding(
   record:PreparedRequestRecord,verified:VerifiedDelegation
  ):Readonly<TrustedCompletionExpectation>{
@@ -1255,7 +1348,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   return this.#assertConsumedEffectBinding(record,verified,"create_pull_request");
  }
  #assertConsumedEffectBinding(record:PreparedRequestRecord,verified:VerifiedDelegation,
-  tool:"update_file"|"create_pull_request"):Readonly<TrustedCompletionExpectation>{
+  tool:"update_file"|"create_pull_request"|"create_branch"):Readonly<TrustedCompletionExpectation>{
   const root=this.#live();
   if(!record||record.consumed!==true||
      !record.authority_only_digest||
@@ -1265,7 +1358,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      this.#flightInFlight||this.#completionInFlight)
    deny("successful mutation lacks live consumed authority-only Prepare");
   const bound=this.#tasks.get(record.task_id);
-  const child=tool==="create_pull_request"?this.#rootPullRequestAuthority(record.task_id):
+  const child=tool==="create_branch"?this.#rootBranchAuthority(record.task_id):
+   tool==="create_pull_request"?this.#rootPullRequestAuthority(record.task_id):
    this.#enrolledChildren.get(record.task_id);
   const taskId=bound?.row.task_id;
   if(!bound||!child||!taskId||!verified||
@@ -1277,7 +1371,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      verified.credential_id!==child.credential_id||
      verified.root_credential_id!==root.root_credential_id||
      !Number.isSafeInteger(verified.hierarchy_depth)||
-     (tool==="create_pull_request"?verified.hierarchy_depth!==0:verified.hierarchy_depth<1)||
+     (tool!=="update_file"?verified.hierarchy_depth!==0:verified.hierarchy_depth<1)||
      child.root_credential_id!==root.root_credential_id||
      child.authority_digest!==root.authority_digest||
      child.agent_did!==bound.row.agent_did||

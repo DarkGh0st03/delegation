@@ -1,3 +1,4 @@
+import {TrustedAuthorityOnlyBranchExecutor} from './trusted-authority-only-branch-executor.ts';
 /**
  * R310 — explicit owner-assembled authority-only Gateway HTTP entrypoint.
  *
@@ -30,6 +31,7 @@ export interface TrustedAuthorityOnlyGatewayOwner {
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   mutationExecutor:TrustedAuthorityOnlyGiteaMutationExecutor;
   runnerExecutor:TrustedAuthorityOnlyRunnerExecutor;
+  branchExecutor?:TrustedAuthorityOnlyBranchExecutor;
   pullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
   store:InMemoryRequestStore;
   audit?:AuditSink;
@@ -83,6 +85,9 @@ export function createTrustedAuthorityOnlyGatewayServer(
   if(!owner.mutationExecutor.isForAdmissions(owner.admissions)||
      !owner.runnerExecutor.isForAdmissions(owner.admissions))
     deny("effect executors belong to another Gateway owner");
+  if(owner.branchExecutor!==undefined&&
+     !TrustedAuthorityOnlyBranchExecutor.isNativeForAdmissions(owner.branchExecutor,owner.admissions))
+    deny("branch executor belongs to another Gateway owner");
   if(owner.pullRequestExecutor!==undefined&&
      !TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(
       owner.pullRequestExecutor,owner.admissions))
@@ -102,6 +107,7 @@ export function createTrustedAuthorityOnlyGatewayServer(
     authorityOnlyMutationExecutor:owner.mutationExecutor,
     authorityOnlyRunnerEnabled:true,
     authorityOnlyRunnerExecutor:owner.runnerExecutor,
+    ...(owner.branchExecutor?{authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:owner.branchExecutor}:{}),
     ...(owner.pullRequestExecutor?{authorityOnlyPullRequestEnabled:true,
      authorityOnlyPullRequestExecutor:owner.pullRequestExecutor}:{})
   });
