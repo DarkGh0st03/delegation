@@ -138,7 +138,7 @@ function fixture(patch?:{
   }]);
   assert.equal(sent.subtask.approved_run_tests,isTest);
   assert.equal(sent.delegation_evidence.credential_id,id);
-  assert.equal(sent.delegation_evidence.presenter_id,did);
+  assert.equal(sent.delegation_evidence.presenter_id,patch?.row?.agent_did??did);
   assert.deepEqual(JSON.parse(sent.delegation_evidence.credential),patch?.signed??signed);
   return patch?.response??goodResponse();
  }};
