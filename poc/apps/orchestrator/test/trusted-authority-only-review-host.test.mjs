@@ -63,13 +63,27 @@ class R3504ScriptedBackend extends BaseLlm{
  connect(){throw Error('Paid model connection forbidden');}
 }
 
+class R3513ScriptedFrontend extends BaseLlm{
+ calls=0;requests=[];
+ constructor(){super({model:'r3513-scripted-frontend-offline'});}
+ async *generateContentAsync(req){
+  this.calls++;this.requests.push(req);
+  if(this.calls===1)yield {content:{role:'model',parts:[{functionCall:{
+   id:'r3513-frontend-update',name:'update_file',
+   args:{branch:'feature/account-suspension',path:'apps/user.ts',
+    content:'export const suspended=true; export const ui="pending";\n'}
+  }}]}};
+  else yield {content:{role:'model',parts:[{text:'Updated approved Frontend state'}]}};
+ }
+ connect(){throw Error('Paid model connection forbidden');}
+}
 class Scripted extends BaseLlm{
  calls=0;
- constructor(){super({model:'free-owner-review-script'});}
+ constructor(proposal=draft){super({model:'free-owner-review-script'});this.proposal=proposal;}
  async *generateContentAsync(){
   this.calls++;
   if(this.calls===1)yield {content:{role:'model',parts:[{functionCall:{id:'read',name:'read_file',args:{branch:'main',path:snapshot.files[0]}}}]}};
-  else yield {content:{role:'model',parts:[{text:JSON.stringify(draft)}]}};
+  else yield {content:{role:'model',parts:[{text:JSON.stringify(this.proposal)}]}};
  }
  connect(){throw Error('Paid inference forbidden');}
 }
@@ -85,7 +99,11 @@ async function fixture(t,flags={}){
  const store=new AuthorityPlanningCheckpointStore({directory:dirs.checkpoints,trust:{
   trustedKeys:{backend:{public_key_pem:pem(backend.publicKey,'spki')}},expectedSessionId:snapshot.session_id,
   expectedRepository:snapshot.repository,expectedBaseRevision:snapshot.base_revision,expectedWorkBranch:branch,expectedRequirement:requirement}});
- const salt=randomBytes(16),log=[],model=new Scripted();
+ const proposal=flags.includeTestPermission?{...draft,requested_permissions:[
+  ...draft.requested_permissions,
+  {operation:'run_tests',resource_type:'branch',path:null}
+ ]}:draft;
+ const salt=randomBytes(16),log=[],model=new Scripted(proposal);
  const options={snapshot,requirement,workBranch:branch,preliminaryRoot:root('urn:r349:preliminary',1),
   activationJournal:new DurableAuthorityOnlyActivationJournal(dirs.activation),taskJournal:new DurableAuthorityTaskJournal(dirs.tasks),
   operationalRecoveryStore:new TrustedOperationalRecoveryStore(dirs.recovery),
@@ -132,21 +150,22 @@ async function fixture(t,flags={}){
 
 /** Real native preflight classes and durable journals; only Gitea reads
  * are supplied by a no-network fixture for these cheap offline regressions. */
-function nativeOfflinePreflights(gateway,dirs,events=[]){
+function nativeOfflinePreflights(gateway,dirs,events=[],provider){
  class PinnedGiteaReadFixture extends GiteaClient{
   constructor(){super({baseUrl:'http://offline-gitea.invalid',
    token:'offline-no-network',owner:'thesis',repository:'iam-console-poc'});}
   async getBranchMetadata(workBranch){
    assert.equal(workBranch,branch);
-   return {name:workBranch,commit_sha:snapshot.base_revision};
+   return {name:workBranch,commit_sha:provider?.head??snapshot.base_revision};
   }
   async readTextFile(workBranch,path,revision){
    assert.equal(workBranch,branch);
    assert.equal(path,'apps/user.ts');
-   assert.equal(revision,snapshot.base_revision);
+   assert.equal(revision,provider?.head??snapshot.base_revision);
    events.push('offline_pinned_gitea_read');
-   return {branch:workBranch,path,revision,blob_sha:'b'.repeat(40),
-    content:'export const suspended=false;\n'};
+   return {branch:workBranch,path,revision,
+    blob_sha:provider?.blob??'b'.repeat(40),
+    content:provider?.content??'export const suspended=false;\n'};
   }
  }
  const gitea=new PinnedGiteaReadFixture();
