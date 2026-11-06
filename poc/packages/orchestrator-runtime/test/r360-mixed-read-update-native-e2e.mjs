@@ -268,6 +268,8 @@ try{
  });
  const readPublisher=new TrustedGatewayGiteaReadEvidencePublisher({
   directory:path("receipts"),key:evidenceKey,admissions:gate,
+  // Authenticated read-only client is independent from the Gateway writer.
+  independentGiteaClient:independentClient,
   repository:"thesis/iam-console-poc",branch,nowMs
  });
  const native=await TrustedAuthorityOnlySequentialReadUpdateStager.begin({
