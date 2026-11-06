@@ -111,7 +111,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let d1FailurePreflightAttempted=false,d1FailurePreflightFlight,
   d1FailurePreflightFailed=false,d1VerifiedFailure,
   d1RepairProposalAttempted=false,d1RepairProposal,
-  d1RepairAdmissionAttempted=false,d1RepairAdmissionFlight;
+  d1RepairAdmissionAttempted=false,d1RepairAdmissionFlight,
+  d1DispatchPin;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let dispatchFlight,dispatchFailed=false;
@@ -504,6 +505,14 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           !nativeEffectBinding?.failureObserver||
           d1FailurePreflightAttempted))
        deny('D1 failure observer must be installed before original Test dispatch');
+      // A D1 candidate may propose instructions, never a mutable dispatch
+      // command. Pin the first admitted native repair to that exact choice:
+      // roles/permissions alone do not protect model-authored intent.
+      if(d1DispatchPin&&input.runtimeTaskId===d1DispatchPin.runtimeTaskId&&
+         (input.taskId!==d1DispatchPin.taskId||
+          input.instruction!==d1DispatchPin.instruction||
+          input.d1Candidate!==undefined))
+       deny('D1 dispatch requires original owner-pinned repair instruction');
       if(dispatchAttempts.has(input.runtimeTaskId))
        deny('protected A2A dispatch replayed');
       dispatchAttempts.add(input.runtimeTaskId); // before sending A2A / private IPC
@@ -722,8 +731,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         operation:row.permissions.find(p=>
          p.operation==='update_file'||p.operation==='run_tests')?.operation
        }));
+       // The random native Task ID is selected by the Coordinator, while
+       // the instruction is the immutable, previously validated ADK choice.
+       // Neither the caller nor an A2A response may replace it at dispatch.
+       d1DispatchPin=Object.freeze({
+        taskId:enrolled.task_id,runtimeTaskId:enrolled.runtime_task_id,
+        instruction:proposal.instruction
+       });
        stagedTaskCount++;
-       return Object.freeze({...enrolled,
+       return Object.freeze({...enrolled,instruction:proposal.instruction,
         decision_source:'verified_d1_model_original_coordinator',
         failed_test_task_id:intent.task_id,
         recovery_completed:false,provider_executed:false});

@@ -1184,6 +1184,24 @@ for(const mode of ['missing','backend','frontend','test','failure',
        assert.equal(newD1.recovery_completed,false);
        assert.equal(newD1.gateway_execution_authorized,false);
        assert.equal(newD1.decision_source,'verified_d1_model_original_coordinator');
+       assert.equal(newD1.instruction,candidate.candidate.instruction);
+       const d1Stager=execution.createEnrolledNativeEffectStager({
+        runtimeTaskId:newD1.runtime_task_id,expectedHeadSha:frontendSha
+       });
+       assert.equal(d1Stager.isForOwnerTask(
+        gateway,newD1.runtime_task_id,'update_file'),true);
+       // The caller cannot rewrite a signed-scope D1 task as arbitrary text.
+       // Rejected dispatches must NOT consume the original one-use stager.
+       for(const forgedInstruction of ['Unapproved D1 instruction',
+        newD1.instruction+'\nDo something else']){
+        await assert.rejects(execution.dispatchEnrolledTask({
+         taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id,
+         instruction:forgedInstruction,effectStager:d1Stager
+        }),/D1 dispatch requires original owner-pinned repair instruction/);
+       }
+       await assert.rejects(execution.attestEnrolledTaskCompletion({
+        taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id
+       }),/no matching original A2A dispatch report/);
        assert.equal(coordinator.registeredTaskCount,4);
        assert.equal(gateway.registeredTaskCount,4);
        assert.equal(gateway.stagedCompletedTaskCount,2);
