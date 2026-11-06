@@ -84,9 +84,13 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
  }
  /** Called only between Gateway Prepare and signed VP, never from the model. */
  async stage(requestId:string):Promise<unknown>{
-  if(!ID.test(requestId)||
-     (this.#state!=="read_ready"&&this.#state!=="read_verified"))
+  if(this.#state!=="read_ready"&&this.#state!=="read_verified")
    deny("out-of-order, duplicate or terminated owner effect");
+  const phase=this.#state;
+  // A malformed/mismatched Prepare consumes the owner slot, including
+  // failures detected before the durable journal's first write.
+  this.#state="failed";
+  if(!ID.test(requestId))deny("malformed native Task request ID");
   const record=this.#store.get(requestId);
   if(!record||record.task_id!==this.#runtimeTaskId||
      record.consumed!==false||record.expires_at_ms<=Date.now()||
@@ -95,8 +99,7 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
      typeof record.request.arguments.path!=="string")
    deny("read/update Prepare lacks original Task, path or expected HEAD");
   const tool=record.request.tool;
-  if(this.#state==="read_ready"){
-   this.#state="failed"; // consume before any durable reservation
+  if(phase==="read_ready"){
    if(tool!=="read_file")deny("first typed effect must read the existing file");
    const result=await this.#admissions.stageTrustedSequentialReadEffect(record);
    if(result.status!=="sequential_read_effect_reserved_staged"||
@@ -108,7 +111,6 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
    this.#state="read_pending";
    return result;
   }
-  this.#state="failed"; // a failed/ambiguous CAS cannot retry
   if(tool!=="update_file"||record.request.arguments.path!==this.#path)
    deny("mutation must target the exact independently read file");
   const intent=await this.#mutation.stageUpdate(record,this.#head);

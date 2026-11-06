@@ -81,6 +81,8 @@ test("R359.4 changed pinned HEAD denies read before any trusted provider operati
  const f=await fixture();
  const changed=f.store.get("read")!;changed.pinned_revision="b".repeat(40);
  await assert.rejects(f.stager.stage("read"),/expected HEAD/u);
+ changed.pinned_revision=head;
+ await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
  assert.deepEqual(f.calls,["begin"]);
 });
 test("R359.4 update on a different file cannot use earlier read evidence",async()=>{
@@ -88,4 +90,11 @@ test("R359.4 update on a different file cannot use earlier read evidence",async(
  const changed=f.store.get("update")!;changed.request.arguments.path="other.ts";
  await assert.rejects(f.stager.stage("update"),/exact independently read file/u);
  assert.deepEqual(f.calls,["begin","stage_read","attest_read"]);
+});
+
+test("R359.7 a missing Gateway Prepare consumes the typed owner slot",async()=>{
+ const f=await fixture();
+ await assert.rejects(f.stager.stage("nonexistent"),/original Task, path or expected HEAD/u);
+ await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
+ assert.deepEqual(f.calls,["begin"]);
 });
