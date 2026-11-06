@@ -661,27 +661,35 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
  const fetchFn=async(url,options)=>{
   const u=String(url),body=JSON.parse(String(options?.body));
   if(u.endsWith('/v1/authorization/prepare')){
-   assert.equal(body.task_id,task.runtimeTaskId);
-   assert.equal(body.agent_role,'backend');
+   const frontendRequest=throughFrontend&&next&&
+    body.task_id===next.runtimeTaskId;
+   assert.equal(body.task_id,frontendRequest?next.runtimeTaskId:task.runtimeTaskId);
+   assert.equal(body.agent_role,frontendRequest?'frontend':'backend');
    assert.equal(body.tool,'update_file');
    assert.deepEqual(body.arguments,{branch,path:'apps/user.ts',
-    content:'export const suspended=true;\n'});
-   events.push('gateway_prepare_canonical');
+    content:frontendRequest?frontendContent:newContent});
+   events.push(frontendRequest?'frontend_gateway_prepare_canonical':
+    'gateway_prepare_canonical');
    const prepared=prepareAuthorization(body,{
     audience:'cloud-access-gateway',request_ttl_ms:60000,
     repository:snapshot.repository
    },{
     store,audit,authorityOnlyAdmissions:gateway,
-    requestId:()=>requestId,challenge:()=> 'r3504-challenge'
+    requestId:()=>frontendRequest?frontendRequestId:requestId,
+    challenge:()=>frontendRequest?frontendChallenge:'r3504-challenge'
    });
-   assert.equal(store.size(),1);
+   assert.equal(store.size(),frontendRequest?2:1);
    return Response.json(prepared,{status:201});
   }
   if(u.endsWith('/v1/presentations')){
-   assert.equal(body.credential_id,staged.credential_id);
-   assert.equal(body.challenge,'r3504-challenge');
-   events.push('private_vp_fixture');
-   return Response.json({signed_vp:vp});
+   const frontendRequest=throughFrontend&&frontendStaged&&
+    body.credential_id===frontendStaged.credential_id;
+   assert.equal(body.credential_id,frontendRequest?
+    frontendStaged.credential_id:staged.credential_id);
+   assert.equal(body.challenge,frontendRequest?
+    frontendChallenge:'r3504-challenge');
+   events.push(frontendRequest?'frontend_private_vp_fixture':'private_vp_fixture');
+   return Response.json({signed_vp:frontendRequest?frontendVp:vp});
   }
   if(u.endsWith('/v1/authorization/execute')){
    assert.equal(body.request_id,requestId);
@@ -720,7 +728,8 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
   throw Error('Unexpected untrusted Gateway endpoint '+u);
  };
  try{
-  const registry=new TrustedEffectStagingTaskRegistry();
+  const registries=Object.fromEntries(roles.map(role=>[
+   role,new TrustedEffectStagingTaskRegistry()]));
   for(const role of roles){
    const sc={socketPath:join(temp,role+'-stage.sock'),
     secretFile:join(temp,role+'-stage.hex')};
@@ -733,12 +742,13 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    const server=await startSpecializedAgentServer({
     role,host:'127.0.0.1',port:await localPort(),
     delegatedAuthorization:true,capabilityProfile:'approved-plan',
-    ...(role==='backend'?{adk:{
-     model,gatewayBaseUrl:'http://offline-gateway.r3504.invalid',
+    ...((role==='backend'||(throughFrontend&&role==='frontend'))?{adk:{
+     model:role==='backend'?model:frontendModel,
+     gatewayBaseUrl:'http://offline-gateway.r3504.invalid',
      adapterBaseUrl:'http://offline-crypto.r3504.invalid',
      adapterToken:'private-r3504-token',scopeModelPaths:true,
      maxModelTurns:4,maxModelCallMs:5000,
-     trustedEffectTaskRegistry:registry,fetchFn
+     trustedEffectTaskRegistry:registries[role],fetchFn
     }}:{})
    });
    servers.push(server);a2aUrls[role]=server.baseUrl;
@@ -746,7 +756,7 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
   for(const role of roles){
    const bind=await createTrustedEffectAgentBindingServer({
     ...agentBindingChannels[role],expectedRole:role,
-    registry:role==='backend'?registry:new TrustedEffectStagingTaskRegistry(),
+    registry:registries[role],
     ownerStageClient:await connectTrustedOwnerEffectStagingClient(
      stageChannels[role])
    });
