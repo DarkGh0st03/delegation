@@ -60,14 +60,17 @@ const draft={requested_permissions:[{operation:'update_file',resource_type:'file
 const pem=(k,type)=>k.export({format:'pem',type}).toString();
 class R3504ScriptedBackend extends BaseLlm{
  calls=0; requests=[];
- constructor(){super({model:'r3504-scripted-no-inference'});}
+ constructor(allowD1=false){super({model:'r3504-scripted-no-inference'});this.allowD1=allowD1;}
  async *generateContentAsync(request){
   this.calls++;this.requests.push(request);
-  if(this.calls===1)yield {content:{role:'model',parts:[{functionCall:{
-   id:'r3504-update',name:'update_file',
-   args:{branch:'feature/account-suspension',path:'apps/user.ts',
-    content:'export const suspended=true;\n'}
-  }}]}};
+  if(this.calls===1||(this.allowD1&&this.calls===3))
+   yield {content:{role:'model',parts:[{functionCall:{
+    id:this.calls===3?'r3524-repair':'r3504-update',name:'update_file',
+    args:{branch:'feature/account-suspension',path:'apps/user.ts',
+     content:this.calls===3?
+      'export const suspended=true; export const ui="ready";\n':
+      'export const suspended=true;\n'}
+   }}]}};
   else yield {content:{role:'model',parts:[{text:'Updated owner-authorized file'}]}};
  }
  connect(){throw Error('Paid model connection forbidden');}
@@ -587,11 +590,13 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
 });
 
 for(const mode of ['missing','backend','frontend','test','failure',
- 'failure-no-receipt','failure-model-denied'])test(
+ 'failure-d1-effect','failure-no-receipt','failure-model-denied'])test(
  mode==='failure-no-receipt'?
  'R352.1 Test FAIL without MAC receipt retires original Engineer root':
  mode==='failure-model-denied'?
  'R352.1 verified FAIL does not permit a model-selected foreign D1 role':
+ mode==='failure-d1-effect'?
+ 'R352.4 admitted D1 Backend repairs through original A2A/Gateway and independent Gitea evidence':
  mode==='failure'?
  'R352.1 actual A2A Test FAIL is independently verified and permits only a bounded D1 candidate':
  mode==='test'?
@@ -606,13 +611,14 @@ for(const mode of ['missing','backend','frontend','test','failure',
   noFailureReceipt=mode==='failure-no-receipt',
   foreignD1Model=mode==='failure-model-denied',
   throughTest=mode==='test'||throughFailure,
-  throughFrontend=mode==='frontend'||throughTest;
+  throughFrontend=mode==='frontend'||throughTest,
+  d1Effect=mode==='failure-d1-effect';
  const f=await fixture(t,throughFrontend?{includeTestPermission:true}:{});
  const host=await f.start();
  await f.approve(throughFrontend?['permission-1','permission-2','permission-3']:
   ['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:real-a2a-root',2));
- const deps=executionDeps(f),events=[],model=new R3504ScriptedBackend();
+ const deps=executionDeps(f),events=[],model=new R3504ScriptedBackend(d1Effect);
  deps.effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(f.dirs.flights);
  const fileSha='e'.repeat(40),frontendSha='f'.repeat(40),
   vp='r3504-private-vp',frontendVp='r3513-private-frontend-vp',
@@ -623,10 +629,14 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const newContent='export const suspended=true;\n';
  const frontendContent='export const suspended=true; export const ui="pending";\n';
  const newBlob='d'.repeat(40),frontendBlob='c'.repeat(40),oldBlob='b'.repeat(40);
+ const repairSha='9'.repeat(40),repairBlob='8'.repeat(40),
+  repairContent='export const suspended=true; export const ui="ready";\n',
+  repairRequestId='r3524-prepared-d1-repair',repairChallenge='r3524-d1-challenge',
+  repairVp='r3524-private-d1-vp';
  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
   blob:oldBlob,content:'export const suspended=false;\n'};
  let publisher,frontendStaged,next,testTask,testStaged,runnerClient,
-  runnerPublisher,runnerJournal,failureObserver,failurePublisher;
+  runnerPublisher,runnerJournal,failureObserver,failurePublisher,nativeD1;
  const frontendModel=new R3513ScriptedFrontend();
  const testAgentModel=new R3514ScriptedTest();
  const runnerPhases=['dependency_install','typecheck','backend_tests',
@@ -780,24 +790,27 @@ for(const mode of ['missing','backend','frontend','test','failure',
     assert.equal(store.size(),3);
     return Response.json(prepared,{status:201});
    }
+   const d1Request=d1Effect&&nativeD1&&
+    body.task_id===nativeD1.runtime_task_id;
    const frontendRequest=throughFrontend&&next&&
     body.task_id===next.runtimeTaskId;
-   assert.equal(body.task_id,frontendRequest?next.runtimeTaskId:task.runtimeTaskId);
+   assert.equal(body.task_id,d1Request?nativeD1.runtime_task_id:
+    frontendRequest?next.runtimeTaskId:task.runtimeTaskId);
    assert.equal(body.agent_role,frontendRequest?'frontend':'backend');
    assert.equal(body.tool,'update_file');
    assert.deepEqual(body.arguments,{branch,path:'apps/user.ts',
-    content:frontendRequest?frontendContent:newContent});
-   events.push(frontendRequest?'frontend_gateway_prepare_canonical':
-    'gateway_prepare_canonical');
+    content:d1Request?repairContent:frontendRequest?frontendContent:newContent});
+   events.push(d1Request?'d1_gateway_prepare_canonical':
+    frontendRequest?'frontend_gateway_prepare_canonical':'gateway_prepare_canonical');
    const prepared=prepareAuthorization(body,{
     audience:'cloud-access-gateway',request_ttl_ms:60000,
     repository:snapshot.repository
    },{
     store,audit,authorityOnlyAdmissions:gateway,
-    requestId:()=>frontendRequest?frontendRequestId:requestId,
-    challenge:()=>frontendRequest?frontendChallenge:'r3504-challenge'
+    requestId:()=>d1Request?repairRequestId:frontendRequest?frontendRequestId:requestId,
+    challenge:()=>d1Request?repairChallenge:frontendRequest?frontendChallenge:'r3504-challenge'
    });
-   assert.equal(store.size(),frontendRequest?2:1);
+   assert.equal(store.size(),d1Request?4:frontendRequest?2:1);
    return Response.json(prepared,{status:201});
   }
   if(u.endsWith('/v1/presentations')){
@@ -808,14 +821,18 @@ for(const mode of ['missing','backend','frontend','test','failure',
     events.push('test_private_vp_fixture');
     return Response.json({signed_vp:testVp});
    }
+   const d1Request=d1Effect&&nativeD1&&
+    body.credential_id===nativeD1.new_child_credential_id;
    const frontendRequest=throughFrontend&&frontendStaged&&
     body.credential_id===frontendStaged.credential_id;
-   assert.equal(body.credential_id,frontendRequest?
-    frontendStaged.credential_id:staged.credential_id);
-   assert.equal(body.challenge,frontendRequest?
-    frontendChallenge:'r3504-challenge');
-   events.push(frontendRequest?'frontend_private_vp_fixture':'private_vp_fixture');
-   return Response.json({signed_vp:frontendRequest?frontendVp:vp});
+   assert.equal(body.credential_id,d1Request?nativeD1.new_child_credential_id:
+    frontendRequest?frontendStaged.credential_id:staged.credential_id);
+   assert.equal(body.challenge,d1Request?repairChallenge:
+    frontendRequest?frontendChallenge:'r3504-challenge');
+   events.push(d1Request?'d1_private_vp_fixture':
+    frontendRequest?'frontend_private_vp_fixture':'private_vp_fixture');
+   return Response.json({signed_vp:d1Request?repairVp:
+    frontendRequest?frontendVp:vp});
   }
   if(u.endsWith('/v1/authorization/execute')){
    if(throughTest&&body.request_id===testRequestId){
@@ -863,24 +880,25 @@ for(const mode of ['missing','backend','frontend','test','failure',
       researcher_acceptance:{status:throughFailure?'skipped':'pass'}}
     });
    }
+   const d1Request=d1Effect&&nativeD1&&body.request_id===repairRequestId;
    const frontendRequest=throughFrontend&&body.request_id===frontendRequestId;
-   const id=frontendRequest?frontendRequestId:requestId;
-   const signed=frontendRequest?frontendVp:vp;
-   const nextSha=frontendRequest?frontendSha:fileSha;
-   const previousSha=frontendRequest?fileSha:snapshot.base_revision;
-   const previousBlob=frontendRequest?newBlob:oldBlob;
-   const blob=frontendRequest?frontendBlob:newBlob;
-   const updated=frontendRequest?frontendContent:newContent;
+   const id=d1Request?repairRequestId:frontendRequest?frontendRequestId:requestId;
+   const signed=d1Request?repairVp:frontendRequest?frontendVp:vp;
+   const nextSha=d1Request?repairSha:frontendRequest?frontendSha:fileSha;
+   const previousSha=d1Request?frontendSha:frontendRequest?fileSha:snapshot.base_revision;
+   const previousBlob=d1Request?frontendBlob:frontendRequest?newBlob:oldBlob;
+   const blob=d1Request?repairBlob:frontendRequest?frontendBlob:newBlob;
+   const updated=d1Request?repairContent:frontendRequest?frontendContent:newContent;
    assert.equal(body.request_id,id);
    assert.equal(body.signed_vp,signed);
-   events.push(frontendRequest?'frontend_gateway_execute_fixture':
-    'gateway_execute_fixture');
+   events.push(d1Request?'d1_gateway_execute_fixture':
+    frontendRequest?'frontend_gateway_execute_fixture':'gateway_execute_fixture');
    if(verified){
     const names=(await readdir(f.dirs.mutationIntents))
      .filter(n=>n.endsWith('.intent.json'));
     const flights=(await readdir(f.dirs.flights))
      .filter(n=>n.endsWith('.flight.json'));
-    const count=frontendRequest?2:1;
+    const count=d1Request?3:frontendRequest?2:1;
     assert.equal(names.length,count);assert.equal(flights.length,count);
     const intents=await Promise.all(names.map(async n=>JSON.parse(
      await readFile(join(f.dirs.mutationIntents,n),'utf8'))));
@@ -889,8 +907,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
     const intent=intents.find(i=>i.request_id===id);
     const flight=flightsData.find(i=>i.request_id===id);
     assert.ok(intent);assert.ok(flight);
-    assert.equal(flight.credential_id,frontendRequest?
-     frontendStaged.credential_id:staged.credential_id);
+    assert.equal(flight.credential_id,d1Request?nativeD1.new_child_credential_id:
+     frontendRequest?frontendStaged.credential_id:staged.credential_id);
     const pins=['session_id','authority_digest','root_credential_id',
      'task_id','runtime_task_id','epoch','agent_did','credential_id',
      'request_id','request_fingerprint'];
@@ -1162,7 +1180,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
       }
       const suggestion=await execution.proposeVerifiedD1RepairTask({model:candidate});
       assert.equal(suggestion.status,'d1_model_candidate_not_recovery_authorized');
-      if(mode==='failure'){
+      if(mode==='failure'||d1Effect){
        const journal=new DurableNativeD1FirstTaskAdmissionJournal(
         f.dirs.d1Admissions);
        // Only the private Engineer owner supplies a new revocable status
@@ -1173,6 +1191,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
          statusListIndex:'29110'
         }
        });
+       nativeD1=newD1;
        assert.equal(newD1.status,'native_d1_child_enrolled_no_provider_effect');
        assert.equal(newD1.task_registered,true);
        assert.equal(newD1.gateway_child_enrolled,true);
@@ -1215,6 +1234,36 @@ for(const mode of ['missing','backend','frontend','test','failure',
        assert.equal(newD1.original_root_credential_id,
         original.root_credential_id);
        assert.equal((await readdir(f.dirs.d1Admissions)).length,1);
+       if(d1Effect){
+        const repairReport=await execution.dispatchEnrolledTask({
+         taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id,
+         instruction:newD1.instruction,effectStager:d1Stager
+        });
+        assert.equal(repairReport.status,'a2a_report_not_gateway_completed');
+        assert.equal(repairReport.role,'backend');
+        assert.equal(repairReport.provider_completion_attested,false);
+        assert.equal(repairReport.artifact.commit_sha,repairSha);
+        assert.deepEqual(repairReport.artifact.files_modified,['apps/user.ts']);
+        assert.equal(gateway.stagedCompletedTaskCount,2);
+        assert.equal(model.calls,4);
+        const repaired=await execution.attestEnrolledTaskCompletion({
+         taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id
+        });
+        assert.equal(repaired.status,'owner_gateway_completion_independently_observed');
+        assert.equal(repaired.task_id,newD1.task_id);
+        assert.equal(gateway.stagedCompletedTaskCount,3);
+        assert.equal(provider.head,repairSha);
+        assert.equal(provider.parent,frontendSha);
+        assert.equal(provider.content,repairContent);
+        assert.equal(events.at(-1),'d1_gateway_execute_fixture');
+        await assert.rejects(execution.dispatchEnrolledTask({
+         taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id,
+         instruction:newD1.instruction,effectStager:d1Stager
+        }),/protected A2A dispatch replayed/);
+        await assert.rejects(execution.attestEnrolledTaskCompletion({
+         taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id
+        }),/no matching original A2A dispatch report/);
+       }
        await assert.rejects(execution.admitVerifiedD1RepairTask({
         journal,freshStatusEntry:{
          statusListCredential:'https://status.invalid/list',
@@ -1234,10 +1283,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
       assert.equal(suggestion.child_credential_issued,false);
       assert.equal(candidate.calls,1);
       assert.equal(coordinator.registeredTaskCount,
-       mode==='failure'?4:3);
+       mode==='failure'||d1Effect?4:3);
       assert.equal(gateway.registeredTaskCount,
-       mode==='failure'?4:3);
-      assert.equal(gateway.stagedCompletedTaskCount,2);
+       mode==='failure'||d1Effect?4:3);
+      assert.equal(gateway.stagedCompletedTaskCount,d1Effect?3:2);
       const prompt=JSON.stringify(candidate.requests);
       assert.ok(prompt.includes('independent_runner_failure'));
       for(const secret of [testVp,testStaged.credential_id,testRequestId])
