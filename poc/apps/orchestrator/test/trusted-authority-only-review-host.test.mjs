@@ -768,6 +768,79 @@ test('R350.12 exact original Gitea instance and branch are required by both nati
  await host.close();
  assert.equal(host.phase,'revoked');
 });
+test('R350.13 feature snapshot allows only pinned feature read and rejects main or changed provider branch',async()=>{
+ const feature={...snapshot,planning_branch:branch};
+ const source='apps/user.ts',rootId='urn:r35013:preliminary-read';
+ let transportCalls=0,wrongProviderBranch=false;
+ const session=new TrustedAuthorityOnlyEngineerSession({
+  snapshot:feature,requirement,
+  authenticatedEngineerDid:did,
+  credentials:{
+   async issueScopedOrchestratorRoot(request){
+    assert.equal(request.credential_id,rootId);
+    const featurePermissions=preliminaryReadPermissions(feature);
+    assert.deepEqual(request.permissions,featurePermissions);
+    assert.equal(featurePermissions.some(p=>p.resource.includes('/branches/main/')),false);
+    return {id:rootId,credentialSubject:{per:structuredClone(request.permissions)}};
+   },
+   async revokeRoot(id){assert.equal(id,rootId);}
+  },
+  approvals:{async loadAuthenticatedAuthority(){throw Error('never approve');}},
+  journal:{async reservePlanning(){},async reserveOperational(){}},
+  planningRevisions:{
+   async begin(id){return {task_id:id,base_revision:feature.base_revision,
+    expires_at:new Date(Date.now()+600000).toISOString()};},
+   async end(){}
+  }
+ });
+ await session.startPlanning(root(rootId,1));
+ const client=new TrustedPlanningGatewayReadPort({
+  coordinator:session,snapshot:feature,
+  gatewayBaseUrl:'http://r35013-feature-planning.invalid',
+  adapterBaseUrl:'http://r35013-private-crypto.invalid',
+  adapterToken:'private-offline-no-billing',
+  fetchFn:async(url,init)=>{
+   transportCalls++;
+   const route=String(url),request=JSON.parse(String(init.body));
+   if(route.endsWith('/prepare')){
+    assert.equal(request.tool,'read_file');
+    assert.deepEqual(request.arguments,{branch,path:source});
+    return Response.json({request_id:'r35013-feature-read',audience:'gateway',
+     challenge:'read-challenge',required_permission:
+      preliminaryReadPermissions(feature).find(p=>p.operation==='read_file')});
+   }
+   if(route.endsWith('/v1/presentations')){
+    assert.equal(request.credential_id,rootId);
+    return Response.json({signed_vp:'offline-read-only'});
+   }
+   if(route.endsWith('/execute')){
+    return Response.json({execution:{
+     provider:'gitea',performed:true,tool:'read_file',
+     branch:wrongProviderBranch?'main':branch,
+     path:source,revision:feature.base_revision,
+     content:'export const approved = false;'
+    }});
+   }
+   throw Error('untrusted transport path');
+  }
+ });
+ await assert.rejects(client.invoke('read_file',{branch:'main',path:source}),
+  /inactive or out-of-scope read/);
+ assert.equal(transportCalls,0);
+ const result=await client.invoke('read_file',{branch,path:source});
+ assert.equal(result.branch,branch);
+ assert.equal(result.revision,snapshot.base_revision);
+ assert.equal(transportCalls,3);
+ wrongProviderBranch=true;
+ await assert.rejects(client.invoke('read_file',{branch,path:source}),
+  /inactive or out-of-scope read/);
+ assert.equal(transportCalls,6);
+ await session.cancelPlanning();
+ await assert.rejects(client.invoke('read_file',{branch,path:source}),
+  /inactive or expired/);
+ assert.equal(transportCalls,6);
+});
+
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{
  const f=await fixture(t),host=await f.start();
  assert.equal(host.phase,'planning');assert.equal(f.model.calls,2);
