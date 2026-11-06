@@ -48,6 +48,8 @@ import {DurableAuthorityTaskJournal}
  from "../src/trusted-authority-task-journal.ts";
 import {TrustedAuthorityOnlyEngineerSession}
  from "../src/trusted-authority-only-engineer-session.ts";
+import {preliminaryReadPermissions}
+ from "../src/trusted-engineer-authority.ts";
 import {startTrustedAuthorityOnlyReviewHost}
  from "../../../apps/orchestrator/src/trusted-authority-only-review-host.mjs";
 import {AuthorityPlanningCheckpointStore}
@@ -392,9 +394,8 @@ try{
     assert.equal(body.arguments.path,mutationPath);
     return Response.json({request_id:"r35013-disposable-read",
      audience:"cloud-access-gateway",challenge:"r35013-nonce",
-     required_permission:{
-      resource:resourcePrefix+"/files/"+mutationPath,operation:"read_file"
-     }});
+     required_permission:preliminaryReadPermissions(reviewSnapshot).find(
+      p=>p.operation==="read_file"&&p.resource.endsWith("/"+mutationPath))});
    }
    if(route.endsWith("/v1/presentations")){
     assert.equal(body.credential_id,preliminary.credential_id);
