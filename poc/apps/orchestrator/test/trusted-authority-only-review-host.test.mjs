@@ -666,6 +666,11 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    if(throughFrontend&&body.agent_role==='frontend'){
     const checks={
      expected_frontend_task:body.task_id===next?.runtimeTaskId,
+     uses_backend_task:body.task_id===task.runtimeTaskId,
+     uses_frontend_logical_id:body.task_id===next?.task?.task_id,
+     uses_backend_logical_id:body.task_id===task.task.task_id,
+     task_format_valid:typeof body.task_id==='string'&&
+      /^dispatch_[A-Za-z0-9_-]{22}$/.test(body.task_id),
      expected_role:body.agent_role==='frontend',
      expected_tool:body.tool==='update_file',
      expected_branch:body.arguments?.branch===branch,
