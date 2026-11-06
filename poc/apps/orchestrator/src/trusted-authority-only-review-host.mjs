@@ -18,6 +18,9 @@ import {RUST_OPERATIONS} from '../../gateway/src/operation-catalog.ts';
 import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
 import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
+import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
+import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-authority-only-runner-preflight.ts';
+import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
 import {startTrustedAuthorityOnlySdkA2AOwner} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-a2a-owner.ts';
 import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
@@ -72,6 +75,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let taskStageFlight,taskStageFailed=false,stagedTaskCount=0;
  const stagedTaskIds=new Map();
  const dispatchAttempts=new Set();
+ const issuedEffectStagers=new Map();
+ let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let dispatchFlight,dispatchFailed=false;
  let a2aOwner,a2aStarting,a2aStartAttempted=false;
  async function retire(){
@@ -295,6 +300,57 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       throw error;
      }finally{a2aStarting=undefined;}
      },
+    /** R350.6: owner-only installation of the real in-process Gateway effect
+     * runtime. The original shared Prepare store, mutation preflight and
+     * Runner preflight MUST be bound to this very Gateway instance.
+     * This is not an A2A/ADK/MCP callable route. */
+    bindNativeGatewayEffects(deps){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||taskStageFlight||dispatchFlight||dispatchFailed||
+        nativeEffectBindingAttempted)
+      deny('native Gateway effect runtime requires active quiescent owner');
+     nativeEffectBindingAttempted=true;
+     if(!fields(deps,['store','mutation','runner'])||
+        !(deps.store instanceof InMemoryRequestStore)||
+        !(deps.mutation instanceof TrustedAuthorityOnlyGiteaMutationPreflight)||
+        !(deps.runner instanceof TrustedAuthorityOnlyRunnerPreflight)||
+        !deps.mutation.isForAdmissions(gateway)||
+        !deps.runner.isForAdmissions(gateway)){
+      dispatchFailed=true;
+      deny('native Gateway effect dependencies are not from original session');
+     }
+     nativeEffectBinding=Object.freeze({...deps});
+     return Object.freeze({
+      status:'owner_native_gateway_effects_bound_no_execution',
+      gateway_execution_authorized:false
+     });
+    },
+    /** Obtain a unique one-shot owner stager after enrolling the Child.
+     * Pin exact original Gateway, Task ID, role/tool and owner-selected HEAD. */
+    createEnrolledNativeEffectStager(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        !nativeEffectBinding||taskStageFlight||dispatchFlight||
+        taskStageFailed||dispatchFailed||
+        !fields(input,['runtimeTaskId','expectedHeadSha'])||
+        typeof input?.expectedHeadSha!=='string'||
+        !/^[a-f0-9]{40}$/u.test(input.expectedHeadSha))
+      deny('native effect staging requires pinned owner HEAD and live runtime');
+     const pin=stagedTaskIds.get(input.runtimeTaskId);
+     if(!pin||!['update_file','run_tests'].includes(pin.operation)||
+        issuedEffectStagers.has(input.runtimeTaskId)||
+        dispatchAttempts.has(input.runtimeTaskId))
+      deny('native effect stager requires enrolled, unspent Task');
+     operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+     const stager=new TrustedAuthorityOnlyEffectStager({
+      store:nativeEffectBinding.store,admissions:gateway,
+      mutation:nativeEffectBinding.mutation,
+      runner:nativeEffectBinding.runner,
+      runtimeTaskId:input.runtimeTaskId,
+      tool:pin.operation,expectedHeadSha:input.expectedHeadSha
+     });
+     issuedEffectStagers.set(input.runtimeTaskId,stager);
+     return stager;
+    },
      /** R350.5 — dispatch only the original enrolled Task with a genuine
       * owner-private stager created for this Gateway, runtime ID and effect.
       * A2A output is a report, never Gateway provider completion. */
@@ -309,6 +365,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       if(!pin||pin.task_id!==input.taskId||
          !['update_file','run_tests'].includes(pin.operation)||
          !(input.effectStager instanceof TrustedAuthorityOnlyEffectStager)||
+         issuedEffectStagers.get(input.runtimeTaskId)!==input.effectStager||
          !input.effectStager.isForOwnerTask(gateway,input.runtimeTaskId,pin.operation))
        deny('protected A2A dispatch requires an original owner-bound effect stager');
       if(dispatchAttempts.has(input.runtimeTaskId))

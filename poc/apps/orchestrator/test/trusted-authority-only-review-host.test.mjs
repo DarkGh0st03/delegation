@@ -17,6 +17,10 @@ import {DurableAuthorityOnlyActivationJournal} from '../../../packages/orchestra
 import {DurableAuthorityTaskJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-task-journal.ts';
 import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
 import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
+import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
+import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
+import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-authority-only-runner-preflight.ts';
+import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
 import {startSpecializedAgentServer,TrustedEffectStagingTaskRegistry,
  createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
  from '../../../packages/agent-runtime/src/index.ts';
@@ -275,9 +279,42 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
    stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
   });
   assert.equal(typeof owner.dispatchIssuedTask,'function');
-  const {dispatchEnrolledTask}=await Promise.resolve({dispatchEnrolledTask:
-   // The returned execution handle, not the A2A SDK object, owns this method.
-   execution.dispatchEnrolledTask});
+  const {dispatchEnrolledTask,bindNativeGatewayEffects,
+   createEnrolledNativeEffectStager}=execution;
+  // An arbitrary callback is not a native owner-bound effect stager.
+  await assert.rejects(dispatchEnrolledTask({
+   taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId,
+   instruction:'no native owner stage yet',effectStager:{stage:async()=>{}}
+  }),/original owner-bound effect stager/);
+  assert.throws(()=>createEnrolledNativeEffectStager({
+   runtimeTaskId:stage.runtimeTaskId,expectedHeadSha:'a'.repeat(40)
+  }),/native effect staging requires/);
+  const nativeStore=new InMemoryRequestStore();
+  const realGateway=execution.gateway;
+  const nativeMutation=Object.assign(
+   Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
+    isForAdmissions:g=>g===realGateway
+   });
+  const nativeRunner=Object.assign(
+   Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
+    isForAdmissions:g=>g===realGateway
+   });
+  assert.deepEqual(bindNativeGatewayEffects({
+   store:nativeStore,mutation:nativeMutation,runner:nativeRunner
+  }),{status:'owner_native_gateway_effects_bound_no_execution',
+   gateway_execution_authorized:false});
+  const genuineStager=createEnrolledNativeEffectStager({
+   runtimeTaskId:stage.runtimeTaskId,expectedHeadSha:'a'.repeat(40)
+  });
+  assert.ok(genuineStager instanceof TrustedAuthorityOnlyEffectStager);
+  assert.equal(genuineStager.isForOwnerTask(realGateway,stage.runtimeTaskId,
+   'update_file'),true);
+  assert.throws(()=>createEnrolledNativeEffectStager({
+   runtimeTaskId:stage.runtimeTaskId,expectedHeadSha:'a'.repeat(40)
+  }),/unspent Task/);
+  assert.throws(()=>bindNativeGatewayEffects({
+   store:nativeStore,mutation:nativeMutation,runner:nativeRunner
+  }),/quiescent owner/);
   await assert.rejects(dispatchEnrolledTask({
    taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId,
    instruction:'do not execute',effectStager:{stage:async()=>{}}
@@ -421,6 +458,29 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
   await rm(temp,{recursive:true,force:true});
   if(host.phase==='operational')await host.close();
  }
+});
+
+
+test('R350.6 never binds a foreign preflight to the same-session Gateway',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ await host.activateOperational(root('urn:r350:wrong-preflight',2));
+ const execution=await host.admitOperationalExecution(executionDeps(f));
+ const foreign={
+  store:new InMemoryRequestStore(),
+  mutation:Object.assign(Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
+   isForAdmissions:()=>false
+  }),
+  runner:Object.assign(Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
+   isForAdmissions:()=>false
+  })
+ };
+ assert.throws(()=>execution.bindNativeGatewayEffects(foreign),
+  /not from original session/);
+ assert.throws(()=>execution.bindNativeGatewayEffects(foreign),
+  /active quiescent owner/);
+ await host.close();
+ assert.equal(host.phase,'revoked');
 });
 
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{
