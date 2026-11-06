@@ -292,7 +292,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       }
       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       a2aOwner=owner;
-      return owner;
+      // SDK Owner is private to the verified R349 Engineer session.
+      // Only guarded dispatch and attestation on this handle can use it.
+      return Object.freeze({
+       status:'owner_protected_a2a_started_no_provider_execution',
+       gateway_execution_authorized:false
+      });
      })();
      try{return await a2aStarting;}
      catch(error){

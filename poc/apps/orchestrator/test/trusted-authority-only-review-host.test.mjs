@@ -280,7 +280,12 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
   const owner=await startSdkA2AOwner({
    stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
   });
-  assert.equal(typeof owner.dispatchIssuedTask,'function');
+  assert.deepEqual(owner,{
+   status:'owner_protected_a2a_started_no_provider_execution',
+   gateway_execution_authorized:false
+  });
+  assert.equal('dispatchIssuedTask' in owner,false);
+  assert.equal('attestIndependentGatewayCompletion' in owner,false);
   const {dispatchEnrolledTask,bindNativeGatewayEffects,
    createEnrolledNativeEffectStager,attestEnrolledTaskCompletion}=execution;
   await assert.rejects(attestEnrolledTaskCompletion({
@@ -332,8 +337,9 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
    stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
   }),/requires an enrolled Child/);
   // Startup is NOT provider success and cannot fabricate a completion.
-  await assert.rejects(owner.attestIndependentGatewayCompletion(
-   stage.task.task_id,stage.runtimeTaskId),/no matching previous A2A report/);
+  await assert.rejects(execution.attestEnrolledTaskCompletion({
+   taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId
+  }),/no matching original A2A dispatch report/);
   await host.close();assert.equal(host.phase,'revoked');
  }finally{
   await Promise.allSettled(binders.reverse().map(x=>x.close()));
@@ -348,6 +354,7 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
  await f.approve(['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:real-a2a-root',2));
  const deps=executionDeps(f),events=[],model=new R3504ScriptedBackend();
+ deps.effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(f.dirs.flights);
  const fileSha='e'.repeat(40),vp='r3504-private-vp',requestId='r3504-prepared-01';
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   events.push('native_child_fixture');
@@ -359,14 +366,37 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
    credentialStatus:structuredClone(req.credential_status),
    proof:{type:'Ed25519Signature2020',proofValue:'OFFLINE_R3504_FIXTURE'}};
  }};
- const {gateway,stageTask,startSdkA2AOwner}=await host.admitOperationalExecution(deps);
+ const execution=await host.admitOperationalExecution(deps);
+ const {gateway,stageTask,startSdkA2AOwner}=execution;
  const task=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
  const staged=await stageTask(task);
  assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
+ const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+ const nativeMutation=Object.assign(
+  Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
+   isForAdmissions:g=>g===gateway,
+   async stageUpdate(record,head){
+    assert.equal(record.request_id,requestId);
+    assert.equal(head,snapshot.base_revision);
+    events.push('offline_mutation_intent_fixture');
+    return {provider_write_authorized:false};
+   }
+  });
+ const nativeRunner=Object.assign(
+  Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
+   isForAdmissions:g=>g===gateway,
+   async stageRunner(){throw Error('Backend must not reach Test Runner');}
+  });
+ assert.equal(execution.bindNativeGatewayEffects({
+  store,mutation:nativeMutation,runner:nativeRunner
+ }).gateway_execution_authorized,false);
+ const nativeStager=execution.createEnrolledNativeEffectStager({
+  runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
+ });
  const temp=await mkdtemp(join(tmpdir(),'r3504a2a-'));
  const roles=['backend','frontend','test'],stageChannels={},
   agentBindingChannels={},a2aUrls={},servers=[],binders=[];
- let owner;
+ let ownerStartup;
  const fetchFn=async(url,options)=>{
   const u=String(url),body=JSON.parse(String(options?.body));
   if(u.endsWith('/v1/authorization/prepare')){
@@ -375,10 +405,16 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
    assert.equal(body.tool,'update_file');
    assert.deepEqual(body.arguments,{branch,path:'apps/user.ts',
     content:'export const suspended=true;\n'});
-   events.push('gateway_prepare_fixture');
-   return Response.json({request_id:requestId,audience:'cloud-access-gateway',
-    challenge:'r3504-challenge',expires_at:new Date(Date.now()+60000).toISOString(),
-    required_permission:task.task.permissions[0]},{status:201});
+   events.push('gateway_prepare_canonical');
+   const prepared=prepareAuthorization(body,{
+    audience:'cloud-access-gateway',request_ttl_ms:60000,
+    repository:snapshot.repository
+   },{
+    store,audit,authorityOnlyAdmissions:gateway,
+    requestId:()=>requestId,challenge:()=> 'r3504-challenge'
+   });
+   assert.equal(store.size(),1);
+   return Response.json(prepared,{status:201});
   }
   if(u.endsWith('/v1/presentations')){
    assert.equal(body.credential_id,staged.credential_id);
@@ -429,38 +465,47 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
    });
    binders.push(bind);await bind.start();
   }
-  owner=await startSdkA2AOwner({stageChannels,agentBindingChannels,
+  ownerStartup=await startSdkA2AOwner({stageChannels,agentBindingChannels,
    agentBaseUrls:a2aUrls,a2aPolling:{
     deadlineMs:15000,initialIntervalMs:25,maxIntervalMs:80}});
-  const report=await owner.dispatchIssuedTask({
+  assert.equal(ownerStartup.status,'owner_protected_a2a_started_no_provider_execution');
+  assert.equal('dispatchIssuedTask' in ownerStartup,false);
+  const report=await execution.dispatchEnrolledTask({
    taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId,
    instruction:'Update only the Engineer-approved file',
-   effectStager:{async stage(id){
-    assert.equal(id,requestId);
-    events.push('owner_effect_stage_fixture');
-    return {provider_write_authorized:false};
-   }}
+   effectStager:nativeStager
   });
   assert.equal(report.status,'a2a_report_not_gateway_completed');
   assert.equal(report.provider_completion_attested,false);
   assert.equal(report.artifact.commit_sha,fileSha);
   assert.deepEqual(report.artifact.files_modified,['apps/user.ts']);
   assert.deepEqual(events,[
-   'native_child_fixture','gateway_prepare_fixture','owner_effect_stage_fixture',
-   'private_vp_fixture','gateway_execute_fixture']);
+   'native_child_fixture','gateway_prepare_canonical',
+   'offline_mutation_intent_fixture','private_vp_fixture',
+   'gateway_execute_fixture']);
+  const flights=(await readdir(f.dirs.flights)).filter(n=>n.endsWith('.flight.json'));
+  assert.equal(flights.length,1);
+  const flight=JSON.parse(await readFile(join(f.dirs.flights,flights[0]),'utf8'));
+  assert.equal(flight.session_id,snapshot.session_id);
+  assert.equal(flight.task_id,task.task.task_id);
+  assert.equal(flight.runtime_task_id,task.runtimeTaskId);
+  assert.equal(flight.credential_id,staged.credential_id);
+  assert.equal(flight.request_id,requestId);
+  assert.equal(gateway.stagedCompletedTaskCount,0);
   assert.equal(model.calls,2);
   for(const secret of [vp,staged.credential_id,requestId,
     'OFFLINE_R3504_FIXTURE'])
    assert.equal(JSON.stringify(model.requests).includes(secret),false);
-  await assert.rejects(owner.attestIndependentGatewayCompletion(
-   task.task.task_id,task.runtimeTaskId),
-   /trusted completion observer or owner-private journal missing/);
-  assert.equal(gateway.stagedCompletedTaskCount,0);
-  await assert.rejects(owner.dispatchIssuedTask({
+  await assert.rejects(execution.dispatchEnrolledTask({
    taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId,
-   instruction:'Replay',effectStager:{async stage(){}}}),
-   /closed or malformed owner-selected Task/);
-  await host.close();assert.equal(host.phase,'revoked');
+   instruction:'Replay',effectStager:nativeStager
+  }),/protected A2A dispatch replayed/);
+  await assert.rejects(execution.attestEnrolledTaskCompletion({
+   taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId
+  }),/trusted completion observer or owner-private journal missing/);
+  assert.equal(gateway.stagedCompletedTaskCount,0);
+  assert.equal(host.phase,'revoked');
+  await host.close();
  }finally{
   await Promise.allSettled(binders.reverse().map(x=>x.close()));
   await Promise.allSettled(servers.reverse().map(x=>x.close()));
