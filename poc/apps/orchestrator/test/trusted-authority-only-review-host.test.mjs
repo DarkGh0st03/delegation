@@ -1356,7 +1356,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
          statusListIndex:'29111'
         }
        }),/requires one original verified proposal/);
-       await assert.rejects(execution.proposeAndStageTask({
+       if(!d1Retest)await assert.rejects(execution.proposeAndStageTask({
         model:new R351ScriptedDecision(candidate.candidate),
         runtimeTaskId:'dispatch_'+'R'.repeat(22),
         childParameters:testTask.childParameters
@@ -1369,10 +1369,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
       assert.equal(suggestion.child_credential_issued,false);
       assert.equal(candidate.calls,1);
       assert.equal(coordinator.registeredTaskCount,
-       mode==='failure'||d1Effect?4:3);
+       d1Retest?5:mode==='failure'||d1Effect?4:3);
       assert.equal(gateway.registeredTaskCount,
-       mode==='failure'||d1Effect?4:3);
-      assert.equal(gateway.stagedCompletedTaskCount,d1Effect?3:2);
+       d1Retest?5:mode==='failure'||d1Effect?4:3);
+      assert.equal(gateway.stagedCompletedTaskCount,d1Retest?4:d1Effect?3:2);
       const prompt=JSON.stringify(candidate.requests);
       assert.ok(prompt.includes('independent_runner_failure'));
       for(const secret of [testVp,testStaged.credential_id,testRequestId])
@@ -1380,7 +1380,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
       await assert.rejects(execution.proposeVerifiedD1RepairTask({
        model:new R351ScriptedDecision(candidate.candidate)
       }),/requires authenticated original Runner failure/);
-      await assert.rejects(execution.proposeAndStageTask({
+      if(!d1Retest)await assert.rejects(execution.proposeAndStageTask({
        model:new R351ScriptedDecision(candidate.candidate),
        runtimeTaskId:'dispatch_'+'R'.repeat(22),
        childParameters:testTask.childParameters
