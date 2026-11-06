@@ -663,23 +663,6 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
   if(u.endsWith('/v1/authorization/prepare')){
    const frontendRequest=throughFrontend&&next&&
     body.task_id===next.runtimeTaskId;
-   if(throughFrontend&&body.agent_role==='frontend'){
-    const checks={
-     expected_frontend_task:body.task_id===next?.runtimeTaskId,
-     uses_backend_task:body.task_id===task.runtimeTaskId,
-     uses_frontend_logical_id:body.task_id===next?.task?.task_id,
-     uses_backend_logical_id:body.task_id===task.task.task_id,
-     task_format_valid:typeof body.task_id==='string'&&
-      /^dispatch_[A-Za-z0-9_-]{22}$/.test(body.task_id),
-     expected_role:body.agent_role==='frontend',
-     expected_tool:body.tool==='update_file',
-     expected_branch:body.arguments?.branch===branch,
-     expected_path:body.arguments?.path==='apps/user.ts',
-     expected_content:body.arguments?.content===frontendContent
-    };
-    if(Object.values(checks).some(x=>!x))
-     console.error('R351.3 frontend prepare contract mismatch',JSON.stringify(checks));
-   }
    assert.equal(body.task_id,frontendRequest?next.runtimeTaskId:task.runtimeTaskId);
    assert.equal(body.agent_role,frontendRequest?'frontend':'backend');
    assert.equal(body.tool,'update_file');
@@ -834,7 +817,10 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    instruction:'Replay',effectStager:nativeStager
   }),/protected A2A dispatch replayed/);
   if(verified){
-   const next=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding(),{
+   // Share the original Frontend Task pin with the trusted Gateway fixture.
+   // Block-scoped shadowing here used to mistake the real Frontend request
+   // for the first Backend request, causing an offline-only A2A denial.
+   next=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding(),{
     taskId:'r3512-frontend',epoch:2,childId:'urn:r3512:frontend-child',
     permission:task.task.permissions[0]
    });
@@ -880,31 +866,11 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
     const frontendStager=execution.createEnrolledNativeEffectStager({
      runtimeTaskId:next.runtimeTaskId,expectedHeadSha:fileSha
     });
-    let frontendReport;
-    try{
-     frontendReport=await execution.dispatchEnrolledTask({
-      taskId:next.task.task_id,runtimeTaskId:next.runtimeTaskId,
-      instruction:'Update the Engineer-approved Frontend file',
-      effectStager:frontendStager
-     });
-    }catch(error){
-     // Only categorical local diagnostics. No native credentials, provider
-     // payload or model content are ever logged from this offline fixture.
-     const intents=(await readdir(f.dirs.mutationIntents))
-      .filter(n=>n.endsWith('.intent.json')).length;
-     const flights=(await readdir(f.dirs.flights))
-      .filter(n=>n.endsWith('.flight.json')).length;
-     const evidence=(await readdir(f.dirs.mutationEvidence))
-      .filter(n=>n.endsWith('.mutation.json')).length;
-     console.error('R351.3 offline Frontend failure stage:',JSON.stringify({
-      event_names:events.map(x=>x.replace(/^offline_.*$/,'offline_read')),
-      frontend_model_calls:frontendModel.calls,
-      prepared_requests:store.size(),mutation_intents:intents,
-      trusted_task_flights:flights,gitea_evidence_receipts:evidence,
-      error_kind:error?.constructor?.name??'unknown'
-     }));
-     throw error;
-    }
+    const frontendReport=await execution.dispatchEnrolledTask({
+     taskId:next.task.task_id,runtimeTaskId:next.runtimeTaskId,
+     instruction:'Update the Engineer-approved Frontend file',
+     effectStager:frontendStager
+    });
     assert.equal(frontendReport.status,'a2a_report_not_gateway_completed');
     assert.equal(frontendReport.provider_completion_attested,false);
     assert.equal(frontendReport.role,'frontend');
