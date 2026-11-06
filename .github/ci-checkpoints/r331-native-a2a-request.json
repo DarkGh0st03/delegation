@@ -1,7 +1,7 @@
 {
-  "revision": "R350.13-native-vp",
-  "request": "run reviewed-native R331 with real private Rust preliminary VP, no HTTP downgrade",
-  "source_commit": "d959932ea330a3b817d1f265bca0458b41beac47",
+  "revision": "R350.13-native-planning-diagnostic",
+  "request": "run reviewed-native with sanitized ADK Planning failure telemetry",
+  "source_commit": "a52cae90494eec1ee5943c13010c4634c62520db",
   "mode": "reviewed_native",
   "paid_ai": false,
   "production_effects": false,
@@ -14,5 +14,6 @@
     "three independent verified Gateway Task completions",
     "immutable main, root revocation and fail-closed recovery"
   ],
-  "replaced_run": 42205484506
+  "replaced_run": 42205484506,
+  "previous_native_run": 42206120077
 }
