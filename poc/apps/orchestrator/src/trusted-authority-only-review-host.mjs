@@ -127,6 +127,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  // Retain at most two independently authenticated Runner FAILs.
  // Neither is a completed Task or a new grant under the Engineer root.
  const adaptiveVerifiedFailures=[];
+ // Set only after the adaptive controller re-opens an independent latest
+ // Runner PASS on the current Gitea HEAD. Never trust A2A readiness text.
+ let adaptiveReadyProof;
  const adaptiveInstructions=new Map();
  let branchAdmissionAttempted=false;
  const branchTaskPins=new Map(),branchStageAttempts=new Set();
@@ -668,7 +671,22 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         return executionHandle.inspectVerifiedPullRequestHead({taskId:latest[1].task_id,runtimeTaskId:latest[0]});
        },retire
       }});
-     try{return await adaptiveLoopFlight;}finally{adaptiveLoopFlight=undefined;}
+     try{
+      const result=await adaptiveLoopFlight;
+      if(result.status==='owner_adaptive_work_ready_for_pr'){
+       if(adaptiveReadyProof||result.pr_created!==false||
+          typeof result.source_test_task_id!=='string'||
+          typeof result.source_test_runtime_task_id!=='string'||
+          !/^[a-f0-9]{40}$/u.test(result.tested_commit_sha))
+        deny('adaptive readiness is not bound to latest original Test');
+       adaptiveReadyProof=Object.freeze({
+        source_test_task_id:result.source_test_task_id,
+        source_test_runtime_task_id:result.source_test_runtime_task_id,
+        tested_commit_sha:result.tested_commit_sha
+       });
+      }
+      return result;
+     }finally{adaptiveLoopFlight=undefined;}
     },
     async proposeAndStageBranchTask(input){
      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
@@ -767,9 +785,21 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          'runtimeTaskId']))
       deny('PR Task admission requires quiescent original owner and one decision');
      const pending=[...stagedTaskIds.values()].filter(p=>!gatewayAttestedTaskIds.has(p.task_id));
+     // The original failed Runner flights remain registered but NEVER
+     // completed. PR admission after R356 adaptive recovery requires the
+     // explicit ready_for_pr result and the exact independently completed
+     // replacement Test. A model claim or a verified FAIL alone is insufficient.
+     const adaptiveReady=!!adaptiveReadyProof&&adaptiveLoopAttempted&&
+      input.sourceTestTaskId===adaptiveReadyProof.source_test_task_id&&
+      input.sourceTestRuntimeTaskId===adaptiveReadyProof.source_test_runtime_task_id&&
+      adaptiveVerifiedFailures.length>0&&
+      pending.length===adaptiveVerifiedFailures.length&&
+      pending.every(p=>adaptiveVerifiedFailures.some(f=>
+       p.task_id===f.failed_task_id&&f.gateway_task_completed===false));
      if(pending.length&&!(d1RetestPassed&&pending.length===1&&
-        pending[0].task_id===d1VerifiedFailure?.proof?.failed_task_id))
-      deny('PR Task requires independent completion of earlier work');
+        pending[0].task_id===d1VerifiedFailure?.proof?.failed_task_id)&&
+        !adaptiveReady)
+      deny('PR Task requires independent completion or ready adaptive recovery evidence');
      const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
      const permission=before.root_permissions.find(p=>p.operation==='create_pull_request');
      const owner=options.trustedAgentRegistry.orchestrator;
@@ -777,6 +807,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       deny('PR Task requires original Engineer create_pull_request grant and owner identity');
      const source={taskId:input.sourceTestTaskId,runtimeTaskId:input.sourceTestRuntimeTaskId};
      const first=await executionHandle.inspectVerifiedPullRequestHead(source);
+     if(adaptiveReady&&first.tested_commit_sha!==adaptiveReadyProof.tested_commit_sha)
+      deny('adaptive PR source differs from independently verified ready HEAD');
      if(pullRequestAdmissionAttempted)
       deny('PR Task decision already attempted');
      pullRequestAdmissionAttempted=true; // bounded model decision, no implicit retry
