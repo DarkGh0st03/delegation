@@ -81,6 +81,7 @@ jobs:
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-authority-only-failed-test-flight.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-native-runner-failure-d1-preflight.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-native-d1-first-task-admission.test.ts
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-native-d1-child-gateway-bind.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/prepare.test.ts poc/apps/gateway/test/operation-catalog.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: ADK, A2A and task-local cryptographic MCP
         run: |

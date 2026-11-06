@@ -98,6 +98,75 @@ export class DurableNativeD1FirstTaskAdmissionJournal{
    constants.O_DIRECTORY|constants.O_NOFOLLOW);
   try{await d.sync();}finally{await d.close();}
  }
+ /**
+  * R342: reopen the one-shot source, never trust a serialized Task receipt.
+  * The original file must remain private, exact and non-replaced.
+  */
+ async assertReservedOriginal(input:{
+  original:TrustedAuthorityOnlyRunnerIntent;
+  admitted:Readonly<{task_id:string;epoch:number;
+   failed_test_task_id:string;source_evidence_sha256:string;
+   original_root_credential_id:string}>;
+  permissionDigest:string;
+ }):Promise<Readonly<{
+  original_session_id:string;root_credential_id:string;
+  admitted_task_id:string;admitted_epoch:number;
+  source_evidence_sha256:string
+ }>>{
+  const {original,admitted,permissionDigest}=input;
+  DurableAuthorityOnlyRunnerIntentJournal.assertValid(original);
+  if(!admitted||!SHA64.test(permissionDigest)||
+     !ID.test(admitted.task_id)||!Number.isSafeInteger(admitted.epoch))
+   deny("invalid immutable original D1 lookup");
+  const dir=await lstat(this.#dir);
+  if(!dir.isDirectory()||dir.isSymbolicLink()||
+     (dir.mode&0o777)!==0o700||
+     (typeof process.getuid==="function"&&dir.uid!==process.getuid()))
+   deny("unsafe original D1 journal");
+  const name=sha(original.session_id+"\n"+original.task_id+"\n"+
+   original.request_id)+".d1-first-task.json";
+  const fd=await open(join(this.#dir,name),
+   constants.O_RDONLY|constants.O_NOFOLLOW);
+  let raw:unknown;
+  try{
+   const st=await fd.stat();
+   if(!st.isFile()||st.nlink!==1||(st.mode&0o777)!==0o600||
+      (typeof process.getuid==="function"&&st.uid!==process.getuid())||
+      st.size<200||st.size>4096)
+    deny("unsafe original one-shot D1 admission entry");
+   raw=JSON.parse(await fd.readFile("utf8")) as unknown;
+  }finally{await fd.close();}
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))
+   deny("malformed original D1 admission entry");
+  const record=raw as Record<string,unknown>;
+  if(Object.keys(record).sort().join(",")!==[
+   "schema","session_id","authority_digest","original_root_credential_id",
+   "failed_test_task_id","failed_runner_request_id",
+   "failed_runner_request_fingerprint","verified_fail_evidence_sha256",
+   "candidate_permission_digest","recovery_task_id","recovery_epoch"
+  ].sort().join(",")||
+   record.schema!=="native-d1-first-task-admission-v1"||
+   record.session_id!==original.session_id||
+   record.authority_digest!==original.authority_digest||
+   record.original_root_credential_id!==original.root_credential_id||
+   record.failed_test_task_id!==original.task_id||
+   record.failed_runner_request_id!==original.request_id||
+   record.failed_runner_request_fingerprint!==original.request_fingerprint||
+   record.verified_fail_evidence_sha256!==admitted.source_evidence_sha256||
+   record.candidate_permission_digest!==permissionDigest||
+   record.recovery_task_id!==admitted.task_id||
+   record.recovery_epoch!==admitted.epoch||
+   admitted.failed_test_task_id!==original.task_id||
+   admitted.original_root_credential_id!==original.root_credential_id)
+   deny("original failed Runner source or registered D1 Task changed");
+  return Object.freeze({
+   original_session_id:original.session_id,
+   root_credential_id:original.root_credential_id,
+   admitted_task_id:admitted.task_id,
+   admitted_epoch:admitted.epoch,
+   source_evidence_sha256:admitted.source_evidence_sha256
+  });
+ }
 }
 export async function admitFirstNativeD1RepairTask(input:{
  coordinator:TrustedAuthorityOnlyExecutionCoordinator;

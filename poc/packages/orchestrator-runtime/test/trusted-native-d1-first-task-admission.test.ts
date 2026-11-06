@@ -13,6 +13,8 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {AuthenticatedRunnerFailureObserver}
  from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
+import {enrollFirstNativeD1ChildAtGateway}
+ from "../src/trusted-native-d1-child-gateway-bind.ts";
 import {DurableNativeD1FirstTaskAdmissionJournal,
  admitFirstNativeD1RepairTask}
  from "../src/trusted-native-d1-first-task-admission.ts";
@@ -115,7 +117,8 @@ async function fixture(action:(f:{
     task_id:raw.task_id,epoch:raw.epoch,agent_id:raw.agent_id,
     session_id:auth.session_id,root_credential_id:auth.root_credential_id,
     authority_digest:auth.authority_digest,
-    permissions:raw.permissions,
+    permissions:raw.permissions,agent_did:"did:thesis:backend",
+    card_ref:"trusted:backend",depends_on:raw.depends_on,
     gateway_registered:false,child_credential_issued:false,
     execution_authorized:false
    };
@@ -199,5 +202,88 @@ test("R341 unsafe shared admission store is fail closed before Task registration
   await chmod(f.directory,0o755);
   await assert.rejects(admitFirstNativeD1RepairTask(f.input),/unsafe native D1/);
   assert.equal(f.calls,0);
+ });
+});
+
+test("R342 original D1 Task is bound, native Child issued, Gateway enrolled, no effect",async()=>{
+ await fixture(async f=>{
+  const a=await admitFirstNativeD1RepairTask(f.input);
+  const events:string[]=[];
+  Object.assign(f.input.gateway,{
+   bindTrustedTask:async(taskId:string,runtimeTaskId:string,role:string)=>{
+    events.push("gateway_bind");
+    assert.equal(taskId,a.task_id);
+    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{32}$/);
+    assert.equal(role,"backend");
+    return {status:"gateway_task_bound_preflight_only",
+     task_id:taskId,runtime_task_id:runtimeTaskId,
+     authority_digest:root.authority_digest,
+     gateway_execution_authorized:false};
+   },
+   enrollTrustedIssuedChild:async(taskId:string,runtimeTaskId:string)=>{
+    events.push("gateway_enroll");
+    assert.equal(taskId,a.task_id);
+    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{32}$/);
+    return {status:"gateway_child_enrolled_preflight_only",
+     task_id:taskId,runtime_task_id:runtimeTaskId,
+     credential_id:"child-r342",gateway_execution_authorized:false};
+   }
+  });
+  Object.assign(f.input.childIssuer,{
+   issueForRegisteredTask:async(taskId:string,parameters:Record<string,unknown>)=>{
+    events.push("rust_issue");
+    assert.equal(taskId,a.task_id);
+    assert.equal((parameters.credential_status as any).statusListIndex,"29109");
+    assert.match(String(parameters.credential_id),/^urn:d1:child:[a-f0-9]{24}$/);
+    return {status:"native_child_response_verified_staged",
+     task_id:taskId,epoch:a.epoch,session_id:root.session_id,
+     root_credential_id:root.root_credential_id,
+     authority_digest:root.authority_digest,
+     agent_id:"backend",agent_did:"did:thesis:backend",
+     permissions:[writePerm],credential_id:"child-r342",
+     gateway_execution_authorized:false};
+   }
+  });
+  const result=await enrollFirstNativeD1ChildAtGateway({
+   ...f.input,admission:a,
+   freshStatusEntry:{statusListCredential:"https://status.example/r342",
+    statusListIndex:"29109"}
+  });
+  assert.equal(result.status,"native_d1_child_enrolled_no_provider_effect");
+  assert.equal(result.original_root_credential_id,root.root_credential_id);
+  assert.equal(result.epoch,4);
+  assert.equal(result.native_child_issued,true);
+  assert.equal(result.gateway_child_enrolled,true);
+  assert.equal(result.provider_executed,false);
+  assert.equal(result.recovery_completed,false);
+  assert.equal(result.gateway_execution_authorized,false);
+  assert.deepEqual(events,["gateway_bind","rust_issue","gateway_enroll"]);
+ });
+});
+test("R342 forged R341 admission or reused status cannot reach native Rust",async()=>{
+ await fixture(async f=>{
+  const a=await admitFirstNativeD1RepairTask(f.input);
+  let called=false;
+  Object.assign(f.input.gateway,{
+   bindTrustedTask:async()=>{called=true;throw Error("must not bind");}
+  });
+  for(const tamper of [
+   {task_id:"foreign"},
+   {source_evidence_sha256:"0".repeat(64)},
+   {original_root_credential_id:"wrong-root"}
+  ]){
+   await assert.rejects(enrollFirstNativeD1ChildAtGateway({
+    ...f.input,admission:{...a,...tamper},
+    freshStatusEntry:{statusListCredential:"https://status.example/r342",
+     statusListIndex:"29110"}
+   }),/NO-GO/);
+  }
+  // The Test Child was minted for an existing status entry; never reuse it.
+  await assert.rejects(enrollFirstNativeD1ChildAtGateway({
+   ...f.input,admission:a,
+   freshStatusEntry:{statusListCredential:child.status_list_credential,
+    statusListIndex:child.status_list_index}
+  }),/NO-GO/);
+  assert.equal(called,false);
  });
 });
