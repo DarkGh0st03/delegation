@@ -17,6 +17,7 @@ import {authorityOnlyDigest,selectAuthorityOnlyGrant} from '../../../packages/pl
 import {RUST_OPERATIONS} from '../../gateway/src/operation-catalog.ts';
 import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
 import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
+import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
 import {startTrustedAuthorityOnlySdkA2AOwner} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-a2a-owner.ts';
 import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
@@ -69,6 +70,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let server,attempted=false,closed=false,closing,activationFlight;
  let operationalCoordinator,executionAdmissionAttempted=false,executionAdmissionFlight;
  let taskStageFlight,taskStageFailed=false,stagedTaskCount=0;
+ const stagedTaskIds=new Map();
+ const dispatchAttempts=new Set();
+ let dispatchFlight,dispatchFailed=false;
  let a2aOwner,a2aStarting,a2aStartAttempted=false;
  async function retire(){
   if(session.phase==='planning')await session.cancelPlanning();
@@ -226,6 +230,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          enrolled.gateway_execution_authorized!==false)
        deny('Task, native Child and Gateway enrollment disagree');
       stagedTaskCount++;
+      stagedTaskIds.set(input.runtimeTaskId,Object.freeze({
+       task_id:registered.task_id,agent_id:registered.agent_id,
+       operation:registered.permissions.find(p=>
+        p.operation==='update_file'||p.operation==='run_tests')?.operation
+      }));
       return Object.freeze({
        status:'owner_child_enrolled_no_provider_execution',
        task_id:registered.task_id,
@@ -285,6 +294,51 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       }
       throw error;
      }finally{a2aStarting=undefined;}
+     },
+     /** R350.5 — dispatch only the original enrolled Task with a genuine
+      * owner-private stager created for this Gateway, runtime ID and effect.
+      * A2A output is a report, never Gateway provider completion. */
+     async dispatchEnrolledTask(input){
+      if(closed||session.phase!=='operational'||!a2aOwner||
+         taskStageFailed||dispatchFailed||dispatchFlight||
+         taskStageFlight||gateway.phase!=='active')
+       deny('protected A2A dispatch requires quiescent live original session');
+      if(!fields(input,['taskId','runtimeTaskId','instruction','effectStager']))
+       deny('protected A2A dispatch rejects credentials or authority overrides');
+      const pin=stagedTaskIds.get(input.runtimeTaskId);
+      if(!pin||pin.task_id!==input.taskId||
+         !['update_file','run_tests'].includes(pin.operation)||
+         !(input.effectStager instanceof TrustedAuthorityOnlyEffectStager)||
+         !input.effectStager.isForOwnerTask(gateway,input.runtimeTaskId,pin.operation))
+       deny('protected A2A dispatch requires an original owner-bound effect stager');
+      if(dispatchAttempts.has(input.runtimeTaskId))
+       deny('protected A2A dispatch replayed');
+      dispatchAttempts.add(input.runtimeTaskId); // before sending A2A / private IPC
+      dispatchFlight=(async()=>{
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       const report=await a2aOwner.dispatchIssuedTask({
+        taskId:input.taskId,runtimeTaskId:input.runtimeTaskId,
+        instruction:input.instruction,effectStager:input.effectStager
+       });
+       if(closed||session.phase!=='operational')
+        deny('Engineer retired while A2A Task was executing');
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       if(report.status!=='a2a_report_not_gateway_completed'||
+          report.task_id!==input.taskId||
+          report.runtime_task_id!==input.runtimeTaskId||
+          report.provider_completion_attested!==false)
+        deny('untrusted or mismatched A2A Task report');
+       return report;
+      })();
+      try{return await dispatchFlight;}
+      catch(error){
+       dispatchFailed=true;
+       if(session.phase==='operational'){
+        try{await session.retireOperationalRoot();}
+        catch{deny('A2A dispatch failed and operational retirement unconfirmed');}
+       }
+       throw error;
+      }finally{dispatchFlight=undefined;}
      }
     });
    })();
@@ -306,6 +360,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(executionAdmissionFlight)try{await executionAdmissionFlight;}catch{/* Fail closed below. */}
     if(taskStageFlight)try{await taskStageFlight;}catch{/* Recheck root below. */}
     if(a2aStarting)try{await a2aStarting;}catch{/* Recheck root below. */}
+    if(dispatchFlight)try{await dispatchFlight;}catch{/* Recheck root below. */}
     try{
      try{if(a2aOwner)await a2aOwner.close();}
      finally{if(session.phase!=='revoked')await retire();}

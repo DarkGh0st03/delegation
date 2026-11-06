@@ -33,6 +33,13 @@ export class TrustedAuthorityOnlyEffectStager {
   this.#mutation=opts.mutation;this.#runner=opts.runner;
   this.#task=opts.runtimeTaskId;this.#tool=opts.tool;this.#head=opts.expectedHeadSha;
  }
+ /** Exact same native Gateway and original owner-pinned Task/effect.
+   * A foreign session's stager must never be accepted by an A2A Owner. */
+ isForOwnerTask(admissions:TrustedAuthorityOnlyGatewayAdmissions,
+  runtimeTaskId:string,tool:'update_file'|'run_tests'):boolean{
+  return this.#gate===admissions&&this.#task===runtimeTaskId&&
+    this.#tool===tool;
+ }
  async stage(requestId:string) {
   if(this.#attempted)throw Error('Effect staging already attempted');
   const record=this.#store.get(requestId);

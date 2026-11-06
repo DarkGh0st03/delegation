@@ -67,6 +67,13 @@ test('concurrent call is rejected while reservation awaits',async()=>{
  await assert.rejects(f.stager.stage('request'),/already attempted/);
  release();await first;assert.deepEqual(f.calls,['flight']);
 });
+test('stager read-only Task identity proof is bound to original Gateway/Task/operation',()=>{
+ const f=fixture();
+ assert.equal(f.stager.isForOwnerTask(f.opts.admissions,'task','update_file'),true);
+ assert.equal(f.stager.isForOwnerTask(f.opts.admissions,'dispatch_foreign','update_file'),false);
+ assert.equal(f.stager.isForOwnerTask(f.opts.admissions,'task','run_tests'),false);
+ assert.equal(f.stager.isForOwnerTask(Object.create(Admissions.prototype),'task','update_file'),false);
+});
 test('owner mismatch and unpinned HEAD fail during construction',()=>{
  const f=fixture();
  assert.throws(()=>new Stager({...f.opts,expectedHeadSha:'main'}),/trusted owner/);

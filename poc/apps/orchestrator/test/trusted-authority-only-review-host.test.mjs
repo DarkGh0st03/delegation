@@ -240,7 +240,8 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
    credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status)};
  }};
- const {stageTask,startSdkA2AOwner}=await host.admitOperationalExecution(deps);
+ const execution=await host.admitOperationalExecution(deps);
+ const {stageTask,startSdkA2AOwner}=execution;
  const stage=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
  await stageTask(stage);
  const temp=await mkdtemp(join(tmpdir(),'r350sdk-'));
@@ -274,6 +275,13 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
    stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
   });
   assert.equal(typeof owner.dispatchIssuedTask,'function');
+  const {dispatchEnrolledTask}=await Promise.resolve({dispatchEnrolledTask:
+   // The returned execution handle, not the A2A SDK object, owns this method.
+   execution.dispatchEnrolledTask});
+  await assert.rejects(dispatchEnrolledTask({
+   taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId,
+   instruction:'do not execute',effectStager:{stage:async()=>{}}
+  }),/original owner-bound effect stager/);
   await assert.rejects(startSdkA2AOwner({
    stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
   }),/requires an enrolled Child/);
