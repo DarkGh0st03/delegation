@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BaseLlm} from '@google/adk';
-import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
@@ -20,7 +20,9 @@ import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operatio
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
 import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-authority-only-runner-preflight.ts';
-import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
+import {InMemoryRequestStore,InMemoryAuditSink,prepareAuthorization} from '../../gateway/src/prepare.ts';
+import {DurableAuthorityOnlyTaskFenceJournal}
+ from '../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts';
 import {startSpecializedAgentServer,TrustedEffectStagingTaskRegistry,
  createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
  from '../../../packages/agent-runtime/src/index.ts';
@@ -62,7 +64,7 @@ const root=(id,index,seconds=600)=>({credential_id:id,valid_from:new Date().toIS
  credential_status:{type:'BitstringStatusListEntry',statusPurpose:'revocation',statusListIndex:String(index),statusListCredential:'https://status.invalid/list'}});
 async function fixture(t,flags={}){
  const home=await mkdtemp(join(tmpdir(),'r349-'));t.after(()=>rm(home,{recursive:true,force:true}));
- const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren'].map(k=>[k,join(home,k)]));
+ const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren','flights'].map(k=>[k,join(home,k)]));
  for(const d of Object.values(dirs))await mkdir(d,{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
  const privateKeyFile=join(dirs.keys,'engineer.pem');await writeFile(privateKeyFile,pem(engineer.privateKey,'pkcs8'),{mode:0o600});
@@ -488,6 +490,86 @@ test('R350.6 never binds a foreign preflight to the same-session Gateway',async 
   /active quiescent owner/);
  await host.close();
  assert.equal(host.phase,'revoked');
+});
+
+test('R350.8 original Engineer session creates real canonical Gateway Prepare and crash-durable Task flight',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r3508:operational',2));
+ const deps=executionDeps(f);
+ const nativeCalls=[];
+ deps.effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(f.dirs.flights);
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  nativeCalls.push('native_child_fixture');
+  return {id:req.credential_id,validFrom:req.valid_from,
+   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialStatus:structuredClone(req.credential_status)};
+ }};
+ const execution=await host.admitOperationalExecution(deps);
+ const task=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
+ await execution.stageTask(task);
+ assert.equal(nativeCalls.length,1);
+ const {gateway}=execution;
+ const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+ const config={audience:'cloud-access-gateway',request_ttl_ms:60000,
+  repository:snapshot.repository};
+ const raw={task_id:task.runtimeTaskId,agent_role:'backend',tool:'update_file',
+  arguments:{branch:'feature/account-suspension',path:'apps/user.ts',
+   content:'export const suspended=true;'}};
+ const prep={store,audit,authorityOnlyAdmissions:gateway,
+  requestId:()=> 'req_r3508_trusted',challenge:()=> 'trusted-r3508-challenge'};
+ assert.throws(()=>prepareAuthorization({...raw,
+  arguments:{...raw.arguments,path:'apps/foreign.ts'}},config,prep),
+  /request operation or resource not in exact signed Task grant/);
+ assert.equal(store.size(),0);
+ const prepared=prepareAuthorization(raw,config,prep);
+ assert.equal(prepared.request_id,'req_r3508_trusted');
+ assert.equal(prepared.required_permission.operation,'update_file');
+ assert.equal(store.size(),1);
+ const record=store.get(prepared.request_id);
+ assert.equal(record.authority_only_plan_task_id,task.task.task_id);
+ assert.equal(record.authority_only_agent_did,'did:thesis:backend');
+ const nativeMutation=Object.assign(
+  Object.create(TrustedAuthorityOnlyGiteaMutationPreflight.prototype),{
+   isForAdmissions:g=>g===gateway,
+   async stageUpdate(actual,head){
+    assert.equal(actual,record);assert.equal(head,snapshot.base_revision);
+    nativeCalls.push('offline_mutation_intent_reserved');
+    return {provider_write_authorized:false};
+   }
+  });
+ const nativeRunner=Object.assign(
+  Object.create(TrustedAuthorityOnlyRunnerPreflight.prototype),{
+   isForAdmissions:g=>g===gateway,
+   async stageRunner(){throw Error('Test Runner cannot stage Backend Task');}
+  });
+ assert.equal(execution.bindNativeGatewayEffects({
+  store,mutation:nativeMutation,runner:nativeRunner}).gateway_execution_authorized,false);
+ const stager=execution.createEnrolledNativeEffectStager({
+  runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
+ });
+ const staged=await stager.stage(prepared.request_id);
+ assert.equal(staged.provider_write_authorized,false);
+ assert.deepEqual(nativeCalls,['native_child_fixture','offline_mutation_intent_reserved']);
+ const files=(await readdir(f.dirs.flights)).filter(n=>n.endsWith('.flight.json'));
+ assert.equal(files.length,1);
+ const durable=JSON.parse(await readFile(join(f.dirs.flights,files[0]),'utf8'));
+ assert.equal(durable.session_id,snapshot.session_id);
+ assert.equal(durable.task_id,task.task.task_id);
+ assert.equal(durable.runtime_task_id,task.runtimeTaskId);
+ assert.equal(durable.root_credential_id,'urn:r3508:operational');
+ assert.equal(durable.credential_id,task.childParameters.credential_id);
+ assert.equal(durable.request_id,prepared.request_id);
+ assert.equal(durable.kind,'flight');
+ assert.equal(gateway.stagedCompletedTaskCount,0);
+ await assert.rejects(gateway.attestTrustedTaskCompletion(
+  task.task.task_id,task.runtimeTaskId),
+  /trusted completion observer or owner-private journal missing/);
+ await assert.rejects(stager.stage(prepared.request_id),/already attempted/);
+ assert.equal((await readdir(f.dirs.flights)).filter(n=>n.endsWith('.completion.json')).length,0);
+ await host.close();
+ assert.equal(host.phase,'revoked');
+ assert.equal(f.log.at(-1),'revoke:urn:r3508:operational');
 });
 
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{
