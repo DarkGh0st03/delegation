@@ -1,0 +1,26 @@
+{
+  "checkpoint": "R356.1",
+  "scenario": "account-suspension",
+  "gate": "same-root-native-adaptive-fail-backend-repair-retest",
+  "model": "scripted-no-paid-inference",
+  "prerequisite": {
+    "r356_0_run": 42271611943,
+    "conclusion": "success",
+    "proof": "original-owner-real-docker-authenticated-failure"
+  },
+  "requires": [
+    "native-rust-child-and-root",
+    "live-opa-gateway-vp",
+    "gitea-real-head-cas",
+    "docker-original-fail",
+    "model-selected-backend-correction-after-proof",
+    "independent-repair-CAS-attestation",
+    "model-selected-retest",
+    "independent-test-and-acceptance-pass",
+    "failed-original-not-completed",
+    "same-operational-root",
+    "main-unchanged",
+    "zero-paid-model-calls"
+  ],
+  "trigger": "one native validation checkpoint, not per-commit"
+}
