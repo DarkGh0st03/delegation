@@ -15,6 +15,10 @@ import {TrustedActiveAuthorityPlanning} from '../../../packages/orchestrator-run
 import {AuthorityPlanningCheckpointStore} from '../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts';
 import {authorityOnlyDigest,selectAuthorityOnlyGrant} from '../../../packages/plan-contracts/src/authority-only-approval.mjs';
 import {RUST_OPERATIONS} from '../../gateway/src/operation-catalog.ts';
+import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
+import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
+import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
+import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
 const OPS=new Set(RUST_OPERATIONS);
 const fields=(o,allowed)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).every(k=>allowed.includes(k));
 function deny(reason){throw Error('Authority-only review host: '+reason);}
@@ -62,6 +66,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   return [role,{did:pin.did,card_ref:pin.card_ref}];
  }));
  let server,attempted=false,closed=false,closing,activationFlight;
+ let operationalCoordinator,executionAdmissionAttempted=false,executionAdmissionFlight;
  async function retire(){
   if(session.phase==='planning')await session.cancelPlanning();
   else if(session.phase==='operational')await session.retireOperationalRoot();
@@ -104,6 +109,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(closed){await retire();deny('host closed during root transition');}
     const activation=await coordinator.activate();
     if(closed){await retire();deny('host closed during Coordinator activation');}
+    operationalCoordinator=coordinator;
     return Object.freeze({activation,coordinator});
    }catch(error){
     if(session.phase==='operational'){
@@ -114,12 +120,72 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
    })();
    try{return await activationFlight;}finally{activationFlight=undefined;}
   },
-  close(){
+   /** R350: owner-private same-session Gateway and Child composition.
+   * This only admits authority; it never issues a Child, dispatches A2A,
+   * executes a provider operation or claims acceptance. All journals and
+   * the native crypto port must be supplied by the trusted owner, not ADK. */
+  async admitOperationalExecution(deps){
+   if(closed||!operationalCoordinator||session.phase!=='operational')
+    deny('execution admission requires an activated operational Coordinator');
+   if(executionAdmissionAttempted||executionAdmissionFlight)
+    deny('execution admission already attempted');
+   executionAdmissionAttempted=true; // one-shot even on ambiguous failure
+   executionAdmissionFlight=(async()=>{
+    if(!fields(deps,['operationalSessionStore','gatewayTaskJournal',
+      'issuerChildJournal','gatewayChildJournal','nativeCryptoPort',
+      'effectFenceJournal','sequentialEffectJournal','completionObserver'])||
+       !(deps.operationalSessionStore instanceof TrustedOperationalSessionStore)||
+       !(deps.gatewayTaskJournal instanceof DurableAuthorityTaskJournal)||
+       deps.gatewayTaskJournal===options.taskJournal||
+       !(deps.issuerChildJournal instanceof DurableAuthorityOnlyChildJournal)||
+       !(deps.gatewayChildJournal instanceof DurableAuthorityOnlyChildJournal)||
+       deps.issuerChildJournal===deps.gatewayChildJournal||
+       deps.nativeCryptoPort?.kind!=='rust-native'||
+       typeof deps.nativeCryptoPort.issueChild!=='function')
+     deny('distinct owner-private journals and native Rust Child port required');
+    const root=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+    if(root.session_id!==snapshot.session_id||
+       root.base_revision!==snapshot.base_revision||
+       root.engineer_did!==approval.engineerDid||
+       !isDeepStrictEqual(root.repository,snapshot.repository))
+     deny('Gateway admission cannot change original session or root');
+    const gateway=new TrustedAuthorityOnlyGatewayAdmissions({
+     repository:snapshot.repository,engineerDid:approval.engineerDid,
+     coordinator:operationalCoordinator,approvals:files,
+     operationalSessionStore:deps.operationalSessionStore,
+     taskJournal:deps.gatewayTaskJournal,childJournal:deps.gatewayChildJournal,
+     ...(deps.effectFenceJournal===undefined?{}:{effectFenceJournal:deps.effectFenceJournal}),
+     ...(deps.sequentialEffectJournal===undefined?{}:{sequentialEffectJournal:deps.sequentialEffectJournal}),
+     ...(deps.completionObserver===undefined?{}:{completionObserver:deps.completionObserver})
+    });
+    const childIssuer=new TrustedAuthorityOnlyChildIssuer({
+     coordinator:operationalCoordinator,nativeCryptoPort:deps.nativeCryptoPort,
+     journal:deps.issuerChildJournal
+    });
+    const admission=await gateway.activate(snapshot.session_id,snapshot.base_revision);
+    if(closed)deny('host closed during Gateway admission');
+    const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+    if(live.root_credential_id!==root.root_credential_id||
+       live.authority_digest!==root.authority_digest)
+     deny('operational root changed during Gateway admission');
+    return Object.freeze({admission,gateway,childIssuer});
+   })();
+   try{return await executionAdmissionFlight;}
+   catch(error){
+    if(session.phase==='operational'){
+     try{await session.retireOperationalRoot();}
+     catch{deny('Gateway admission failed and root retirement unconfirmed');}
+    }
+    throw error;
+   }finally{executionAdmissionFlight=undefined;}
+  },
+ close(){
    if(closing)return closing;
    closed=true;
    closing=(async()=>{
     // Await the transition owner before deciding which root to retire.
     if(activationFlight)try{await activationFlight;}catch{/* Recheck state below. */}
+    if(executionAdmissionFlight)try{await executionAdmissionFlight;}catch{/* Fail closed below. */}
     try{if(session.phase!=='revoked')await retire();}
     finally{
      if(server.listening)await new Promise((ok,bad)=>server.close(e=>e?bad(e):ok()));
@@ -142,6 +208,7 @@ export async function startTrustedAuthorityOnlyReviewHost(options){
   });
   return Object.freeze({engineerUrl:'http://127.0.0.1:'+host.server.address().port,
    get phase(){return host.phase;},activateOperational:root=>host.activateOperational(root),
+   admitOperationalExecution:deps=>host.admitOperationalExecution(deps),
    close:()=>host.close()});
  }catch(error){
   try{await host.close();}catch{deny('listener startup failed and root retirement unconfirmed');}

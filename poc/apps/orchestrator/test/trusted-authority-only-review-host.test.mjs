@@ -14,6 +14,8 @@ import {startOwnerControlledEngineerReviewHost} from '../src/trusted-engineer-ho
 import {AuthorityPlanningCheckpointStore} from '../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts';
 import {DurableAuthorityOnlyActivationJournal} from '../../../packages/orchestrator-runtime/src/authority-only-activation-journal.ts';
 import {DurableAuthorityTaskJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-task-journal.ts';
+import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
+import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
 import {preliminaryReadPermissions} from '../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts';
 import {TrustedAuthorityOnlyEngineerSession} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-engineer-session.ts';
 import {TrustedPlanningGatewayReadPort} from '../../../packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts';
@@ -37,7 +39,7 @@ const root=(id,index,seconds=600)=>({credential_id:id,valid_from:new Date().toIS
  credential_status:{type:'BitstringStatusListEntry',statusPurpose:'revocation',statusListIndex:String(index),statusListCredential:'https://status.invalid/list'}});
 async function fixture(t,flags={}){
  const home=await mkdtemp(join(tmpdir(),'r349-'));t.after(()=>rm(home,{recursive:true,force:true}));
- const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys'].map(k=>[k,join(home,k)]));
+ const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren'].map(k=>[k,join(home,k)]));
  for(const d of Object.values(dirs))await mkdir(d,{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
  const privateKeyFile=join(dirs.keys,'engineer.pem');await writeFile(privateKeyFile,pem(engineer.privateKey,'pkcs8'),{mode:0o600});
@@ -86,6 +88,46 @@ async function fixture(t,flags={}){
  async function approve(){const {cookie,packet}=await review();const r=await call('/api/approve',{cookie,csrf:packet.csrf_token,body:{proposal_digest:packet.proposal_digest,approved_permission_ids:['permission-1'],confirmation:'APPROVE '+packet.proposal_digest}});assert.equal(r.status,201);return packet;}
  return {options,start,log,model,call,review,approve,dirs,store,engineer};
 }
+
+function executionDeps(f){
+ return {
+  operationalSessionStore:new TrustedOperationalSessionStore(f.dirs.gatewaySessions),
+  gatewayTaskJournal:new DurableAuthorityTaskJournal(f.dirs.gatewayTasks),
+  issuerChildJournal:new DurableAuthorityOnlyChildJournal(f.dirs.issuerChildren),
+  gatewayChildJournal:new DurableAuthorityOnlyChildJournal(f.dirs.gatewayChildren),
+  nativeCryptoPort:{kind:'rust-native',issueChild:async()=>{
+   throw Error('no Child issuance in R350 admission-only test');
+  }}
+ };
+}
+test('R350 same R349 Engineer session activates independently verified Gateway and native Child issuer',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await assert.rejects(host.admitOperationalExecution(executionDeps(f)),/requires an activated/);
+ await f.approve();
+ const {coordinator}=await host.activateOperational(root('urn:r350:operational',2));
+ const {gateway,childIssuer,admission}=await host.admitOperationalExecution(executionDeps(f));
+ assert.equal(admission.status,'gateway_authority_admitted_preflight_only');
+ assert.equal(admission.gateway_execution_authorized,false);
+ assert.equal(admission.session_id,snapshot.session_id);
+ assert.equal(gateway.phase,'active');
+ assert.equal(gateway.registeredTaskCount,0);
+ assert.equal(coordinator.registeredTaskCount,0);
+ assert.throws(()=>childIssuer.assertTrustedIssuedChild('unregistered',coordinator),/Task not admitted/);
+ await assert.rejects(host.admitOperationalExecution(executionDeps(f)),/already attempted/);
+ await host.close();
+ assert.equal(host.phase,'revoked');
+ assert.throws(()=>coordinator.assertTrustedGatewayAuthorityBinding(),/root|retire|active/);
+});
+test('R350 rejects shared Child journal and retires the original operational root',async t=>{
+ const f=await fixture(t),host=await f.start();await f.approve();
+ await host.activateOperational(root('urn:r350:invalid',2));
+ const deps=executionDeps(f);deps.gatewayChildJournal=deps.issuerChildJournal;
+ await assert.rejects(host.admitOperationalExecution(deps),/distinct owner-private journals/);
+ assert.equal(host.phase,'revoked');
+ assert.equal(f.log.at(-1),'revoke:urn:r350:invalid');
+ await host.close();
+});
+
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{
  const f=await fixture(t),host=await f.start();
  assert.equal(host.phase,'planning');assert.equal(f.model.calls,2);
