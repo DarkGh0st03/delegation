@@ -110,7 +110,10 @@ class ScriptedReadThenCas extends BaseLlm {
   }else if(turn===2){
    // An actual ADK FunctionResponse must carry the independently authorized
    // real Gitea source. A blind precomputed update is NOT a pass here.
-   if(!JSON.stringify(request).includes(this.oldContent))
+   // Compare JSON-escaped UTF-8 bytes because ADK LlmRequest serializes
+   // source newlines and quotes in functionResponse parts.
+   const sourceEvidence=JSON.stringify(request);
+   if(!sourceEvidence.includes(JSON.stringify(this.oldContent).slice(1,-1)))
     throw Error("R362 scripted ADK did not observe authenticated source bytes");
    yield {content:{role:"model",parts:[{functionCall:{
     name:"update_file",id:"r362-update",args:{
