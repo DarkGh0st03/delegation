@@ -1,7 +1,7 @@
 {
-  "revision": "R350.13",
-  "request": "one-disposable-review-approved-native-Rust-EVM-OPA-Gitea-Docker-proof",
-  "source_commit": "5b1ad5408a3c3d3d2c13046e67a89b6c59bd9be8",
+  "revision": "R350.13-native-vp",
+  "request": "run reviewed-native R331 with real private Rust preliminary VP, no HTTP downgrade",
+  "source_commit": "d959932ea330a3b817d1f265bca0458b41beac47",
   "mode": "reviewed_native",
   "paid_ai": false,
   "production_effects": false,
@@ -13,5 +13,6 @@
     "three real ADK A2A agents, native Rust VP / OPA / Gitea CAS and Docker",
     "three independent verified Gateway Task completions",
     "immutable main, root revocation and fail-closed recovery"
-  ]
+  ],
+  "replaced_run": 42205484506
 }
