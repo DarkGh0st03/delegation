@@ -672,13 +672,15 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'pr-execute-foreign-child','pr-execute-child-depth','pr-execute-post-failure','pr-execute-race',
  'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
  'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale','adaptive-work',
- 'adaptive-observed-fail','adaptive-unverified-fail'])test(
+ 'adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest'])test(
  mode==='adaptive-work'?
   'R355 original adaptive loop executes chosen Frontend through real ADK A2A and independent Gateway completion':
  mode==='adaptive-observed-fail'?
   'R355.4 original adaptive Test FAIL is verified independently before the next model turn':
  mode==='adaptive-unverified-fail'?
   'R355.4 missing Runner FAIL MAC cannot be converted to adaptive observation':
+ mode==='adaptive-repair-and-retest'?
+  'R355.5 original adaptive controller selects repair and retest after authenticated FAIL':
  mode.startsWith('adaptive')?
   'R355 original Engineer current Test readiness '+mode:
  mode.startsWith('pr')?
@@ -704,12 +706,12 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const attestPr=mode.startsWith('pr-attest');
  const executePr=mode.startsWith('pr-execute')||attestPr;
  const verified=mode!=='missing',throughFailure=mode.startsWith('failure')||
-  mode==='adaptive-observed-fail'||mode==='adaptive-unverified-fail',
+  ['adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest'].includes(mode),
   noFailureReceipt=mode==='failure-no-receipt'||mode==='adaptive-unverified-fail',
   foreignD1Model=mode==='failure-model-denied',
   throughTest=mode==='test'||mode.startsWith('pr')||['adaptive-ready','adaptive-stale'].includes(mode)||throughFailure,
   throughFrontend=mode==='frontend'||mode==='adaptive-work'||throughTest,
-  d1Retest=mode==='failure-d1-retest',
+  d1Retest=mode==='failure-d1-retest'||mode==='adaptive-repair-and-retest',
    d1Effect=mode==='failure-d1-effect'||d1Retest;
  const f=await fixture(t,throughFrontend?{includeTestPermission:true,
   includePullRequestPermission:mode.startsWith('pr')&&mode!=='pr-denied'}:{});
@@ -849,6 +851,17 @@ for(const mode of ['missing','backend','frontend','test','failure',
   events.push('native_child_fixture');
   if(mode==='adaptive-work'&&req.delegatee==='frontend')frontendStaged={credential_id:req.credential_id};
   if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)&&req.delegatee==='test')testStaged={credential_id:req.credential_id};
+  if(mode==='adaptive-repair-and-retest'){
+   if(req.delegatee==='backend'&&model.calls===2)
+    nativeD1={new_child_credential_id:req.credential_id};
+   if(req.delegatee==='test'){
+    if(testAgentModel.calls===0)testStaged={credential_id:req.credential_id};
+    else{
+     d1RetestStaged={credential_id:req.credential_id};
+     d1RetestTask={task_id:'r3555-adaptive-retest'};
+    }
+   }
+  }
   return {'@context':['https://www.w3.org/ns/credentials/v2'],
    type:['VerifiableCredential','DelegationCredential'],
    id:req.credential_id,issuer:'did:thesis:rust',
@@ -894,6 +907,14 @@ for(const mode of ['missing','backend','frontend','test','failure',
   const u=String(url),body=JSON.parse(String(options?.body));
   if(u.endsWith('/v1/authorization/prepare')){
    if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)&&body.agent_role==='test')testTask.runtimeTaskId=body.task_id;
+   if(mode==='adaptive-repair-and-retest'){
+    if(body.agent_role==='test'){
+     if(testAgentModel.calls<3)testTask.runtimeTaskId=body.task_id;
+     else d1RetestTask.runtime_task_id=body.task_id;
+    }
+    if(body.agent_role==='backend'&&nativeD1&&model.calls>=3)
+     nativeD1.runtime_task_id=body.task_id;
+   }
    const runnerRequest=throughTest&&testStaged&&
     body.task_id===testTask.runtimeTaskId;
    const retestRequest=d1Retest&&d1RetestTask&&
@@ -1269,24 +1290,51 @@ for(const mode of ['missing','backend','frontend','test','failure',
     });
     assert.equal(frontendAttested.status,'owner_gateway_completion_independently_observed');
     assert.equal(gateway.stagedCompletedTaskCount,2);
-    if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)){
+    if(['adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest'].includes(mode)){
      class AdaptiveTestFailureModel extends BaseLlm{
       calls=0;requests=[];
       constructor(){super({model:'r3554-scripted-original-failure-observer'});}
       async *generateContentAsync(request){
        this.calls++;this.requests.push(request);
-       yield {content:{role:'model',parts:[{text:JSON.stringify(this.calls===1?
+       const choice=this.calls===1?
         {action:'delegate',task:{task_id:'r3513-test',agent_id:'test',
          depends_on:[task.task.task_id,next.task.task_id],
          permissions:[testPermission],
          instruction:'Run bounded Test and observe independently authenticated failure'}}:
-        {action:'blocked',reason:'Verified compiler FAIL observed; no fix attempted in this gate'})}]}};
+        mode==='adaptive-repair-and-retest'&&this.calls===2?
+         {action:'delegate',task:{task_id:'r3555-adaptive-repair',agent_id:'backend',
+          depends_on:[task.task.task_id,next.task.task_id],
+          permissions:task.task.permissions,
+          instruction:'Repair verified typecheck failure under original signed root'}}:
+        mode==='adaptive-repair-and-retest'&&this.calls===3?
+         {action:'delegate',task:{task_id:'r3555-adaptive-retest',agent_id:'test',
+          depends_on:[task.task.task_id,next.task.task_id,'r3555-adaptive-repair'],
+          permissions:[testPermission],
+          instruction:'Retest independently repaired current HEAD'}}:
+        mode==='adaptive-repair-and-retest'?
+         {action:'ready_for_pr',reason:'Latest replacement Docker/acceptance PASS is independently verified'}:
+         {action:'blocked',reason:'Verified compiler FAIL observed; no fix attempted in this gate'};
+       yield {content:{role:'model',parts:[{text:JSON.stringify(choice)}]}};
       }
       connect(){throw Error('Paid inference forbidden in R355.4');}
      }
      const adaptiveModel=new AdaptiveTestFailureModel();
      const input={model:adaptiveModel,
       nextChildParameters:pin=>{
+       if(mode==='adaptive-repair-and-retest'&&pin.epoch===4){
+        assert.equal(pin.agent_id,'backend');
+        return {credential_id:'urn:r3555:adaptive:repair',
+         valid_from:new Date().toISOString(),validity_seconds:90,
+         credential_status:{type:'BitstringStatusListEntry',statusPurpose:'revocation',
+          statusListCredential:'https://status.invalid/r3555',statusListIndex:'35541'}};
+       }
+       if(mode==='adaptive-repair-and-retest'&&pin.epoch===5){
+        assert.equal(pin.agent_id,'test');
+        return {credential_id:'urn:r3555:adaptive:retest',
+         valid_from:new Date().toISOString(),validity_seconds:90,
+         credential_status:{type:'BitstringStatusListEntry',statusPurpose:'revocation',
+          statusListCredential:'https://status.invalid/r3555',statusListIndex:'35542'}};
+       }
        assert.deepEqual(pin,{epoch:3,agent_id:'test'});
        return testTask.childParameters;
       }};
@@ -1299,6 +1347,25 @@ for(const mode of ['missing','backend','frontend','test','failure',
       await host.close();return;
      }
      const outcome=await execution.runAdaptiveWorkLoop(input);
+     if(mode==='adaptive-repair-and-retest'){
+      assert.equal(outcome.status,'owner_adaptive_work_ready_for_pr');
+      assert.equal(outcome.executed_tasks,2);
+      assert.equal(outcome.source_test_task_id,'r3555-adaptive-retest');
+      assert.equal(outcome.tested_commit_sha,repairSha);
+      assert.equal(outcome.pr_created,false);
+      assert.equal(adaptiveModel.calls,4);
+      assert.equal(model.calls,4);
+      assert.equal(testAgentModel.calls,4);
+      assert.equal(gateway.stagedCompletedTaskCount,4);
+      assert.equal(coordinator.registeredTaskCount,5);
+      assert.equal(provider.head,repairSha);
+      assert.equal((await readdir(f.dirs.runnerEvidence))
+       .filter(n=>n.endsWith('.runner-fail.json')).length,1);
+      assert.equal((await readdir(f.dirs.runnerEvidence))
+       .filter(n=>n.endsWith('.runner.json')).length,1);
+      assert.equal(host.phase,'operational');
+      await host.close();return;
+     }
      assert.equal(outcome.status,'owner_adaptive_work_blocked');
      assert.equal(outcome.executed_tasks,0);
      assert.equal(adaptiveModel.calls,2);
