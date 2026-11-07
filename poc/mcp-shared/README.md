@@ -96,6 +96,40 @@ server-side MCP signing boundary remain separate follow-up gates.
 Never interpret the broker as holding a second signer, and do not
 expose an MCP crypto method to an ADK model or public A2A client.
 
+## R381.3 — trusted native Rust execution INSIDE private MCP stdio
+
+The opt-in `createOwnerPrivateNativeCryptoMcpSession` is a different boundary
+from the R381.0–R381.2 ACK-only broker. A short-lived MCP subprocess receives a
+role-scoped bearer, exact native request and private Unix socket path **only
+over its owner-controlled stdio MCP channel** (not argv, environment, HTTP,
+A2A, or an ADK FunctionTool). Its selected operation is fixed before launch:
+**Child issuance** or **presentation creation** only. Root issuance and
+revocation remain direct Software Engineer → Rust. The subprocess invokes
+the existing `invokeNativeCrypto` native Rust socket client and sends the
+signed credential or VP back in a private MCP response, not to the model.
+The existing native Rust CryptoRuntime remains the sole signer and the
+independent Gateway verifier/OPA path is unchanged.
+
+`TrustedAuthorityOnlyChildIssuer` offers owner-only
+`privateMcpTransport:"native-stdio"` when its `rust-native` port implements
+`issueChildViaPrivateMcp`; the default continues to be in-process. Journal
+reservation, immutable Task permission checks, native result validation,
+replay tombstones and fail-closed behavior are retained. The old `"stdio"`
+choice remains the ACK-only R381.2 proof and MUST NOT be described as
+server-side signing.
+
+The free offline test `test/owner-private-native-crypto-stdio.test.ts` uses a
+disposable Unix socket to prove that the native IPC request and response
+traverse the MCP subprocess, including one-shot, no root tools, shutdown,
+malformed reply and sanitized errors. The R292 native Rust/EVM harness has
+a separate explicit `R3813_NATIVE_MCP_SIGNING=1` opt-in for both Child and
+VP, but **this does not attest a native green run until that exact mode has
+been executed and independently checked on the same SHA**. Production
+launcher opt-in, real end-to-end Rust/EVM proof, and A/B/C architecture
+closure remain distinct gates. Do not enable this transport for untrusted
+clients; the role-scoped native bearer is a privileged secret inside the
+isolated MCP process, and must never enter a model prompt or diagnostic log.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
