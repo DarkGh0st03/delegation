@@ -72,6 +72,8 @@ import {PrivateMcpTaskRegistry}
  from "../../agent-runtime/src/private-mcp-task-registry.ts";
 import {DelegationEvidenceHandler}
  from "../../agent-runtime/src/delegation-evidence-handler.ts";
+import {LocalCryptoMcpBridge}
+ from "../../agent-runtime/src/local-crypto-mcp-bridge.ts";
 import {connectTrustedOwnerEffectStagingClient,
  createTrustedEffectAgentBindingServer}
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
@@ -453,6 +455,7 @@ try{
  const originalCryptoInvoke=PrivateMcpTaskRegistry.prototype.invokeCrypto;
  const originalProofTake=PrivateMcpTaskRegistry.prototype.takeSignedPresentation;
  const originalCreate=DelegationEvidenceHandler.prototype.createPresentation;
+ const originalMcpBridge=LocalCryptoMcpBridge.prototype.createSignedPresentation;
  TrustedEffectStagingTaskRegistry.prototype.selectFor=function(context){
   const port=originalSelect.call(this,context);
   if(context?.role!=="backend")return port;
@@ -491,6 +494,17 @@ try{
    recordPhase("crypto_proof_taken");return result;
   }catch(error){recordPhase("crypto_proof_take_rejected");throw error;}
  };
+ LocalCryptoMcpBridge.prototype.createSignedPresentation=async function(prepared){
+  recordPhase("mcp_bridge_presentation_entered");
+  try{
+   const signed=await originalMcpBridge.call(this,prepared);
+   recordPhase(typeof signed==="string"&&signed.length>0?
+    "mcp_bridge_returned_signed_string":"mcp_bridge_returned_invalid_type");
+   return signed;
+  }catch(error){
+   recordPhase("mcp_bridge_presentation_rejected");throw error;
+  }
+ };
  DelegationEvidenceHandler.prototype.createPresentation=async function(prepared){
   recordPhase("private_rust_presentation_entered");
   try{
@@ -523,6 +537,12 @@ try{
    bindingServers.push(binder);await binder.start();
   }
   const gatewayTransport=async(url,init)=>{
+   // Same original Gateway implementation. Observe the transport entry
+   // BEFORE parsing or touching a signed VP; classify only the route.
+   recordPhase(String(url).endsWith("/v1/authorization/execute")?
+    "gateway_execute_transport_entered":
+    String(url).endsWith("/v1/authorization/prepare")?
+     "gateway_prepare_transport_entered":"gateway_unexpected_transport");
    const body=JSON.parse(String(init?.body));
    if(String(url).endsWith("/v1/authorization/prepare")){
     events.push("prepare_attempt_"+body.agent_role+"_"+body.tool);
@@ -767,6 +787,7 @@ try{
   PrivateMcpTaskRegistry.prototype.invokeCrypto=originalCryptoInvoke;
   PrivateMcpTaskRegistry.prototype.takeSignedPresentation=originalProofTake;
   DelegationEvidenceHandler.prototype.createPresentation=originalCreate;
+  LocalCryptoMcpBridge.prototype.createSignedPresentation=originalMcpBridge;
   const results=await Promise.allSettled([
    owner?.close(),...bindingServers.reverse().map(b=>b.close()),
    ...roleServers.reverse().map(s=>s.close())

@@ -1,5 +1,5 @@
 {
-  "checkpoint": "R364.7",
+  "checkpoint": "R364.8",
   "baseline_native_sha": "1a7c2d20d8aaf8fb15eeb324a1402789f470179d",
   "scenario": "account-suspension",
   "roles": [
@@ -10,13 +10,14 @@
   "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
   "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
   "excluded": "no Test/Docker or PR claim",
-  "status": "requested, not yet attested",
-  "previous_sha": "d7aa637e890de1805a47a5895af82a2e161b576b",
+  "status": "requested; outcome unverified",
+  "previous_sha": "b4f2b996204c6ce0556cea0f5183d1dde3cb4778",
   "fix": "Defer dependent Frontend native Child issuance and Gateway enrollment until after independent Backend final receipt",
-  "previous_failure_run": 42319028602,
+  "previous_failure_run": 42319919084,
   "previous_failure": "Backend stage succeeded; native VP or MCP crypto unavailable before Gateway Execute",
-  "instrumentation": "Test-only delegating hooks, exact phase names only, no credentials, VP, source, or request IDs in output; restored after test",
+  "instrumentation": "Only test-side bridge return + transport-entry phase markers; original crypto and Gateway implementations retained; no signed VP or source content logged",
   "diagnostic": "Test-only original native stager stage call with boolean exact Task/HEAD/TTL flags, strict allowlisted error reason; safe no signed VP or source",
   "change": "Fail-only direct probe of same Rust signer with original Gateway challenge, no provider execution, no sensitive output",
-  "confirmed": "Original Gateway challenge signed directly by native Rust; failure lies in Agent/IPC/MCP integration after owner stage success"
+  "confirmed": "Original Gateway challenge signed directly by native Rust; failure lies in Agent/IPC/MCP integration after owner stage success",
+  "prior_phase_trace": "proof_taken, no Gateway Execute; VP signed successfully"
 }
