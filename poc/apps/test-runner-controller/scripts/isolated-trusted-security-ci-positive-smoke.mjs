@@ -810,6 +810,9 @@ async function main(){
     if(process.env.APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY==="1"){
       const f1PlanningMode=verifyRealGiteaPlanningMode(process.env,{parent:true});
       const paidOnly=f1PlanningMode==="gemini";
+      const r3803=process.env.R3803_NATIVE_DISCOVERY==="1";
+      if(r3803&&paidOnly)
+        throw Error("R380.3 forbids billed inference and paid pilot inheritance");
       if(process.env.APPROVED_RUNNER_NATIVE_EVM!=="1"||
          scenario.id!=="account-suspension")
         throw Error("F1 real Gitea Planning-only refuses noncanonical scenario");
@@ -838,6 +841,7 @@ async function main(){
             PLANNING_NATIVE_SIGNED_HANDOFF:"1",
             PLANNING_NATIVE_POSITIVE_DAG:"1",
             PLANNING_REAL_GITEA_ONLY:"1",
+            R3803_NATIVE_DISCOVERY:r3803?"1":"0",
             APPROVED_RUNNER_NATIVE_MCP:"1",
             APPROVED_RUNNER_SCENARIO:scenario.id,
             DELEGATION_SIGNED_GEMINI_PILOT:paidOnly?"1":"0",
@@ -875,6 +879,20 @@ async function main(){
       const manifest=output.split(/\r?\n/u).filter(Boolean).map(line=>{
         try{return JSON.parse(line);}catch{return null;}
       }).find(event=>event?.event==="f1_real_planning_input_manifest");
+      const nativeDiscovery=output.split(/\r?\n/u).filter(Boolean).map(line=>{
+        try{return JSON.parse(line);}catch{return null;}
+      }).find(event=>event?.event==="r3803_native_planning_dynamic_discovery");
+      if(r3803){
+        assert.equal(nativeDiscovery?.status,"pass");
+        assert.equal(nativeDiscovery?.real_native_rust_evm_root_and_vp,true);
+        assert.equal(nativeDiscovery?.verified_new_source_from_real_gitea,true);
+        assert.equal(nativeDiscovery?.signed_multi_permission_vp_count,1);
+        assert.equal(nativeDiscovery?.verified_root_revoked,true);
+        assert.equal(nativeDiscovery?.independently_verified_read_count,2);
+        assert.equal(nativeDiscovery?.approved_engineer_execution,false);
+        assert.equal(nativeDiscovery?.provider_writes,0);
+        assert.equal(nativeDiscovery?.paid_model_calls,0);
+      }else assert.equal(nativeDiscovery,undefined);
       assert.equal(result?.status,"pass");
       assert.equal(result?.input_manifest_digest,manifest?.manifest_digest);
       assert.equal(manifest?.source_revision,fixture.mainSha);
@@ -910,7 +928,9 @@ async function main(){
         approval_created:false,operational_root_issued:false,
         provider_writes:0,pr_created:false,
         gemini_calls:result.gemini_calls,
-        model_source:result.model_source
+        model_source:result.model_source,
+        ...(r3803?{r3803_dynamic_discovery_native_verified:true,
+          r3803_signed_multipermission_vp_count:1}:{})
       })+"\n");
       return; // main() finally tears down isolated Docker and OPA.
     }
