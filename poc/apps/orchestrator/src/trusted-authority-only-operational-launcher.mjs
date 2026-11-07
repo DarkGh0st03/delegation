@@ -43,7 +43,7 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
     typeof input.adaptive.nextChildParameters!=="function"||
     (input.adaptive.maxSteps!==undefined&&
      (!Number.isSafeInteger(input.adaptive.maxSteps)||
-      input.adaptive.maxSteps<1||input.adaptive.maxSteps>8)))
+      input.adaptive.maxSteps<1||input.adaptive.maxSteps>16)))
   deny("trusted owner, protected A2A and bounded adaptive model required");
  const owner=input.execution;
  if(typeof owner.startSdkA2AOwner!=="function"||

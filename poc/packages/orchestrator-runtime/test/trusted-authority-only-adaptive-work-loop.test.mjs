@@ -297,3 +297,29 @@ test('R355 retirement failure is reported as unconfirmed',async()=>{
  f.hooks.retire=async()=>{throw Error('native unavailable');};
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),/retirement unconfirmed/);
 });
+
+test('R375 owner can complete 12 separately verified decisions without widening any Task',async()=>{
+ const f=fixture();
+ const sequence=[
+  ...Array.from({length:10},(_,i)=>candidate('backend',i)),
+  candidate('test',10),
+  {action:'ready_for_pr',reason:'The latest real Test proof is independent'}
+ ];
+ const model=new Decisions(sequence);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:12});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,11);
+ assert.equal(model.calls,12);
+ assert.equal(f.verified.length,11);
+ assert.equal(f.retired,false);
+ assert.equal(result.pr_created,false);
+});
+test('R375 original adaptive owner rejects unbounded 17th decision',async()=>{
+ const f=fixture();
+ const model=new Decisions([candidate('backend',0)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:17
+ }),/invalid original owner loop configuration/u);
+ assert.equal(model.calls,0);
+ assert.equal(f.verified.length,0);
+});

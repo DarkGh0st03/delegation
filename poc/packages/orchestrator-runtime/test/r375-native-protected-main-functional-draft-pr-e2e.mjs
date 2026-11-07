@@ -1,0 +1,1247 @@
+/** R375.0 — original Engineer Review Host native root Branch first + SDK A2A
+ * and original authenticated Gateway/Gitea/Docker; free scripted ADK.
+ */
+import assert from "node:assert/strict";
+import {generateKeyPairSync,createHash,randomBytes,scryptSync} from "node:crypto";
+import {createServer} from "node:net";
+import {BaseLlm} from "@google/adk";
+import {createTrustedAuthorityOnlyReviewHost}
+ from "../../../apps/orchestrator/src/trusted-authority-only-review-host.mjs";
+import {AuthorityPlanningCheckpointStore}
+ from "../src/trusted-authority-planning-checkpoint.ts";
+import {TrustedOperationalRecoveryStore}
+ from "../src/trusted-operational-recovery-store.ts";
+import {runTrustedAuthorityOnlyAdaptiveWorkLoop}
+ from "../src/trusted-authority-only-adaptive-work-loop.mjs";
+import {startSpecializedAgentServer}
+ from "../../agent-runtime/src/server.ts";
+import {startTrustedAuthorityOnlySdkA2AOwner}
+ from "../src/trusted-authority-only-a2a-owner.ts";
+import {mkdtemp,mkdir,writeFile,readdir,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {createRequire} from "node:module";
+import {fileURLToPath} from "node:url";
+
+import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {InMemoryAuditSink,InMemoryRequestStore,prepareAuthorization}
+ from "../../../apps/gateway/src/prepare.ts";
+import {executeAuthorization} from "../../../apps/gateway/src/execute.ts";
+import {OpaPolicyClient} from "../../../apps/gateway/src/policy-client.ts";
+import {loadDirectCoreRustVerifier} from "../../../apps/gateway/src/direct-core-loader.ts";
+import {TrustedAuthorityOnlyGatewayAdmissions}
+ from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
+import {TrustedOperationalSessionStore}
+ from "../../../apps/gateway/src/trusted-operational-session-store.ts";
+import {createTrustedEngineerCredentialPort}
+ from "../src/trusted-engineer-crypto-port.ts";
+import {preliminaryReadPermissions}
+ from "../src/trusted-engineer-authority.ts";
+import {createNativeRustChildCryptographyPort}
+ from "../src/trusted-child-crypto-port.ts";
+import {TrustedAuthorityOnlyChildIssuer}
+ from "../src/trusted-authority-only-child-issuer.ts";
+import {DurableAuthorityOnlyChildJournal}
+ from "../src/trusted-authority-only-child-journal.ts";
+import {SignedAuthorityOnlyFileStore}
+ from "../src/signed-authority-only-store.ts";
+import {DurableAuthorityOnlyActivationJournal}
+ from "../src/authority-only-activation-journal.ts";
+import {DurableAuthorityTaskJournal}
+ from "../src/trusted-authority-task-journal.ts";
+import {TrustedAuthorityOnlyEngineerSession}
+ from "../src/trusted-authority-only-engineer-session.ts";
+import {TrustedAuthorityOnlyExecutionCoordinator}
+ from "../src/trusted-authority-only-execution-coordinator.ts";
+import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
+ from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
+import {invokeNativeCrypto}
+ from "../../agent-runtime/src/native-crypto-ipc.ts";
+
+import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
+import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
+import {TrustedAuthorityOnlyGiteaMutationPreflight} from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
+import {DurableAuthorityOnlyGiteaMutationIntentJournal} from "../../../apps/gateway/src/trusted-authority-only-mutation-intent-journal.ts";
+import {TrustedAuthorityOnlyGiteaMutationExecutor} from "../../../apps/gateway/src/trusted-authority-only-mutation-executor.ts";
+import {TrustedGatewayGiteaMutationEvidencePublisher,
+ AuthenticatedGiteaMutationCompletionObserver} from "../../../apps/gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
+import {DurableAuthorityOnlySequentialEffectJournal}
+ from "../src/trusted-authority-only-sequential-effect-journal.ts";
+import {DurableAuthorityOnlyTaskFenceJournal}
+ from "../src/trusted-authority-only-task-fence-journal.ts";
+import {TrustedAuthorityOnlyCompletionObserver}
+ from "../src/trusted-authority-only-completion-observer.ts";
+import {TrustedAuthorityOnlyRunnerPreflight}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-preflight.ts";
+import {DurableAuthorityOnlyRunnerIntentJournal}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-intent-journal.ts";
+import {TrustedAuthorityOnlyRunnerExecutor}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-executor.ts";
+import {TrustedAuthorityOnlyPullRequestExecutor}
+ from "../../../apps/gateway/src/trusted-authority-only-pull-request-executor.ts";
+import {TrustedAuthorityOnlyBranchExecutor}
+ from "../../../apps/gateway/src/trusted-authority-only-branch-executor.ts";
+import {ProviderNotFoundError} from "../../../apps/gateway/src/errors.ts";
+import {TrustedGatewayRunnerPassEvidencePublisher,
+ AuthenticatedRunnerCompletionObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-evidence.ts";
+import {TrustedGatewayRunnerFailEvidencePublisher,
+ AuthenticatedRunnerFailureObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
+import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
+import {TrustedAuthorityOnlyEffectStager}
+ from "../../../apps/gateway/src/trusted-authority-only-effect-stager.ts";
+import {IsolatedDockerRunnerExecutor}
+ from "../../../apps/test-runner-controller/src/isolated-executor.ts";
+import {createRunnerHttpServer}
+ from "../../../apps/test-runner-controller/src/http.ts";
+import {ACCOUNT_SUSPENSION_REFERENCE_FILES}
+ from "../../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
+import {ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT,
+ ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES}
+ from "../../../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs";
+import {TrustedGatewayGiteaReadEvidencePublisher}
+ from "../../../apps/gateway/src/trusted-authority-only-gitea-publisher.ts";
+import {AuthenticatedGiteaReadCompletionObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-gitea-evidence.ts";
+import {TrustedAuthorityOnlySequentialReadUpdateStager}
+ from "../../../apps/gateway/src/trusted-authority-only-sequential-read-update-stager.ts";
+
+import {TrustedEffectStagingTaskRegistry}
+ from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
+import {PrivateMcpTaskRegistry}
+ from "../../agent-runtime/src/private-mcp-task-registry.ts";
+import {DelegationEvidenceHandler}
+ from "../../agent-runtime/src/delegation-evidence-handler.ts";
+import {LocalCryptoMcpBridge}
+ from "../../agent-runtime/src/local-crypto-mcp-bridge.ts";
+import {connectTrustedOwnerEffectStagingClient,
+ createTrustedEffectAgentBindingServer}
+ from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
+
+assert.equal(process.env.R233_NATIVE_EVM,"1");
+assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
+assert.equal(process.env.ADAPTER_TRUST_PROFILE,"evm");
+assert.equal(process.env.GATEWAY_VERIFIER_MODE,"core-rust");
+assert.equal(process.env.APPROVED_RUNNER_NATIVE_MCP,"1");
+assert.equal(process.env.GEMINI_API_KEY,undefined);
+assert.equal(process.env.OPENAI_API_KEY,undefined);
+const requireAddon=createRequire(import.meta.url);
+assert.equal(typeof requireAddon("../src/native/delegation-engineer.node")
+ .issue_engineer_root,"function");
+const tokens=Object.fromEntries(["ENGINEER","ORCHESTRATOR","BACKEND","FRONTEND","TEST","GATEWAY"].map(role=>{
+ const token=process.env["ADAPTER_CALLER_"+role];
+ assert.ok(token,role+" private native bearer missing");
+ return [role.toLowerCase(),token];
+}));
+const engineerDid=process.env.ADAPTER_ID_ENGINEER;
+const frontendDid=process.env.ADAPTER_ID_FRONTEND;
+const backendDid=process.env.ADAPTER_ID_BACKEND;
+const testDid=process.env.ADAPTER_ID_TEST;
+assert.match(engineerDid??"",/^did:/u);
+assert.match(frontendDid??"",/^did:/u);
+assert.match(backendDid??"",/^did:/u);
+assert.match(testDid??"",/^did:/u);
+const sessionId="r375-original-review-host-e2e";
+/**
+ * SCRIPTED fixture, NOT a generative coding LLM. One Task holds only one
+ * signer-authorized directory (or file) UPDATE permission; each effect reads
+ * the actual Gitea bytes and independently CAS-updates one approved path.
+ * Different Task sessions keep separate source-revision stage boundaries.
+ */
+class ScriptedScopedReferenceWriter extends BaseLlm{
+ constructor(branch,role,stages){
+  super({model:"r375-free-scripted-reference-writer-no-paid-inference"});
+  this.branch=branch;this.role=role;this.stages=stages;
+  this.requests=[];this.stageIndex=0;this.stageTurn=0;
+ }
+ async *generateContentAsync(request){
+  this.requests.push(request);
+  const stage=this.stages[this.stageIndex];
+  if(!stage)throw Error("R375 exhausted signed scripted "+this.role+" source stages");
+  const turn=++this.stageTurn,limit=2*stage.files.length+1;
+  if(turn>limit)throw Error("R375 model exceeded one Task's approved file stage");
+  if(turn===limit){
+   this.stageIndex++;this.stageTurn=0;
+   yield {content:{role:"model",parts:[{text:
+    "Completed one signed "+this.role+" source group with independently confirmed CAS tool responses"
+   }]}};
+   return;
+  }
+  const file=stage.files[Math.floor((turn-1)/2)];
+  if(turn%2===1){
+   yield {content:{role:"model",parts:[{functionCall:{
+    id:"r375-read-"+this.role+"-"+this.requests.length,
+    name:"read_file",args:{branch:this.branch,path:file.path}
+   }}]}};
+  }else{
+   // NEVER claim a source update from static fixture alone: the live ADK
+   // functionResponse must return the exact Gitea content previously read.
+   const got=JSON.stringify(request);
+   if(!got.includes(JSON.stringify(file.previous).slice(1,-1)))
+    throw Error("R375 "+this.role+" missing independent Gitea read evidence for "+file.path);
+   yield {content:{role:"model",parts:[{functionCall:{
+    id:"r375-update-"+this.role+"-"+this.requests.length,
+    name:"update_file",args:{branch:this.branch,path:file.path,
+     content:file.replacement}
+   }}]}};
+  }
+ }
+ connect(){throw Error("Paid provider connections prohibited by R375 checkpoint");}
+}
+async function freeRolePort(){
+ const server=createServer();
+ await new Promise((ok,bad)=>{
+  server.once("error",bad);server.listen(0,"127.0.0.1",ok);
+ });
+ const value=server.address();
+ if(!value||typeof value==="string")throw Error("no A2A loopback port");
+ await new Promise((ok,bad)=>server.close(err=>err?bad(err):ok()));
+ return value.port;
+}
+class ScriptedNativeDockerTest extends BaseLlm {
+ constructor(branch){
+  super({model:"r375-local-adk-docker-test-no-paid-inference"});
+  this.branch=branch;this.requests=[];
+ }
+ async *generateContentAsync(req){
+  this.requests.push(req);
+  if(this.requests.length===1||this.requests.length===3){
+   yield {content:{role:"model",parts:[{functionCall:{
+    id:"r375-docker-test",name:"run_tests",
+    args:{branch:this.branch,profile:"poc-default"}
+   }}]}};
+  }else if(this.requests.length===2||this.requests.length===4){
+   yield {content:{role:"model",parts:[{
+    text:"Completed one native Test against owner-pinned Gitea HEAD"
+   }]}};
+  }else throw Error("R375 Docker Test model generated extra tool turns");
+ }
+ connect(){return Promise.reject(Error("Paid model connections prohibited"));}
+}
+const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+assert.equal(process.env.GITEA_OWNER,"thesis");
+assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
+let gatewayCasWrites=0,draftPrCreateAttempts=0,branchPostAttempts=0;
+let privateCasStagingBranchPosts=0;
+class ObservedGiteaClient extends GiteaClient{
+ async updateFileWithHeadCas(input){gatewayCasWrites++;return super.updateFileWithHeadCas(input);}
+ async createDraftPullRequest(...args){
+  draftPrCreateAttempts++;
+  return super.createDraftPullRequest(...args);
+ }
+}
+const client=new ObservedGiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
+ token:process.env.GITEA_GATEWAY_TOKEN,owner:repo.owner,repository:repo.repository,
+ fetchFn:async(url,init)=>{
+  if(init?.method==="POST"&&
+     new URL(String(url)).pathname.endsWith("/branches")){
+   const request=JSON.parse(String(init.body));
+   if(request.new_branch_name==="feature/account-suspension")
+    branchPostAttempts++;
+   else if(typeof request.new_branch_name==="string"&&
+           /^feature\/r302-internal-[a-f0-9]{28}$/u.test(request.new_branch_name))
+    privateCasStagingBranchPosts++;
+   else throw Error("Unexpected Gitea branch POST outside original protected Task");
+  }
+  return fetch(url,init);
+ }});
+assert.ok(process.env.GITEA_RUNNER_TOKEN,"Independent read-only token required");
+const independentClient=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
+ token:process.env.GITEA_RUNNER_TOKEN,owner:repo.owner,repository:repo.repository});
+// R375.1: genuine unsolved protected main is never modified.
+const branch="feature/account-suspension";
+const baselineMain=(await client.getBranchMetadata("main")).commit_sha;
+assert.equal(baselineMain,ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT);
+await assert.rejects(independentClient.getBranchMetadata(branch),
+ e=>e instanceof ProviderNotFoundError);
+const backendPath="apps/backend/src/users/user.service.ts";
+const mutationPath="apps/frontend/src/api/users-api.ts";
+const sharedPath="packages/shared/src/account-status.ts";
+const backendFiles=[backendPath,
+ "apps/backend/src/users/user.controller.ts",
+ "apps/backend/src/users/user.routes.ts"];
+const frontendFiles=[mutationPath,
+ "apps/frontend/src/pages/UserDetailPage.tsx",
+ "apps/frontend/src/styles.css"];
+const backendOldContent=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[backendPath];
+const oldContent=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[mutationPath];
+const backendNewContent=backendOldContent+
+ "\n// R375 scripted incomplete Backend D0: acceptance must FAIL before full repair\n";
+const newContent=oldContent+
+ "\n// R375 scripted incomplete Frontend D0: acceptance must FAIL before full repair\n";
+for(const file of [sharedPath,...backendFiles,...frontendFiles]){
+ assert.ok(typeof ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file]==="string",
+  "R375 real protected-main file absent: "+file);
+ assert.ok(typeof ACCOUNT_SUSPENSION_REFERENCE_FILES[file]==="string",
+  "R375 functional source target missing: "+file);
+ assert.notEqual(ACCOUNT_SUSPENSION_REFERENCE_FILES[file],
+  ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file]);
+}
+const baseRevision=baselineMain;
+const disposableMainHead=baselineMain;
+assert.equal(branchPostAttempts,0);
+const requirement="R375 original protected-main Account Suspension signed functional integration proof";
+const resourcePrefix="gitea://gitea.local/thesis/iam-console-poc/branches/"+
+ "feature%2Faccount-suspension";
+const branchPermission={resource:"gitea://gitea.local/thesis/iam-console-poc",
+ operation:"create_branch"};
+const prPermission={resource:"gitea://gitea.local/thesis/iam-console-poc",
+ operation:"create_pull_request"};
+const testPermission={resource:resourcePrefix,operation:"run_tests"};
+const pair=(file,operation)=>({
+ resource:resourcePrefix+"/files/"+file,operation
+});
+const permissionsFor=file=>[pair(file,"read_file"),pair(file,"update_file")];
+const approvedFiles=[sharedPath,...backendFiles,...frontendFiles];
+const backendPermissions=permissionsFor(backendPath);
+const taskPermissions=permissionsFor(mutationPath);
+const sharedPermissions=permissionsFor(sharedPath);
+const grantPermissions=[
+ branchPermission,prPermission,testPermission,
+ ...approvedFiles.flatMap(permissionsFor)
+];
+assert.equal(grantPermissions.length,17);
+const nowMs=()=>Date.now();
+const start=new Date();
+const issuedAt=start.toISOString().replace(/\.\d{3}Z$/u,"Z");
+const approvalExpiresAt=new Date(start.getTime()+55*60_000)
+ .toISOString().replace(/\.\d{3}Z$/u,"Z");
+const authKey="r375-disposable-ed25519";
+const {publicKey,privateKey}=generateKeyPairSync("ed25519");
+const proposed={
+ schema_version:"1.0.0",session_id:sessionId,repository:repo,branch,
+ base_revision:baseRevision,requirement,
+ requested_permissions:grantPermissions
+};
+const grant=selectAuthorityOnlyGrant(proposed,grantPermissions,{
+ allowedOperations:new Set(RUST_OPERATIONS)
+});
+const receipt=signAuthorityOnlyGrant({
+ authorization:grant,engineerDid,keyId:authKey,
+ privateKeyPem:privateKey.export({format:"pem",type:"pkcs8"}),
+ issuedAt,expiresAt:approvalExpiresAt,
+ allowedOperations:new Set(RUST_OPERATIONS)
+});
+const parent=await mkdtemp(join(tmpdir(),"delegation-r375-"));
+// Native owner demands an owner-private socket directory. A shared runner
+// temp directory is deliberately not trusted for Rust credential IPC.
+// Match the already-green R233 fixture's private socket provisioning.
+const socketPath=join(parent,"owner.sock");
+process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socketPath;
+const path=name=>join(parent,name);
+const names=["approvals","keys","checkpoints","recovery","root-journal","coordinator-tasks","gateway-tasks",
+ "gateway-activation","child-intents","gateway-child-intents",
+ "sequences","flights","intent","receipts",
+ "runner-intent","runner-receipts","runner-fail-receipts","runner-logs"];
+try{
+ for(const name of names)await mkdir(path(name),{mode:0o700});
+ await writeFile(path("approvals")+"/"+sessionId+".json",
+  JSON.stringify(receipt),{mode:0o600,flag:"wx"});
+  // R375.2: the original Engineer Review Host owns Planning, root,
+  // Coordinator, Gateway, Child issuer and every model-selected Task.
+  // An independently signed disposable approval is persisted above and
+  // MUST match the newly generated, source-grounded Planning checkpoint.
+  const credentialPort=createTrustedEngineerCredentialPort({
+   bearerToken:tokens.engineer,timeoutMs:60000
+  });
+  const snapshot={session_id:sessionId,repository:repo,
+   base_revision:baseRevision,
+   directories:["","apps","apps/backend","apps/backend/src","apps/backend/src/users",
+    "apps/frontend","apps/frontend/src","apps/frontend/src/api",
+    "apps/frontend/src/pages","packages","packages/shared","packages/shared/src"],
+   files:[sharedPath,...backendFiles,...frontendFiles]};
+  const status=index=>({type:"BitstringStatusListEntry",
+   statusPurpose:"revocation",statusListIndex:String(index),
+   statusListCredential:"https://status.example/r375"});
+  const params=(id,index,duration)=>({
+   credential_id:id,valid_from:issuedAt,validity_seconds:duration,
+   credential_status:status(index)
+  });
+  // The original native Child issuer rejects timestamps older than 60s.
+  // The first true Docker FAIL takes >60s; refresh only Child *start
+  // metadata* at the actual owner model-selected epoch, not the signed
+  // Engineer grant, root authority, expiry or permitted operations.
+  const freshChildParams=(id,index,duration)=>({
+   credential_id:id,
+   valid_from:new Date().toISOString().slice(0,19)+"Z",
+   validity_seconds:duration,
+   credential_status:status(index)
+  });
+  const preliminary=params("urn:r375:preliminary",29151,360);
+  const operational=params("urn:r375:operational",29152,1800);
+  const planningKey=generateKeyPairSync("ed25519");
+  class ScriptedPermissionOnlyPlanner extends BaseLlm{
+   constructor(){super({model:"r375-free-native-original-host-planner"});this.calls=0;}
+   async *generateContentAsync(request){
+    this.calls++;
+    if(this.calls===1)yield {content:{role:"model",parts:[{
+     functionCall:{id:"r375-source-read",name:"read_file",
+      args:{branch:"main",path:backendPath}}
+    }]}};
+    else if(this.calls===2){
+     const grounded=JSON.stringify(request);
+     if(!grounded.includes(JSON.stringify(backendOldContent).slice(1,-1)))
+      throw Error("R375 Planning did not receive the authenticated source bytes");
+     yield {content:{role:"model",parts:[{text:JSON.stringify({
+      requested_permissions:[
+       {operation:"create_branch",resource_type:"repository",path:null},
+       {operation:"create_pull_request",resource_type:"repository",path:null},
+       {operation:"run_tests",resource_type:"branch",path:null},
+       ...approvedFiles.flatMap(file=>[
+        {operation:"read_file",resource_type:"file",path:file},
+        {operation:"update_file",resource_type:"file",path:file}
+       ])
+      ],assumptions:[],uncertainties:[]
+     })}]}};
+    }else throw Error("R375 Planner exceeded scripted free budget");
+   }
+   connect(){throw Error("Paid Planning provider disabled");}
+  }
+  const planningModel=new ScriptedPermissionOnlyPlanner();
+  const checkpointKey=generateKeyPairSync("ed25519");
+  const checkpoints=new AuthorityPlanningCheckpointStore({
+   directory:path("checkpoints"),trust:{
+    trustedKeys:{owner:{public_key_pem:checkpointKey.publicKey.export({
+     format:"pem",type:"spki"
+    }).toString()}},
+    expectedSessionId:sessionId,expectedRepository:repo,
+    expectedBaseRevision:baseRevision,expectedWorkBranch:branch,
+    expectedRequirement:requirement
+   }
+  });
+  const engineerFile=path("keys")+"/engineer.pem";
+  await writeFile(engineerFile,privateKey.export({format:"pem",type:"pkcs8"}),
+   {mode:0o600,flag:"wx"});
+  const salt=randomBytes(16);
+  const nativePlanningVerifier=loadDirectCoreRustVerifier({
+   allowGiteaScopeCoverage:true
+  });
+  let planningExecuteCount=0;
+  const planningTransport=async(url,opts)=>{
+   const body=JSON.parse(String(opts?.body));
+   if(String(url).endsWith("/v1/authorization/prepare")){
+    assert.equal(body.tool,"read_file");
+    assert.equal(body.agent_role,"orchestrator");
+    assert.deepEqual(body.arguments,{branch:"main",path:backendPath});
+    return Response.json({request_id:"r375-planning-request",
+     audience:"cloud-access-gateway",challenge:"r375-planning-source-challenge",
+     required_permission:preliminaryReadPermissions(snapshot).find(p=>p.operation==="read_file")},{status:201});
+   }
+   if(String(url).endsWith("/v1/authorization/execute")){
+    assert.equal(body.request_id,"r375-planning-request");
+    const observed=await nativePlanningVerifier.verify({
+     presenter:"orchestrator",audience:"cloud-access-gateway",
+     challenge:"r375-planning-source-challenge",
+     required_permission:preliminaryReadPermissions(snapshot).find(p=>p.operation==="read_file"),signed_vp:body.signed_vp
+    });
+    assert.equal(observed.credential_id,preliminary.credential_id);
+    const actual=await independentClient.readTextFile(
+     "main",backendPath,baseRevision);
+    assert.equal(actual.content,backendOldContent);
+    planningExecuteCount++;
+    return Response.json({execution:{
+     provider:"gitea",performed:true,tool:"read_file",
+     branch:"main",path:backendPath,revision:baseRevision,content:actual.content
+    }});
+   }
+   throw Error("R375 Planning cannot execute write or unknown Gateway route");
+  };
+  const operationalSessions=new TrustedOperationalSessionStore(path("gateway-activation"));
+  const host=await createTrustedAuthorityOnlyReviewHost({
+   snapshot,requirement,workBranch:branch,preliminaryRoot:preliminary,
+   checkpoint:{store:checkpoints,backendKeyId:"owner",
+    backendPrivateKeyPem:checkpointKey.privateKey.export({
+     format:"pem",type:"pkcs8"
+    }).toString()},
+   activationJournal:new DurableAuthorityOnlyActivationJournal(path("root-journal")),
+   taskJournal:new DurableAuthorityTaskJournal(path("coordinator-tasks")),
+   operationalRecoveryStore:new TrustedOperationalRecoveryStore(path("recovery")),
+   operationalSessionStore:operationalSessions,
+   approval:{engineerDid,keyId:authKey,privateKeyFile:engineerFile,
+    publicKeyPem:publicKey.export({format:"pem",type:"spki"}).toString(),
+    receiptDirectory:path("approvals"),
+    passwordSaltHex:salt.toString("hex"),
+    passwordScryptHex:scryptSync("r375-engineer-test-only",salt,64).toString("hex")},
+   planner:{model:planningModel,planId:"r375-native-review",
+    maxModelTurns:3,maxProposalRevisions:0},
+   trustedAgentRegistry:{
+    backend:{did:backendDid,card_ref:"trusted:r375-backend",
+     capabilities:["read_file","update_file"]},
+    frontend:{did:frontendDid,card_ref:"trusted:r375-frontend",
+     capabilities:["read_file","update_file"]},
+    test:{did:testDid,card_ref:"trusted:r375-test",
+     capabilities:["run_tests"]},
+    orchestrator:{did:process.env.ADAPTER_ID_ORCHESTRATOR,
+     card_ref:"trusted:r375-orchestrator",
+     capabilities:["create_branch","create_pull_request"]}
+   },
+   credentials:credentialPort,
+   planningRevisions:{
+    async begin(taskId){return {task_id:taskId,
+     base_revision:baseRevision,expires_at:new Date(Date.now()+600000).toISOString()};},
+    async end(){return;}
+   },
+   gateway:{gatewayBaseUrl:"http://r375-planning.fixture.invalid",
+    adapterToken:tokens.orchestrator,fetchFn:planningTransport,
+    timeoutMs:60000}
+  });
+  assert.equal(planningModel.calls,2);
+  assert.equal(planningExecuteCount,1);
+  const {coordinator}=await host.activateOperational(operational);
+  const liveRoot=coordinator.assertTrustedGatewayAuthorityBinding();
+  assert.deepEqual(liveRoot.root_permissions,grantPermissions);
+  assert.equal(liveRoot.root_credential_id,operational.credential_id);
+  const evidenceKey=Buffer.alloc(32,96);
+  const readObserver=new AuthenticatedGiteaReadCompletionObserver({
+   directory:path("receipts"),key:evidenceKey,
+   repository:"thesis/iam-console-poc",branch,
+   giteaClient:independentClient,nowMs
+  });
+  const runnerObserver=new AuthenticatedRunnerCompletionObserver({
+   directory:path("runner-receipts"),key:evidenceKey,
+   repository:"thesis/iam-console-poc",branch,
+   giteaClient:independentClient,nowMs
+  });
+  const nativePort=createNativeRustChildCryptographyPort({
+   bearerToken:tokens.orchestrator,timeoutMs:60000
+  },socketPath);
+  let backendChild,child,runnerChild,issuedChildren=0;
+  const nativeChildPort={kind:"rust-native",
+   async issueChild(request){
+    const signed=await nativePort.issueChild(request);
+    issuedChildren++;
+    if(request.delegatee==="backend")backendChild=signed;
+    else if(request.delegatee==="frontend")child=signed;
+    else if(request.delegatee==="test")runnerChild=signed;
+    else throw Error("Unexpected delegated specialist");
+    return signed;
+   }
+  };
+  const execution=await host.admitOperationalExecution({
+   operationalSessionStore:operationalSessions,
+   gatewayTaskJournal:new DurableAuthorityTaskJournal(path("gateway-tasks")),
+   issuerChildJournal:new DurableAuthorityOnlyChildJournal(path("child-intents")),
+   gatewayChildJournal:new DurableAuthorityOnlyChildJournal(path("gateway-child-intents")),
+   sequentialEffectJournal:new DurableAuthorityOnlySequentialEffectJournal(path("sequences")),
+   effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
+   completionObserver:new TrustedAuthorityOnlyCompletionObserver({
+    readVerifiedCompletion:expected=>expected.task_id==="r375-test-task"?
+     runnerObserver.observe(expected):readObserver.observe(expected)
+   }),nativeCryptoPort:nativeChildPort
+  });
+  const gate=execution.gateway;
+  assert.equal(gate.phase,"active");
+  assert.equal(coordinator.registeredTaskCount,0);
+  assert.equal(issuedChildren,0);
+  assert.equal(gate.stagedCompletedTaskCount,0);
+
+ const taskId="r375-frontend-task";let runtimeTaskId="dispatch_"+"F".repeat(22);
+ const backendTaskId="r375-backend-task";let backendRuntimeId="dispatch_"+"B".repeat(22);
+ const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
+ const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
+  file,task_id:"r375-functional-file-"+(index+1),
+  agent_id:file.startsWith("apps/frontend/")?"frontend":"backend",
+  permissions:permissionsFor(file)
+ }));
+ assert.equal(sourceTasks.length,7);
+ const retestTaskId="r375-functional-retest";
+ const requirementSha=createHash("sha256").update(requirement).digest("hex");
+ assert.ok(socketPath.startsWith("/"));
+ const verifier=loadDirectCoreRustVerifier({allowGiteaScopeCoverage:true});
+ assert.equal(verifier.allowsGiteaScopeCoverage,true);
+ const policy=new OpaPolicyClient({baseUrl:"http://127.0.0.1:8181",
+  timeoutMs:6000});
+ const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+ let legacyWriteCalls=0;
+ class ObservedGiteaExecutor extends GiteaExecutor {
+  async execute(...args){if(args[0]?.request?.tool==="update_file")
+    legacyWriteCalls++;return super.execute(...args);}
+ }
+ const executor=new ObservedGiteaExecutor(client);
+ const journal=new DurableAuthorityOnlyGiteaMutationIntentJournal(path("intent"));
+ const preflight=new TrustedAuthorityOnlyGiteaMutationPreflight({
+  admissions:gate,giteaClient:client,journal,repository:"thesis/iam-console-poc",
+  branch,nowMs
+ });
+ const observer=new AuthenticatedGiteaMutationCompletionObserver({
+  directory:path("receipts"),key:evidenceKey,
+  repository:"thesis/iam-console-poc",branch,giteaClient:independentClient,nowMs
+ });
+ const mutationExecutor=new TrustedAuthorityOnlyGiteaMutationExecutor({
+  admissions:gate,preflight,journal,giteaClient:client,
+  publisher:new TrustedGatewayGiteaMutationEvidencePublisher({
+   directory:path("receipts"),key:evidenceKey,
+   repository:"thesis/iam-console-poc",
+   branch,independentGiteaClient:independentClient,nowMs
+  }),observer,repository:"thesis/iam-console-poc",branch
+ });
+ // Separate native Test Runner path, bound to the SAME trusted Gateway.
+ // It makes no provider call until native Rust VP and real OPA both allow.
+ const runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(
+  path("runner-intent"));
+ const runnerPreflight=new TrustedAuthorityOnlyRunnerPreflight({
+  admissions:gate,giteaClient:client,journal:runnerJournal,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ });
+ const runnerBearer=randomBytes(32).toString("hex");
+ const controller=new IsolatedDockerRunnerExecutor({
+  gitea_base_url:process.env.GITEA_RUNNER_BASE_URL,
+  gitea_owner:"thesis",gitea_repository:"iam-console-poc",
+  gitea_token:process.env.GITEA_RUNNER_TOKEN,
+  docker_image:"node:22.15.0-bookworm",
+  phase_timeout_ms:600000,total_timeout_ms:840000,
+  log_dir:path("runner-logs"),acceptance_enabled:true,
+  acceptance_dir:fileURLToPath(
+   new URL("../../../runner/acceptance/",import.meta.url))
+ });
+ let runnerServer=createRunnerHttpServer({
+  bind_host:"127.0.0.1",bind_port:0,gateway_token:runnerBearer,
+  contract:{repository:"gitea://gitea.local/thesis/iam-console-poc",branch}
+ },controller);
+ await new Promise((ok,bad)=>{
+  runnerServer.once("error",bad);runnerServer.listen(0,"127.0.0.1",ok);
+ });
+ const address=runnerServer.address();
+ assert.ok(address&&typeof address!=="string");
+ let runnerCalls=0;
+ class ObservedRunnerClient extends RunnerClient{
+  async run(request,signal){
+   runnerCalls++;
+   const result=await super.run(request,signal);
+   process.stdout.write(JSON.stringify({
+    event:"r375_runner_sanitized_result",
+    status:result.status,
+    project_status:result.project_tests?.status??null,
+    acceptance_status:result.researcher_acceptance?.status??null,
+    head_matches:result.tested_commit_sha===request.commit_sha
+   })+"\n");
+   return result;
+  }
+ }
+ const runnerClient=new ObservedRunnerClient({
+  baseUrl:"http://127.0.0.1:"+address.port,
+  gatewayToken:runnerBearer,timeoutMs:900000
+ });
+ const failObserver=new AuthenticatedRunnerFailureObserver({
+  directory:path("runner-fail-receipts"),key:evidenceKey,
+  giteaClient:client,journal:runnerJournal,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ });
+ const failPublisher=new TrustedGatewayRunnerFailEvidencePublisher({
+  directory:path("runner-fail-receipts"),key:evidenceKey,
+  // The original RunnerExecutor requires the exact SAME Gateway Gitea port
+  // for its one-shot flight; the independent MAC failure observer then
+  // reopens the attested source HEAD through that original bound identity.
+  runnerClient,independentGiteaClient:client,
+  journal:runnerJournal,repository:"thesis/iam-console-poc",branch,nowMs
+ });
+ const runnerExecutor=new TrustedAuthorityOnlyRunnerExecutor({
+  admissions:gate,preflight:runnerPreflight,
+  journal:runnerJournal,giteaClient:client,runnerClient,
+  publisher:new TrustedGatewayRunnerPassEvidencePublisher({
+   directory:path("runner-receipts"),key:evidenceKey,
+   runnerClient,independentGiteaClient:independentClient,
+   repository:"thesis/iam-console-poc",branch,nowMs
+  }),observer:runnerObserver,
+  failurePublisher:failPublisher,failureObserver:failObserver,
+  repository:"thesis/iam-console-poc",branch
+ });
+ const branchExecutor=new TrustedAuthorityOnlyBranchExecutor({
+  admissions:gate,giteaClient:client,
+  independentGiteaClient:independentClient,
+  repository:"thesis/iam-console-poc",nowMs
+ });
+ const prExecutor=new TrustedAuthorityOnlyPullRequestExecutor({
+  admissions:gate,giteaClient:client,runnerObserver,
+  repository:"thesis/iam-console-poc",branch,
+  independentGiteaClient:independentClient
+ });
+ const readPublisher=new TrustedGatewayGiteaReadEvidencePublisher({
+  directory:path("receipts"),key:evidenceKey,admissions:gate,
+  // Authenticated read-only client is independent from the Gateway writer.
+  independentGiteaClient:independentClient,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ });
+ assert.equal(execution.bindNativeGatewayEffects({
+  store,mutation:preflight,runner:runnerPreflight,
+  giteaClient:client,mutationObserver:observer,
+  runnerPassObserver:runnerObserver,failureObserver:failObserver,
+  pullRequestExecutor:prExecutor,branchExecutor
+ }).status,"owner_native_gateway_effects_bound_no_execution");
+ const deps={store,audit,verifier,policy,repository:repo,executor,
+  authorityOnlyAdmissions:gate,nowMs,authorityOnlyReadEnabled:true,
+  authorityOnlyReceiptWriter:readPublisher,
+  authorityOnlyMutationEnabled:true,authorityOnlyMutationExecutor:mutationExecutor,
+  authorityOnlyRunnerEnabled:true,authorityOnlyRunnerExecutor:runnerExecutor,
+  authorityOnlyPullRequestEnabled:true,
+  authorityOnlyPullRequestExecutor:prExecutor,
+  authorityOnlyBranchEnabled:true,
+  authorityOnlyBranchExecutor:branchExecutor};
+ // R375: three distinct pairs of role-pinned HMAC IPC channels; separate
+ // agent registries and signing keys, but one original native Engineer root.
+ const roles=["backend","frontend","test"],stageChannels={},agentBindingChannels={};
+ const registries={},bindingServers=[],roleServers=[],urls={},events=[],prepared=[];
+ const backendReferenceFiles=backendFiles.map(file=>Object.freeze({
+  path:file,
+  previous:file===backendPath?backendNewContent:
+   ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
+  replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
+ }));
+ const frontendReferenceFiles=frontendFiles.map(file=>Object.freeze({
+  path:file,
+  previous:file===mutationPath?newContent:
+   ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
+  replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
+ }));
+ const models={
+  backend:new ScriptedScopedReferenceWriter(branch,"backend",[
+   {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
+   {files:[{path:sharedPath,
+     previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
+     replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
+   ...backendReferenceFiles.map(file=>({files:[file]}))
+  ]),
+  frontend:new ScriptedScopedReferenceWriter(branch,"frontend",[
+   {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
+   ...frontendReferenceFiles.map(file=>({files:[file]}))
+  ]),
+  test:new ScriptedNativeDockerTest(branch)
+ };
+ // R375.7 diagnostic: observe internal phase ACKs without changing the
+ // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
+ // All hooks delegate to the original implementations and are restored.
+ const cryptoTrace=[];
+ const recordPhase=(phase)=>{if(cryptoTrace.length<24)cryptoTrace.push(phase);};
+ const originalSelect=TrustedEffectStagingTaskRegistry.prototype.selectFor;
+ const originalChallenge=PrivateMcpTaskRegistry.prototype.stageGatewayChallenge;
+ const originalCryptoInvoke=PrivateMcpTaskRegistry.prototype.invokeCrypto;
+ const originalProofTake=PrivateMcpTaskRegistry.prototype.takeSignedPresentation;
+ const originalCreate=DelegationEvidenceHandler.prototype.createPresentation;
+ const originalMcpBridge=LocalCryptoMcpBridge.prototype.createSignedPresentation;
+ TrustedEffectStagingTaskRegistry.prototype.selectFor=function(context){
+  const port=originalSelect.call(this,context);
+  if(context?.role!=="backend")return port;
+  recordPhase("agent_port_selected");
+  return Object.freeze({...port,
+   stage:async requestId=>{
+    recordPhase("agent_stage_entered");
+    try{
+     const result=await port.stage(requestId);
+     recordPhase("agent_stage_ack_ok");return result;
+    }catch(error){recordPhase("agent_stage_ack_rejected");throw error;}
+   },
+   ...(typeof port.attest==="function"?{
+    attest:async(requestId,tool)=>port.attest(requestId,tool)
+   }:{})
+  });
+ };
+ PrivateMcpTaskRegistry.prototype.stageGatewayChallenge=function(taskId,prepared){
+  recordPhase("crypto_challenge_entered");
+  try{
+   const result=originalChallenge.call(this,taskId,prepared);
+   recordPhase("crypto_challenge_registered");return result;
+  }catch(error){recordPhase("crypto_challenge_rejected");throw error;}
+ };
+ PrivateMcpTaskRegistry.prototype.invokeCrypto=async function(...args){
+  recordPhase("mcp_crypto_invoke_entered");
+  try{
+   const result=await originalCryptoInvoke.apply(this,args);
+   recordPhase("mcp_crypto_invoke_ok");return result;
+  }catch(error){recordPhase("mcp_crypto_invoke_rejected");throw error;}
+ };
+ PrivateMcpTaskRegistry.prototype.takeSignedPresentation=function(...args){
+  recordPhase("crypto_proof_take_entered");
+  try{
+   const result=originalProofTake.apply(this,args);
+   recordPhase("crypto_proof_taken");return result;
+  }catch(error){recordPhase("crypto_proof_take_rejected");throw error;}
+ };
+ LocalCryptoMcpBridge.prototype.createSignedPresentation=async function(prepared){
+  recordPhase("mcp_bridge_presentation_entered");
+  try{
+   const signed=await originalMcpBridge.call(this,prepared);
+   recordPhase(typeof signed==="string"&&signed.length>0?
+    "mcp_bridge_returned_signed_string":"mcp_bridge_returned_invalid_type");
+   return signed;
+  }catch(error){
+   recordPhase("mcp_bridge_presentation_rejected");throw error;
+  }
+ };
+ DelegationEvidenceHandler.prototype.createPresentation=async function(prepared){
+  recordPhase("private_rust_presentation_entered");
+  try{
+   const result=await originalCreate.call(this,prepared);
+   recordPhase("private_rust_presentation_signed");return result;
+  }catch(error){recordPhase("private_rust_presentation_denied");throw error;}
+ };
+ let owner;
+ try{
+  for(const role of roles){
+   const stageSocket=path("stage-"+role+".sock");
+   const stageSecret=path("stage-"+role+".hex");
+   const bindingSocket=path("bind-"+role+".sock");
+   const bindingSecret=path("bind-"+role+".hex");
+   for(const secretFile of [stageSecret,bindingSecret])
+    await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+     {mode:0o600,flag:"wx"});
+   stageChannels[role]={socketPath:stageSocket,secretFile:stageSecret};
+   agentBindingChannels[role]={socketPath:bindingSocket,
+    secretFile:bindingSecret};
+   const registry=new TrustedEffectStagingTaskRegistry();
+   registries[role]=registry;
+   const stageClient=await connectTrustedOwnerEffectStagingClient({
+    socketPath:stageSocket,secretFile:stageSecret
+   });
+   const binder=await createTrustedEffectAgentBindingServer({
+    socketPath:bindingSocket,secretFile:bindingSecret,
+    registry,ownerStageClient:stageClient,expectedRole:role
+   });
+   bindingServers.push(binder);await binder.start();
+  }
+  let testSignedVp=null;
+  const gatewayTransport=async(url,init)=>{
+   // Same original Gateway implementation. Observe the transport entry
+   // BEFORE parsing or touching a signed VP; classify only the route.
+   recordPhase(String(url).endsWith("/v1/authorization/execute")?
+    "gateway_execute_transport_entered":
+    String(url).endsWith("/v1/authorization/prepare")?
+     "gateway_prepare_transport_entered":"gateway_unexpected_transport");
+   const body=JSON.parse(String(init?.body));
+   if(String(url).endsWith("/v1/authorization/prepare")){
+    if(body.agent_role==="backend")backendRuntimeId=body.task_id;
+    else if(body.agent_role==="frontend")runtimeTaskId=body.task_id;
+    else if(body.agent_role==="test")testRuntimeId=body.task_id;
+    events.push("prepare_attempt_"+body.agent_role+"_"+body.tool);
+    let response;
+    try{
+     response=prepareAuthorization(body,{
+      audience:"cloud-access-gateway",request_ttl_ms:body.agent_role==="test"?1_200_000:120000,
+      repository:repo
+     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
+    }catch(error){
+     process.stderr.write(JSON.stringify({
+      event:"r375_safe_gateway_prepare_rejection",
+      role:body.agent_role,tool:body.tool,
+      reason_class:error?.constructor?.name??"unknown",
+      reason_code:typeof error?.code==="string"?error.code:null
+     })+"\n");
+     throw error;
+    }
+    prepared.push({role:body.agent_role,tool:body.tool,response});
+    events.push("prepare_"+body.agent_role+"_"+body.tool);
+    return Response.json(response,{status:201});
+   }
+   if(String(url).endsWith("/v1/authorization/execute")){
+    const record=store.get(body.request_id);
+    // PreparedRequestRecord stores the role on its TOP-LEVEL envelope.
+// Reading record.request.agent_role incorrectly treats every native execute
+// as unknown, masking successful owner IPC and VP as tool_unavailable.
+const tool=record?.request?.tool,role=record?.agent_role;
+    if(!["read_file","update_file","run_tests"].includes(tool)||
+       !["backend","frontend","test"].includes(role))
+     throw Error("unrecognized role or native Gateway effect");
+    events.push("execute_"+role+"_"+tool);
+    if(role==="test")testSignedVp=body.signed_vp;
+    try{return Response.json(await executeAuthorization(body,deps),{status:200});}
+    catch(error){
+     process.stderr.write("R375 denied "+role+" "+tool+": "+
+      (error?.constructor?.name??"UnknownError")+"\n");
+     return Response.json({error:"native_authorization_denied"},{status:403});
+    }
+   }
+   throw Error("unrecognized Gateway route");
+  };
+  for(const role of roles){
+   const opts={role,host:"127.0.0.1",port:await freeRolePort(),
+    capabilityProfile:"approved-plan",delegatedAuthorization:true};
+   if(["backend","frontend","test"].includes(role)){
+    const keys=generateKeyPairSync("ed25519");
+    opts.mcpTaskSigning={
+     signingPrivateKeyPem:keys.privateKey.export({
+      type:"pkcs8",format:"pem"}).toString(),
+     signingPublicKeyPem:keys.publicKey.export({
+      type:"spki",format:"pem"}).toString()
+    };
+    opts.adk={
+     model:models[role],gatewayBaseUrl:"http://gateway.fixture.invalid",
+     adapterToken:tokens[role],maxModelTurns:4,maxModelCallMs:15000,
+     gatewayTimeoutMs:role==="test"?900000:60000,scopeModelPaths:true,
+     trustedEffectTaskRegistry:registries[role],fetchFn:gatewayTransport
+    };
+   }
+   const server=await startSpecializedAgentServer(opts);
+   roleServers.push(server);urls[role]=server.baseUrl;
+  }
+  assert.equal(models.backend.requests.length,0);
+  assert.equal(models.frontend.requests.length,0);
+  // R375.2 no registered Task nor native Child before this real SDK
+  // owner starts. Every subsequent step is selected by ADK and independently
+  // completed before another model turn.
+  assert.equal(coordinator.registeredTaskCount,0);
+  let backendHead,frontendHead,verifiedRunnerBinding;
+  // Original Review Host owns the FULL adaptive state and all effects.
+  // No harness hooks may register Tasks or attest Gateway completions.
+  assert.equal(coordinator.registeredTaskCount,0);
+  assert.equal(issuedChildren,0);
+  assert.equal(gate.stagedCompletedTaskCount,0);
+  // R375: one original signature and exactly one read->CAS per Task.
+  // The model does not have a fixed DAG: it selects the next Task only
+  // after independent Gateway evidence of every preceding Task, with
+  // seven tightly scoped functional corrections after the first true FAIL.
+  const firstChoices=[
+   {action:"delegate",task:{task_id:backendTaskId,agent_id:"backend",
+    depends_on:["r375-original-root-branch"],permissions:backendPermissions,
+    instruction:"Read unresolved Backend and commit incomplete D0 source"}},
+   {action:"delegate",task:{task_id:taskId,agent_id:"frontend",
+    depends_on:[backendTaskId],permissions:taskPermissions,
+    instruction:"Read unresolved Frontend and commit incomplete D0 source"}},
+   {action:"delegate",task:{task_id:testTaskId,agent_id:"test",
+    depends_on:[taskId],permissions:[testPermission],
+    instruction:"Run native Docker acceptance against the incomplete D0 branch"}}
+  ];
+  class FreeOriginalHostDecisionModel extends BaseLlm{
+   constructor(){super({model:"r375-free-task-by-task-source-recovery"});
+    this.calls=0;this.requests=[];this.verifiedFailBeforeRepair=false;}
+   async *generateContentAsync(req){
+    const n=this.calls++,context=JSON.stringify(req);
+    this.requests.push(req);
+    assert.ok(n<12,"native original owner adaptive loop exceeded bounded decisions");
+    if(n===0)assert.match(context,/r375-original-root-branch/u);
+    if(n===1||n===2)
+     assert.ok(context.includes(firstChoices[n-1].task.task_id),
+      "ADK next Task requires previous original independent completion");
+    let choice;
+    if(n<3)choice=firstChoices[n];
+    else if(n>=3&&n<=9){
+     const j=n-3,entry=sourceTasks[j];
+     if(j===0){
+      assert.match(context,/independent_runner_failure/u);
+      assert.match(context,/independently_verified_test_failures/u);
+      assert.match(context,/source_evidence_sha256/u);
+      assert.match(context,/researcher_acceptance/u);
+      assert.match(context,/verified_failure_preflight_only_not_approval/u);
+      assert.ok(context.includes(testTaskId));
+      for(const secret of [tokens.orchestrator,tokens.test,
+       operational.credential_id,process.env.ADAPTER_EVM_PRIVATE_KEY_TEST])
+       if(secret)assert.equal(context.includes(secret),false);
+      this.verifiedFailBeforeRepair=true;
+     }else{
+      assert.equal(this.verifiedFailBeforeRepair,true);
+      assert.ok(context.includes(sourceTasks[j-1].task_id),
+       "No functional edit may precede the last independent source CAS");
+     }
+     choice={action:"delegate",task:{
+      task_id:entry.task_id,agent_id:entry.agent_id,
+      depends_on:[j===0?taskId:sourceTasks[j-1].task_id],
+      permissions:entry.permissions,
+      instruction:"Read real Gitea "+entry.file+
+       " then submit one authorized full-file CAS for Account Suspension"
+     }};
+    }else if(n===10){
+     assert.ok(context.includes(sourceTasks.at(-1).task_id));
+     assert.match(context,/independent_runner_failure/u);
+     choice={action:"delegate",task:{
+      task_id:retestTaskId,agent_id:"test",
+      depends_on:[sourceTasks.at(-1).task_id],
+      permissions:[testPermission],
+      instruction:"Run Docker unit/build/researcher acceptance on the independently completed functional HEAD"
+     }};
+    }else{
+     assert.ok(context.includes(retestTaskId),
+      "PR readiness cannot precede completed replacement Test");
+     choice={action:"ready_for_pr",
+      reason:"Await original owner re-attestation of the newest real Docker PASS on identical HEAD"
+     };
+    }
+    yield {content:{role:"model",parts:[{text:JSON.stringify(choice)}]}};
+   }
+   connect(){throw Error("Paid provider inference forbidden in R375");}
+  }
+  const controller=new FreeOriginalHostDecisionModel();
+  let childMetadataCount=0;
+  class FreeSignedPrTaskProposal extends BaseLlm{
+   constructor(){super({model:"r375-free-signed-original-root-pr-proposer"});
+    this.calls=0;this.requests=[];}
+   async *generateContentAsync(req){
+    this.calls++;this.requests.push(req);
+    assert.equal(this.calls,1,"original root PR Task selection must be one shot");
+    const context=JSON.stringify(req);
+    assert.ok(context.includes(retestTaskId),
+     "PR model must see independently accepted replacement Test");
+    yield {content:{role:"model",parts:[{text:JSON.stringify({
+     task_id:"r375-gitea-draft-pr",agent_id:"orchestrator",
+     depends_on:[retestTaskId],permissions:[prPermission],
+     instruction:"Create a Draft PR at the latest independently PASS-tested HEAD; never merge"
+    })}]}};
+   }
+   connect(){throw Error("No paid provider calls allowed for original root PR");}
+  }
+  const prModel=new FreeSignedPrTaskProposal();
+  let privatePrFlight,privatePrExecutorCalls=0;
+  assert.equal(draftPrCreateAttempts,0);
+  assert.throws(()=>gate.preflightCanonicalRequest({
+   task_id:"dispatch_"+"Z".repeat(22),agent_role:"orchestrator",
+   tool:"create_pull_request",arguments:{
+    head_branch:branch,base_branch:"main",title:"PR without acceptance",
+    body:"Must fail before independently authenticated Runner PASS"
+   }
+  }),/unbound runtime Task|Task/);
+
+  // R375: Branch is selected, staged and attested by the SAME original
+  // Review Host BEFORE the protected worker SDK A2A can start.
+  class FreeSignedBranchProposal extends BaseLlm{
+   constructor(){super({model:"r375-original-root-branch-only"});
+    this.calls=0;this.requests=[];}
+   async *generateContentAsync(req){
+    this.calls++;this.requests.push(req);
+    assert.equal(this.calls,1);
+    assert.equal(branchPostAttempts,0);
+    assert.equal(issuedChildren,0);
+    assert.ok(JSON.stringify(req).includes("create_branch"));
+    yield {content:{role:"model",parts:[{text:JSON.stringify({
+     task_id:"r375-original-root-branch",agent_id:"orchestrator",
+     depends_on:[],permissions:[branchPermission],
+     instruction:"Create exactly one approved feature branch from immutable main"
+    })}]}};
+   }
+   connect(){throw Error("Paid branch-model inference prohibited");}
+  }
+  const branchModel=new FreeSignedBranchProposal();
+  let privateBranchFlight,privateBranchExecuteCalls=0;
+  assert.equal(branchPostAttempts,0);
+  await assert.rejects(independentClient.getBranchMetadata(branch),
+   error=>error instanceof ProviderNotFoundError);
+  const workflow=await execution.runCanonicalOperationalWorkflow({
+   createBranch:{
+    model:branchModel,branch,baseBranch:"main",
+    permission:branchPermission,
+    prepare:request=>{
+     assert.equal(privateBranchFlight,undefined);
+     assert.equal(request.agent_role,"orchestrator");
+     assert.equal(request.tool,"create_branch");
+     assert.deepEqual(request.arguments,{branch,base_branch:"main"});
+     assert.equal(branchPostAttempts,0);
+     assert.equal(coordinator.registeredTaskCount,1,
+      "Root Branch must be the first and only registered Task");
+     assert.equal(issuedChildren,0);
+     const prepared=prepareAuthorization(request,{
+      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
+     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
+     assert.deepEqual(prepared.required_permission,branchPermission);
+     privateBranchFlight={request,prepared};
+     return prepared;
+    },
+    execute:async({request,prepared,expectedMainSha})=>{
+     assert.equal(request,privateBranchFlight?.request);
+     assert.equal(prepared.request_id,privateBranchFlight?.prepared.request_id);
+     assert.equal(expectedMainSha,disposableMainHead);
+     assert.equal(branchPostAttempts,0);
+     await assert.rejects(independentClient.getBranchMetadata(branch),
+      error=>error instanceof ProviderNotFoundError);
+     const signed=await invokeNativeCrypto({
+      socketPath,token:tokens.orchestrator,timeoutMs:60000
+     },"create_presentation",{
+      credential_id:operational.credential_id,
+      disclosed_permissions:[branchPermission],
+      audience:prepared.audience,challenge:prepared.challenge
+     });
+     assert.equal(typeof signed.signed_vp,"string");
+     privateBranchFlight.signed_vp=signed.signed_vp;
+     privateBranchExecuteCalls++;
+     return executeAuthorization({
+      request_id:prepared.request_id,signed_vp:signed.signed_vp
+     },deps);
+    }
+   },
+   sdk:{stageChannels,agentBindingChannels,agentBaseUrls:urls,
+    a2aPolling:{deadlineMs:960000,initialIntervalMs:40,maxIntervalMs:1000}},
+   adaptive:{model:controller,maxSteps:12,
+    nextChildParameters:({epoch,agent_id})=>{
+     childMetadataCount++;
+     if(epoch===2&&agent_id==="backend")
+      return freshChildParams("urn:r375:child:backend-d0",29153,600);
+     if(epoch===3&&agent_id==="frontend")
+      return freshChildParams("urn:r375:child:frontend-d0",29154,600);
+     if(epoch===4&&agent_id==="test")
+      return freshChildParams("urn:r375:child:test-failed",29155,1200);
+     if(epoch>=5&&epoch<=11){
+      const entry=sourceTasks[epoch-5];
+      if(!entry||entry.agent_id!==agent_id)
+       throw Error("R375 signed repair epoch/agent differs from original proposal");
+      return freshChildParams("urn:r375:child:functional-"+(epoch-4),
+       29156+(epoch-5),900);
+     }
+     if(epoch===12&&agent_id==="test")
+      return freshChildParams("urn:r375:child:retest-pass",29163,1200);
+     throw Error("Original Host rejected unexpected model-selected Child");
+    }},
+   draftPullRequest:{
+    model:prModel,headBranch:branch,baseBranch:"main",
+    title:"Account Suspension — original protected-main native acceptance PASS",
+    body:"Immutable Engineer grant; original root, three worker roles, independently attested Docker and researcher acceptance PASS",
+    permission:prPermission,
+    prepare:request=>{
+     assert.equal(privatePrFlight,undefined);
+     assert.equal(request.agent_role,"orchestrator");
+     assert.equal(request.tool,"create_pull_request");
+     assert.equal(request.arguments.head_branch,branch);
+     assert.equal(draftPrCreateAttempts,0);
+     const prepared=prepareAuthorization(request,{
+      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
+     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
+     assert.deepEqual(prepared.required_permission,prPermission);
+     privatePrFlight={request,prepared};
+     return prepared;
+    },
+    execute:async({request,prepared,expectedHeadSha})=>{
+     assert.equal(request,privatePrFlight?.request);
+     assert.equal(prepared.request_id,privatePrFlight?.prepared.request_id);
+     assert.equal(expectedHeadSha,
+      (await independentClient.getBranchMetadata(branch)).commit_sha);
+     assert.equal(draftPrCreateAttempts,0,
+      "original PR POST cannot precede durable one-shot staging");
+     const signed=await invokeNativeCrypto({
+      socketPath,token:tokens.orchestrator,timeoutMs:60000
+     },"create_presentation",{
+      credential_id:operational.credential_id,
+      disclosed_permissions:[prPermission],
+      audience:prepared.audience,challenge:prepared.challenge
+     });
+     assert.equal(typeof signed.signed_vp,"string");
+     privatePrFlight.signed_vp=signed.signed_vp;
+     privatePrExecutorCalls++;
+     return executeAuthorization({
+      request_id:prepared.request_id,signed_vp:signed.signed_vp
+     },deps);
+    }
+   }
+  });
+  assert.equal(workflow.status,"owner_operational_draft_pr_independently_attested");
+  assert.equal(workflow.pr_created,true);
+  assert.equal(workflow.pull_request_attested,true);
+  assert.equal(workflow.branch?.status,"owner_original_branch_independently_attested");
+  assert.equal(workflow.branch?.task_id,"r375-original-root-branch");
+  assert.equal(workflow.branch?.base_revision,disposableMainHead);
+  const report=workflow.adaptive;
+  assert.equal(report.status,"owner_adaptive_work_ready_for_pr");
+  assert.equal(report.pr_created,false);
+  assert.equal(report.executed_tasks,10);
+  assert.equal(report.source_test_task_id,retestTaskId);
+  assert.match(report.source_test_runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+  assert.equal(branchModel.calls,1);
+  assert.equal(branchPostAttempts,1);
+  assert.equal(privateBranchExecuteCalls,1);
+  assert.equal(controller.calls,12);
+  assert.equal(controller.verifiedFailBeforeRepair,true);
+  assert.equal(childMetadataCount,11);
+  assert.equal(issuedChildren,11,"original root PR must never create an agent Child");
+  assert.equal(coordinator.registeredTaskCount,13);
+  assert.equal(gate.stagedCompletedTaskCount,12,
+   "original failed Test remains incomplete despite successful later retest and PR");
+  assert.equal(gatewayCasWrites,9);
+  assert.equal(privateCasStagingBranchPosts,9);
+  assert.equal(runnerCalls,2);
+  assert.equal((await readdir(path("runner-fail-receipts")))
+   .filter(name=>name.endsWith(".runner-fail.json")).length,1);
+  assert.equal((await readdir(path("runner-receipts")))
+   .filter(name=>name.endsWith(".runner.json")).length,1);
+  assert.equal(models.backend.stageIndex,5);
+  assert.equal(models.frontend.stageIndex,4);
+  assert.equal(models.backend.requests.length,15);
+  assert.equal(models.frontend.requests.length,12);
+  assert.equal(models.test.requests.length,4);
+  assert.equal(legacyWriteCalls,0);
+  const latest=(await independentClient.getBranchMetadata(branch)).commit_sha;
+  assert.equal(latest,report.tested_commit_sha);
+  assert.equal(latest,workflow.tested_commit_sha);
+  assert.notEqual(latest,disposableMainHead);
+  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
+   disposableMainHead);
+  // Production source is NOT planted into disposable main by test owner.
+  // All seven changed files are present exclusively at the latest branch HEAD
+  // after independent original Gateway CAS of model-visible source bytes.
+  for(const file of [sharedPath,...backendFiles,...frontendFiles]){
+   const final=await independentClient.readTextFile(branch,file,latest);
+   const main=await independentClient.readTextFile("main",file,disposableMainHead);
+   assert.equal(final.content,ACCOUNT_SUSPENSION_REFERENCE_FILES[file],
+    "original agent did not actually write full functional reference code: "+file);
+   assert.equal(main.content,ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
+    "test owner must not mutate original protected-main source: "+file);
+  }
+  assert.equal(prModel.calls,1);
+  assert.equal(privatePrExecutorCalls,1);
+  assert.equal(draftPrCreateAttempts,1);
+  assert.equal(workflow.source_test_task_id,retestTaskId);
+  assert.equal(workflow.pull_request_task_id,"r375-gitea-draft-pr");
+  assert.equal(workflow.completed_work_tasks,10);
+  assert.match(privatePrFlight?.request?.task_id??"",/^dispatch_[A-Za-z0-9_-]{22}$/u);
+  assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
+   workflow.pull_request_task_id,coordinator));
+  const draft=await independentClient.inspectDraftPullRequest({
+   number:workflow.pull_request_number,headBranch:branch,baseBranch:"main",
+   expectedHeadSha:latest,expectedBaseSha:disposableMainHead
+  });
+  assert.equal(draft.open,true);
+  assert.equal(draft.draft,true);
+  assert.equal(draft.merged,false);
+  assert.equal(draft.head_revision,latest);
+  assert.equal(draft.base_revision,disposableMainHead);
+  await assert.rejects(executeAuthorization({
+   request_id:privateBranchFlight.prepared.request_id,
+   signed_vp:privateBranchFlight.signed_vp
+  },deps),error=>error.code==="replay_detected");
+  await assert.rejects(executeAuthorization({
+   request_id:privatePrFlight.prepared.request_id,
+   signed_vp:privatePrFlight.signed_vp
+  },deps),error=>error.code==="replay_detected");
+  await assert.rejects(execution.attestEnrolledPullRequestCompletion({
+   taskId:workflow.pull_request_task_id,
+   runtimeTaskId:privatePrFlight.request.task_id
+  }),/already been attempted/);
+  assert.equal(branchPostAttempts,1);
+  assert.equal(draftPrCreateAttempts,1);
+  process.stdout.write(JSON.stringify({
+   event:"r375_original_protected_main_functional_native_docker_pass_draft_pr",
+   status:"pass",
+   original_main_immutable:true,
+   feature_branch_created_from_original_root:true,
+   independent_branch_get:true,
+   native_rust_evm:true,real_opa:true,
+   first_docker_status:"fail",first_failure_independent:true,
+   recovery_source_code_authored_by_scripted_fixture:true,
+   source_code_generated_autonomously_by_model:false,
+   functional_source_files_updated:7,
+   cas_writes:gatewayCasWrites,
+   second_docker_status:"pass",researcher_acceptance_pass:true,
+   authenticated_runner_fail_receipts:1,authenticated_runner_pass_receipts:1,
+   completed_gateway_tasks:gate.stagedCompletedTaskCount,
+   registered_tasks:coordinator.registeredTaskCount,
+   distinct_child_credentials:issuedChildren,original_engineer_approval_count:1,
+   original_root_pr_created:true,independent_pr_get:true,
+   pr_draft:true,pr_open:true,pr_merged:false,
+   pr_post_attempts:draftPrCreateAttempts,
+   tested_head:latest,paid_model_calls:0
+  })+"\n");
+ }finally{
+  TrustedEffectStagingTaskRegistry.prototype.selectFor=originalSelect;
+  PrivateMcpTaskRegistry.prototype.stageGatewayChallenge=originalChallenge;
+  PrivateMcpTaskRegistry.prototype.invokeCrypto=originalCryptoInvoke;
+  PrivateMcpTaskRegistry.prototype.takeSignedPresentation=originalProofTake;
+  DelegationEvidenceHandler.prototype.createPresentation=originalCreate;
+  LocalCryptoMcpBridge.prototype.createSignedPresentation=originalMcpBridge;
+  const results=await Promise.allSettled([
+   host.close(),...bindingServers.reverse().map(b=>b.close()),
+   ...roleServers.reverse().map(s=>s.close()),
+   new Promise((resolve,reject)=>
+    runnerServer.close(err=>err?reject(err):resolve()))
+  ]);
+  for(const result of results)
+   if(result.status==="rejected")throw result.reason;
+ }
+ assert.equal(host.phase,"revoked");
+ assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
+  disposableMainHead);
+}finally{
+ await rm(parent,{recursive:true,force:true});
+}
