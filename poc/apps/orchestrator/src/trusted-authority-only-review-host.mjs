@@ -30,6 +30,9 @@ import {TrustedAuthorityOnlySequentialReadUpdateStager}
  from '../../gateway/src/trusted-authority-only-sequential-read-update-stager.ts';
 import {AuthenticatedGiteaMutationCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts';
+import {AuthenticatedGiteaReadCompletionObserver}
+ from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
+import {canonicalFileUri} from '../../gateway/src/canonical.ts';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
@@ -137,6 +140,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  // Runner PASS on the current Gitea HEAD. Never trust A2A readiness text.
  let adaptiveReadyProof;
  const adaptiveInstructions=new Map();
+ // The model never receives read data until a signed Child, Gateway read
+ // receipt and independent Gitea content have all been reverified.
+ const adaptiveSourceObservations=new Map();
  let branchAdmissionAttempted=false;
  const branchTaskPins=new Map(),branchStageAttempts=new Set();
  // R357: a signed create_branch ceiling cannot admit a worker Child before
@@ -484,7 +490,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver','readObserver'])||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
          deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
@@ -498,6 +504,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          !AuthenticatedGiteaMutationCompletionObserver.isForRepository(
           deps.mutationObserver,
           snapshot.repository.owner+'/'+snapshot.repository.repository,branch))||
+        (deps.readObserver!==undefined&&
+         (!(deps.readObserver instanceof AuthenticatedGiteaReadCompletionObserver)||
+          !deps.readObserver.isForRepository(
+           snapshot.repository.owner+'/'+snapshot.repository.repository,branch)))||
         (deps.branchExecutor!==undefined&&
          !TrustedAuthorityOnlyBranchExecutor.isNativeForOwner(deps.branchExecutor,gateway,deps.giteaClient))||
         (deps.pullRequestExecutor!==undefined&&
@@ -641,6 +651,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        deny('adaptive next decision requires independent completion or an authenticated Test FAIL');
       const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      const sourceObservations=[...adaptiveSourceObservations.values()]
+       .filter(o=>o.revision===head.commit_sha);
       return {
        requirement,branch,rootPermissions:live.root_permissions,
        agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
@@ -651,7 +663,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         completed_work:[...stagedTaskIds.values()]
          .filter(p=>gatewayAttestedTaskIds.has(p.task_id))
          .map(p=>({task_id:p.task_id,agent_id:p.agent_id,
-          operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)}))},
+          operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)})),
+        ...(sourceObservations.length?{source_observations:sourceObservations}:{})},
        ...(adaptiveVerifiedFailures.length?{verifiedFailure:{
         failed_phase:adaptiveVerifiedFailures.at(-1).failed_phase,
         source_evidence_sha256:adaptiveVerifiedFailures.at(-1).source_evidence_sha256,
@@ -708,6 +721,33 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         }
         input.signal?.throwIfAborted();
         await executionHandle.attestEnrolledTaskCompletion({taskId:staged.task_id,runtimeTaskId});
+        if(choice.permissions.length===1&&choice.permissions[0]?.operation==='read_file'){
+         if(!nativeEffectBinding.readObserver||adaptiveSourceObservations.size>=4)
+          deny('bounded independent diagnostic source reader unavailable');
+         const binding=gateway.assertTrustedCompletedReadObservationBinding(
+          staged.task_id,runtimeTaskId);
+         const observation=await nativeEffectBinding.readObserver.observeSource(
+          binding.expectation);
+         if(observation.status!=='owner_verified_bounded_gitea_source_observation'||
+            observation.task_id!==staged.task_id||
+            observation.runtime_task_id!==runtimeTaskId||
+            observation.evidence_sha256!==binding.evidence_sha256||
+            observation.revision!==context.executionProgress.current_head_sha||
+            binding.permission_resource!==choice.permissions[0].resource||
+            canonicalFileUri(snapshot.repository,branch,observation.path)!==
+             binding.permission_resource)
+          deny('diagnostic source differs from original signed read and current HEAD');
+         operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+         adaptiveSourceObservations.set(staged.task_id,Object.freeze({
+          task_id:staged.task_id,agent_id:choice.agent_id,
+          path:observation.path,revision:observation.revision,
+          source_sha256:observation.source_sha256,
+          source_bytes:observation.source_bytes,
+          excerpt:observation.excerpt,
+          excerpt_truncated:observation.excerpt_truncated,
+          evidence_sha256:observation.evidence_sha256
+         }));
+        }
         adaptiveInstructions.set(staged.task_id,choice.instruction.replace(/[\x00-\x1f\x7f]/gu,' '));
        },
        observeVerifiedTestFailure:async({task})=>{
