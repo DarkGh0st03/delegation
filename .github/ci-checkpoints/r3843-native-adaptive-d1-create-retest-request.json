@@ -1,6 +1,6 @@
 {
   "checkpoint": "R384.3",
-  "increment": "native-multi-agent-private-create-boundary-diagnostics",
+  "increment": "native-multi-agent-create-stage-ref-hardening",
   "scenario": "account-suspension",
   "objective": "same-original-engineer-root-adaptive-fail-create-d1-retest",
   "sequence": [
@@ -21,5 +21,5 @@
   "permission_escalation": false,
   "notes": "A second authentic Test FAIL is expected; this proves native D1 continuity and fail-closed, NOT functional repair success.",
   "revision": 6,
-  "fix": "Execute free R384.3 with private native CREATE stage diagnostic classifier added to original Gateway dependencies; no paid models or expanded grants"
+  "fix": "Disposable Gitea branch POST classifier now admits only native private r3832-create-<sha28> staging ref, plus original r302 update stage and exact signed feature branch; no broader privilege"
 }
