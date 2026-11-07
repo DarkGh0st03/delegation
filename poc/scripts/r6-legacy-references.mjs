@@ -22,6 +22,12 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/permission-templates.ts",
   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
+  // R384.6 authority-only cleanup candidates: inventory ONLY, not deletion.
+  "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",
+  "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
+  "poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
