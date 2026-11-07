@@ -89,7 +89,7 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
 /** R355.2: the simulated owner is the ONLY party allowed to convert the
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
-function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0,acceptanceFailure}={}){
+function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0,acceptanceFailure,failingTestFiles}={}){
  const done=[],events=[],history=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
  const permission=grant;
  const hooks={
@@ -108,6 +108,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
      instruction:p.instruction}))},
     ...(failure?{verifiedFailure:{failed_phase:failure.failed_phase,
      source_evidence_sha256:failure.source_evidence_sha256,
+     ...(failure.failing_test_files?{failing_test_files:failure.failing_test_files}:{}),
      ...(failure.acceptance_failure?{acceptance_failure:failure.acceptance_failure}:{})},
      verifiedFailureHistory:history.map(f=>({
       failed_task_id:f.failed_task_id,failed_phase:f.failed_phase,
@@ -140,7 +141,8 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
     failed_runtime_task_id:'dispatch_'+'F'.repeat(22),
     gateway_task_completed:false,recovery_authorized:false,
     tested_commit_sha:context.executionProgress.current_head_sha,
-    failed_phase:acceptanceFailure?'researcher_acceptance':'typecheck',
+    failed_phase:acceptanceFailure?'researcher_acceptance':failingTestFiles?'frontend_tests':'typecheck',
+    ...(failingTestFiles?{failing_test_files:failingTestFiles}:{}),
     ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
     source_evidence_sha256:String.fromCharCode(98+failedAttempts).repeat(64)};
    if(forgery==='wrong-status')return {...original,status:'a2a_claimed_test_fail'};
@@ -575,6 +577,31 @@ for(const check of ['ui_pending_actions','untrusted raw assertion']){
    await assert.rejects(run,/Task choice denied/u);
    assert.equal(model.calls,1);
    assert.equal(f.retired,true);
+  }
+ });
+}
+
+for(const authorized of [true,false]){
+ test('R377.5 ADK Vitest path requires an original signed read: '+authorized,async()=>{
+  const path='tests/frontend/account.test.tsx';
+  const f=verifiedFailureFixture({failingTestFiles:[path]});
+  const read=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const ctx=await read();
+   if(authorized)ctx.rootPermissions.push({
+    resource:grant('test').resource+'/files/'+path,operation:'read_file'
+   });
+   return ctx;
+  };
+  const model=new Decisions([candidate('test',0),{action:'blocked',reason:'Stop after diagnosis'}]);
+  const run=runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+  if(authorized){
+   assert.equal((await run).status,'owner_adaptive_work_blocked');
+   assert.match(JSON.stringify(model.requests[1]),/failing_test_files/u);
+   assert.match(JSON.stringify(model.requests[1]),/account\.test\.tsx/u);
+  }else{
+   await assert.rejects(run,/Task choice denied/u);
+   assert.equal(model.calls,1);
   }
  });
 }

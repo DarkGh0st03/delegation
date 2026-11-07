@@ -9,6 +9,7 @@ import {lstat,open} from "node:fs/promises";
 import {isAbsolute,resolve,join} from "node:path";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import {GiteaClient} from "./gitea-client.ts";
+import {sanitizeVitestFailureFiles} from "../../test-runner-controller/src/vitest-failure-files.ts";
 import {sanitizeTypecheckErrorCodes}
  from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {RunnerClient,type RunnerClientRequest,type RunnerClientResult}
@@ -58,6 +59,7 @@ interface FailReceipt{
  readonly repository:string;readonly branch:string;
  readonly tested_commit_sha:string;readonly first_failed_phase:string;
  readonly typecheck_error_codes?:readonly string[];
+ readonly failing_test_files?:readonly string[];
  readonly acceptance_failure?:RunnerClientResult["acceptance_failure"];
  readonly repair_candidate:boolean;readonly runner_profile:"poc-default";
  readonly log_reference:string;readonly policy_version:string;
@@ -120,7 +122,13 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
   fail("Runner failure receipt not a structured object");
  const v=raw as Record<string,unknown>;
  const codesPresent=Object.hasOwn(v,"typecheck_error_codes");
- if(Object.keys(v).filter(k=>k!=="typecheck_error_codes"&&k!=="acceptance_failure").sort().join(",")!==FIELDS||
+ const phase=v.first_failed_phase;
+ const files=v.failing_test_files;
+ if(Object.keys(v).filter(k=>!["typecheck_error_codes","acceptance_failure","failing_test_files"].includes(k)).sort().join(",")!==FIELDS||
+    (Object.hasOwn(v,"failing_test_files")&&
+     ((phase!=="backend_tests"&&phase!=="frontend_tests")||
+      !Array.isArray(files)||!files.length||
+      JSON.stringify(sanitizeVitestFailureFiles(files,phase))!==JSON.stringify(files)))||
     (Object.hasOwn(v,"acceptance_failure")&&
      (v.first_failed_phase!=="researcher_acceptance"||
       !safeAcceptanceFailureSummary(v.acceptance_failure)))||
@@ -216,6 +224,8 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
     {typecheck_error_codes:sanitizeTypecheckErrorCodes(result.typecheck_error_codes)}:{}),
    ...(stage.first_failed_phase==="researcher_acceptance"&&result.acceptance_failure?
     {acceptance_failure:result.acceptance_failure}:{}),
+   ...((stage.first_failed_phase==="backend_tests"||stage.first_failed_phase==="frontend_tests")&&
+    result.failing_test_files?.length?{failing_test_files:result.failing_test_files}:{}),
    repair_candidate:stage.repair_candidate,
    runner_profile:"poc-default",log_reference:result.log_reference!,
    policy_version:policyVersion,completed_at_ms:now,
@@ -255,6 +265,7 @@ export class AuthenticatedRunnerFailureObserver{
   status:"owner_authenticated_runner_failure_observed_staged";
   tested_commit_sha:string;first_failed_phase:string;
   typecheck_error_codes?:readonly string[];
+  failing_test_files?:readonly string[];
   acceptance_failure?:RunnerClientResult["acceptance_failure"];
   repair_candidate:boolean;evidence_sha256:string;
   gateway_task_completed:false;recovery_authorized:false
@@ -281,6 +292,7 @@ export class AuthenticatedRunnerFailureObserver{
    ...(v.typecheck_error_codes?.length?
     {typecheck_error_codes:Object.freeze([...v.typecheck_error_codes])}:{}),
    ...(v.acceptance_failure?{acceptance_failure:safeAcceptanceFailureSummary(v.acceptance_failure)!}:{}),
+   ...(v.failing_test_files?.length?{failing_test_files:Object.freeze([...v.failing_test_files])}:{}),
    repair_candidate:v.repair_candidate,
    evidence_sha256:digest(canonical(v)),
    gateway_task_completed:false as const,recovery_authorized:false as const

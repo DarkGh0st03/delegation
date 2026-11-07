@@ -2,6 +2,7 @@
  * authority or issues a Child DC. The original trusted Coordinator is the
  * sole register/validate boundary after this unsigned proposal.
  * No tools, URLs, keys, DIDs, receipts, or model-supplied session pins. */
+import {sanitizeVitestFailureFiles} from '../../../apps/test-runner-controller/src/vitest-failure-files.ts';
 import {safeAcceptanceFailureSummary} from '../../../runner/acceptance/failure-catalog.mjs';
 import {BaseLlm,LlmAgent,Runner,InMemorySessionService} from '@google/adk';
 import {giteaPermissionCovers,isProjectTestRepairGrant}
@@ -149,9 +150,23 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     Object.hasOwn(verifiedFailure,'typecheck_error_codes');
    const acceptance=verifiedFailure&&typeof verifiedFailure==='object'&&
     Object.hasOwn(verifiedFailure,'acceptance_failure');
+   const files=verifiedFailure?.failing_test_files;
+   const phase=verifiedFailure?.failed_phase;
+   const runnerGrant=roots.find(p=>p.operation==='run_tests'&&
+    p.resource.endsWith('/branches/'+encodeURIComponent(branch)));
    if(!(exact(verifiedFailure,base)||
         exact(verifiedFailure,[...base,'typecheck_error_codes'])||
-        exact(verifiedFailure,[...base,'acceptance_failure']))||
+        exact(verifiedFailure,[...base,'acceptance_failure'])||
+        exact(verifiedFailure,[...base,'failing_test_files']))||
+      (Object.hasOwn(verifiedFailure,'failing_test_files')&&
+       (decisionKind!=='adaptive'||!runnerGrant||
+        (phase!=='backend_tests'&&phase!=='frontend_tests')||
+        !Array.isArray(files)||!files.length||
+        JSON.stringify(sanitizeVitestFailureFiles(files,phase))!==JSON.stringify(files)||
+        files.some(path=>!roots.some(p=>giteaPermissionCovers(p,{
+         resource:runnerGrant.resource+'/files/'+path.split('/').map(encodeURIComponent).join('/'),
+         operation:'read_file'
+        })))))||
       (acceptance&&(decisionKind!=='adaptive'||verifiedFailure.failed_phase!=='researcher_acceptance'||
        !safeAcceptanceFailureSummary(verifiedFailure.acceptance_failure)))||
       !phases.has(verifiedFailure.failed_phase)||
@@ -218,6 +233,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      source_evidence_sha256:this.verifiedFailure.source_evidence_sha256,
      ...(this.verifiedFailure.typecheck_error_codes?.length?
       {typecheck_error_codes:[...this.verifiedFailure.typecheck_error_codes]}:{}),
+     ...(this.verifiedFailure.failing_test_files?.length?
+      {failing_test_files:[...this.verifiedFailure.failing_test_files]}:{}),
      ...(this.verifiedFailure.acceptance_failure?
       {acceptance_failure:this.verifiedFailure.acceptance_failure}:{}),
      status:'verified_failure_preflight_only_not_approval'

@@ -44,6 +44,7 @@ type NativeVerifiedFailedTest=Readonly<{
  original_session_id:string;tested_commit_sha:string;
  failed_phase:string;source_evidence_sha256:string;
  typecheck_error_codes?:readonly string[];
+ failing_test_files?:readonly string[];
  acceptance_failure?:import("../../../apps/gateway/src/runner-client.ts").RunnerClientResult["acceptance_failure"];
  recovery_authorized:false;child_credential_issued:false;
  gateway_task_completed:false;task_registered:false;
@@ -129,6 +130,10 @@ export async function observeTrustedNativeTestFailure(
     (input.nowMs??Date.now)()>=Date.parse(live.expires_at)||
     (input.nowMs??Date.now)()>=Date.parse(live.root_expires_at))
    deny("original authority changed while reading independent FAIL");
+ const failingTestFiles=fail.failing_test_files?.filter(path=>
+  root.root_permissions.some(p=>giteaPermissionCovers(p,{
+   resource:canonicalFileUri(root.repository,root.branch,path),operation:"read_file"
+  })));
  return Object.freeze({
   status:"native_test_failure_evidence_verified_only" as const,
   failed_task_id:intent.task_id,failed_runtime_task_id:intent.runtime_task_id,
@@ -138,6 +143,7 @@ export async function observeTrustedNativeTestFailure(
   source_evidence_sha256:fail.evidence_sha256,
   ...(fail.typecheck_error_codes?.length?
    {typecheck_error_codes:Object.freeze([...fail.typecheck_error_codes])}:{}),
+  ...(failingTestFiles?.length?{failing_test_files:Object.freeze(failingTestFiles)}:{}),
   ...(fail.acceptance_failure?{acceptance_failure:fail.acceptance_failure}:{}),
   recovery_authorized:false as const,
   child_credential_issued:false as const,

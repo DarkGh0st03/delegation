@@ -103,6 +103,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
         source_evidence_sha256:observed.source_evidence_sha256,
         ...(observed.typecheck_error_codes?.length?
          {typecheck_error_codes:[...observed.typecheck_error_codes]}:{}),
+        ...(observed.failing_test_files?.length?{failing_test_files:observed.failing_test_files}:{}),
         ...(observed.acceptance_failure?{acceptance_failure:observed.acceptance_failure}:{})
        }))
      deny('verified Test FAIL did not preserve the original authority and success ledger');

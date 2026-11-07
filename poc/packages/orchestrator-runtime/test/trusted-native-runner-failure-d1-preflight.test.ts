@@ -201,3 +201,17 @@ test("R355.3 candidate-free FAIL observation never accepts false provenance",asy
   await assert.rejects(observeTrustedNativeTestFailure(source),/NO-GO/);
  }
 });
+
+test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>{
+ const allowed="tests/backend/accounts/account.test.ts";
+ const hidden="tests/backend/private.test.ts";
+ const f=fixture({
+  root:{...root,root_permissions:[...approved,
+   {resource:uri+"/directories/tests/backend/accounts",operation:"read_file"}]},
+  expected:{...expected,first_failed_phase:"backend_tests",
+   failing_test_files:[allowed,hidden]}
+ } as never);
+ const proof=await observeTrustedNativeTestFailure(f.config);
+ assert.deepEqual(proof.failing_test_files,[allowed]);
+ assert.equal(proof.recovery_authorized,false);
+});

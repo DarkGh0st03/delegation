@@ -183,3 +183,22 @@ test("R377.4 researcher check labels survive authenticated FAIL and are MAC boun
   await assert.rejects(observer.observe(intent,binding),/violates signed Task/u);
  },body);
 });
+
+test("R377.5 authenticated Backend FAIL binds the sanitized Vitest paths",async()=>{
+ const states=phases.map((phase,i)=>({phase,status:i<2?"pass":i===2?"fail":"skipped"}));
+ const path="tests/backend/account.test.ts";
+ const body={...failure(),phases:states,
+  project_tests:{status:"fail",phases:states.slice(0,6)},researcher_acceptance:states[6],
+  failing_test_files:[path,"tests/frontend/foreign.test.tsx","private assertion"]};
+ await fixture(async({publisher,observer,runner,directory})=>{
+  const result=await runner.run(request);
+  await publisher.publish(intent,binding,request,result,"opa-r3775");
+  assert.deepEqual((await observer.observe(intent,binding)).failing_test_files,[path]);
+  const [name]=await readdir(directory);
+  const file=join(directory,name!);
+  const row=JSON.parse(await readFile(file,"utf8"));
+  row.failing_test_files=["tests/backend/another.test.ts"];
+  await writeFile(file,JSON.stringify(row));
+  await assert.rejects(observer.observe(intent,binding),/MAC invalid/u);
+ },body);
+});
