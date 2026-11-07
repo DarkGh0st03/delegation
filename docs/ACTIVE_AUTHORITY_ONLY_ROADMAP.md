@@ -23,6 +23,29 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
 
+### R384.5 — Budget owner-only per Execution e recovery (8 novembre 2026; CI da verificare)
+
+L'originale launcher authority-only supporta, nel **manifest privato 0600**
+(e mai da modello, A2A, HTTP o MCP), l'oggetto opzionale
+`executionBudget: {"maxDecisions":N,"maxVerifiedFailures":M}`.
+Senza override, le decisioni sono limitate agli indici Child disponibili
+e i FAIL verificati ammessi restano al massimo due (o meno se mancano Child).
+Il budget esplicito ammette da 1 a 24 decisioni, mai superiori agli indici
+Child effettivamente pre-riservati, e da 0 a 4 FAIL indipendentemente
+verificati, senza superare il numero di decisioni. La stessa soglia
+è applicata nel Review Host originale e nel Proposer ADK.
+
+Una failure non diventa un Task completato; solo receipt autenticati e
+Runner indipendente possono autorizzare un nuovo turno diagnostico.
+Permangono il contenimento dentro Root Engineer, il controllo OPA/VP,
+la policy fail-closed per provider write ambigue, il Test PASS sulla HEAD
+corrente e l'obbligo di approvazione prima di spese Gemini.
+
+Aggiunti test offline per tre FAIL verificati e retest conclusivo,
+venti modifiche multi-Task con Test finale, limiti invalidi e default.
+**I test sono scripted e le CI della nuova SHA devono ancora risultare
+PASS:** nessun E2E finale post-cleanup né pilot Gemini autorizzato.
+
 ### R384.4 — Esito nativo funzionale acquisito (8 novembre 2026; NO Gemini)
 
 **Checkpoint di esecuzione scripted, non prova di autonomia generativa.**
