@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.3)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.4)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,12 +16,44 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.3–R381.7: processo MCP privato può invocare Rust; modalità opt-in collegata a issuer, A2A e Review Host; resta da attestare E2E nativo sulla stessa SHA)** |
-| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP Child/VP e confini Rust attestati nativamente R381.8 su SHA `a458b441`; ulteriori audit Planning/letture composte aperti** |
+| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Launcher Review Host già attraversa E2E scripted; R382.4 blocca fallback legacy in authority-only; collegamento del Planning Gemini reale ancora aperto** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **E2E R381.8 SUCCESS su `a458b441`; nuova verifica stessa-SHA obbligatoria dopo C/E, nessun PASS presunto sui commit successivi** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### Nuova evidenza integrata R381.8 — 7 novembre 2026
+
+- **Run [#42389020763](https://github.com/DarkGh0st03/delegation/actions/runs/42389020763): SUCCESS sulla HEAD `a458b4415d2af6190ac603b8a9da013acd47a33b`.**
+  Log originali GitHub Actions: `r375_original_protected_main_functional_native_docker_pass_draft_pr`
+  con `status=pass`; verificatore indipendente
+  `r3819_original_review_host_native_mcp_proof_checked` con
+  `status=pass`, zero chiamate AI a pagamento.
+- **14 Child DC native emesse, 14 via MCP privato**;
+  VP native via MCP: Backend **14**, Frontend **10**, Test **2**.
+  Root Engineer diretta a Rust; Gateway verifica Rust/EVM/OPA;
+  una sola Engineer approval, `main` originale immutabile,
+  Gitea Branch originata dalla Root; **16 Task registrati / 15
+  completati** (il primo FAIL autentico non è falsamente completato).
+- Docker/Test Runner: primo **FAIL** autenticato, poi **PASS**;
+  7 file sorgente e 3 file test aggiornati, 12 scritture CAS,
+  researcher acceptance PASS, una Draft PR creata e verificata
+  indipendentemente, **non mergiata**.
+- **Confine di questa prova:** agenti del workflow *scripted*, non
+  generazione autonoma Gemini; diagnostica di lettura prima del primo
+  write non attestata (`authenticated_source_seen_before_first_write=false`);
+  non dichiarare concluse le parti A o C, né la fase D finale dopo
+  ulteriori cambiamenti. L'esito R381.8 è un PASS reale **di quel codice
+  e di quella SHA**, non un PASS automatico delle SHA successive.
+- **R382.4, successivo alla prova:** `runApprovedGeminiDag` storico
+  rifiuta il fallback Signed DAG **prima** di read receipt/OIDC/Root
+  se l'host trusted seleziona `authority-only`. Il Review Host
+  richiede in quel profilo il Child issuer `native-stdio`,
+  `APPROVED_RUNNER_NATIVE_MCP=1` e la Branch originale, prima
+  di avviare l'operational launcher. Nuovi test negativi in Fast CI;
+  **test e codice R382.4 da verificare sulla nuova SHA**.
+  Nessun modello a pagamento lanciato.
 
 ### Risultati attuali e limiti di prova
 
