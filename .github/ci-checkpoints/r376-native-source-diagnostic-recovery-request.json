@@ -1,0 +1,23 @@
+{
+  "checkpoint": "R376.3",
+  "source_sha": "881209a9dce7b07eec28f4f1a8e0ca3fb2d9c304",
+  "prior_native_checkpoint": {
+    "r375_run": 42354591410,
+    "result": "SUCCESS",
+    "mode": "R375 default unchanged"
+  },
+  "fast_ci": {
+    "run": 42357030596,
+    "result": "SUCCESS"
+  },
+  "purpose": "one FREE original Engineer protected-main native Root Branch -> genuine Docker FAIL -> one model-selected signed Backend read_file-only Child -> independently authenticated MAC/Gitea source excerpt in subsequent ADK context -> 10 signed Gitea CAS repairs -> real Docker project/acceptance PASS -> original Root Draft PR POST/GET",
+  "opt_in_env": "R376_NATIVE_DIAGNOSIS=1",
+  "adk_inference": "scripted deterministic test only",
+  "paid_model_calls": 0,
+  "total_adaptive_decision_ceiling": 16,
+  "expected_read_only_diagnostic_tasks": 1,
+  "expected_new_permissions": 0,
+  "github_main_unchanged": true,
+  "pr38": "draft_unmerged",
+  "status": "PENDING_NATIVE_CI_FAIL_CLOSED_UNTIL_SUCCESS"
+}
