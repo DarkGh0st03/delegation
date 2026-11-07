@@ -146,6 +146,9 @@ const sessionId="r375-original-review-host-e2e";
 // Opt-in native R376 shares the existing disposable Account Suspension proof.
 const diagnosticMode=process.env.R376_NATIVE_DIAGNOSIS==="1";
 assert.ok(process.env.R376_NATIVE_DIAGNOSIS===undefined||diagnosticMode);
+const specialistStop=process.env.R377_NATIVE_SPECIALIST_STOP==="1";
+assert.ok(!specialistStop||diagnosticMode);
+const sourceObservationMode=diagnosticMode&&!specialistStop;
 /**
  * SCRIPTED fixture, NOT a generative coding LLM. One Task holds only one
  * signer-authorized directory (or file) UPDATE permission; each effect reads
@@ -568,8 +571,8 @@ try{
  const taskId="r375-frontend-task";let runtimeTaskId="dispatch_"+"F".repeat(22);
  const backendTaskId="r375-backend-task";let backendRuntimeId="dispatch_"+"B".repeat(22);
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
- const diagnosticTaskId="r376-authenticated-source-read";
- const diagnosticPermissions=[pair(sharedPath,"read_file")];
+ const diagnosticTaskId=specialistStop?"r377-backend-no-change":"r376-authenticated-source-read";
+ const diagnosticPermissions=specialistStop?permissionsFor(sharedPath):[pair(sharedPath,"read_file")];
  const decisionOffset=diagnosticMode?1:0;
  const testRepairPath=diagnosticMode?testFiles.at(-1):undefined;
  const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
@@ -700,7 +703,7 @@ try{
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:preflight,runner:runnerPreflight,
   giteaClient:client,mutationObserver:observer,
-  ...(diagnosticMode?{readObserver}:{}),
+  ...(sourceObservationMode?{readObserver}:{}),
   runnerPassObserver:runnerObserver,failureObserver:failObserver,
   pullRequestExecutor:prExecutor,branchExecutor
  }).status,"owner_native_gateway_effects_bound_no_execution");
@@ -950,7 +953,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   // seven tightly scoped functional corrections after the first true FAIL.
   const firstChoices=[
    {action:"delegate",task:{task_id:backendTaskId,agent_id:"backend",
-    depends_on:[diagnosticMode?diagnosticTaskId:"r375-original-root-branch"],permissions:backendPermissions,
+    depends_on:[sourceObservationMode?diagnosticTaskId:"r375-original-root-branch"],permissions:backendPermissions,
     instruction:"Read unresolved Backend and commit incomplete D0 source"}},
    {action:"delegate",task:{task_id:taskId,agent_id:"frontend",
     depends_on:[backendTaskId],permissions:taskPermissions,
@@ -980,9 +983,15 @@ const tool=record?.request?.tool,role=record?.agent_role;
     }else if(initialIndex<3){
      if(diagnosticMode&&initialIndex===0){
       assert.ok(context.includes(diagnosticTaskId));
-      assert.match(context,/source_observations/u);
-      assert.match(context,/source_sha256/u);
-      assert.match(context,/account-status.ts/u);
+      if(specialistStop){
+       assert.match(context,/independently_verified_specialist_no_change/u);
+       assert.match(context,/read_evidence_sha256/u);
+       assert.doesNotMatch(context,/source_observations/u);
+      }else{
+       assert.match(context,/source_observations/u);
+       assert.match(context,/source_sha256/u);
+       assert.match(context,/account-status.ts/u);
+      }
       assert.doesNotMatch(context,/independent_runner_failure/u);
      }
      if(initialIndex>0){
@@ -1208,7 +1217,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   const report=workflow.adaptive;
   assert.equal(report.status,"owner_adaptive_work_ready_for_pr");
   assert.equal(report.pr_created,false);
-  assert.equal(report.executed_tasks,13+decisionOffset);
+  assert.equal(report.executed_tasks,13+Number(sourceObservationMode));
   assert.equal(report.source_test_task_id,retestTaskId);
   assert.match(report.source_test_runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
   assert.equal(branchModel.calls,1);
@@ -1220,11 +1229,13 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(issuedChildren,14+decisionOffset,
    "original root PR must never create an agent Child");
   assert.equal(coordinator.registeredTaskCount,16+decisionOffset);
-  // The immutable original failed Test never completes. Of 16 registered
-  // Tasks, its one missing completion leaves 15 attested: the original Branch,
-  // 13 successful adaptive work Tasks, and the separately verified root PR.
-  assert.equal(gate.stagedCompletedTaskCount,15+decisionOffset,
-   "only original failed Test remains incomplete; the root PR is completed");
+  // The failed Test and any authenticated specialist stop remain incomplete.
+  assert.equal(gate.stagedCompletedTaskCount,15+Number(sourceObservationMode),
+   "only independently completed Tasks and the root PR count");
+  if(specialistStop)assert.deepEqual(
+   events.filter(event=>event.startsWith("execute_backend_")).slice(0,3),
+   ["execute_backend_read_file","execute_backend_read_file","execute_backend_update_file"]
+  );
   assert.equal(gatewayCasWrites,12);
   assert.equal(privateCasStagingBranchPosts,12);
   assert.equal(runnerCalls,2);
@@ -1265,7 +1276,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(draftPrCreateAttempts,1);
   assert.equal(workflow.source_test_task_id,retestTaskId);
   assert.equal(workflow.pull_request_task_id,"r375-gitea-draft-pr");
-  assert.equal(workflow.completed_work_tasks,13+decisionOffset);
+  assert.equal(workflow.completed_work_tasks,13+Number(sourceObservationMode));
   assert.match(privatePrFlight?.request?.task_id??"",/^dispatch_[A-Za-z0-9_-]{22}$/u);
   assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
    workflow.pull_request_task_id,coordinator));
@@ -1294,12 +1305,13 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(draftPrCreateAttempts,1);
   nativeE2eResultEmitted=true;
   process.stdout.write(JSON.stringify({
-   event:diagnosticMode?
-    "r376_authenticated_diagnostic_read_native_docker_pass_draft_pr":
+   event:specialistStop?"r377_specialist_no_change_native_docker_pass_draft_pr":
+    diagnosticMode?"r376_authenticated_diagnostic_read_native_docker_pass_draft_pr":
     "r375_original_protected_main_functional_native_docker_pass_draft_pr",
-   authenticated_diagnostic_source_seen_by_decider:diagnosticMode,
-   authenticated_source_seen_before_first_write:diagnosticMode,
-   signed_read_only_diagnostic_tasks:decisionOffset,
+   authenticated_diagnostic_source_seen_by_decider:sourceObservationMode,
+   authenticated_source_seen_before_first_write:sourceObservationMode,
+   signed_read_only_diagnostic_tasks:Number(sourceObservationMode),
+   authenticated_specialist_no_change_recoveries:Number(specialistStop),
    attested_test_agent_project_test_repairs:decisionOffset,
    status:"pass",
    original_main_immutable:true,

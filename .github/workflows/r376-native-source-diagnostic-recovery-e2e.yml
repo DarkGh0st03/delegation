@@ -1,10 +1,10 @@
 # R233: REAL native Rust issuance + EVM trust + public-only Gateway verifier.
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Unsigned initial branch is absent; protected unsolved main is unchanged.
-# R376 opt-in: same protected-main Account Suspension + one distinct signed diagnostic read Task,
-# verified Gateway MAC+HEAD+bytes excerpt enters the next ADK turn before the first write.
+# Protected-main Account Suspension with an authenticated specialist stop
+# before the first write, followed by a replacement Backend Task.
 # One genuinely failed Test remains incomplete; PR permitted only on independently attested Docker PASS.
-name: Native Authenticated Source Read Before First Write and Docker Recovery (No AI)
+name: Native Authenticated Specialist Stop and Docker Recovery (No AI)
 on:
   workflow_dispatch:
   push:
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   direct-rust-live-evm:
-    name: "Original Host -> signed source READ -> authentic FAIL -> signed Test repair -> PASS -> Draft PR"
+    name: "Original Host -> specialist no-change -> replacement Task -> authentic FAIL -> signed Test repair -> PASS -> Draft PR"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
@@ -26,6 +26,7 @@ jobs:
       R233_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       R376_NATIVE_DIAGNOSIS: "1"
+      R377_NATIVE_SPECIALIST_STOP: "1"
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: r233-engineer-local
       ADAPTER_CALLER_GATEWAY: r233-gateway-local
@@ -164,7 +165,7 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/native-evm-adapter.pid
-      - name: Authenticated source read, Test repair, Docker retest and Draft PR
+      - name: Authenticated specialist stop, Test repair, Docker retest and Draft PR
         run: |
           set -a
           source poc/infra/runtime/gateway.env
