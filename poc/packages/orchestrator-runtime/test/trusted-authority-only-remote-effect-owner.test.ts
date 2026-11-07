@@ -17,6 +17,13 @@ import {TrustedAuthorityOnlyGiteaMutationPreflight}
 import {AuthenticatedGiteaMutationCompletionObserver}
  from "../../../apps/gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
 import {InMemoryRequestStore} from "../../../apps/gateway/src/prepare.ts";
+import {TrustedAuthorityOnlyCreateEffectStager as CreateStager}
+ from "../../../apps/gateway/src/trusted-authority-only-create-effect-stager.ts";
+import {TrustedAuthorityOnlyGiteaCreatePreflight as CreatePreflight}
+ from "../../../apps/gateway/src/trusted-authority-only-create-preflight.ts";
+import {DurableAuthorityOnlyGiteaCreateIntentJournal as CreateJournal}
+ from "../../../apps/gateway/src/trusted-authority-only-create-intent-journal.ts";
+import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {canonicalBranchUri,canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
 
@@ -199,4 +206,63 @@ test("R359.6 native owner binds exactly one authenticated read->update Task",asy
   }
  }),/original native owner read\/update stager/u);
  assert.deepEqual(fake.calls,[]);
+});
+
+test("R383.8 native owner binds only an original CREATE stager and one exact signed file",async()=>{
+ const create={resource:canonicalFileUri(repo,branch,file),
+  operation:"create_file" as const};
+ const f=fixture({
+  root:{...root,root_permissions:[create]},
+  row:{...row,permissions:[create]},
+  child:{...child,permissions:[create]}
+ });
+ const writer=new GiteaClient({baseUrl:"http://gitea.local:3000",
+  owner:"thesis",repository:"iam-console-poc",token:"private"});
+ const preflight=new CreatePreflight({
+  admissions:f.gateway,giteaClient:writer,
+  journal:new CreateJournal("/tmp/r3838-create-owner-test"),
+  repository:"thesis/iam-console-poc",branch
+ });
+ const stager=new CreateStager({
+  store:new InMemoryRequestStore(),admissions:f.gateway,
+  preflight,giteaClient:writer,repository:"thesis/iam-console-poc",
+  branch,planTaskId:taskId,runtimeTaskId,expectedHeadSha:"a".repeat(40)
+ });
+ const r=await f.owner.bindRegisteredTask({taskId,runtimeTaskId,effectStager:stager});
+ assert.equal(r.status,"owner_remote_effect_task_prebound_not_executed");
+ assert.equal(r.gateway_execution_authorized,false);
+ const pins=JSON.parse(f.calls[1]!);
+ assert.deepEqual(pins,{
+  runtimeTaskId,planTaskId:taskId,role:"backend",
+  childCredentialId:credentialId,presenterId:did,branch,
+  operation:"create_file",path:file
+ });
+ const g=fixture({row:{...row,permissions:[create]},
+  child:{...child,permissions:[create]},root:{...root,root_permissions:[create]}});
+ await assert.rejects(g.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:{
+   stagedTool:"create_file",async stage(){return {provider_write_authorized:false};}
+  }
+ }),/original owner-only Child, HEAD and staging port/u);
+ assert.deepEqual(g.calls,[]);
+ const wrong=fixture({row:{...row,permissions:[create]},
+  child:{...child,permissions:[create]},root:{...root,root_permissions:[create]}});
+ await assert.rejects(wrong.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:stager
+ }),/original owner-only Child, HEAD and staging port/u);
+ assert.deepEqual(wrong.calls,[]);
+});
+test("R383.8 a Test Agent cannot bind a CREATE source Task",async()=>{
+ const grant={resource:canonicalFileUri(repo,branch,file),operation:"create_file" as const};
+ const testDid="did:thesis:test-agent";
+ const f=fixture({
+  row:{...row,agent_id:"test",agent_did:testDid,permissions:[grant]} as never,
+  child:{...child,agent_id:"test",agent_did:testDid,permissions:[grant]} as never,
+  gateway:{...gatewayReceipt,agent_id:"test",agent_did:testDid} as never,
+  root:{...root,root_permissions:[grant]}
+ });
+ await assert.rejects(f.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ }),/original owner-only Child, HEAD and staging port/u);
+ assert.deepEqual(f.calls,[]);
 });
