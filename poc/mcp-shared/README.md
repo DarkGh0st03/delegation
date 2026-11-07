@@ -34,6 +34,41 @@ There is **no** `poc/mcp-shared/src/main.ts` executable or npm `start`
 command. The obsolete remote `TrustedCryptoMcpBridge` SDK client has
 also been physically removed.
 
+## R381.0 — independent stdio MCP transport prototype (no secrets)
+
+The new `owner-private-crypto-stdio-server.mjs` runs in a **different
+Node process**, uses the official MCP SDK `StdioServerTransport`, and
+publishes **exactly one** role-selected owner-private cryptographic
+operation. Its only request value is the one-time opaque
+`owner_crypto_<uuid>` reference; it never receives the original Root,
+Child, permissions, signer bearer, signed VP, provider credentials, or
+repository source. The trusted caller uses `StdioClientTransport`
+with a minimal child environment and checks the one-time response,
+including a different child PID, before executing the original
+owner-local Rust signing callback. Failure, replay, concurrent
+invocation, closure before start, unknown operation, and private
+signer errors are fail-closed.
+
+The static catalog `owner-private-crypto-catalog.mjs` is shared with
+the existing in-process MCP implementation to avoid divergent tool
+names. The child process has **no HTTP or A2A listener** and cannot
+mint/revoke authority by itself.
+
+**Proof boundary:** the opt-in
+`createOwnerPrivateInterprocessMcpSession` is verified by offline
+subprocess tests in `test/owner-private-crypto-stdio.test.ts`.
+It is **NOT yet wired into the canonical Child/Root/VP production
+issuer**, and the crypto callback still executes inside the original
+owner, after the MCP acknowledgement. Therefore R381.0 demonstrates
+a real interprocess MCP *capability/transport boundary*, **not**
+complete signing through a standalone private MCP service, not
+the whole B architecture gate, and not an AI-generated workflow.
+The existing single signer, in-process production route and all
+Gateway/Rust/OPA policies remain unchanged. Next, bind the
+interprocess session explicitly to trusted owner lifecycle and
+prove native Child/DC/VP after the boundary, without exporting
+a public crypto endpoint.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
