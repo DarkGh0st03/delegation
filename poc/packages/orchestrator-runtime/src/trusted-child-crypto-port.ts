@@ -16,6 +16,8 @@ import type {DelegatedPermission} from "./delegated-permission.ts";
 import {createOwnerPrivateChildMcpSession}
   from "../../../mcp-shared/src/owner-private-child-mcp.ts";
 import {invokeNativeCrypto} from "../../agent-runtime/src/native-crypto-ipc.ts";
+import {createOwnerPrivateNativeCryptoMcpSession}
+ from "../../../mcp-shared/src/owner-private-native-crypto-stdio.mjs";
 
 type FetchLike=typeof fetch;
 export interface ExactTrustedChildIssuance {
@@ -30,6 +32,8 @@ export interface ExactTrustedChildIssuance {
 export interface TrustedChildCryptographyPort {
   readonly kind:"rust-adapter"|"rust-native"|"owner-private-crypto-mcp";
   issueChild(request:Readonly<ExactTrustedChildIssuance>):Promise<IssuedDelegationCredential>;
+  /** R381.3 opt-in only: Rust IPC invoked INSIDE a private MCP subprocess. */
+  issueChildViaPrivateMcp?(request:Readonly<ExactTrustedChildIssuance>):Promise<IssuedDelegationCredential>;
 }
 export interface RustAdapterChildPortConfig {
   /** Only the retired HTTP issuer needs a base URL. Native Rust needs none. */
@@ -83,23 +87,35 @@ export function createNativeRustChildCryptographyPort(
 ):TrustedChildCryptographyPort {
  if(!config.bearerToken?.trim()||!socketPath.startsWith("/"))
   throw Error("Trusted native Child DC transport unavailable");
+ const validate=(result:unknown,request:Readonly<ExactTrustedChildIssuance>)
+   :IssuedDelegationCredential=>{
+  if(!result||typeof result!=="object"||Array.isArray(result)||
+     (result as {id?:unknown}).id!==request.credential_id)
+   throw Error("Native Rust Child DC identity mismatch");
+  const subject=(result as {credentialSubject?:{per?:unknown}}).credentialSubject;
+  const rights=subject?.per;
+  if(!Array.isArray(rights)||rights.length!==request.permissions.length||
+     rights.some((p,i)=>!p||typeof p!=="object"||
+       (p as {resource?:unknown}).resource!==request.permissions[i]!.resource||
+       (p as {operation?:unknown}).operation!==request.permissions[i]!.operation))
+   throw Error("Native Rust Child DC changed signed permissions");
+  return result as IssuedDelegationCredential;
+ };
  return Object.freeze({
   kind:"rust-native" as const,
   async issueChild(request:Readonly<ExactTrustedChildIssuance>){
    const result=await invokeNativeCrypto({
     socketPath,token:config.bearerToken,timeoutMs:config.timeoutMs??10000
    },"issue_child",request);
-   if(!result||typeof result!=="object"||Array.isArray(result)||
-      (result as {id?:unknown}).id!==request.credential_id)
-    throw Error("Native Rust Child DC identity mismatch");
-   const subject=(result as {credentialSubject?:{per?:unknown}}).credentialSubject;
-   const rights=subject?.per;
-   if(!Array.isArray(rights)||rights.length!==request.permissions.length||
-      rights.some((p,i)=>!p||typeof p!=="object"||
-       (p as {resource?:unknown}).resource!==request.permissions[i]!.resource||
-       (p as {operation?:unknown}).operation!==request.permissions[i]!.operation))
-    throw Error("Native Rust Child DC changed signed permissions");
-   return result as IssuedDelegationCredential;
+   return validate(result,request);
+  },
+  async issueChildViaPrivateMcp(request:Readonly<ExactTrustedChildIssuance>){
+   // Same validated Rust credential; transport failure never silently
+   // retries through the original direct or ACK-only MCP route.
+   const session=createOwnerPrivateNativeCryptoMcpSession("child_issue",{
+    socketPath,bearerToken:config.bearerToken,timeoutMs:config.timeoutMs??10000
+   },request);
+   return validate(await session.invokeOnce(),request);
   }
  });
 }
