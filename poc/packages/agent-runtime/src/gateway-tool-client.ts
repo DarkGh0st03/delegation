@@ -137,15 +137,28 @@ export class GatewayControlledToolClient {
     args: Record<string, unknown>
   ): Promise<unknown> {
     this.#signal?.throwIfAborted();
-    // R383.8 create is still blocked from model tools until native E2E. Never silently fall
-    // through to a legacy provider write when native owner mode is selected.
+    // R384.1: A model can request CREATE only through a privately prebound
+    // single-effect Task/Child selected by the HMAC owner registry. The same
+    // native one-shot MCP presentation used by the original A2A Task must
+    // be installed before Prepare. No unsigned/legacy presenter fallback.
+    const ownerCreate=this.#trustedEffectStager?.stagedTool==="create_file";
     if(this.#trustedEffectStager?.stagedTool==="read_then_update"&&
        tool!=="read_file"&&tool!=="update_file")
       throw new ControlledToolError("authorization_denied",
         "Mixed native Task supports only exact read_file and update_file");
-    if(this.#trustedEffectStager&&tool==="create_file")
+    if(ownerCreate&&tool!=="create_file")
       throw new ControlledToolError("authorization_denied",
-        "Authority-only create_file is gated pending native owner E2E");
+        "Signed CREATE Task cannot invoke a different repository operation");
+    if(tool==="create_file"&&
+       (process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"||
+        this.#trustedEffectStager!==undefined)&&
+       (!ownerCreate||
+        (this.#agentRole!=="backend"&&this.#agentRole!=="frontend")||
+        !this.#cryptoPresentation||
+        process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+        process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"))
+      throw new ControlledToolError("authorization_denied",
+        "Authority-only CREATE requires original native Child/Task and private MCP");
     let prepareResponse: Response;
     try {
       prepareResponse = await this.#fetch(
@@ -214,7 +227,8 @@ export class GatewayControlledToolClient {
       (this.#trustedEffectStager?.stagedTool===undefined||
        this.#trustedEffectStager?.stagedTool===tool||
        (mixed&&tool==="update_file"));
-    if(this.#trustedEffectStager&&(ownerRead||ownerWrite)){
+    const ownerNativeCreate=tool==="create_file"&&ownerCreate;
+    if(this.#trustedEffectStager&&(ownerRead||ownerWrite||ownerNativeCreate)){
       try{
         await this.#trustedEffectStager.stage(prepared.request_id);
       }catch{
@@ -303,6 +317,26 @@ export class GatewayControlledToolClient {
     }
 
     const execution = (executeBody as { execution: unknown }).execution;
+    if(ownerNativeCreate){
+      const created=execution!==null&&typeof execution==="object"&&
+        !Array.isArray(execution)?execution as Record<string,unknown>:null;
+      if(!created||created.provider!=="gitea"||
+         created.performed!==true||created.tool!=="create_file"||
+         created.branch!==args.branch||created.path!==args.path||
+         typeof args.content!=="string"||
+         typeof created.commit_sha!=="string"||
+         !/^[a-f0-9]{40}$/u.test(created.commit_sha)||
+         created.revision!==created.commit_sha||
+         typeof created.blob_sha!=="string"||
+         !/^[a-f0-9]{40}$/u.test(created.blob_sha)){
+        throw new ControlledToolError("authorization_denied",
+          "Native CREATE has no exact Gateway CAS result",
+          {reason:"gateway_execute_unclassified"});
+      }
+      // A structurally matching provider result is NOT an A2A completion
+      // receipt: the original owner subsequently attests the private MAC,
+      // pinned old-file absence and Task flight independently.
+    }
     if (
       tool === "run_tests" &&
       typeof execution === "object" &&
