@@ -294,13 +294,48 @@ for(const kind of ['foreign-task','wrong-head','bad-digest','over-budget']){
   assert.equal(f.retired,true);
  });
 }
-test('R376.0 read-only diagnosis before verified Test FAIL is denied',async()=>{
+test('R377.0 read-only investigation before any failure informs the next model turn',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const orig=f.hooks.readContext;
+ const excerpt='export function suspendAccount() { return false; }';
+ f.hooks.readContext=async()=>{
+  const state=await orig();
+  if(state.executionProgress.current_head_sha==='a'.repeat(40)&&
+     state.previousTasks.some(p=>p.task_id==='task-0'))
+   state.executionProgress.source_observations=[{
+    task_id:'task-0',agent_id:'backend',path:'apps/backend.ts',
+    revision:state.executionProgress.current_head_sha,
+    source_sha256:'d'.repeat(64),source_bytes:excerpt.length,
+    excerpt,excerpt_truncated:false,evidence_sha256:'e'.repeat(64)
+   }];
+  return state;
+ };
+ const inspect=candidate('backend',0,[diagnosticRead()]);
+ const edit=candidate('backend',1);
+ const verify=candidate('test',2);
+ const model=new Decisions([inspect,edit,verify,
+  {action:'ready_for_pr',reason:'Independent Test is current'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:4});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,3);
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-0','task-1','task-2']);
+ assert.equal(f.retired,false);
+ assert.equal(f.events.some(e=>e==='original-owner-observe-runner-fail'),false);
+ const next=JSON.stringify(model.requests[1]);
+ assert.match(next,/source_observations/u);
+ assert.ok(next.includes(excerpt),'model sees private independently attested read DATA');
+ assert.ok(!JSON.stringify(model.requests[2]).includes(excerpt),
+  'new HEAD invalidates prior source observation');
+ assert.ok(!JSON.stringify(model.requests).includes('independently_verified_test_failures'),
+  'no failure can be fabricated to authorize an investigation');
+});
+test('R377.0 pre-failure read outside signed Engineer root is denied',async()=>{
  const f=fixture();
  const read=f.hooks.readContext;
  f.hooks.readContext=async()=>{
   const ctx=await read();
-  ctx.rootPermissions.push(diagnosticRead());
   ctx.agents.backend.capabilities.push('read_file');
+  // No read_file in the signed root: advertised capability cannot grant it.
   return ctx;
  };
  const model=new Decisions([candidate('backend',0,[diagnosticRead()])]);
@@ -308,6 +343,21 @@ test('R376.0 read-only diagnosis before verified Test FAIL is denied',async()=>{
   /Task choice denied/u);
  assert.equal(model.calls,1);
  assert.equal(f.verified.length,0);
+ assert.equal(f.retired,true);
+});
+test('R377.0 read-only Test agent before any failure is denied',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.agents.test.capabilities.push('read_file');
+  return ctx;
+ };
+ const model=new Decisions([candidate('test',0,[diagnosticRead()])]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.done.length,0);
  assert.equal(f.retired,true);
 });
 test('R376.1 a Test-role read cannot replace signed run_tests authority',async()=>{
