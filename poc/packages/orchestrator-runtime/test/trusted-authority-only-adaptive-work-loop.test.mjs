@@ -89,7 +89,7 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
 /** R355.2: the simulated owner is the ONLY party allowed to convert the
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
-function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1}={}){
+function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0}={}){
  const done=[],events=[],history=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
  const permission=grant;
  const hooks={
@@ -118,7 +118,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
   async beforeDecision(){events.push('decision');},
   async executeTask(task){
    events.push('dispatch:'+task.task_id);epoch++;
-   if(task.agent_id===failRole&&failedAttempts<failCount){
+   if(task.agent_id===failRole&&done.length>=failAfter&&failedAttempts<failCount){
     failedAttempts++;
     events.push('original-runner-fail');
     if(task.agent_id!=='test'||throwTest)
@@ -435,23 +435,43 @@ test('R355.7 third Test FAIL exceeds owner recovery budget and retires root',asy
  assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-3']);
  assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,3);
 });
-test('R355.8 untrusted malformed failure history cannot reach a model turn',async()=>{
+for(const [field,value] of [
+ ['source_evidence_sha256','not-an-authenticated-digest'],
+ ['failed_task_id','other-test'],
+ ['tested_commit_sha','f'.repeat(40)]
+]){
+ test('R377.2 owner proof must match appended failure history: '+field,async()=>{
+  const f=verifiedFailureFixture();
+  const read=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const data=await read();
+   if(data.verifiedFailureHistory)data.verifiedFailureHistory[0][field]=value;
+   return data;
+  };
+  const model=new Decisions([candidate('test',0)]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+   /FAIL history differs from the original owner proof/);
+  assert.equal(model.calls,1);
+  assert.equal(f.retired,true);
+ });
+}
+test('R377.2 recovery cannot reuse a failed Task ID',async()=>{
  const f=verifiedFailureFixture();
- const read=f.hooks.readContext;
- f.hooks.readContext=async()=>{
-  const data=await read();
-  if(data.verifiedFailureHistory)
-   data.verifiedFailureHistory[0].source_evidence_sha256='not-an-authenticated-digest';
-  return data;
- };
- const backend=candidate('backend',1);
- backend.task.depends_on=[];
- const model=new Decisions([candidate('test',0),backend]);
+ const model=new Decisions([candidate('test',0),candidate('backend',0)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
   /Task choice denied/);
- assert.equal(model.calls,1);
+ assert.equal(f.events.filter(x=>x==='dispatch:task-0').length,1);
  assert.equal(f.retired,true);
- assert.equal(f.done.length,0);
+});
+test('R377.2 a newer FAIL invalidates an earlier PASS on the same HEAD',async()=>{
+ const f=verifiedFailureFixture({failAfter:1});
+ const model=new Decisions([candidate('test',0),candidate('test',1),
+  {action:'ready_for_pr',reason:'Use the earlier PASS'}]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /verified Test FAIL requires a new independently completed Test/);
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-0']);
+ assert.equal(f.events.includes('independent_latest_runner_pass'),false);
+ assert.equal(f.retired,true);
 });
 // R366: no PR readiness from an older/forged Test receipt or a HEAD
 // change while the original owner awaits independent verification.

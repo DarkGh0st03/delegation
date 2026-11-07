@@ -14,7 +14,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     (hooks.observeVerifiedTestFailure!==undefined&&
      typeof hooks.observeVerifiedTestFailure!=='function')||
     (signal!==undefined&&!(signal instanceof AbortSignal)))deny('invalid original owner loop configuration');
- let executed=0;
+ let executed=0,retestRequired=false;
  try{
   for(let step=0;step<maxSteps;step++){
    signal?.throwIfAborted();
@@ -33,6 +33,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      reason:decision.reason,pr_created:false});
    }
    if(decision.action==='ready_for_pr'){
+    if(retestRequired)deny('verified Test FAIL requires a new independently completed Test');
     const proof=await hooks.confirmReady();
     signal?.throwIfAborted();
     if(proof?.status!=='owner_verified_tested_head_not_pr_authorized'||
@@ -79,6 +80,14 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
        !/^[a-f0-9]{64}$/u.test(observed.source_evidence_sha256))
      deny('Test failure is not independently verified by the original owner');
     const progress=await hooks.readContext();
+    const expectedHistory=[...(before.verifiedFailureHistory??[]),{
+     failed_task_id:observed.failed_task_id,
+     failed_phase:observed.failed_phase,
+     source_evidence_sha256:observed.source_evidence_sha256,
+     tested_commit_sha:observed.tested_commit_sha
+    }];
+    if(JSON.stringify(progress.verifiedFailureHistory)!==JSON.stringify(expectedHistory))
+     deny('verified Test FAIL history differs from the original owner proof');
     if(progress.nextEpoch!==before.nextEpoch+1||
        JSON.stringify(progress.rootPermissions)!==JSON.stringify(before.rootPermissions)||
        progress.branch!==before.branch||
@@ -97,6 +106,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      deny('verified Test FAIL did not preserve the original authority and success ledger');
     // The failed Task is registered (epoch advances), but NOT completed.
     // Its evidence is diagnostic input for the next model decision only.
+    retestRequired=true;
     continue;
    }
    signal?.throwIfAborted();
@@ -105,6 +115,11 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
       progress.previousTasks.length!==before.previousTasks.length+1||
       !progress.previousTasks.some(p=>p.task_id===decision.task.task_id&&p.agent_id===decision.task.agent_id))
     deny('Task did not yield independently attested owner progress');
+   if(JSON.stringify(progress.verifiedFailureHistory)!==JSON.stringify(before.verifiedFailureHistory)||
+      JSON.stringify(progress.verifiedFailure)!==JSON.stringify(before.verifiedFailure))
+    deny('completed Task changed the authenticated failure history');
+   if(decision.task.agent_id==='test'&&decision.task.permissions.some(p=>p.operation==='run_tests'))
+    retestRequired=false;
    executed++;
   }
   deny('bounded decision budget exhausted without verified PR readiness');

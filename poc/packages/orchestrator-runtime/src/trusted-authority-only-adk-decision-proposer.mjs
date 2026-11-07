@@ -126,7 +126,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    for(const row of verifiedFailureHistory){
     if(!exact(row,['failed_task_id','failed_phase','source_evidence_sha256','tested_commit_sha'])||
        typeof row.failed_task_id!=='string'||!ID.test(row.failed_task_id)||
-       seen.has(row.failed_task_id)||!phases.has(row.failed_phase)||
+       seen.has(row.failed_task_id)||prior.some(p=>p.task_id===row.failed_task_id)||
+       !phases.has(row.failed_phase)||
        typeof row.source_evidence_sha256!=='string'||
        !/^[a-f0-9]{64}$/u.test(row.source_evidence_sha256)||
        typeof row.tested_commit_sha!=='string'||
@@ -247,7 +248,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      raw.permissions.length>16)
    fail();
   const known=new Set(this.previous.map(p=>p.task_id));
-  if(known.has(raw.task_id)||raw.depends_on.some(x=>!known.has(x)))fail();
+  if(known.has(raw.task_id)||raw.depends_on.some(x=>!known.has(x))||
+     this.verifiedFailureHistory?.some(p=>p.failed_task_id===raw.task_id))fail();
   const seen=new Set(),selected=[];
   for(const p of raw.permissions){
    if(!exact(p,['resource','operation'])||
