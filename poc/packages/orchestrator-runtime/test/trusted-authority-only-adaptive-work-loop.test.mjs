@@ -163,13 +163,13 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
 /** R355.2: the simulated owner is the ONLY party allowed to convert the
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
-function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0,acceptanceFailure,failingTestFiles}={}){
+function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0,acceptanceFailure,failingTestFiles,maxVerifiedFailures=2}={}){
  const done=[],events=[],history=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
  const permission=grant;
  const hooks={
   async readContext(){if(retired)throw Error('retired');
    return {
-    requirement:'Implement Account Suspension',branch,
+    requirement:'Implement Account Suspension',branch,maxVerifiedFailures,
     rootPermissions:[...['backend','frontend','test'].map(permission),diagnosticRead()],
     agents:Object.fromEntries(['backend','frontend','test'].map(agent_id=>[
      agent_id,{capabilities:[permission(agent_id).operation,
@@ -210,7 +210,8 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
   },
   async observeVerifiedTestFailure({task,context}){
    events.push('original-owner-observe-runner-fail');
-   if(failedAttempts>2)throw Error('trusted owner recovery attempt budget exhausted');
+   if(failedAttempts>maxVerifiedFailures)
+    throw Error('trusted owner recovery attempt budget exhausted');
    const original={status:'owner_verified_native_test_failure_preflight_only',
     failed_task_id:task.task_id,
     failed_runtime_task_id:'dispatch_'+'F'.repeat(22),
@@ -603,6 +604,30 @@ test('R355.7 adaptive Test FAIL twice, two different corrections, final Test PAS
  assert.ok(fourth.includes('independently_verified_test_failures'));
  assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
 });
+test('R384.5 owner permits three verified FAILs, distinct repairs and latest-head retest',async()=>{
+ const f=verifiedFailureFixture({failCount:3,maxVerifiedFailures:3});
+ const b1=candidate('backend',1);b1.task.depends_on=[];
+ const f2=candidate('frontend',3);f2.task.depends_on=['task-1'];
+ const b3=candidate('backend',5);b3.task.depends_on=['task-3'];
+ const model=new Decisions([
+  candidate('test',0),b1,candidate('test',2),f2,candidate('test',4),b3,
+  candidate('test',6),
+  {action:'ready_for_pr',reason:'Independent final Test PASS on current HEAD'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:8
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.source_test_task_id,'task-6');
+ assert.equal(result.executed_tasks,4);
+ assert.equal(result.pr_created,false);
+ assert.equal(f.retired,false);
+ assert.equal(model.calls,8);
+ assert.equal(f.events.filter(e=>e==='original-owner-observe-runner-fail').length,3);
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-1','task-3','task-5','task-6']);
+ assert.ok(JSON.stringify(model.requests[5]).includes('e'.repeat(64)));
+ assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
+});
 test('R355.7 third Test FAIL exceeds owner recovery budget and retires root',async()=>{
  const f=verifiedFailureFixture({failCount:3});
  const backend=candidate('backend',1);
@@ -704,11 +729,23 @@ test('R375 owner can complete 15 separately verified decisions without widening 
  assert.equal(f.retired,false);
  assert.equal(result.pr_created,false);
 });
-test('R375 original adaptive owner rejects unbounded 17th decision',async()=>{
+test('R384.5 owner can allocate twenty separate changes plus final Test and readiness',async()=>{
+ const f=fixture();
+ const tasks=[...Array.from({length:20},(_,i)=>candidate('backend',i)),
+  candidate('test',20),{action:'ready_for_pr',reason:'Test PASS independently attested'}];
+ const model=new Decisions(tasks);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:22});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,21);
+ assert.equal(model.calls,22);
+ assert.equal(f.verified.length,21);
+ assert.equal(f.retired,false);
+});
+test('R384.5 original adaptive owner rejects unbounded 25th decision',async()=>{
  const f=fixture();
  const model=new Decisions([candidate('backend',0)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
-  model,hooks:f.hooks,maxSteps:17
+  model,hooks:f.hooks,maxSteps:25
  }),/invalid original owner loop configuration/u);
  assert.equal(model.calls,0);
  assert.equal(f.verified.length,0);
