@@ -14,6 +14,10 @@ import {DurableAuthorityOnlyGiteaCreateIntentJournal as Journal}
 import type {PreparedRequestRecord} from "../src/types.ts";
 import {executeAuthorization} from "../src/execute.ts";
 import {InMemoryRequestStore} from "../src/prepare.ts";
+import {GiteaExecutor} from "../src/gitea-executor.ts";
+import {DirectCoreRustVerifier} from "../src/direct-core-verifier.ts";
+import {OpaPolicyClient} from "../src/policy-client.ts";
+
 import {TrustedAuthorityOnlyGiteaCreateExecutor as CreateExecutor}
  from "../src/trusted-authority-only-create-executor.ts";
 import {AuthenticatedGiteaCreateCompletionObserver as CreateObserver,
@@ -531,4 +535,153 @@ test("R383.6 cannot create after OPA denies or without consumed native Prepare",
  assert.equal(f.stats2().writerCalls,0);
  assert.equal((await readdir(f.dir)).some(x=>
   x.endsWith(".create-attempt.json")),false);
+});
+
+/** R383.7 Gateway dispatch tests use the real native-wrapper classes
+ * with an OFFLINE Rust binding and OPA response. They do not claim that
+ * live EVM/Rust, deployed OPA or Gitea have been exercised.
+ */
+async function nativeGatewayCreate(t:import("node:test").TestContext,
+ mode:"allow"|"rust-deny"|"opa-deny"="allow"){
+ const f=await createPipeline(t);
+ const permission=f.verified.permissions[0];
+ const identities={
+  orchestrator:"did:example:gateway-orch-3837",
+  backend:bound.agent_did,
+  frontend:"did:example:gateway-front-3837",
+  test:"did:example:gateway-test-3837"
+ };
+ let rustCalls=0,opaCalls=0,legacyCalls=0;
+ const verifier=new DirectCoreRustVerifier({
+  verify_verifiable_presentation:async(json,signedVp)=>{
+   rustCalls++;
+   const ctx=JSON.parse(json);
+   assert.equal(ctx.presenter_id,identities.backend);
+   assert.equal(ctx.required_permission.operation,"create_file");
+   assert.equal(signedVp,"offline-native-vp");
+   if(mode==="rust-deny")throw Error("native Rust rejected");
+   return JSON.stringify({
+    presenter_id:identities.backend,
+    credential_id:bound.credential_id,
+    issuer_id:"did:example:gateway-rust-issuer",
+    root_credential_id:bound.root_credential_id,
+    hierarchy_depth:1,expiration:new Date(Date.now()+60000).toISOString(),
+    permissions:[permission]
+   });
+  }
+ },identities);
+ const policy=new OpaPolicyClient({
+  baseUrl:"http://opa.local:8181",
+  fetchFn:(async(raw:URL|string,init?:RequestInit)=>{
+   opaCalls++;
+   const body=JSON.parse(String(init?.body));
+   assert.equal(body.input.required_permission.operation,"create_file");
+   assert.equal(body.input.tool,"create_file");
+   assert.match(String(raw),/thesis\/gateway\/decision/u);
+   return new Response(JSON.stringify({result:{
+    allow:mode!=="opa-deny",policy_version:"r3837-offline-policy"
+   }}),{headers:{"content-type":"application/json"}});
+  }) as typeof fetch
+ });
+ const legacy=new GiteaExecutor(f.giteaClient);
+ Object.assign(legacy,{async execute(){
+  legacyCalls++;throw Error("LEGACY CREATE_FILE MUST NOT BE CALLED");
+ }});
+ const store=new InMemoryRequestStore();
+ Object.assign(f.record,{
+  agent_role:"backend",required_permission:permission,
+  audience:"cloud-access-gateway",challenge:"original-challenge",
+  authority_only_digest:bound.authority_digest,
+  authority_only_plan_task_id:bound.task_id,
+  authority_only_agent_did:bound.agent_did,
+  created_at_ms:Date.now(),consumed:false
+ });
+ store.put(f.record);
+ Object.assign(f.admissions,{
+  assertTrustedCreateNativeAdmissionBinding(actual:PreparedRequestRecord,
+   verified:{presenter_id:string;credential_id:string;
+    root_credential_id?:string;permissions:unknown[]}){
+   assert.equal(actual,f.record);
+   if(verified.presenter_id!==bound.agent_did||
+      verified.credential_id!==bound.credential_id||
+      verified.root_credential_id!==bound.root_credential_id||
+      verified.permissions.length!==1)
+    throw Error("original Task Child VP was rejected");
+   return bound;
+  }
+ });
+ const auditEvents:unknown[]=[];
+ const base={
+  store,audit:{emit:(event:unknown)=>{auditEvents.push(event);}},
+  verifier,policy,
+  repository:{authority:"gitea.local",owner:"thesis",
+   repository:"iam-console-poc"},
+  executor:legacy,authorityOnlyAdmissions:f.admissions,
+  authorityOnlyCreateEnabled:true,
+  authorityOnlyCreateExecutor:f.executor
+ };
+ const invoke=(overrides:Record<string,unknown>={})=>
+  executeAuthorization({request_id:bound.request_id,
+   signed_vp:"offline-native-vp"},{...base,...overrides} as never);
+ return {...f,verifier,policy,legacy,store,invoke,auditEvents,
+  counters:()=>({rustCalls,opaCalls,legacyCalls,
+   writerCalls:f.stats2().writerCalls,readerCalls:f.stats2().readerCalls})};
+}
+test("R383.7 Gateway native wrapper dispatches CREATE to MAC-verified CAS, never legacy",async t=>{
+ const f=await nativeGatewayCreate(t);
+ const response=await f.invoke();
+ assert.equal(response.decision,"allow");
+ assert.equal(response.execution.tool,"create_file");
+ assert.equal(response.execution.provider,"gitea");
+ assert.equal(response.execution.performed,true);
+ assert.equal(f.record.consumed,true);
+ assert.deepEqual(f.counters(),{
+  rustCalls:1,opaCalls:1,legacyCalls:0,writerCalls:1,readerCalls:2
+ });
+ await assert.rejects(f.invoke(),/already consumed/u);
+ assert.equal(f.counters().writerCalls,1);
+ assert.ok(f.auditEvents.some((event:unknown)=>
+  (event as {provider_result?:string}).provider_result==="success"));
+});
+for(const mode of ["rust-deny","opa-deny"] as const){
+ test("R383.7 "+mode+" stops before any create provider attempt",async t=>{
+  const f=await nativeGatewayCreate(t,mode);
+  await assert.rejects(f.invoke(),mode==="rust-deny"?
+   /verification_rejected/u:/policy_denied/u);
+  assert.equal(f.record.consumed,true);
+  assert.equal(f.counters().rustCalls,1);
+  assert.equal(f.counters().opaCalls,mode==="rust-deny"?0:1);
+  assert.equal(f.counters().writerCalls,0);
+  assert.equal(f.counters().legacyCalls,0);
+  assert.equal((await readdir(f.dir)).some(x=>
+   x.endsWith(".create-attempt.json")),false);
+ });
+}
+test("R383.7 missing opt-in and foreign owner do not expose legacy create",async t=>{
+ const f=await nativeGatewayCreate(t);
+ await assert.rejects(f.invoke({authorityOnlyCreateEnabled:false}),
+  /not enabled/u);
+ assert.equal(f.counters().writerCalls,0);
+ assert.equal(f.counters().legacyCalls,0);
+ const g=await nativeGatewayCreate(t);
+ await assert.rejects(g.invoke({
+  authorityOnlyAdmissions:Object.create(Admissions.prototype)
+ }),/differs from original native Gateway authority/u);
+ assert.equal(g.counters().rustCalls,0);
+ assert.equal(g.counters().writerCalls,0);
+ assert.equal(g.counters().legacyCalls,0);
+});
+test("R383.7 generic verifier and fake OPA cannot use native create owner opt-in",async t=>{
+ const f=await nativeGatewayCreate(t);
+ await assert.rejects(f.invoke({
+  verifier:{verify:async()=>f.verified}
+ }),/not enabled/u);
+ assert.equal(f.counters().writerCalls,0);
+ assert.equal(f.counters().legacyCalls,0);
+ const g=await nativeGatewayCreate(t);
+ await assert.rejects(g.invoke({
+  policy:{evaluate:async()=>({allow:true,policy_version:"forged"})}
+ }),/not enabled/u);
+ assert.equal(g.counters().writerCalls,0);
+ assert.equal(g.counters().legacyCalls,0);
 });
