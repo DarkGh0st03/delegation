@@ -1,8 +1,8 @@
 {
-  "schema": "r3818-canonical-native-private-mcp-retry-r3823-v3",
-  "candidate_parent_sha": "e75b6e5895879b89499ee87cdda17b71ea984742",
+  "schema": "r3818-canonical-deployment-preflight-v1",
+  "candidate_parent_sha": "58d523d131832f688d23e1779f1b02e4a87be03c",
   "workflow": "r3818-canonical-private-native-mcp-e2e.yml",
-  "purpose": "One free same-SHA original authority-only Engineer Review Host E2E: Root direct Rust; Task-bound Child DC and all 3 original protected A2A role VPs signed inside private MCP stdio through one native Rust signer; independent EVM/OPA/Gitea/Docker FAIL-repair-PASS and Draft PR.",
+  "purpose": "Verify the canonical deployment composition with real native verifier and scripted models, then run the existing free native R3818 end-to-end regression.",
   "requested": true,
   "attested": false,
   "trigger_once": true,
@@ -24,12 +24,8 @@
     "Backend Frontend Test VPs signed through native MCP",
     "original main unchanged",
     "Docker FAIL then independently attested PASS",
-    "Draft PR independently observed unmerged"
+    "Draft PR independently observed unmerged",
+    "canonical_deployment_native_preflight PASS before provider effects"
   ],
-  "retry_of_run_id": 42387283759,
-  "retry_of_sha": "18266e20c4581a9d052fb7b0c4cc60d549703836",
-  "retry_reason": "R382.2 full-stack check passed all native Rust EVM Gitea startup but original Review Host correctly rejected static synthetic Agent Card DID; R382.3 binds each Card and SDK probe to exact preprovisioned native Rust role DID while retaining original signed Engineer registry identity check.",
-  "retry_count": 2,
-  "previous_preflight_status": "passed_offline_and_native_bootstrap_failed_closed_at_verified_a2a_card_did",
-  "gate_before_native": "R382.3 Fast CI #42388751553 SUCCESS; Crypto MCP Profile #42388751623 SUCCESS; Crypto Gateway Bridge #42388751566 SUCCESS on 46b547171d59"
+  "gate_before_native": "Fast CI #42397773453 SUCCESS on deployment baseline"
 }

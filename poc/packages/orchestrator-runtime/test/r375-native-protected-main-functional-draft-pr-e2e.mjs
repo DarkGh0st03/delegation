@@ -1,3 +1,5 @@
+import {assembleCanonicalOperationalDeployment}
+ from "../../../apps/orchestrator/src/canonical-owner-deployment.mjs";
 import {assembleTrustedAuthorityOnlyNativeEffects}
  from "../../../apps/orchestrator/src/trusted-authority-only-native-effects.mjs";
 /** R375.0 — original Engineer Review Host native root Branch first + SDK A2A
@@ -849,6 +851,44 @@ const tool=record?.request?.tool,role=record?.agent_role;
     gatewayTimeoutMs:role==="test"?900000:60000,scopeModelPaths:true,
     fetchFn:gatewayTransport
    }};
+  }
+  if(r3818NativeMcp){
+   const directory=path("deployment-preflight");
+   await mkdir(directory,{mode:0o700});
+   const secret=async(name,value)=>{
+    const file=join(directory,name);
+    await writeFile(file,value,{mode:0o600,flag:"wx"});
+    return file;
+   };
+   const workerTokens=Object.fromEntries(await Promise.all(roles.map(async role=>
+    [role,await secret(role+".token",tokens[role])])));
+   const assembled=await assembleCanonicalOperationalDeployment({
+    pins:{snapshot,preliminaryRoot:preliminary,workBranch:branch,
+     gateway:{gatewayBaseUrl:"http://127.0.0.1:8189"}},
+    config:{
+     directory,giteaUrl:process.env.GITEA_HOST_BASE_URL,
+     giteaWriterFile:await secret("writer.token",process.env.GITEA_GATEWAY_TOKEN),
+     giteaReaderFile:await secret("reader.token",process.env.GITEA_RUNNER_TOKEN),
+     runnerUrl:"http://127.0.0.1:"+address.port,
+     runnerTokenFile:await secret("runner.token",runnerBearer),
+     opaUrl:"http://127.0.0.1:8181",evidenceKeyFile:await secret("evidence.key",evidenceKey.toString("hex")),
+     orchestratorTokenFile:await secret("orchestrator.token",tokens.orchestrator),
+     workerTokens,workerPorts:Object.fromEntries(roles.map(role=>[role,workers[role].port])),
+     rootIndex:"29200",childIndices:["29201"],draftTitle:"Free canonical preflight",
+     draftBody:"Scripted model assembly with no inference."
+    },
+    loadModelFactory:async()=>()=>models.backend
+   });
+   assert.equal(assembled.rootGateway.verifier.allowsGiteaScopeCoverage,true);
+   assert.equal(assembled.workflow.createBranch.branch,branch);
+   assert.deepEqual(Object.keys(assembled.localWorkers.workers),roles);
+   assert.equal(assembled.localWorkers.workers.backend.adk.model,models.backend);
+   await assert.rejects(assembled.localWorkers.workers.backend.adk.fetchFn(
+    "http://127.0.0.1:8189/v1/authorization/prepare",{method:"POST"}
+   ),/configuration denied/u);
+   assert.equal(models.backend.requests.length,0);
+   assert.equal(branchPostAttempts,0);
+   process.stdout.write(JSON.stringify({event:"canonical_deployment_native_preflight",status:"pass"})+"\n");
   }
   localWorkers=await startTrustedAuthorityOnlyLocalA2AWorkers({
    directory:parent,workers,native:r3818NativeMcp,

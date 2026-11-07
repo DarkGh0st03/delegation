@@ -44,6 +44,18 @@ export async function prepareOperational({expectedSourceSha,chargeAuthorization}
   process.env.DELEGATION_ENGINEER_SERVICE_CONFIG,{expectedSourceSha});
  const c=JSON.parse(await readProtectedCanonicalOwnerFile(
   process.env.DELEGATION_CANONICAL_DEPLOYMENT_CONFIG));
+ return assembleCanonicalOperationalDeployment({
+  pins,config:c,async loadModelFactory(){
+   const input=await loadProtectedGeminiOwnerInput(
+    process.env.DELEGATION_GEMINI_OWNER_INPUT_FILE,{chargeAuthorization});
+   return ()=>createGeminiAdkModel({apiKey:input.geminiApiKey,model:input.modelName});
+  }
+ });
+}
+
+/** Shared in-process composition. Model construction does not perform inference. */
+export async function assembleCanonicalOperationalDeployment({pins,config:c,loadModelFactory}){
+ if(typeof loadModelFactory!=="function")deny();
  if(!exact(c,["directory","giteaUrl","giteaWriterFile","giteaReaderFile",
    "runnerUrl","runnerTokenFile","opaUrl","evidenceKeyFile","orchestratorTokenFile",
    "workerTokens","workerPorts","rootIndex","childIndices","draftTitle","draftBody"])||
@@ -65,9 +77,8 @@ export async function prepareOperational({expectedSourceSha,chargeAuthorization}
   token(c.evidenceKeyFile),...roles.map(role=>token(c.workerTokens[role]))
  ]);
  if(writer===reader||!/^[a-f0-9]{64}$/u.test(key))deny();
- const modelInput=await loadProtectedGeminiOwnerInput(
-  process.env.DELEGATION_GEMINI_OWNER_INPUT_FILE,{chargeAuthorization});
- const model=()=>createGeminiAdkModel({apiKey:modelInput.geminiApiKey,model:modelInput.modelName});
+ const model=await loadModelFactory();
+ if(typeof model!=="function")deny();
  const repository=pins.snapshot.repository,branch=pins.workBranch;
  const resource=canonicalRepositoryUri(repository);
  const repoName=repository.owner+"/"+repository.repository;
