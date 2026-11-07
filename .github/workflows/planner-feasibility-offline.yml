@@ -27,6 +27,13 @@ on:
       - "poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts"
+      - "poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts"
+      - "poc/apps/gateway/src/execute.ts"
+      - "poc/apps/gateway/src/composite-authorization.ts"
+      - "poc/apps/gateway/src/direct-core-verifier.ts"
+      - "poc/apps/gateway/test/direct-core-verifier.test.ts"
+      - "poc/apps/gateway/test/planning-revision-pinning.test.ts"
+      - "poc/apps/gateway/test/composite-authorization.test.ts"
       - "poc/apps/gateway/native-test/f1-planner-ablation.test.mjs"
       - "poc/apps/test-runner-controller/fixtures/**"
   workflow_dispatch:
@@ -60,6 +67,8 @@ jobs:
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
       - name: R350.14 and R380.0–R380.2 verify pinned read-only Gateway Planning and dynamic discovery
         run: node --experimental-strip-types --test --test-name-pattern="R350.14|R380.0|R380.1|R380.2" poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts
+      - name: R380.3 verify native result corroboration and pinned Planning scope offline
+        run: node --experimental-strip-types --test poc/apps/gateway/test/direct-core-verifier.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts poc/apps/gateway/test/composite-authorization.test.ts
       - name: F1 frozen old/new requirement x guidance (no inference)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/f1-planner-ablation.test.mjs
       - name: Assert no Gemini API key or manual billable execution in this workflow
