@@ -1,27 +1,23 @@
 {
-  "checkpoint": "R376.4",
-  "source_sha": "fdaddb103793001a2979848fd1fbd87180117b3c",
-  "prior_native_run": {
-    "id": 42357158535,
-    "result": "FAIL_CLOSED",
-    "initial_docker_status": "acceptance_fail",
-    "last_error": "protected A2A dispatch requires an original owner-bound effect stager",
-    "stage": "first model-selected diagnostic read dispatch before provider read"
+  "checkpoint": "R376.5",
+  "source_sha": "1de4ac8e5280efbde7c26f644be660f3515c5069",
+  "previous_native_run": {
+    "id": 42357707166,
+    "conclusion": "FAIL",
+    "first_docker_acceptance": "FAIL_AUTHENTIC",
+    "read_tool": "tool_unavailable",
+    "safe_stop": true
   },
-  "cause": "original Review Host dispatch whitelist allowed only update_file and run_tests despite R376 signed read-only stager",
-  "corrective_fix": "read_file dispatch only when original adaptive loop has independently verified Test FAIL, Backend/Frontend specialist and the original owner-injected independent Gitea read observer; original Task, Child and effectStager pins still enforced",
-  "fast_ci": {
-    "run": 42357558032,
-    "result": "SUCCESS"
+  "root_cause": "single-effect read-only Gateway Prepare had no owner-pinned Gitea revision; read-only stager refused before executing authorized provider read",
+  "security_preserving_fix": "new original-owner only Gateway read pin for exact signed Backend/Frontend read Task/Child/HEAD before Prepare, checked at staged flight and source evidence. Historical read-only preflight behavior unchanged; R376 source projection requires matching pin",
+  "CI": {
+    "fast_run": 42358622803,
+    "status": "SUCCESS"
   },
-  "engineer_ci": {
-    "run": 42357558034,
-    "result": "SUCCESS"
-  },
-  "target": "original Branch -> real FAIL -> one distinct signed diagnostic source read with authenticated MAC/HEAD/bytes -> ADK source observations -> ten functional CAS -> Docker project+researcher acceptance PASS -> root Draft PR POST/GET",
-  "opt_in_env": "R376_NATIVE_DIAGNOSIS=1",
-  "paid_calls": 0,
+  "expected": "signed single-file source read -> authenticated provider receipt -> independent MAC/HEAD/bytes -> next ADK model turn -> original source CAS corrections -> Docker project/acceptance PASS -> signed Draft PR",
+  "paid_inference_calls": 0,
+  "models": "scripted deterministic",
   "github_main_unchanged": true,
-  "pr38": "draft_unmerged",
-  "status": "PENDING_NATIVE_RETEST"
+  "github_pr38": "draft_unmerged",
+  "status": "PENDING_NATIVE_E2E"
 }
