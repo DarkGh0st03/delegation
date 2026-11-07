@@ -11,8 +11,7 @@
 import {constants} from "node:fs";
 import {lstat,open,realpath} from "node:fs/promises";
 import {isAbsolute,dirname,resolve} from "node:path";
-import {createPublicKey} from "node:crypto";
-import {isDeepStrictEqual} from "node:util";
+import {createPublicKey,createPrivateKey,timingSafeEqual} from "node:crypto";
 import {AuthorityPlanningCheckpointStore}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts";
 import {DurableAuthorityOnlyActivationJournal}
@@ -95,9 +94,6 @@ async function privateText(file,maxBytes=32768){
   return await handle.readFile("utf8");
  }catch{deny();}
  finally{await handle?.close();}
-}
-async function onlyPrivateFile(file){
- await privateText(file,16384); // inspect owner/mode; do not expose PEM
 }
 function assertPublicKey(pem){
  try{
@@ -187,7 +183,19 @@ export async function loadProtectedCanonicalOwnerManifest(
   ]);
  assertPublicKey(backendPublicKeyPem);
  assertPublicKey(engineerPublicKeyPem);
- await onlyPrivateFile(data.approval.privateKeyFile);
+ // The public review key and protected Engineer signing key must be the
+ // SAME Ed25519 identity before permitting a live Planning host. A
+ // mismatched file cannot create a second approved authority later.
+ const engineerPrivateKeyPem=await privateText(
+  data.approval.privateKeyFile,8192);
+ try{
+  const actual=createPublicKey(createPrivateKey(engineerPrivateKeyPem));
+  if(actual.asymmetricKeyType!=="ed25519")deny();
+  const a=actual.export({format:"der",type:"spki"});
+  const b=createPublicKey(engineerPublicKeyPem)
+   .export({format:"der",type:"spki"});
+  if(a.length!==b.length||!timingSafeEqual(a,b))deny();
+ }catch{deny();}
  for(const p of Object.values(data.native))
   await dirOwned(dirname(p));
  const saltHex=salt.trim(),scryptHex=scrypt.trim();
