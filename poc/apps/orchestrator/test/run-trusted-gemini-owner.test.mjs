@@ -4,7 +4,8 @@ import {mkdtemp,writeFile,chmod,symlink,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
-import {loadProtectedGeminiOwnerInput,startProtectedGeminiOwnerSession}
+import {loadProtectedGeminiOwnerInput,startProtectedGeminiOwnerSession,
+  startProtectedCanonicalGeminiOwnerSession}
   from "../src/run-trusted-gemini-owner.mjs";
 
 const CONFIRMATION="I AUTHORIZE GEMINI API CHARGES";
@@ -156,4 +157,51 @@ test("Gemini foreground CLI cannot silently start paid Planning without protecte
   assert.equal(result.stdout,"");
   assert.match(result.stderr,/Gemini owner startup denied/);
   assert.doesNotMatch(result.stderr,/PRIVATE KEY|offline-no-network-key|Bearer/);
+});
+
+test("R382.6 legacy Gemini CLI cannot start Signed DAG in authority-only mode",async()=>{
+ const before=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+ try{
+  // This must deny BEFORE checking local source, protected files,
+  // constructing Gemini or issuing the preliminary Rust Root.
+  await assert.rejects(startProtectedGeminiOwnerSession({
+   configPath:"/nonexistent",inputFile:"/nonexistent",
+   expectedSourceSha:"a".repeat(40),
+   chargeAuthorization:CONFIRMATION
+  }),/Protected Gemini owner input denied/u);
+ }finally{
+  if(before===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=before;
+ }
+});
+
+test("R382.6 canonical Gemini owner refuses GitHub runner and missing independent billing consent",async()=>{
+ const keys=["GITHUB_ACTIONS","DELEGATION_GATEWAY_ARCHITECTURE",
+  "APPROVED_RUNNER_NATIVE_MCP"];
+ const old=new Map(keys.map(k=>[k,process.env[k]]));
+ try{
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+  process.env.GITHUB_ACTIONS="true";
+  const params={
+   authority:{},inputFile:"/nonexistent",
+   expectedSourceSha:"a".repeat(40),
+   chargeAuthorization:CONFIRMATION,
+   provision:async()=>{throw Error("Must never provision Root");}
+  };
+  await assert.rejects(startProtectedCanonicalGeminiOwnerSession(params),
+   /Protected Gemini owner input denied/u);
+  process.env.GITHUB_ACTIONS="false";
+  await assert.rejects(startProtectedCanonicalGeminiOwnerSession({
+   ...params,chargeAuthorization:"no consent"
+  }),/Protected Gemini owner input denied/u);
+  await assert.rejects(startProtectedCanonicalGeminiOwnerSession({
+   ...params,expectedSourceSha:"0".repeat(40)
+  }),/Protected Gemini owner input denied/u);
+ }finally{
+  for(const [k,v] of old)
+   if(v===undefined)delete process.env[k];
+   else process.env[k]=v;
+ }
 });
