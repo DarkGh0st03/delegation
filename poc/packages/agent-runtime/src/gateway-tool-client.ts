@@ -320,7 +320,10 @@ export class GatewayControlledToolClient {
     if(ownerNativeCreate){
       const created=execution!==null&&typeof execution==="object"&&
         !Array.isArray(execution)?execution as Record<string,unknown>:null;
-      if(!created||created.provider!=="gitea"||
+      if(!created||
+         Object.keys(created).sort().join(",")!==
+          "blob_sha,branch,commit_sha,path,performed,provider,revision,tool"||
+         created.provider!=="gitea"||
          created.performed!==true||created.tool!=="create_file"||
          created.branch!==args.branch||created.path!==args.path||
          typeof args.content!=="string"||
@@ -385,6 +388,17 @@ export class GatewayControlledToolClient {
         throw new ControlledToolError("authorization_denied",
          "Gateway source capture lacks exact authorized request evidence");
       this.#onTrustedDiscoveryRead(execution);
+    }
+    if(ownerNativeCreate){
+      // Never relay unrecognized Gateway/provider metadata or auth material
+      // to a model even after the private Task and exact CAS shape checks.
+      const result=execution as Record<string,unknown>;
+      return Object.freeze({
+       provider:"gitea",performed:true,tool:"create_file",
+       branch:result.branch,path:result.path,
+       revision:result.revision,commit_sha:result.commit_sha,
+       blob_sha:result.blob_sha
+      });
     }
     return execution;
   }
