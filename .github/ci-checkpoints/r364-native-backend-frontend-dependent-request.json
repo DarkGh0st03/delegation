@@ -1,5 +1,5 @@
 {
-  "checkpoint": "R364.9a",
+  "checkpoint": "R364.10",
   "baseline_native_sha": "1a7c2d20d8aaf8fb15eeb324a1402789f470179d",
   "scenario": "account-suspension",
   "roles": [
@@ -10,9 +10,9 @@
   "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
   "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
   "excluded": "no Test/Docker or PR claim",
-  "status": "native rerun requested; outcome not yet known",
-  "previous_sha": "43e6ce6567b2d641f0eec4c10f47a5bb9d3b9c7d",
-  "fix": "Use original prepare envelope agent_role for exact Backend/Frontend role validation; no permission or Rust/MCP/OPA relaxations",
+  "status": "requested; complete E2E and root revocation not yet confirmed",
+  "previous_sha": "3709ceb6fd4fc7232dde3402f3d6f6a24f14ab2a",
+  "fix": "Assert all 12 ordered diagnostic and authorization events exactly, no retries or silent filtering",
   "previous_failure_run": 42319919084,
   "previous_failure": "Backend stage succeeded; native VP or MCP crypto unavailable before Gateway Execute",
   "instrumentation": "Only test-side bridge return + transport-entry phase markers; original crypto and Gateway implementations retained; no signed VP or source content logged",
@@ -23,5 +23,7 @@
   "found": "Gateway prepare.ts PreparedRequestRecord stores agent_role on record.agent_role, not record.request.agent_role",
   "failure_explanation": "All prior R364 native executes blocked in test-only transport before verifier; mistaken record role is undefined",
   "previous_workflow_run": 42323761409,
-  "workflow_fix": "Indent two actions/cache path block scalar contents so workflow parses; keep top-level PreparedRequestRecord.agent_role fix"
+  "workflow_fix": "Indent two actions/cache path block scalar contents so workflow parses; keep top-level PreparedRequestRecord.agent_role fix",
+  "prior_run": 42323830989,
+  "prior_result": "Four signed ADK/A2A Backend then Frontend tool operations PASS, real native CAS HEAD rollover; failure is diagnostic event expectation only"
 }

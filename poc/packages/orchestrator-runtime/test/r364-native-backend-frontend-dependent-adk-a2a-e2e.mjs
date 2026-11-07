@@ -746,10 +746,17 @@ const tool=record?.request?.tool,role=record?.agent_role;
   for(const p of prepared)
    assert.equal(store.get(p.response.request_id).pinned_revision,
     p.role==="backend"?baseRevision:backendHead);
+  // Each signed effect must generate precisely ONE Prepare attempt,
+  // ONE canonical Prepare and ONE independently verified Execute.
+  // Diagnostic events are asserted, not silently filtered or ignored.
   assert.deepEqual(events,[
+   "prepare_attempt_backend_read_file",
    "prepare_backend_read_file","execute_backend_read_file",
+   "prepare_attempt_backend_update_file",
    "prepare_backend_update_file","execute_backend_update_file",
+   "prepare_attempt_frontend_read_file",
    "prepare_frontend_read_file","execute_frontend_read_file",
+   "prepare_attempt_frontend_update_file",
    "prepare_frontend_update_file","execute_frontend_update_file"
   ]);
   const frontendConfirmed=await owner.attestIndependentGatewayCompletion(
