@@ -50,6 +50,8 @@ import {invokeNativeCrypto}
  from "../../agent-runtime/src/native-crypto-ipc.ts";
 import {createOwnerPrivateInterprocessMcpSession}
  from "../../../mcp-shared/src/owner-private-crypto-stdio.ts";
+import {createOwnerPrivateNativeCryptoMcpSession}
+ from "../../../mcp-shared/src/owner-private-native-crypto-stdio.mjs";
 
 assert.equal(process.env.R233_NATIVE_EVM,"1");
 assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
@@ -57,6 +59,9 @@ assert.equal(process.env.ADAPTER_TRUST_PROFILE,"evm");
 assert.equal(process.env.GATEWAY_VERIFIER_MODE,"core-rust");
 assert.equal(process.env.APPROVED_RUNNER_NATIVE_MCP,"1");
 const r3812Stdio=process.env.R3812_NATIVE_MCP_STDIO==="1";
+const r3813Native=process.env.R3813_NATIVE_MCP_SIGNING==="1";
+assert.ok(!r3812Stdio||!r3813Native,
+ "Only one MCP signing transport may be selected");
 assert.ok(process.env.R3812_NATIVE_MCP_STDIO===undefined||r3812Stdio,
  "R381.2 trusted test opt-in must be exactly 1");
 assert.equal(process.env.GEMINI_API_KEY,undefined);
@@ -178,13 +183,14 @@ try{
   coordinator,nativeCryptoPort:nativePort,
   journal:new DurableAuthorityOnlyChildJournal(path("child-intents")),
   nowMs,
-  ...(r3812Stdio?{privateMcpTransport:"stdio"}:{})
+  ...(r3813Native?{privateMcpTransport:"native-stdio"}:
+   r3812Stdio?{privateMcpTransport:"stdio"}:{})
  });
  const child=await issuer.issueForRegisteredTask(taskId,
   params("urn:r292:child:backend",29103,600));
  assert.equal(child.gateway_execution_authorized,false);
  assert.equal(child.root_credential_id,operational.credential_id);
- if(r3812Stdio)
+ if(r3812Stdio||r3813Native)
   assert.equal(issuer.assertTrustedIssuedChild(taskId,coordinator).credential_id,
    child.credential_id);
  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
@@ -225,7 +231,19 @@ try{
    });
   };
   let signed;
-  if(r3812Stdio){
+  if(r3813Native){
+   // Request AND signed VP are handled through a real separate MCP process.
+   // Rust's original role-authenticated native socket remains the signer.
+   privatePresentationBrokers++;
+   nativePresentationCalls++;
+   signed=await createOwnerPrivateNativeCryptoMcpSession(
+    "presentation_create",{
+     socketPath,bearerToken:tokens.backend,timeoutMs:60000
+    },{
+     credential_id,disclosed_permissions:[grantPermission],
+     audience:prepared.audience,challenge:prepared.challenge
+    }).invokeOnce();
+  }else if(r3812Stdio){
    privatePresentationBrokers++;
    signed=await createOwnerPrivateInterprocessMcpSession(
     "presentation_create",nativeEffect).invokeOnce();
@@ -301,7 +319,7 @@ try{
  assert.equal(executor.callCount,0);
  assert.equal(nativePresentationCalls,3,
   "all three original signed VP requests must reach native Rust once");
- if(r3812Stdio){
+ if(r3812Stdio||r3813Native){
   assert.equal(privatePresentationBrokers,3,
    "every signed VP must first use one isolated MCP broker");
  }
@@ -312,6 +330,13 @@ try{
   native_verified_root_provenance:true,real_opa_allow:true,
   unbound_child_denied:true,revoked_root_denied:true,
   provider_calls:executor.callCount,gateway_execution_authorized:false,
+  ...(r3813Native?{
+   r3813_native_rust_signing_in_private_mcp_process:true,
+   child_original_root_pinned:true,
+   presentation_broker_count:privatePresentationBrokers,
+   native_presentation_count:nativePresentationCalls,
+   native_root_revoked:true
+  }:{}),
   ...(r3812Stdio?{
    r3812_native_stdio_mcp_child_and_vp:true,
    child_original_root_pinned:true,
