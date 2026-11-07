@@ -506,7 +506,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           snapshot.repository.owner+'/'+snapshot.repository.repository,branch))||
         (deps.readObserver!==undefined&&
          (!(deps.readObserver instanceof AuthenticatedGiteaReadCompletionObserver)||
-          !deps.readObserver.isForRepository(
+          !AuthenticatedGiteaReadCompletionObserver.prototype.isForRepository.call(
+           deps.readObserver,
            snapshot.repository.owner+'/'+snapshot.repository.repository,branch)))||
         (deps.branchExecutor!==undefined&&
          !TrustedAuthorityOnlyBranchExecutor.isNativeForOwner(deps.branchExecutor,gateway,deps.giteaClient))||
@@ -726,8 +727,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           deny('bounded independent diagnostic source reader unavailable');
          const binding=gateway.assertTrustedCompletedReadObservationBinding(
           staged.task_id,runtimeTaskId);
-         const observation=await nativeEffectBinding.readObserver.observeSource(
-          binding.expectation);
+         // Call the class's private-field implementation, not a shadowed
+         // user/subclass method that could manufacture model-visible source.
+         const observation=await AuthenticatedGiteaReadCompletionObserver.prototype
+          .observeSource.call(nativeEffectBinding.readObserver,binding.expectation);
          if(observation.status!=='owner_verified_bounded_gitea_source_observation'||
             observation.task_id!==staged.task_id||
             observation.runtime_task_id!==runtimeTaskId||
