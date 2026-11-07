@@ -1,17 +1,9 @@
 {
-  "checkpoint": "R371.2",
-  "original_R370_validated_run": 42342454494,
-  "R371_0_native_failure": {
-    "run_id": 42343999180,
-    "reason": "Protected main prohibits preapproval fixture writes (HTTP 403)"
-  },
-  "R371_1_native_failure": {
-    "run_id": 42344529541,
-    "reason": "The original Review Host correctly rejects an explicit planning_branch=main because source branch overrides must equal work branch"
-  },
-  "correction": "Use the original branch-first default main Planning snapshot, as validated by R354, omitting planning_branch rather than weakening the original Host guard. Scope source files only to the genuinely existing unresolved Backend file.",
-  "invariant": "main protected and unchanged, original Engineer approval file, model-selected original root branch, independent branch GET, then SDK Backend read and CAS only. No Docker/PR claims.",
-  "no_paid_model": true,
-  "main_branch_change": false,
-  "valid_until_native_success": false
+  "checkpoint": "R371.3",
+  "preceding_attempt": 42344836233,
+  "diagnosis": "Native signed Branch and protected SDK A2A Backend read/update already passed. Test assertion miscounted Gitea internal CAS staging ref POST /branches as duplicate authorized feature branch POST.",
+  "fix": "Distinguish exactly one approved feature/account-suspension root branch POST and exactly one private feature/r302-internal-* Gitea CAS staging ref POST. Reject any unknown branch creation in the native fixture.",
+  "expected": "main remains unchanged; 1 approved branch POST; 1 private staging branch POST; 1 Backend CAS; 2 authoritative Gateway completions; 1 native Child; zero Test/PR/paid calls",
+  "status": "pending native CI",
+  "no_paid_inference": true
 }

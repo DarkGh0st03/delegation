@@ -213,6 +213,7 @@ const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"}
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
 let gatewayCasWrites=0,draftPrCreateAttempts=0,branchPostAttempts=0;
+let privateCasStagingBranchPosts=0;
 class ObservedGiteaClient extends GiteaClient{
  async updateFileWithHeadCas(input){gatewayCasWrites++;return super.updateFileWithHeadCas(input);}
  async createDraftPullRequest(...args){
@@ -224,7 +225,15 @@ const client=new ObservedGiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
  token:process.env.GITEA_GATEWAY_TOKEN,owner:repo.owner,repository:repo.repository,
  fetchFn:async(url,init)=>{
   if(init?.method==="POST"&&
-     new URL(String(url)).pathname.endsWith("/branches"))branchPostAttempts++;
+     new URL(String(url)).pathname.endsWith("/branches")){
+   const request=JSON.parse(String(init.body));
+   if(request.new_branch_name==="feature/account-suspension")
+    branchPostAttempts++;
+   else if(typeof request.new_branch_name==="string"&&
+           /^feature\/r302-internal-[a-f0-9]{28}$/u.test(request.new_branch_name))
+    privateCasStagingBranchPosts++;
+   else throw Error("Unexpected Gitea branch POST outside original protected Task");
+  }
   return fetch(url,init);
  }});
 assert.ok(process.env.GITEA_RUNNER_TOKEN,"Independent read-only token required");
@@ -919,6 +928,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(coordinator.registeredTaskCount,2);
   assert.equal(gate.stagedCompletedTaskCount,2);
   assert.equal(gatewayCasWrites,1);
+  assert.equal(privateCasStagingBranchPosts,1);
   assert.equal(draftPrCreateAttempts,0);
   assert.equal(runnerCalls,0);
   assert.equal(models.backend.requests.length,3);
@@ -940,6 +950,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    original_protected_unsolved_main_unchanged:true,preexisting_feature_branch:false,
    model_selected_root_branch:true,independent_branch_get:true,
    real_native_rust_evm:true,opa_real:true,branch_posts:branchPostAttempts,
+   private_cas_staging_branch_posts:privateCasStagingBranchPosts,
    original_gateway_completed_tasks:gate.stagedCompletedTaskCount,
    backend_child_credentials:issuedChildren,backend_native_read_then_cas:true,
    gateway_cas_writes:gatewayCasWrites,frontend_calls:models.frontend.requests.length,
