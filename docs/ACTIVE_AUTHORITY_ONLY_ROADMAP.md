@@ -426,8 +426,14 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   preflight nativo. La vecchia Card sintetica resta disponibile
   soltanto nel profilo storico non-native, non come fallback
   nel profilo authority-only.
-  **Stato:** correzione da validare con Fast CI, poi una sola nuova
-  esecuzione nativa R381.8. Nessun Gemini a pagamento autorizzato.
+  **Validazione offline stessa SHA `46b547171d59` confermata:** Fast CI
+  [#42388751553](https://github.com/DarkGh0st03/delegation/actions/runs/42388751553)
+  SUCCESS, Crypto MCP Profile
+  [#42388751623](https://github.com/DarkGh0st03/delegation/actions/runs/42388751623)
+  SUCCESS e Gateway Bridge
+  [#42388751566](https://github.com/DarkGh0st03/delegation/actions/runs/42388751566)
+  SUCCESS. Il prossimo checkpoint nativo resta distinto e obbligatorio
+  prima di dichiarare conclusa la fase B; nessun Gemini a pagamento.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
