@@ -79,6 +79,82 @@ for(const mode of ['premature','stale-test','a2a-only','provider-failed','scope-
   if(mode==='a2a-only')assert.equal(model.calls,1,'unattested A2A output cannot unlock another model turn');
  });
 }
+test('R383.1 one adaptive owner can modify three different files via distinct signed Child Tasks and retest latest HEAD',async()=>{
+ const f=fixture();
+ const backendSecondary={operation:'update_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-handler.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(backendSecondary);
+  return ctx;
+ };
+ const actions=[
+  candidate('backend',0),
+  candidate('backend',1,[backendSecondary]),
+  candidate('frontend',2),
+  candidate('test',3),
+  {action:'ready_for_pr',reason:'All three exact-file Tasks and final Test independently completed'}
+ ];
+ const model=new Decisions(actions);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:5
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,4);
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.equal(result.pr_created,false,
+  'signed Test proof is not a model-authorized PR');
+ assert.deepEqual(f.verified.map(t=>t.task_id),
+  ['task-0','task-1','task-2','task-3']);
+ assert.deepEqual(f.verified.slice(0,3).map(t=>t.permissions[0].resource),
+  [grant('backend').resource,backendSecondary.resource,
+   grant('frontend').resource]);
+ assert.deepEqual(f.verified.map(t=>t.permissions.length),[1,1,1,1],
+  'each Child holds only its own signed single native effect');
+ assert.equal(new Set(f.verified.slice(0,3)
+  .map(t=>t.permissions[0].resource)).size,3);
+ assert.equal(f.retired,false);
+ assert.equal(model.calls,5);
+ assert.deepEqual(f.events.filter(e=>e.startsWith('dispatch:')),
+  ['dispatch:backend','dispatch:backend','dispatch:frontend','dispatch:test']);
+});
+
+for(const mode of ['two-writes','read-foreign-then-write',
+ 'write-then-read-foreign','read-and-run-tests','create-file-not-native']){
+ test('R383.1 adaptive model cannot mix unrelated native effects: '+mode,async()=>{
+  const f=fixture(),base=grant('backend');
+  const foreign={operation:'update_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-other.ts'};
+  const readSame={operation:'read_file',resource:base.resource};
+  const readForeign={operation:'read_file',resource:foreign.resource};
+  const create={operation:'create_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/new-component.ts'};
+  const cases={
+   'two-writes':[base,foreign],
+   'read-foreign-then-write':[readForeign,base],
+   'write-then-read-foreign':[base,readForeign],
+   'read-and-run-tests':[readSame,grant('test')],
+   'create-file-not-native':[create]
+  };
+  const original=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   ctx.rootPermissions.push(foreign,readSame,readForeign,create);
+   ctx.agents.backend.capabilities.push('read_file','create_file','run_tests');
+   return ctx;
+  };
+  const model=new Decisions([candidate('backend',0,cases[mode])]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks,maxSteps:2
+  }),/Task choice denied/u);
+  assert.equal(f.verified.length,0,
+   'no mixed-effect proposal may reach a real Child/Task');
+  assert.equal(f.retired,true);
+  assert.equal(model.calls,1);
+ });
+}
+
 test('R355 model can stop blocked without fabricating completion',async()=>{
  const f=fixture(),model=new Decisions([{action:'blocked',reason:'Required authority is unavailable'}]);
  const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
