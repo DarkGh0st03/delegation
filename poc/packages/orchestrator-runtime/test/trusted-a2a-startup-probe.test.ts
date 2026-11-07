@@ -139,3 +139,65 @@ test("R379 verified Agent Card capability subset stays scoped to the declared ro
  assert.equal(profiles.test.capabilities.includes("run_tests"),true);
  assert.equal(Object.isFrozen(profiles.backend.capabilities),true);
 });
+
+
+test("R382.3 trusted startup probe matches each Agent Card to original native Rust role DID",async()=>{
+ const names=["APPROVED_RUNNER_NATIVE_MCP","DELEGATION_GATEWAY_ARCHITECTURE",
+  "ADAPTER_TRUST_PROFILE",...ROLES.map(role=>"ADAPTER_ID_"+role.toUpperCase())];
+ const prior=new Map(names.map(name=>[name,process.env[name]]));
+ try{
+  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  process.env.ADAPTER_TRUST_PROFILE="evm";
+  const identities=Object.fromEntries(ROLES.map((role,i)=>[
+   role,"did:ethr:0x7a69:0x"+String(i+2).padStart(40,"0")
+  ])) as Record<typeof ROLES[number],string>;
+  for(const role of ROLES)
+   process.env["ADAPTER_ID_"+role.toUpperCase()]=identities[role];
+  const endpoints={
+   backend:"http://127.0.0.1:61001",frontend:"http://127.0.0.1:61002",
+   test:"http://127.0.0.1:61003"
+  };
+  const roleFor=(url:string)=>ROLES.find(role=>
+   url===endpoints[role]+"/.well-known/agent-card.json")!;
+  let readCount=0;
+  const goodFetch=async(raw:string|URL|Request)=>{
+   const role=roleFor(String(raw));assert.ok(role);
+   readCount++;
+   return Response.json(createSpecializedAgentCard(role,endpoints[role],{
+    capabilityProfile:"approved-plan",delegatedAuthorization:true,
+    nativeSignerDid:identities[role]
+   }));
+  };
+  const profiles=await assertTrustedApprovedA2AStartup({
+   endpoints,fetchFn:goodFetch as typeof fetch
+  });
+  assert.equal(readCount,3,"one role-pinned Card probe per specialist");
+  for(const role of ROLES)
+   assert.equal(profiles[role].did,identities[role]);
+
+  // A historical synthetic Card is not an alternative identity in the
+  // same canonical Rust session, even when skill/capabilities still match.
+  await assert.rejects(assertTrustedApprovedA2AStartup({
+   endpoints,fetchFn:(async(raw:string|URL|Request)=>{
+    const role=roleFor(String(raw));
+    return Response.json(createSpecializedAgentCard(role,endpoints[role]));
+   }) as typeof fetch
+  }),/pinned localhost role-card verification denied/u);
+  await assert.rejects(assertTrustedApprovedA2AStartup({
+   endpoints,fetchFn:(async(raw:string|URL|Request)=>{
+    const role=roleFor(String(raw));
+    const card=createSpecializedAgentCard(role,endpoints[role],{
+     nativeSignerDid:identities[role]
+    });
+    if(role==="backend")
+     card.capabilities.extensions[0]!.params.agentDid=identities.frontend;
+    return Response.json(card);
+   }) as typeof fetch
+  }),/pinned localhost role-card verification denied/u);
+ }finally{
+  for(const [k,v] of prior)
+   if(v===undefined)delete process.env[k];
+   else process.env[k]=v;
+ }
+});
