@@ -41,6 +41,8 @@ export interface SpecializedAgentServerOptions {
     "adapterBaseUrl"|"backendToken"|"fetchFn"|"timeoutMs">;
   /** Opt-in only; the default A2A baseline stays unchanged. */
   mcpTaskSigning?: { signingPrivateKeyPem: string; signingPublicKeyPem: string };
+  /** Original host role DID; MUST equal the configured native Rust signer. */
+  nativeSignerDid?: string;
 }
 
 export interface SpecializedAgentServer {
@@ -62,9 +64,14 @@ export async function startSpecializedAgentServer(
 ): Promise<SpecializedAgentServer> {
   const host = options.host ?? "127.0.0.1";
   const baseUrl = `http://${host}:${options.port}`;
+  // Native identity cannot be substituted on a deterministic or unbound
+  // A2A worker. All native role keys remain exclusively with the Rust owner.
+  if(options.nativeSignerDid!==undefined&&(!options.adk||!options.mcpTaskSigning))
+    throw Error("Trusted native A2A signer DID requires an original ADK Task host");
   const card = createSpecializedAgentCard(options.role, baseUrl, {
     delegatedAuthorization: options.delegatedAuthorization,
-    capabilityProfile: options.capabilityProfile
+    capabilityProfile: options.capabilityProfile,
+    ...(options.nativeSignerDid===undefined?{}:{nativeSignerDid:options.nativeSignerDid})
   });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
   // R381.6: a private Rust MCP subprocess is an owner-bound signing
