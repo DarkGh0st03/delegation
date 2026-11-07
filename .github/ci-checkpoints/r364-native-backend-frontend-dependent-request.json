@@ -1,5 +1,5 @@
 {
-  "checkpoint": "R364.3",
+  "checkpoint": "R364.4",
   "baseline_native_sha": "1a7c2d20d8aaf8fb15eeb324a1402789f470179d",
   "scenario": "account-suspension",
   "roles": [
@@ -10,10 +10,11 @@
   "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
   "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
   "excluded": "no Test/Docker or PR claim",
-  "status": "native rerun requested; do not infer PASS",
-  "previous_sha": "c41d989d431d1a3a4723732e70a34c30e5156c52",
+  "status": "Requested; no E2E result presumed",
+  "previous_sha": "d79064fb279cd2e91c419f0a179b4b3dd2ea9c99",
   "fix": "Fix invalid YAML job name colon and actually integrate both role dispatch paths in the E2E executable",
-  "previous_failure_run": 42314495026,
-  "previous_failure": "Backend first read_file tool_unavailable; no A2A completion",
-  "instrumentation": "safe phase counters and backend Gateway Prepare rejection classification, no credentials or source bytes"
+  "previous_failure_run": 42315639916,
+  "previous_failure": "Native Backend Prepare succeeded but no execute, ADK tool_unavailable",
+  "instrumentation": "safe phase counters and backend Gateway Prepare rejection classification, no credentials or source bytes",
+  "diagnostic": "Test-only original native stager stage call with boolean exact Task/HEAD/TTL flags, strict allowlisted error reason; safe no signed VP or source"
 }

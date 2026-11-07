@@ -373,6 +373,38 @@ try{
   expectedHeadSha:baseRevision
  });
  assert.equal(backendStager.stagedTool,"read_then_update");
+ // R364.4: owner-private, test-only stage observation. This instruments the
+ // original native stager INSTANCE (not a proxy), preserving Rust/Gateway
+ // identity and exact signed Task pins. Export only fixed safe classifications.
+ const backendStageEvents=[];
+ const realBackendStage=backendStager.stage.bind(backendStager);
+ backendStager.stage=async requestId=>{
+  const record=store.get(requestId);
+  backendStageEvents.push({
+   phase:"entered_owner_stager",tool:record?.request?.tool??"missing",
+   exact_runtime_task:record?.task_id===backendRuntimeId,
+   exact_pin:record?.pinned_revision===baseRevision,
+   live:record?.consumed===false&&record?.expires_at_ms>Date.now()
+  });
+  try{
+   const result=await realBackendStage(requestId);
+   backendStageEvents.push({phase:"owner_stage_success",status:result?.status??"unknown"});
+   return result;
+  }catch(error){
+   const allowedReasons=[
+    "read/update Prepare lacks original Task, path or expected HEAD",
+    "sequential read lacks trusted Task, Child or previous evidence",
+    "missing or concurrent sequential read reservation",
+    "first typed effect must read the existing file",
+    "original immutable read/update manifest is not durably reserved",
+    "out-of-order, duplicate or terminated owner effect"
+   ];
+   const code=allowedReasons.find(known=>
+    String(error?.message??"").includes(known))??"other_owner_stage_error";
+   backendStageEvents.push({phase:"owner_stage_rejected",reason_code:code});
+   throw error;
+  }
+ };
  // A signed dependency rejects Frontend even after native Child enrollment.
  await assert.rejects(
   TrustedAuthorityOnlySequentialReadUpdateStager.begin({
@@ -523,6 +555,7 @@ try{
     backend_model_turns:models.backend.requests.length,
     gateway_completed_tasks:gate.stagedCompletedTaskCount,
     gateway_sequential_tasks:gate.stagedSequentialTaskCount,
+    backend_stage_events:backendStageEvents,
     error_class:error?.constructor?.name??"unknown"
    })+"\n");
    throw error;
