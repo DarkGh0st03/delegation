@@ -23,6 +23,8 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
  from "./trusted-authority-only-admissions.ts";
 import {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
+import {TrustedAuthorityOnlyGiteaCreateExecutor}
+ from "./trusted-authority-only-create-executor.ts";
 import {TrustedAuthorityOnlyRunnerExecutor}
  from "./trusted-authority-only-runner-executor.ts";
 import {TrustedAuthorityOnlyPullRequestExecutor}
@@ -32,6 +34,8 @@ import type {AuditSink} from "./types.ts";
 export interface TrustedAuthorityOnlyGatewayOwner {
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   mutationExecutor:TrustedAuthorityOnlyGiteaMutationExecutor;
+  /** Optional owner-created native CREATE CAS (never from HTTP). */
+  createExecutor?:TrustedAuthorityOnlyGiteaCreateExecutor;
   runnerExecutor:TrustedAuthorityOnlyRunnerExecutor;
   /** Explicit owner-only read evidence opt-in; absent means fail closed. */
   readPublisher?:TrustedGatewayGiteaReadEvidencePublisher;
@@ -89,6 +93,11 @@ export function createTrustedAuthorityOnlyGatewayServer(
   if(!owner.mutationExecutor.isForAdmissions(owner.admissions)||
      !owner.runnerExecutor.isForAdmissions(owner.admissions))
     deny("effect executors belong to another Gateway owner");
+  if(owner.createExecutor!==undefined&&
+     (!(owner.createExecutor instanceof TrustedAuthorityOnlyGiteaCreateExecutor)||
+      !TrustedAuthorityOnlyGiteaCreateExecutor.prototype.isForAdmissions.call(
+       owner.createExecutor,owner.admissions)))
+    deny("create CAS executor belongs to another Gateway owner");
   if(owner.readPublisher!==undefined&&
      (!(owner.readPublisher instanceof TrustedGatewayGiteaReadEvidencePublisher)||
       !owner.readPublisher.isForAdmissions(owner.admissions)))
@@ -113,6 +122,8 @@ export function createTrustedAuthorityOnlyGatewayServer(
     authorityOnlyAdmissions:owner.admissions,
     authorityOnlyMutationEnabled:true,
     authorityOnlyMutationExecutor:owner.mutationExecutor,
+    ...(owner.createExecutor?{authorityOnlyCreateEnabled:true,
+      authorityOnlyCreateExecutor:owner.createExecutor}:{}),
     authorityOnlyRunnerEnabled:true,
     authorityOnlyRunnerExecutor:owner.runnerExecutor,
     ...(owner.readPublisher?{authorityOnlyReadEnabled:true,
