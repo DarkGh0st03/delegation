@@ -615,6 +615,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         typeof input.nextChildParameters!=='function')
       deny('adaptive loop requires original quiescent owner and private Child metadata provisioner');
      adaptiveLoopAttempted=true;
+     // The root Branch and PR are separate, one-shot authority decisions.
+     // Count only adaptive model turns against the caller's bounded maxSteps;
+     // an independently completed Branch cannot consume the final ready_for_pr
+     // decision. Re-entry is already fenced by adaptiveLoopAttempted.
+     let adaptiveDecisionCalls=0;
      const original=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
      const readContext=async()=>{
       if(closed||session.phase!=='operational'||gateway.phase!=='active'||
@@ -661,7 +666,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       model:input.model,maxSteps:input.maxSteps,signal:input.signal,
       hooks:{readContext,
        beforeDecision:async()=>{
-        if(decisionFlight||++decisionCalls>Math.min(input.maxSteps??8,16))
+        if(decisionFlight||++adaptiveDecisionCalls>Math.min(input.maxSteps??8,16))
          deny('adaptive loop exceeds original owner decision budget');
        },
        runDecision:async decide=>{
