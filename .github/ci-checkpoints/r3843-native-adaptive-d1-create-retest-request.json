@@ -1,6 +1,6 @@
 {
   "checkpoint": "R384.3",
-  "increment": "full-native-multi-agent-first-attempt",
+  "increment": "full-native-multi-agent-second-attempt",
   "scenario": "account-suspension",
   "objective": "same-original-engineer-root-adaptive-fail-create-d1-retest",
   "sequence": [
@@ -19,5 +19,7 @@
   "paid_ai": false,
   "changes_main": false,
   "permission_escalation": false,
-  "notes": "A second authentic Test FAIL is expected; this proves native D1 continuity and fail-closed, NOT functional repair success."
+  "notes": "A second authentic Test FAIL is expected; this proves native D1 continuity and fail-closed, NOT functional repair success.",
+  "revision": 2,
+  "fix": "Match Planning normalized Root permission order: create_file directory before per-file read/update. No permission or authority change."
 }
