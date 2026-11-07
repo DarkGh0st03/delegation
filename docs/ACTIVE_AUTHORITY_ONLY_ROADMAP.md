@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R381.2)
+## Piano attivo — aggiornato al 7 novembre 2026 (R381.7)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,7 +16,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.2: Child+VP MCP stdio attestati con Rust/EVM/OPA nativi; processo signer separato ancora aperto)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.3–R381.7: processo MCP privato può invocare Rust; modalità opt-in collegata a issuer, A2A e Review Host; resta da attestare E2E nativo sulla stessa SHA)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -287,6 +287,23 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   per host legacy, host non configurato e Task registry assente.
   Questo restringe l'opt-in introdotto in R381.4; non costituisce
   una prova nativa end-to-end né autorizza il launcher a pagamento.
+- **R381.7 — canonical Review Host owner-only Child MCP opt-in**:
+  `createTrustedAuthorityOnlyReviewHost(...).admitOperationalExecution(deps)`
+  accetta unicamente `privateChildMcpTransport:"native-stdio"` come
+  opzione aggiuntiva del **trusted owner**. Prima di aprire il Gateway
+  richiede il metodo `issueChildViaPrivateMcp` del port Rust originale;
+  la modalità `"stdio"` ACK-only e valori arbitrari sono rifiutati
+  senza fallback. La Root del Software Engineer, il Core verifier del
+  Gateway, i Task, i journal originali e i permessi firmati restano
+  invariati. Il percorso di default è lo stesso di prima.
+  I test gratuiti nel Review Host verificano una Child sotto la Root
+  operativa originale, nessuna chiamata al signer diretto in modalità
+  opt-in e il rifiuto di port/maniera invalidi, con revoca della Root.
+  **Limite**: la prova del Review Host usa un port Rust controllato;
+  non è ancora attestato il flusso canonico completo con Rust/EVM/OPA
+  reali, A2A, Gitea e Docker sulla HEAD attuale. In particolare gli
+  E2E R375 con agenti scripted non sono automaticamente migrati.
+  Conservare i gate di CI e NON attivare workflow Gemini a pagamento.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
