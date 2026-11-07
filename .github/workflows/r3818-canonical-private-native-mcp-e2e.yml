@@ -76,6 +76,7 @@ jobs:
           node --test poc/apps/orchestrator/test/trusted-authority-only-operational-launcher.test.mjs
       - name: R3818 free native MCP Task and Review Host preflight (no model inference)
         run: |
+          node --test poc/scripts/test/r3822-native-mcp-checkpoint-isolation.test.mjs
           node --test poc/scripts/test/verify-r3818-native-mcp-proof.test.mjs
           node --experimental-strip-types --test poc/mcp-shared/test/owner-private-native-crypto-stdio.test.ts
           node --experimental-strip-types --test poc/packages/agent-runtime/test/native-crypto-ipc.test.ts poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/canonical-a2a-no-http-worker.test.ts poc/apps/a2a-agent/test/mcp-tool-flags.test.ts
