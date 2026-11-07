@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.4)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.5)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -54,6 +54,43 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   di avviare l'operational launcher. Nuovi test negativi in Fast CI;
   **test e codice R382.4 da verificare sulla nuova SHA**.
   Nessun modello a pagamento lanciato.
+
+### R382.5 — ingresso owner-only firmato nel launcher canonico
+
+Il **vero** `createTrustedAuthorityOnlyReviewHost` espone ora il
+metodo **privato, solo in-process**
+`createReviewedCanonicalHandoff({provision})`. Questo costruisce il
+nuovo `createTrustedAuthorityOnlyReviewedCanonicalHandoff` legato
+**allo stesso** Planning checkpoint e al medesimo file di approvazione
+Ed25519 dell'Engineer: sessione, SHA base, digest del grant approvato
+e DID Engineer derivano dal Review Host, non da un Task, un modello o
+dall'operatore. `reviewReadiness()` rilegge checkpoint+receipt,
+senza Root o effetto. Solo `runApprovedCanonical()` (one-shot)
+riesamina la firma, ottiene l'input **privato del trusted owner**
+da `provision`, chiama `activateOperational` (con nuova verifica
+originale dell'approvazione), `admitOperationalExecution` con
+`privateChildMcpTransport:"native-stdio"` e infine
+`runCanonicalOperationalWorkflow` (Branch prima degli agenti).
+Le Root ambiguous, gli errori del provider e la cancellazione
+ritirano il Review Host originale; **mai** retry automatico,
+secondo issuer, Signed DAG di fallback, approval automatica o
+merge. L'infrastruttura e le credenziali non sono esposte via
+Engineer HTTP, A2A, MCP o function tool Gemini.
+
+Sono stati creati test gratuiti unitari negativi per firma non
+pronta, digest errato, port MCP mancante, doppia esecuzione,
+cancellazione durante il controllo della firma, fallimento Gateway
+e revoca Rust incerta. Un test usa il **vero** Review Host di
+Planning (checkpoints+Engineer Ed25519), rilegge la firma e
+dimostra che `reviewReadiness` non emette la Root operativa;
+tutti sono collegati alla Fast CI. **Questo non rende ancora il
+CLI pagato `run-trusted-gemini-owner.mjs` equivalente al launcher
+authority-only**: la sua istanza Planning Gemini storica resta
+separata e da migrare al Review Host originale prima del pilot.
+La verifica nativa finale va ripetuta dopo le fasi C/E e sulla
+nuova SHA; la prova R381.8 SUCCESS `a458b441` rimane valida
+solo per la baseline precedente. Nessun modello a pagamento è
+stato avviato o autorizzato.
 
 ### Risultati attuali e limiti di prova
 
