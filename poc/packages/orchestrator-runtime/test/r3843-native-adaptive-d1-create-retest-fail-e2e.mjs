@@ -550,15 +550,26 @@ try{
    bearerToken:tokens.orchestrator,timeoutMs:60000
   },socketPath);
   let backendChild,child,runnerChild,issuedChildren=0;
+  let nativeMcpChildCalls=0,legacyChildIssuerCalls=0;
+  const recordNativeChild=(request,signed)=>{
+   issuedChildren++;
+   if(request.delegatee==="backend")backendChild=signed;
+   else if(request.delegatee==="frontend")child=signed;
+   else if(request.delegatee==="test")runnerChild=signed;
+   else throw Error("Unexpected delegated specialist");
+   return signed;
+  };
   const nativeChildPort={kind:"rust-native",
-   async issueChild(request){
-    const signed=await nativePort.issueChild(request);
-    issuedChildren++;
-    if(request.delegatee==="backend")backendChild=signed;
-    else if(request.delegatee==="frontend")child=signed;
-    else if(request.delegatee==="test")runnerChild=signed;
-    else throw Error("Unexpected delegated specialist");
-    return signed;
+   async issueChild(){
+    // The canonical authority-only host MUST never silently fall back to
+    // non-MCP native issuance, even when a direct Rust method is available.
+    legacyChildIssuerCalls++;
+    throw Error("R384.3 forbids non-MCP Child issuance");
+   },
+   async issueChildViaPrivateMcp(request){
+    nativeMcpChildCalls++;
+    return recordNativeChild(request,
+     await nativePort.issueChildViaPrivateMcp(request));
    }
   };
   const execution=await host.admitOperationalExecution({
@@ -574,7 +585,8 @@ try{
      expected.task_id==="r3843-test-task"||
      expected.task_id==="r3843-retest-task"?
       runnerObserver.observe(expected):readObserver.observe(expected)
-   }),nativeCryptoPort:nativeChildPort
+   }),nativeCryptoPort:nativeChildPort,
+   privateChildMcpTransport:"native-stdio"
   });
   const gate=execution.gateway;
   assert.equal(gate.phase,"active");
@@ -1104,6 +1116,8 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(controller.calls,6);
   assert.equal(childMetadataCount,5);
   assert.equal(issuedChildren,5);
+  assert.equal(nativeMcpChildCalls,5);
+  assert.equal(legacyChildIssuerCalls,0);
   assert.equal(coordinator.registeredTaskCount,6);
   assert.equal(gate.stagedCompletedTaskCount,4);
   assert.equal(gatewayCasWrites,2);
@@ -1156,7 +1170,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
    real_native_rust_evm:true,opa_real:true,branch_posts:branchPostAttempts,
    private_cas_staging_branch_posts:privateCasStagingBranchPosts,
    original_gateway_completed_tasks:gate.stagedCompletedTaskCount,
-   native_worker_children:issuedChildren,backend_native_read_then_cas:true,
+   native_worker_children:issuedChildren,
+   native_private_mcp_child_issuances:nativeMcpChildCalls,
+   legacy_child_issuances:legacyChildIssuerCalls,
+   backend_native_read_then_cas:true,
    frontend_native_read_then_cas:true,
    gateway_cas_writes:gatewayCasWrites,gateway_atomic_create_calls:gatewayCreateCalls,
    new_d1_created_file_independently_observed:true,
