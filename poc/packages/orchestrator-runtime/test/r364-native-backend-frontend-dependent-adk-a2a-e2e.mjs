@@ -301,14 +301,12 @@ try{
  });
  const backendChild=await issuer.issueForRegisteredTask(backendTaskId,
   params("urn:r364:child:backend",29103,600));
- const child=await issuer.issueForRegisteredTask(taskId,
-  params("urn:r364:child:frontend",29104,600));
- assert.notEqual(backendChild.credential_id,child.credential_id);
- assert.equal(backendChild.root_credential_id,child.root_credential_id);
+ assert.equal(backendChild.gateway_execution_authorized,false);
+ assert.equal(backendChild.root_credential_id,operational.credential_id);
  assert.deepEqual(backendChild.permissions,backendPermissions);
- assert.equal(child.gateway_execution_authorized,false);
- assert.equal(child.root_credential_id,operational.credential_id);
- assert.deepEqual(child.permissions,taskPermissions);
+ // Dependent Frontend Child is issued only when the native Backend finishes:
+ // do not activate a future Task's signer before independent predecessors.
+ let child;
  assert.deepEqual(approved.permissions,grantPermissions);
  const evidenceKey=Buffer.alloc(32,96); // disposable CI receipt key
  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
@@ -330,9 +328,9 @@ try{
  const backendEnrolled=await gate.enrollTrustedIssuedChild(
   backendTaskId,backendRuntimeId,issuer);
  assert.equal(backendEnrolled.credential_id,backendChild.credential_id);
- const enrolled=await gate.enrollTrustedIssuedChild(taskId,runtimeTaskId,issuer);
- assert.equal(enrolled.credential_id,child.credential_id);
- assert.equal(enrolled.gateway_execution_authorized,false);
+ // Frontend remains registered at epoch 2 but has NO issued or enrolled Child.
+ assert.throws(()=>gate.assertTrustedOwnerRemoteEffectBinding(
+  taskId,runtimeTaskId));
  const verifier=loadDirectCoreRustVerifier({allowGiteaScopeCoverage:true});
  assert.equal(verifier.allowsGiteaScopeCoverage,true);
  const policy=new OpaPolicyClient({baseUrl:"http://127.0.0.1:8181",
@@ -581,6 +579,18 @@ try{
   assert.equal(gate.assertTrustedCompletedSequentialReadUpdateTask(
    backendTaskId,backendRuntimeId).status,"sequential_read_update_task_completed_staged");
   assert.equal(gate.stagedCompletedTaskCount,1);
+  // Original root and Task grant do not change. The successor's Child is
+  // generated and Gateway-enrolled only AFTER independent Backend evidence.
+  child=await issuer.issueForRegisteredTask(taskId,
+   params("urn:r364:child:frontend",29104,600));
+  assert.notEqual(backendChild.credential_id,child.credential_id);
+  assert.equal(child.gateway_execution_authorized,false);
+  assert.equal(child.root_credential_id,operational.credential_id);
+  assert.deepEqual(child.permissions,taskPermissions);
+  const enrolled=await gate.enrollTrustedIssuedChild(
+   taskId,runtimeTaskId,issuer);
+  assert.equal(enrolled.credential_id,child.credential_id);
+  assert.equal(enrolled.gateway_execution_authorized,false);
   // The predecessor's actual Gitea commit is the ONLY new Frontend HEAD.
   const frontendStager=await TrustedAuthorityOnlySequentialReadUpdateStager.begin({
    store,admissions:gate,mutation:preflight,mutationObserver:observer,
