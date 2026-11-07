@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.7)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.8)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,51 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.7 collega l'executor `create_file` al Gateway `executeAuthorization`, `GatewayRuntime` e owner host con opt-in esplicito, verifier Rust e OPA concreti e class/Task binding. FunctionTools, attivazione owner reale e prova nativa E2E restano aperti.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.8 introduce lo stager `create_file` nel percorso owner-only e i pin Task/Child/branch su IPC privato. La chiamata del FunctionTool resta DENY, l'owner launcher produttivo e l'E2E Rust/EVM/OPA/Gitea restano aperti.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.8 — Preflight CREATE e flight monouso nel binding owner/A2A (NO-WRITE)
+
+`TrustedAuthorityOnlyCreateEffectStager` è il nuovo port concreto
+owner-private collegato allo stesso `InMemoryRequestStore`,
+`TrustedAuthorityOnlyGatewayAdmissions`,
+`TrustedAuthorityOnlyGiteaCreatePreflight` e `GiteaClient`
+originali. Riceve soltanto un request ID da IPC: il suo
+`planTaskId`, `runtimeTaskId`, HEAD, repository e branch
+sono vincoli fissati in costruzione dall'owner. Prima di una
+chiamata Gitea GET o a un journal brucia lo slot in memoria,
+verifica Prepare non consumato, crea l'intent persistente
+`create_file` (assenza esatta al pinned HEAD) e riserva
+`stageTrustedTaskFlight` del Child originale. Un errore o
+un tentativo ambiguo è terminale, senza retry e senza
+prenotare `create-attempt` o fare provider write.
+
+L'owner `TrustedAuthorityOnlyRemoteEffectOwner` riconosce
+soltanto una singola permission esatta `create_file` per
+Backend/Frontend, ne decodifica il file canonico, confronta
+Coordinator, Child, Gateway, repository e branch e richiede
+lo stager originale con brand privato. Impedisce che una
+capability CREATE sostituisca un Task UPDATE o di Test.
+Il registro `TrustedEffectStagingTaskRegistry` e l'IPC
+HMAC accettano il pin `create_file` solo con percorso,
+ruolo e Task firmati; l'ack IPC non vale come permesso di
+scrittura. Sono state aggiunte regressioni per Task,
+HEAD, owner, stager contraffatti, Gitea 503, doppio
+tentativo e bind di Test.
+
+**Confine deliberato:** il client `GatewayControlledToolClient`
+continua a **negare sempre** `create_file` in modalità
+authority-only. La presenza del pin privato non attiva il
+FunctionTool e non attesta una scrittura. Prima di aprire
+l'effetto modello servono bootstrap reale dell'owner,
+evidenza nativa Rust/EVM/OPA/Gitea, prove HEAD/race/revoca
+e completion A2A indipendente. Aggiornare la Fast CI della
+SHA finale; nessuna AI a pagamento o merge.
 
 ### R383.7 — Dispatch CREATE_FILE nel Gateway canonico con native guard
 
