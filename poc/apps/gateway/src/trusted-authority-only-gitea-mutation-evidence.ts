@@ -204,7 +204,9 @@ export class AuthenticatedGiteaMutationCompletionObserver{
   value is AuthenticatedGiteaMutationCompletionObserver{
   return value instanceof AuthenticatedGiteaMutationCompletionObserver&&
    #repository in value&&value.#repository===repository&&
-   value.#branch===branch;
+   value.#branch===branch&&
+   GiteaClient.isPinnedRepositoryClient(value.#client,
+    repository.split("/")[0],repository.split("/")[1]);
  }
  async observe(expected:TrustedCompletionExpectation):
  Promise<ObservedTrustedTaskCompletion>{

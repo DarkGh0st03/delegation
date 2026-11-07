@@ -60,6 +60,27 @@ import {TrustedAuthorityOnlyEngineerSession} from '../../../packages/orchestrato
 import {TrustedPlanningGatewayReadPort} from '../../../packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts';
 import {selectAuthorityOnlyGrant,signAuthorityOnlyGrant} from '../../../packages/plan-contracts/src/authority-only-approval.mjs';
 import {RUST_OPERATIONS} from '../../gateway/src/operation-catalog.ts';
+test('R368.2 reject foreign Gitea client in matching native mutation observer',()=>{
+ const repository='thesis/iam-console-poc',branch='feature/account-suspension';
+ const base={directory:join(tmpdir(),'r368-no-native-receipt-read'),
+  key:randomBytes(32),repository,branch};
+ const pinned=new GiteaClient({baseUrl:'http://offline-r368.invalid',
+  token:'read-only-fixture',owner:'thesis',repository:'iam-console-poc'});
+ const foreign=new GiteaClient({baseUrl:'http://offline-r368.invalid',
+  token:'read-only-fixture',owner:'different',repository:'iam-console-poc'});
+ const trusted=new AuthenticatedGiteaMutationCompletionObserver({
+  ...base,giteaClient:pinned});
+ const mismatched=new AuthenticatedGiteaMutationCompletionObserver({
+  ...base,giteaClient:foreign});
+ assert.equal(AuthenticatedGiteaMutationCompletionObserver.isForRepository(
+  trusted,repository,branch),true);
+ assert.equal(AuthenticatedGiteaMutationCompletionObserver.isForRepository(
+  mismatched,repository,branch),false);
+ assert.equal(AuthenticatedGiteaMutationCompletionObserver.isForRepository(
+  trusted,repository,'feature/other'),false);
+ assert.equal(AuthenticatedGiteaMutationCompletionObserver.isForRepository(
+  trusted,'different/iam-console-poc',branch),false);
+});
 test('R367 reject mutation observer prototype forgery',()=>{
  const fake=Object.create(AuthenticatedGiteaMutationCompletionObserver.prototype);
  assert.equal(AuthenticatedGiteaMutationCompletionObserver.isForRepository(
