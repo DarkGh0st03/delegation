@@ -170,6 +170,13 @@ test("R382.6 legacy Gemini CLI cannot start Signed DAG in authority-only mode",a
    expectedSourceSha:"a".repeat(40),
    chargeAuthorization:CONFIRMATION
   }),/Protected Gemini owner input denied/u);
+  delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  // An unset architecture is also NOT an implicit legacy fallback.
+  await assert.rejects(startProtectedGeminiOwnerSession({
+   configPath:"/nonexistent",inputFile:"/nonexistent",
+   expectedSourceSha:"a".repeat(40),
+   chargeAuthorization:CONFIRMATION
+  }),/Protected Gemini owner input denied/u);
  }finally{
   if(before===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
   else process.env.DELEGATION_GATEWAY_ARCHITECTURE=before;
