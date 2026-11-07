@@ -47,8 +47,10 @@ const context=():AgentTaskContext=>({
 });
 class ScriptedCreate extends BaseLlm{
  readonly requests:LlmRequest[]=[];
- constructor(readonly repeat=false){
+ readonly repeat:boolean;
+ constructor(repeat=false){
   super({model:"r3841-scripted-offline-adk"});
+  this.repeat=repeat;
  }
  override async *generateContentAsync(req:LlmRequest):
  AsyncGenerator<LlmResponse,void>{
