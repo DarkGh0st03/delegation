@@ -140,9 +140,12 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    if(!["backend","frontend"].includes(row.agent_id)||
       row.permissions.length!==1||
       !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
-       effectStager,this.#gateway,taskId,runtimeTaskId))
+       effectStager,this.#gateway,taskId,runtimeTaskId,
+       root.repository.owner+"/"+root.repository.repository,root.branch))
     deny("create Task requires original owner-only Child, HEAD and staging port");
   }
+  if(effect.operation!=="create_file"&&effectStager.stagedTool==="create_file")
+   deny("a CREATE-only private stager cannot replace an approved non-create Task");
   if(typedMixed){
    if(!TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
        effectStager,this.#gateway,taskId,runtimeTaskId))
