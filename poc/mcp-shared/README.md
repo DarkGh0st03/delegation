@@ -73,11 +73,28 @@ a real interprocess MCP capability/transport boundary and optional
 Child-issuer adoption, **not** complete signing through a standalone
 MCP cryptographic service, not root/VP service migration, not the
 whole B architecture gate, and not an AI-generated workflow.
-The production default, single original Rust signer, Gateway and OPA
-remain unchanged. Next, prove a native Rust/EVM Child/DC/VP with the
-trusted owner-selected stdio option, then evaluate an authenticated
-service-side signing channel without introducing another signer or
-exposing a public crypto endpoint.
+**R381.2 native checkpoint PASS:** the original R292 authority-only
+E2E now optionally enables the stdio broker for one native Child and
+all three native Backend VPs. In the disposable run
+[#42378351480](https://github.com/DarkGh0st03/delegation/actions/runs/42378351480)
+the same Rust CryptoRuntime issued the Root/Child and three presentations;
+the independent Core Rust/EVM/status verifier and real OPA checked the
+delegation. The Gateway still rejected unauthorized execution, an
+unbound Child and the VP after native Root revocation. The structured
+receipt reports exactly three brokered presentations, three native
+presentation calls, zero provider effects and zero paid AI calls.
+[Fast CI #42378351487](https://github.com/DarkGh0st03/delegation/actions/runs/42378351487)
+also passed on the same SHA `71eebebd`.
+
+The production default remains in-process. Importantly, the broker
+acknowledges a one-shot owner request in its own process; **the actual
+Rust signing callback still runs in the original owner after the MCP
+ACK**, not in the broker subprocess. Therefore R381.2 is an authenticated
+end-to-end **transport opt-in proof**, not a standalone interprocess
+cryptographic signer/service. The full signed-workflow E2E and actual
+server-side MCP signing boundary remain separate follow-up gates.
+Never interpret the broker as holding a second signer, and do not
+expose an MCP crypto method to an ADK model or public A2A client.
 
 ## Retired remote compatibility paths
 
