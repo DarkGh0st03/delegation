@@ -319,12 +319,16 @@ async function prepareCanonicalNativeEffects(authority,options){
  if(!exact(options,fields)&&!exact(options,[...fields,"readObserver"]))deny();
  const {installAuthorization,directories,evidenceKey,...clients}=options;
  const repository=authority.snapshot?.repository;
+ const baseDirs=["mutationIntent","giteaReceipts","runnerIntent",
+  "runnerFailureReceipts","runnerPassReceipts"];
+ const nativeCreateDirs=[...baseDirs,"createIntent","createReceipts"];
+ const hasCreate=Object.hasOwn(directories??{},"createIntent")||
+  Object.hasOwn(directories??{},"createReceipts");
  if(typeof installAuthorization!=="function"||
     typeof repository?.owner!=="string"||typeof repository.repository!=="string"||
     !Buffer.isBuffer(evidenceKey)||evidenceKey.length!==32||
-    !exact(directories,["mutationIntent","giteaReceipts","runnerIntent",
-     "runnerFailureReceipts","runnerPassReceipts"])||
-    new Set(Object.values(directories)).size!==5)
+    !(hasCreate?exact(directories,nativeCreateDirs):exact(directories,baseDirs))||
+    new Set(Object.values(directories)).size!==(hasCreate?7:5))
   deny();
  const pins={...directories},key=Buffer.from(evidenceKey);
  await Promise.all(Object.values(pins).map(dirOwned));
