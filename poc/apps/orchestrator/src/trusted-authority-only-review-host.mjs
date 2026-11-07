@@ -402,7 +402,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        task_id:registered.task_id,agent_id:registered.agent_id,
        operation:registered.permissions.find(p=>
         p.operation==='update_file'||p.operation==='run_tests'||
-        p.operation==='create_pull_request')?.operation
+        p.operation==='create_pull_request')?.operation??
+        (registered.permissions.length===1&&
+         registered.permissions[0]?.operation==='read_file'?'read_file':undefined)
       }));
       return Object.freeze({
        status:'owner_child_enrolled_no_provider_execution',
@@ -1024,7 +1026,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !/^[a-f0-9]{40}$/u.test(input.expectedHeadSha))
       deny('native effect staging requires pinned owner HEAD and live runtime');
      const pin=stagedTaskIds.get(input.runtimeTaskId);
-     if(!pin||!['update_file','run_tests'].includes(pin.operation)||
+     if(!pin||!['read_file','update_file','run_tests'].includes(pin.operation)||
         issuedEffectStagers.has(input.runtimeTaskId)||
         dispatchAttempts.has(input.runtimeTaskId))
       deny('native effect stager requires enrolled, unspent Task');
