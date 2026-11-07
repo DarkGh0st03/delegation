@@ -8,7 +8,8 @@ import {
   createTrustedEffectAgentBindingServer,
   type SpecializedAgentRole
 } from "@thesis/agent-runtime";
-import {requireProductionDirectGatewayTools,requireProductionNativeCrypto} from "./mcp-tool-flags.ts";
+import {requireProductionDirectGatewayTools,requireProductionNativeCrypto,
+ selectOwnerPrivateNativeMcpSigning} from "./mcp-tool-flags.ts";
 import {generateKeyPairSync} from "node:crypto";
 
 function roleFromEnvironment(value: string | undefined): SpecializedAgentRole {
@@ -80,11 +81,8 @@ if(architecture!==undefined&&
 const ownerOnly=architecture==="authority-only";
 // Native MCP signing transport is trusted-host opt-in ONLY. The A2A Task,
 // model and Agent Card cannot choose or broaden this cryptographic path.
-const nativeMcpOptIn=process.env.DELEGATION_PRIVATE_NATIVE_MCP_SIGNING;
-if(nativeMcpOptIn!==undefined&&nativeMcpOptIn!=="1")
- throw Error("Private native MCP signing selector must be exactly 1");
-if(nativeMcpOptIn==="1"&&(!ownerOnly||engine!=="adk"))
- throw Error("Private native MCP signing requires authority-only ADK host");
+const nativeMcpOptIn=selectOwnerPrivateNativeMcpSigning(
+ process.env,architecture,engine);
 if(ownerOnly&&engine!=="adk")
  throw Error("Authority-only Task binding requires ADK runtime");
 const effectRegistry=ownerOnly?new TrustedEffectStagingTaskRegistry():undefined;
@@ -110,7 +108,7 @@ const adk = engine === "adk"
       ...(effectRegistry?{trustedEffectTaskRegistry:effectRegistry}:{}),
       // One native Rust crypto socket handles Child DC and VP; no Adapter HTTP URL.
       adapterToken: required(roleToken),
-      ...(nativeMcpOptIn==="1"
+      ...(nativeMcpOptIn
         ?{nativePresentationTransport:"mcp-stdio" as const}:{}),
       maxModelTurns: turnsFromEnvironment(),
       maxModelCallMs: modelCallTimeoutFromEnvironment(),
