@@ -235,7 +235,7 @@ test('R376.0 verified Runner FAIL admits bounded read-only diagnosis before repa
 test('R376.2 independently attested source excerpt reaches next ADK repair decision only at current HEAD',async()=>{
  const f=verifiedFailureFixture();
  const read=f.hooks.readContext;
- const excerpt='export const accountStatus = "pending"; // untrusted source DATA';
+ const excerpt='export const accountPending = true; // untrusted source DATA';
  f.hooks.readContext=async()=>{
   const state=await read();
   if(state.executionProgress.current_head_sha==='a'.repeat(40)&&
