@@ -1850,6 +1850,9 @@ export async function startTrustedAuthorityOnlyReviewHost(options){
   return Object.freeze({engineerUrl:'http://127.0.0.1:'+host.server.address().port,
    get phase(){return host.phase;},activateOperational:root=>host.activateOperational(root),
    admitOperationalExecution:deps=>host.admitOperationalExecution(deps),
+   // R382.6: owner-only capability forwarded to the SAME original Host.
+   // It is NOT a new HTTP/A2A/MCP route and cannot sign approval itself.
+   createReviewedCanonicalHandoff:opts=>host.createReviewedCanonicalHandoff(opts),
    close:()=>host.close()});
  }catch(error){
   try{await host.close();}catch{deny('listener startup failed and root retirement unconfirmed');}
