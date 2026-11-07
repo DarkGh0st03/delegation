@@ -39,6 +39,15 @@ export function createProtectedGeminiOwnerDispatch({
       return signed;
     },
     runApprovedGeminiDag(input){
+      // R382.4: the historical Signed DAG continuation must NEVER
+      // become a fallback when the original Engineer owner selected
+      // authority-only. This is checked synchronously, BEFORE reading
+      // a signed review, using OIDC, creating a root or invoking Gemini.
+      // Real authority-only execution uses the original Review Host's
+      // runCanonicalOperationalWorkflow after independent root/branch
+      // activation; a model cannot downgrade this private host selector.
+      if(process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only")
+        reject("legacy Signed DAG execution forbidden in authority-only mode");
       if(closed||dispatchPreparing||dispatchAttempted||
          coordinator.phase!=="planning")
         reject("one-use approved DAG already attempted or unavailable");
