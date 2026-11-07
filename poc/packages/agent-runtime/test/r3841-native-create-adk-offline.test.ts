@@ -55,7 +55,7 @@ class ScriptedCreate extends BaseLlm{
  override async *generateContentAsync(req:LlmRequest):
  AsyncGenerator<LlmResponse,void>{
   this.requests.push(req);
-  if(this.requests.length===1||this.repeat){
+  if(this.requests.length===1||(this.repeat&&this.requests.length===2)){
    yield {content:{role:"model",parts:[{functionCall:{
     id:"r3841-create-"+this.requests.length,
     name:"create_file",args:{branch:BRANCH,path:PATH,content:CONTENT}
