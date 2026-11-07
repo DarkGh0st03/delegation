@@ -184,6 +184,9 @@ try{
   params("urn:r292:child:backend",29103,600));
  assert.equal(child.gateway_execution_authorized,false);
  assert.equal(child.root_credential_id,operational.credential_id);
+ if(r3812Stdio)
+  assert.equal(issuer.assertTrustedIssuedChild(taskId,coordinator).credential_id,
+   child.credential_id);
  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
   repository:repo,engineerDid,coordinator,approvals,
   operationalSessionStore:new TrustedOperationalSessionStore(
@@ -301,8 +304,6 @@ try{
  if(r3812Stdio){
   assert.equal(privatePresentationBrokers,3,
    "every signed VP must first use one isolated MCP broker");
-  assert.equal(issuer.assertTrustedIssuedChild(taskId,coordinator).credential_id,
-   child.credential_id);
  }
  process.stdout.write(JSON.stringify({
   event:"r292_authority_only_native_evm_staged",
