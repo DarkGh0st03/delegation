@@ -38,3 +38,7 @@ main byte-for-byte unchanged, root retired after bounded stop.
 
 No human GUI click, no generative code synthesis beyond a scripted
 source append; code is a test fixture. GitHub PR #38 remains Draft.
+
+## R371.2 source-branch guard correction
+
+The R371.1 attempt [run 42344529541](https://github.com/DarkGh0st03/delegation/actions/runs/42344529541) failed **before** root issuance. The Review Host legitimately rejects an explicit `snapshot.planning_branch="main"` override when the approved work branch is `feature/account-suspension`. The correct pre-existing branch-first contract is to **omit** that optional override: the original Planner's read-only default is `main` (as in R354), while `workBranch` remains the signed feature branch. The snapshot also lists only files genuinely present in protected, unresolved main. No validation or branch-protection rules are weakened. Still unverified until the new native workflow passes.

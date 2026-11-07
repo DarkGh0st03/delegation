@@ -1,13 +1,17 @@
 {
-  "checkpoint": "R371.1",
-  "previous_R371_native_failed_run": 42343999180,
-  "failure": "Disposable Gitea main protected: gateway client attempting owner-only reference seed got HTTP 403 before Engineer/root. Main policy remains unchanged.",
-  "new_focus": "Original protected unsolved main remains byte-for-byte untouched. ADK free Planner reads main. Engineer signs create_branch + Backend exact file read/update. Original Host launcher creates and independently attests feature branch then starts protected SDK A2A and executes Backend native read/CAS. No Frontend/Test/Runner/PR asserted.",
-  "original_R370_native_complete_run": 42342454494,
-  "paid_inference": false,
-  "branch_before_model": true,
-  "expected_gateway_completed_tasks": 2,
-  "expected_backend_child_credentials": 1,
-  "main_immutable": true,
-  "validation": "R371.1 native CI success on exact HEAD required"
+  "checkpoint": "R371.2",
+  "original_R370_validated_run": 42342454494,
+  "R371_0_native_failure": {
+    "run_id": 42343999180,
+    "reason": "Protected main prohibits preapproval fixture writes (HTTP 403)"
+  },
+  "R371_1_native_failure": {
+    "run_id": 42344529541,
+    "reason": "The original Review Host correctly rejects an explicit planning_branch=main because source branch overrides must equal work branch"
+  },
+  "correction": "Use the original branch-first default main Planning snapshot, as validated by R354, omitting planning_branch rather than weakening the original Host guard. Scope source files only to the genuinely existing unresolved Backend file.",
+  "invariant": "main protected and unchanged, original Engineer approval file, model-selected original root branch, independent branch GET, then SDK Backend read and CAS only. No Docker/PR claims.",
+  "no_paid_model": true,
+  "main_branch_change": false,
+  "valid_until_native_success": false
 }

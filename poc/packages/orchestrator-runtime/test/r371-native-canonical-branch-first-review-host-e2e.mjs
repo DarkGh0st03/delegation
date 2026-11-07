@@ -317,9 +317,9 @@ try{
    bearerToken:tokens.engineer,timeoutMs:60000
   });
   const snapshot={session_id:sessionId,repository:repo,
-   base_revision:baseRevision,planning_branch:"main",
-   directories:["","apps/backend","apps/frontend"],
-   files:[backendPath,mutationPath]};
+   base_revision:baseRevision,
+   directories:["","apps","apps/backend","apps/backend/src","apps/backend/src/users"],
+   files:[backendPath]};
   const status=index=>({type:"BitstringStatusListEntry",
    statusPurpose:"revocation",statusListIndex:String(index),
    statusListCredential:"https://status.example/r371"});
