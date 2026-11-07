@@ -565,12 +565,13 @@ async function localPort(){
  await new Promise((ok,bad)=>server.close(e=>e?bad(e):ok()));
  return addr.port;
 }
-test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after native Child enrollment',async t=>{
+test('R367.1 same-session Owner starts pinned SDK A2A before first Task/Child',async t=>{
  const f=await fixture(t),host=await f.start();
  await f.approve(['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:sdk-root',2));
- const deps=executionDeps(f);
+ const deps=executionDeps(f);let issuedChildren=0;
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  issuedChildren++;
   return {id:req.credential_id,validFrom:req.valid_from,
    credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status)};
@@ -578,7 +579,8 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
  const execution=await host.admitOperationalExecution(deps);
  const {stageTask,startSdkA2AOwner}=execution;
  const stage=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
- await stageTask(stage);
+ assert.equal(coordinator.registeredTaskCount,0);
+ assert.equal(issuedChildren,0);
  const temp=await mkdtemp(join(tmpdir(),'r350sdk-'));
  const roles=['backend','frontend','test'];
  const stageChannels={},agentBindingChannels={},a2aUrls={};
@@ -615,6 +617,13 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
   });
   assert.equal('dispatchIssuedTask' in owner,false);
   assert.equal('attestIndependentGatewayCompletion' in owner,false);
+  // No Task/Child existed when the protected SDK owner started. The first
+  // native Child is admitted only after the original owner has booted.
+  assert.equal(coordinator.registeredTaskCount,0);
+  assert.equal(issuedChildren,0);
+  await stageTask(stage);
+  assert.equal(coordinator.registeredTaskCount,1);
+  assert.equal(issuedChildren,1);
   const {dispatchEnrolledTask,bindNativeGatewayEffects,
    createEnrolledNativeEffectStager,attestEnrolledTaskCompletion}=execution;
   await assert.rejects(attestEnrolledTaskCompletion({
@@ -661,7 +670,7 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
   }),/original owner-bound effect stager/);
   await assert.rejects(startSdkA2AOwner({
    stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
-  }),/requires an enrolled Child/);
+  }),/requires independently verified branch and quiescent live root/);
   // Startup is NOT provider success and cannot fabricate a completion.
   await assert.rejects(execution.attestEnrolledTaskCompletion({
    taskId:stage.task.task_id,runtimeTaskId:stage.runtimeTaskId

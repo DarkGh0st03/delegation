@@ -422,14 +422,17 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       throw error;
      }finally{taskStageFlight=undefined;}
     },
-    /** R350.3: only the trusted owner may provision SDK A2A agent endpoints
+    /** R367.1: SDK A2A must start AFTER original root/branch verification
+     * but BEFORE a model chooses the first worker Task/Child. Later exact
+     * private binds still require an admitted native Child and Task.
+     * Only the trusted owner may provision SDK A2A agent endpoints
      * and distinct private role-pinned IPC. No LLM/HTTP/Engineer approval
      * endpoint can pass a Coordinator, issuer, Gateway or signing key. */
     async startSdkA2AOwner(config){
      if(closed||session.phase!=='operational'||taskStageFailed||
-        taskStageFlight||stagedTaskCount<1||gateway.phase!=='active'||
+        taskStageFlight||!branchReadyForWorkers()||gateway.phase!=='active'||
         a2aStartAttempted||a2aStarting||a2aOwner)
-      deny('A2A Owner requires an enrolled Child and quiescent live root');
+      deny('A2A Owner requires independently verified branch and quiescent live root');
      if(!fields(config,['agentBaseUrls','stageChannels','agentBindingChannels',
        'a2aPolling'])||
         !fields(config.agentBaseUrls,['backend','frontend','test'])||

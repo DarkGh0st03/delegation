@@ -22,3 +22,16 @@ ordering on real providers without pre-registering Tasks. Gemini authorship,
 generalized source diagnostics, canonical paid launcher and GUI remain open.
 
 No paid inference, no PR merge, and no change to main.
+
+## R367.1 — pre-Task A2A lifecycle
+
+The original Review Host no longer requires a pre-issued worker Child to
+start protected SDK A2A channels. A create_branch permission still requires
+its original root-signed branch Task to be independently completed first;
+for an existing approved feature branch, the active original Engineer root
+suffices. The first model-selected Task/Child is enrolled **after** SDK
+startup. The original R350.3 offline fixture now asserts that A2A bootstrap
+succeeds while Coordinator registeredTaskCount and native Child issuance
+are both zero, then successfully enrolls exactly one Child afterward.
+This is a focused lifecycle check with offline issuer/provider fixtures,
+not the full native R367 adaptive 3-role proof.
