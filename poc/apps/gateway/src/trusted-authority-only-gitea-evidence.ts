@@ -102,6 +102,13 @@ export class AuthenticatedGiteaReadCompletionObserver{
   this.#maxAgeMs=maxAgeMs;
   this.#nowMs=opts.nowMs??Date.now;
  }
+ /** The original host may install this independent reader only for its
+  * exact immutable repository and branch. Not an A2A or model capability. */
+ isForRepository(repository:string,branch:string):boolean{
+  const [owner,name]=repository.split("/");
+  return this.#repository===repository&&this.#branch===branch&&
+   !!owner&&!!name&&GiteaClient.isPinnedRepositoryClient(this.#gitea,owner,name);
+ }
  toTrustedObserver():TrustedAuthorityOnlyCompletionObserver{
   return new TrustedAuthorityOnlyCompletionObserver({
    readVerifiedCompletion:(expected)=>this.observe(expected)
@@ -109,6 +116,28 @@ export class AuthenticatedGiteaReadCompletionObserver{
  }
  async observe(expected:Readonly<TrustedCompletionExpectation>)
   :Promise<ObservedTrustedTaskCompletion>{
+  return (await this.#observeVerified(expected)).completion;
+ }
+ /** R376: only AFTER the same MAC+independent Gitea verification used for
+  * Gateway completion, expose a bounded source excerpt to the private owner.
+  * Caller must additionally match the returned path to the signed Task URI.
+  * Text is untrusted DATA; no new permission or success is asserted. */
+ async observeSource(expected:Readonly<TrustedCompletionExpectation>){
+  const {completion,source}=await this.#observeVerified(expected);
+  const excerpt=source.content.slice(0,4096);
+  return Object.freeze({
+   status:"owner_verified_bounded_gitea_source_observation" as const,
+   task_id:completion.task_id,runtime_task_id:completion.runtime_task_id,
+   path:source.path,revision:source.revision,
+   source_sha256:source.source_sha256,source_bytes:source.source_bytes,
+   excerpt,excerpt_truncated:excerpt.length<source.content.length,
+   evidence_sha256:completion.evidence_sha256
+  });
+ }
+ async #observeVerified(expected:Readonly<TrustedCompletionExpectation>):
+  Promise<{completion:ObservedTrustedTaskCompletion;
+   source:Readonly<{path:string;revision:string;source_sha256:string;
+    source_bytes:number;content:string}>}>{
   if(!expected||typeof expected!=="object"||
      !ID.test(expected.session_id)||!ID.test(expected.request_id)||
      !ID.test(expected.task_id)||!ID.test(expected.credential_id)||
@@ -186,9 +215,14 @@ export class AuthenticatedGiteaReadCompletionObserver{
    deny("independent Gitea contents do not match authenticated result");
   if(this.#nowMs()>=record.completed_at_ms+this.#maxAgeMs)
    deny("evidence expired during provider verification");
-  return Object.freeze({...structuredClone(expected),
-   status:"owner_verified_provider_result",
-   evidence_sha256:hash(canonical(record)),
-   completed_at_ms:record.completed_at_ms});
+  return Object.freeze({
+   completion:Object.freeze({...structuredClone(expected),
+    status:"owner_verified_provider_result" as const,
+    evidence_sha256:hash(canonical(record)),
+    completed_at_ms:record.completed_at_ms}),
+   source:Object.freeze({path:record.path,revision:record.revision,
+    source_sha256:record.source_sha256,source_bytes:record.source_bytes,
+    content:observed.content})
+  });
  }
 }
