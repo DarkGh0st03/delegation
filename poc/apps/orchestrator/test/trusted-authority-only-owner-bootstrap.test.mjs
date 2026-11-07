@@ -266,4 +266,23 @@ test("operational bootstrap reuses the original session store and reserves the R
   agent_role:"orchestrator",tool:"create_branch"
  }),/bootstrap denied/u);
  assert.equal(typeof prepared.workflow.draftPullRequest.execute,"function");
+
+ const reservationDirectory=f.at("status-reservations");
+ await mkdir(reservationDirectory,{mode:0o700});
+ const {reserveRoot,...nativeOptions}=operational;
+ const rootAuthority={...pinnedAuthority,preliminaryRoot:f.config.preliminaryRoot};
+ const rootReservation={directory:reservationDirectory,index:"19",validitySeconds:600};
+ await assert.rejects(createProtectedCanonicalOperationalProvision(rootAuthority,{
+  ...nativeOptions,rootReservation:{...rootReservation,index:f.config.preliminaryRoot.credential_status.statusListIndex}
+ }),/bootstrap denied/u);
+ const provisioners=await Promise.all([1,2].map(()=>
+  createProtectedCanonicalOperationalProvision(rootAuthority,{...nativeOptions,rootReservation})));
+ assert.deepEqual(await readdir(reservationDirectory),[]);
+ const attempts=await Promise.allSettled(provisioners.map(make=>make()));
+ const successes=attempts.filter(result=>result.status==="fulfilled");
+ assert.equal(successes.length,1);
+ assert.equal(successes[0].value.root.credential_status.statusListIndex,"19");
+ assert.match(attempts.find(result=>result.status==="rejected").reason.message,/already reserved/u);
+ assert.equal((await readdir(reservationDirectory)).length,1);
+
 });

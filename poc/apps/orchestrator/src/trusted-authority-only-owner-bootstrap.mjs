@@ -11,7 +11,7 @@
 import {constants} from "node:fs";
 import {lstat,open,realpath} from "node:fs/promises";
 import {isAbsolute,dirname,join,resolve} from "node:path";
-import {createPublicKey,createPrivateKey,timingSafeEqual} from "node:crypto";
+import {createPublicKey,createPrivateKey,randomUUID,timingSafeEqual} from "node:crypto";
 import {AuthorityPlanningCheckpointStore}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts";
 import {DurableAuthorityOnlyActivationJournal}
@@ -45,6 +45,8 @@ import {createTrustedAuthorityOnlyRootEffectTransport}
  from "./trusted-authority-only-root-effect-transport.mjs";
 import {prepareAuthorization} from "../../gateway/src/prepare.ts";
 import {executeAuthorization} from "../../gateway/src/execute.ts";
+import {persistStatusIndexReservation}
+ from "../../../packages/orchestrator-runtime/src/trusted-status-index-reservation.ts";
 
 const SHA=/^[0-9a-f]{40}$/u;
 const HEX=/^[0-9a-f]+$/u;
@@ -338,6 +340,41 @@ async function prepareCanonicalNativeEffects(authority,options){
  };
 }
 
+async function prepareOperationalRootReservation(authority,options){
+ const preliminary=authority.preliminaryRoot?.credential_status;
+ const list=preliminary?.statusListCredential;
+ const sessionId=authority.snapshot?.session_id;
+ if(!exact(options,["directory","index","validitySeconds"])||
+    !ID.test(sessionId??"")||
+    typeof options.index!=="string"||!/^(0|[1-9][0-9]{0,7})$/u.test(options.index)||
+    !/^\d+$/u.test(preliminary?.statusListIndex??"")||
+    Number(options.index)===Number(preliminary.statusListIndex)||
+    !Number.isSafeInteger(options.validitySeconds)||
+    options.validitySeconds<1||options.validitySeconds>7200||
+    typeof list!=="string"||list.length>1024)
+  deny();
+ const uri=URL.canParse(list)?new URL(list):undefined;
+ if(uri?.protocol!=="https:"||uri.href!==list||
+    uri.username||uri.password||uri.hash||uri.search)deny();
+ const {directory,index,validitySeconds}=options;
+ await dirOwned(directory);
+ return async()=>{
+  await dirOwned(directory);
+  const credentialId="urn:operational-root:"+randomUUID();
+  await persistStatusIndexReservation(directory,list,index,{
+   version:1,session_id:sessionId,credential_id:credentialId,status_list:list,index
+  });
+  return {
+   credential_id:credentialId,valid_from:new Date().toISOString(),
+   validity_seconds:validitySeconds,
+   credential_status:{
+    type:"BitstringStatusListEntry",statusPurpose:"revocation",
+    statusListCredential:list,statusListIndex:index
+   }
+  };
+ };
+}
+
 /** Assemble the fixed operational dependencies without reserving or issuing
  * a Root. Provider and A2A capabilities are supplied by the trusted host. */
 export async function createProtectedCanonicalOperationalProvision(
@@ -346,10 +383,11 @@ export async function createProtectedCanonicalOperationalProvision(
  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
     process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
     !exact(operational,["journalDirectory","orchestratorTokenFile",
-    "reserveRoot","completionObserver","workflow",
+    operational?.rootReservation===undefined?"reserveRoot":"rootReservation",
+    "completionObserver","workflow",
     operational?.nativeEffects===undefined?"prepareNativeEffects":"nativeEffects",
     ...(Object.hasOwn(operational??{},"rootGateway")?["rootGateway"]:[])])||
-    typeof operational.reserveRoot!=="function"||
+    (operational.rootReservation===undefined&&typeof operational.reserveRoot!=="function")||
     (operational.nativeEffects===undefined&&
      typeof operational.prepareNativeEffects!=="function")||
     !(operational.completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
@@ -357,8 +395,9 @@ export async function createProtectedCanonicalOperationalProvision(
     operational.workflow?.createBranch?.branch!==authority.workBranch||
     operational.workflow?.createBranch?.baseBranch!=="main")
   deny();
- const {journalDirectory,orchestratorTokenFile,reserveRoot,completionObserver,
-  workflow}=operational;
+ const {journalDirectory,orchestratorTokenFile,completionObserver,workflow}=operational;
+ const reserveRoot=operational.rootReservation===undefined?operational.reserveRoot:
+  await prepareOperationalRootReservation(authority,operational.rootReservation);
  const assembleEffects=operational.nativeEffects===undefined?undefined:
   await prepareCanonicalNativeEffects(authority,operational.nativeEffects);
  const {rootGateway}=operational;

@@ -134,6 +134,15 @@ the original repository and the installed Gateway authorization. Each
 effect can sign its prepared challenge once. Keep SDK A2A configuration
 and the Root reservation capability in the trusted owner process.
 
+To use built-in operational Root reservation, pass `rootReservation`
+instead of `reserveRoot`. Provide `directory`, a preallocated `index`
+as a decimal string, and `validitySeconds` (1–7200). Use the same
+private reservation directory for all allocations on that Status List,
+with indices provisioned by the operator. The list URI comes from the
+preliminary Root. After signed review, the bootstrap reserves the index
+durably and generates a fresh credential ID. The original Engineer host
+still issues the Root through Rust.
+
 **Not yet complete:** the executable owner process needs its
 trusted operational `provision` implementation and a newly validated
 same-SHA full native E2E after the CLI/bootstrap migration. R381.8

@@ -10,10 +10,9 @@
  * This is an allocation boundary, not a VC signer. The Rust Adapter
  * independently enforces the actual attenuated child permissions.
  */
-import {createHash,randomBytes} from "node:crypto";
-import {constants} from "node:fs";
-import {lstat,open} from "node:fs/promises";
-import {join} from "node:path";
+import {randomBytes} from "node:crypto";
+import {lstat} from "node:fs/promises";
+import {persistStatusIndexReservation} from "./trusted-status-index-reservation.ts";
 import {assertApprovedPlanScope,planDigest}
   from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS}
@@ -136,34 +135,15 @@ export async function createTrustedApprovedTaskAuthorityAllocator(input:
     // Synchronously reserve one attempt before any filesystem await.
     used.add(taskId);
     const index=allocation.get(taskId)!;
-    const token=createHash("sha256").update(listUri+"\n"+index).digest("hex");
-    const location=join(dirPath,token+".reservation.json");
     const childId="urn:task-child:"+randomBytes(16).toString("hex");
-    let fd;
     try{
-      fd=await open(location,
-        constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY|
-        constants.O_NOFOLLOW,0o600);
-      await fd.writeFile(JSON.stringify({
+      await persistStatusIndexReservation(dirPath,listUri,index,{
         version:1,session_id:input.sessionId,task_id:taskId,
         role,credential_id:childId,status_list:listUri,index
-      }));
-      await fd.sync();
-    }catch{
-      // Includes EEXIST from a prior run/crash. Never retry the index.
-      fail("Status List index already reserved or persistence unconfirmed");
-    }finally{
-      await fd?.close();
+      });
+    }catch(error){
+      fail(error instanceof Error?error.message:"Status List reservation failed");
     }
-    // A failed fsync or a deleted directory is terminal. Keep tombstones.
-    let directoryFd;
-    try{
-      directoryFd=await open(dirPath,
-        constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
-      await directoryFd.sync();
-    }catch{
-      fail("Status List reservation durability unconfirmed");
-    }finally{await directoryFd?.close();}
     if(input.coordinator.phase!=="execution")
       fail("operational root closed after Task index reservation");
     return {
