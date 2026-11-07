@@ -21,7 +21,7 @@ jobs:
       ENGINEER_CORE_NATIVE_MODE: "1"
       R233_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
-      R3812_NATIVE_MCP_STDIO: "1"
+      R3813_NATIVE_MCP_SIGNING: "1"
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: r233-engineer-local
       ADAPTER_CALLER_GATEWAY: r233-gateway-local
@@ -150,12 +150,12 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/native-evm-adapter.pid
-      - name: R381.2 original Child -> MCP stdio -> native Rust VP/EVM/OPA deny (No AI)
+      - name: R381.3 MCP subprocess native Rust Child and VP/EVM/OPA deny (No AI)
         run: |
           set -o pipefail
           node --check poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs
           node --experimental-strip-types poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs |
-            tee "$RUNNER_TEMP/r3812-native-result.jsonl"
+            tee "$RUNNER_TEMP/r3813-native-result.jsonl"
           node -e '
           const fs=require("node:fs"),assert=require("node:assert/strict");
           const rows=fs.readFileSync(process.argv[1],"utf8").split(/\r?\n/).filter(Boolean);
@@ -167,17 +167,17 @@ jobs:
             "native_signed_vp","independent_rust_evm_status",
             "native_verified_root_provenance","real_opa_allow",
             "unbound_child_denied","revoked_root_denied",
-            "r3812_native_stdio_mcp_child_and_vp","child_original_root_pinned",
+            "r3813_native_rust_signing_in_private_mcp_process","child_original_root_pinned",
             "native_root_revoked"])assert.equal(e[key],true,key);
           assert.equal(e.presentation_broker_count,3);
           assert.equal(e.native_presentation_count,3);
           assert.equal(e.provider_calls,0);
           assert.equal(e.gateway_execution_authorized,false);
           assert.equal(e.paid_model_calls,0);
-          console.log(JSON.stringify({event:"r3812_native_child_vp_stdio_verified",
+          console.log(JSON.stringify({event:"r3813_native_child_vp_rust_stdio_verified",
             status:"pass",mcp_stdio_child:true,mcp_stdio_vp_count:3,
             native_rust_evm_opa:true,provider_effects:0,paid_model_calls:0}));
-          ' "$RUNNER_TEMP/r3812-native-result.jsonl"
+          ' "$RUNNER_TEMP/r3813-native-result.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only
