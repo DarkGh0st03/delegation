@@ -267,6 +267,35 @@ test("operational bootstrap reuses the original session store and reserves the R
  }),/bootstrap denied/u);
  assert.equal(typeof prepared.workflow.draftPullRequest.execute,"function");
 
+ // R383.9: CREATE is opt-in ONLY when BOTH separately protected owner
+ // directories exist. Reusing UPDATE receipts or an untrusted path is a deny.
+ const createIntent=f.at("createIntent"),createReceipts=f.at("createReceipts");
+ await mkdir(createIntent,{mode:0o700});
+ await mkdir(createReceipts,{mode:0o700});
+ const withNativeCreate={...directories,createIntent,createReceipts};
+ const createOptions={...builtIn,nativeEffects:{
+  ...builtIn.nativeEffects,directories:withNativeCreate
+ }};
+ const createProvision=await createProtectedCanonicalOperationalProvision(
+  pinnedAuthority,createOptions);
+ assert.equal(typeof createProvision,"function");
+ await assert.rejects(createProtectedCanonicalOperationalProvision(
+  pinnedAuthority,{...createOptions,nativeEffects:{
+   ...createOptions.nativeEffects,directories:{...directories,createIntent}
+  }}
+ ),/bootstrap denied/u);
+ await chmod(createReceipts,0o755);
+ await assert.rejects(createProtectedCanonicalOperationalProvision(
+  pinnedAuthority,createOptions),/bootstrap denied/u);
+ await chmod(createReceipts,0o700);
+ await assert.rejects(createProtectedCanonicalOperationalProvision(
+  pinnedAuthority,{...createOptions,nativeEffects:{
+   ...createOptions.nativeEffects,directories:{
+    ...directories,createIntent,createReceipts:directories.giteaReceipts
+   }
+  }}
+ ),/bootstrap denied/u);
+
  const reservationDirectory=f.at("status-reservations");
  await mkdir(reservationDirectory,{mode:0o700});
  const {reserveRoot,...nativeOptions}=operational;
