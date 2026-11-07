@@ -38,15 +38,6 @@ const SCHEMAS = {
   }).strict()
 } as const satisfies Record<SpecializedToolName, z.ZodObject<z.ZodRawShape>>;
 
-/** Approved Task capability types, independent of the historic IAM Console
- * profile. Exact resources/operations still come from signed plan + Gateway. */
-const APPROVED_ROLE_TOOLS:Readonly<Record<SpecializedAgentRole,
- readonly SpecializedToolName[]>>=Object.freeze({
-  backend:Object.freeze(["read_file","update_file","create_file"]),
-  frontend:Object.freeze(["read_file","update_file","create_file"]),
-  test:Object.freeze(["read_file","update_file","create_file","run_tests"])
-});
-
 export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> };
 
 /**
@@ -175,8 +166,11 @@ export function createAdkSpecializedAgent(
   // (already derived privately from the signed plan) is the file profile.
   // Legacy tasks without signed per-operation hints retain the original
   // Account Suspension role allowlists for backward compatibility.
-  const availableTools:readonly SpecializedToolName[]=signedTask
-    ? APPROVED_ROLE_TOOLS[config.role]:baseline.tools;
+  // Permanent role capabilities come from the SAME canonical approved
+  // profile used to publish/verify the A2A Agent Card, not a second ADK
+  // allowlist. Task grants only select visible paths and eligible effects;
+  // they never add a capability to the role or authorize Gateway execution.
+  const availableTools:readonly SpecializedToolName[]=baseline.tools;
   const writable=signedTask
     ? taskPaths.filter(path=>availableTools.includes("update_file")&&
         hasGrant("update_file",path))
