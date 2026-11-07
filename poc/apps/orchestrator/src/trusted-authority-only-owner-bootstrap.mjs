@@ -41,6 +41,10 @@ import {TrustedAuthorityOnlyCompletionObserver}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
 import {assembleTrustedAuthorityOnlyNativeEffects}
  from "./trusted-authority-only-native-effects.mjs";
+import {createTrustedAuthorityOnlyRootEffectTransport}
+ from "./trusted-authority-only-root-effect-transport.mjs";
+import {prepareAuthorization} from "../../gateway/src/prepare.ts";
+import {executeAuthorization} from "../../gateway/src/execute.ts";
 
 const SHA=/^[0-9a-f]{40}$/u;
 const HEX=/^[0-9a-f]+$/u;
@@ -326,9 +330,10 @@ async function prepareCanonicalNativeEffects(authority,options){
   });
   return Object.freeze({
    binding:effects.binding,
-   install:()=>installAuthorization(Object.freeze({
+   authorization:Object.freeze({
     store:effects.binding.store,authorityOnlyAdmissions:gateway,...effects.authorization
-   }))
+   }),
+   install:installAuthorization
   });
  };
 }
@@ -342,7 +347,8 @@ export async function createProtectedCanonicalOperationalProvision(
     process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
     !exact(operational,["journalDirectory","orchestratorTokenFile",
     "reserveRoot","completionObserver","workflow",
-    operational?.nativeEffects===undefined?"prepareNativeEffects":"nativeEffects"])||
+    operational?.nativeEffects===undefined?"prepareNativeEffects":"nativeEffects",
+    ...(Object.hasOwn(operational??{},"rootGateway")?["rootGateway"]:[])])||
     typeof operational.reserveRoot!=="function"||
     (operational.nativeEffects===undefined&&
      typeof operational.prepareNativeEffects!=="function")||
@@ -355,6 +361,17 @@ export async function createProtectedCanonicalOperationalProvision(
   workflow}=operational;
  const assembleEffects=operational.nativeEffects===undefined?undefined:
   await prepareCanonicalNativeEffects(authority,operational.nativeEffects);
+ const {rootGateway}=operational;
+ if(Object.hasOwn(operational,"rootGateway")&&
+    (!assembleEffects||!exact(rootGateway,["audit","verifier","policy","executor"])||
+     !rootGateway.audit||!rootGateway.verifier||!rootGateway.policy||!rootGateway.executor||
+     [workflow.createBranch,workflow.draftPullRequest].some(effect=>
+      effect&&(Object.hasOwn(effect,"prepare")||Object.hasOwn(effect,"execute")))||
+     (workflow.draftPullRequest&&
+      (workflow.draftPullRequest.headBranch!==authority.workBranch||
+       workflow.draftPullRequest.baseBranch!=="main"))))
+  deny();
+ const repository=authority.snapshot?.repository;
  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  if(!path(socketPath)||socketPath.length>100)deny();
  await dirOwned(journalDirectory);
@@ -384,15 +401,38 @@ export async function createProtectedCanonicalOperationalProvision(
   const root=await reserveRoot();
   if(!assembleEffects)return {root,dependencies,workflow,
    prepareNativeEffects:operational.prepareNativeEffects};
-  let install;
+  let effects,authorization;
+  const withRootTransport=effect=>{
+   const transport=createTrustedAuthorityOnlyRootEffectTransport({
+    native:{socketPath,token:bearerToken,timeoutMs:60000},
+    credentialId:root.credential_id,permission:effect.permission,
+    prepareGateway(request){
+     if(!authorization)deny();
+     return prepareAuthorization(request,{
+      audience:"cloud-access-gateway",request_ttl_ms:120000,repository
+     },{...authorization,audit:rootGateway.audit});
+    },
+    executeGateway(input){
+     return executeAuthorization(input,{...rootGateway,...authorization,repository});
+    }
+   });
+   return {...effect,...transport};
+  };
   return {
-   root,dependencies,workflow,
+   root,dependencies,
+   workflow:rootGateway?{
+    ...workflow,createBranch:withRootTransport(workflow.createBranch),
+    ...(workflow.draftPullRequest?{draftPullRequest:withRootTransport(workflow.draftPullRequest)}:{})
+   }:workflow,
    prepareNativeEffects(gateway){
-    const effects=assembleEffects(gateway);
-    install=effects.install;
+    effects=assembleEffects(gateway);
     return effects.binding;
    },
-   installNativeAuthorization(){return install();}
+   async installNativeAuthorization(){
+    if(!effects||authorization)deny();
+    await effects.install(effects.authorization);
+    authorization=effects.authorization;
+   }
   };
  };
 }

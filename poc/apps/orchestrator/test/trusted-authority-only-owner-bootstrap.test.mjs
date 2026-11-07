@@ -234,4 +234,36 @@ test("operational bootstrap reuses the original session store and reserves the R
  assert.equal(typeof result.dependencies.nativeCryptoPort.issueChildViaPrivateMcp,"function");
  await assert.rejects(provision(),/bootstrap denied/u);
  assert.equal(reservations,1);
+
+ const directories=Object.fromEntries([
+  "mutationIntent","giteaReceipts","runnerIntent","runnerFailureReceipts","runnerPassReceipts"
+ ].map(name=>[name,f.at(name)]));
+ await Promise.all(Object.values(directories).map(dir=>mkdir(dir,{mode:0o700})));
+ const {prepareNativeEffects,...base}=operational;
+ const builtIn={
+  ...base,workflow:{
+   createBranch:{...operational.workflow.createBranch,
+    permission:{resource:"gitea://gitea.local/thesis/iam",operation:"create_branch"}},
+   draftPullRequest:{headBranch:authority.workBranch,baseBranch:"main",
+    permission:{resource:"gitea://gitea.local/thesis/iam",operation:"create_pull_request"}}
+  },
+  nativeEffects:{store:{},giteaClient:{},independentGiteaClient:{},runnerClient:{},
+   runnerPassObserver:{},directories,evidenceKey:Buffer.alloc(32),
+   installAuthorization(){throw Error("must wait for native binding");}},
+  rootGateway:{audit:{},verifier:{},policy:{},executor:{}}
+ };
+ const pinnedAuthority={...authority,snapshot:f.config.snapshot};
+ await assert.rejects(createProtectedCanonicalOperationalProvision(pinnedAuthority,{
+  ...builtIn,workflow:{...builtIn.workflow,createBranch:{
+   ...builtIn.workflow.createBranch,prepare(){throw Error("foreign transport");}
+  }}
+ }),/bootstrap denied/u);
+ const builtInProvision=await createProtectedCanonicalOperationalProvision(pinnedAuthority,builtIn);
+ assert.equal(reservations,1);
+ const prepared=await builtInProvision();
+ assert.equal(reservations,2);
+ await assert.rejects(prepared.workflow.createBranch.prepare({
+  agent_role:"orchestrator",tool:"create_branch"
+ }),/bootstrap denied/u);
+ assert.equal(typeof prepared.workflow.draftPullRequest.execute,"function");
 });

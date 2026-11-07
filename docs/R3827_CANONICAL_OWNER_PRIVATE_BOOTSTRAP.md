@@ -126,6 +126,14 @@ After the Review Host accepts the binding, the trusted
 with the same request store and Gateway admissions. R375 uses the same
 provider assembly.
 
+For built-in Branch and Draft PR transport, also pass `rootGateway`
+with the trusted `audit`, `verifier`, `policy`, and `executor` ports.
+Omit `prepare` and `execute` from the Branch and optional Draft PR
+workflow entries. The bootstrap binds both effects to the reserved Root,
+the original repository and the installed Gateway authorization. Each
+effect can sign its prepared challenge once. Keep SDK A2A configuration
+and the Root reservation capability in the trusted owner process.
+
 **Not yet complete:** the executable owner process needs its
 trusted operational `provision` implementation and a newly validated
 same-SHA full native E2E after the CLI/bootstrap migration. R381.8
