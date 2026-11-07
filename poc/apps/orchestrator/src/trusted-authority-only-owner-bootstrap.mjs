@@ -43,6 +43,9 @@ const AGENTS={
  orchestrator:["create_branch","create_pull_request"]
 };
 const URL_ALLOWED=new Set(["127.0.0.1"]);
+// A caller cannot forge the result of the protected 0600 manifest reader,
+// nor use it twice to assemble two native Roots after an ambiguous startup.
+const verifiedManifest=new WeakSet();
 function deny(){throw Error("Protected canonical authority bootstrap denied");}
 function plain(x){return x!==null&&typeof x==="object"&&!Array.isArray(x)&&
  Object.getPrototypeOf(x)===Object.prototype;}
@@ -149,8 +152,8 @@ function assertManifest(x,expectedSourceSha){
     new Set(Object.values(x.directories)).size!==DIRS.length||
     !Object.values(x.native).every(path)||
     !path(x.checkpoint.backendPublicKeyFile)||
-    !Object.values(x.approval)
-      .filter((_,i)=>i>=2).every(path))
+    !["publicKeyFile","privateKeyFile","passwordSaltHexFile",
+      "passwordScryptHexFile"].every(k=>path(x.approval[k])))
   deny();
 }
 
@@ -191,11 +194,13 @@ export async function loadProtectedCanonicalOwnerManifest(
  if(!HEX.test(saltHex)||saltHex.length!==32||
     !HEX.test(scryptHex)||scryptHex.length!==128)deny();
  const pins=frozen(data);
- return Object.freeze({
+ const result=Object.freeze({
   pins,
   backendPublicKeyPem,engineerPublicKeyPem,
   passwordSaltHex:saltHex,passwordScryptHex:scryptHex
  });
+ verifiedManifest.add(result);
+ return result;
 }
 
 /**
@@ -206,7 +211,8 @@ export async function loadProtectedCanonicalOwnerManifest(
  */
 export async function assembleProtectedCanonicalOwnerAuthority(loaded){
  const x=loaded?.pins;
- if(!x||process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+ if(!x||!verifiedManifest.delete(loaded)||
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
     process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
     process.env.ENGINEER_CORE_NATIVE_MODE!=="1")
   deny();
