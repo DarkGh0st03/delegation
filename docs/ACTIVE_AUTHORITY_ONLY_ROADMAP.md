@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R380.0)
+## Piano attivo — aggiornato al 7 novembre 2026 (R380.1)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -94,14 +94,29 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   PASS con >128 file e controlli negativi su out-of-snapshot, branch e write.
   **Non** è ancora discovery ricorsiva dinamica di file che non compaiono nello
   snapshot né una nuova prova Rust/EVM nativa del root subtree.
-- **R380.1 ancora aperto**: il Gateway possiede
-  `prepareReadCompositeAuthorization` e `executeReadCompositeAuthorization`
-  con un'unica VP multipermission e verifiche OPA prima del primo provider IO,
-  ma il `GatewayRuntime` con authority-only admissions rifiuta ancora
-  la route composite. Non sostituire questa prova con un loop di letture
-  singole chiamato "batch"; progettare e testare un'eccezione trusted
-  Planning-only che conservi il pin della Root preliminare e la separazione
-  da Task operativi, oppure mantenere il rifiuto finché non sia possibile.
+- **R380.1 completato nel percorso Planning preliminare separato**:
+  `OrchestratorGatewayTransport.invokeReadComposite` usa le route
+  `prepare-read-composite` / `execute-read-composite` del Gateway e
+  richiede **una sola VP multipermission** per 2–12 operazioni, con
+  risposta/challenge/permission/SHA verificate prima della firma. Il
+  `TrustedPlanningGatewayReadPort` verifica ogni azione contro lo
+  snapshot originale, il branch, la Root ancora attiva e la revoca. Nessun
+  fallback a singole chiamate, nessun effetto write/test. Il Planner ADK
+  espone `read_files` SOLO quando il port trusted implementa il batch:
+  contenuti e byte budget vengono validati in blocco prima di inviare
+  qualsiasi file al modello. [Planner offline preflight
+  #42370109868](https://github.com/DarkGh0st03/delegation/actions/runs/42370109868)
+  SUCCESS, con 6 nuovi test di integrazione ADK/Gateway (batch positivo,
+  permessi alterati, path/branch/write vietati, OPA deny e sessione ritirata).
+  Rimane INVARIATO il rifiuto delle route composite dal
+  `GatewayRuntime` **operativo authority-only**; il batch è ammesso solo
+  dal Gateway preliminare provvisto di `TrustedPlanningRevisions`.
+  Non è ancora un nuovo E2E Rust/EVM nativo né una soluzione di discovery
+  dinamica per file non presenti nello snapshot trusted.
+  Una Root gerarchica non concede nuovi path al modello.
+  L'attuale enum ADK dei file resta basato sulla lista trusted, fino
+  a 4096 voci nell'opt-in: l'ottimizzazione dello schema del modello e
+  dei limiti di output è un lavoro distinto, non un permesso aggiuntivo.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
