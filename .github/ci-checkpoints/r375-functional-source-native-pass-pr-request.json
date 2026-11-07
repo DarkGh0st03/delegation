@@ -1,9 +1,10 @@
 {
-  "checkpoint": "R375.2",
-  "previous_sha": "0325e3957e57229ded2d0c2b771f73244fe297b2",
-  "failed_native_run": 42350354622,
-  "diagnosis": "Read-only Planner rejected incorrect preparatory signed read scope: fixture selected first of 7 preliminary read_file permissions, now shared AccountStatus file, while tool requested Backend user.service.ts. Original owner failed closed before any worker Task.",
-  "fix": "Choose preliminary read_file permission by exact canonical Backend source path in BOTH prepare and native verifier. Original read-only Planner, Rust verification and immutable root remain unchanged.",
-  "expected": "Grounded approved 17-pair Engineer grant, 12 owner model decisions, 9 same-file CAS writes, genuine Docker FAIL then PASS, independent Draft PR GET, no paid inference.",
-  "status": "not proved until R375 native CI SUCCESS"
+  "checkpoint": "R375.3",
+  "previous_sha": "f11186627b44628930bc10113dd686c55aac1eca",
+  "preceding_native_run": 42350793761,
+  "issue": "Original read-only Planning successfully grounded 17 exact capability pairs. Native Engineered grant correctly canonicalizes file pair order lexicographically. Fixture's post-approval equality test expected a model-specific sequence (shared file first) and failed before any operational issuance.",
+  "fix": "Construct approved root grantPermissions in canonical file-path order before signed review. Model-selected sequential Task order remains independent of Engineer permission ceiling. No mutation to Rust/OPA/host or approved permission pairs.",
+  "expected": "One original root from protected main, genuine D0 Docker FAIL, 7 separately signed read-CAS updates, retest Docker PASS, independent Gitea Draft PR GET",
+  "status": "pending native CI",
+  "paid_calls": 0
 }

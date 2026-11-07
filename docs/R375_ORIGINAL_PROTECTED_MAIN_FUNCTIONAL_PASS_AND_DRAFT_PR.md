@@ -73,3 +73,7 @@ R375.0 workflow [#42350171857](https://github.com/DarkGh0st03/delegation/actions
 ## R375.2 — exact read-only Planner root scope
 
 Native [#42350354622](https://github.com/DarkGh0st03/delegation/actions/runs/42350354622) correctly refused the Planning read before execution (`no verified read-only grounded proposal`). The enlarged read-only snapshot now lists shared account status before Backend, whereas the original fixture used `.find(operation===read_file)` for its private preliminary Gateway Prepare and Rust VP verifier. The prepared scope was therefore *not* for `apps/backend/src/users/user.service.ts`. R375.2 selects exactly the requested file permission in both operations. No Rust, Gateway, OPA or Planner guard is relaxed; no provider effect or Child had been attempted at the failed checkpoint. Native success still pending.
+
+## R375.3 — canonical Engineer permission order
+
+Native [#42350793761](https://github.com/DarkGh0st03/delegation/actions/runs/42350793761) completed read-only Planning, then stopped at the test harness's `assert.deepEqual(liveRoot.root_permissions,grantPermissions)`. The original Engineer root normalization canonically sorts file URI paths; the scripted fixture instead compared to its own intended source-change Task order (shared first). R375.3 sorts the **unchanged exact same 17 permission pairs** before signing/expectation, keeping operational Task ordering separate from immutable authority. All original verifier/Coordinator constraints are unchanged. No functional native Docker PASS claim until next validation.

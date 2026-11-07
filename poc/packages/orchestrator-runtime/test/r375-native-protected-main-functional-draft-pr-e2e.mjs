@@ -297,9 +297,12 @@ const approvedFiles=[sharedPath,...backendFiles,...frontendFiles];
 const backendPermissions=permissionsFor(backendPath);
 const taskPermissions=permissionsFor(mutationPath);
 const sharedPermissions=permissionsFor(sharedPath);
+// The signed Engineer ceiling and trusted root are canonically sorted by
+// URI path. The model may separately choose source Task order after FAIL,
+// but root permission order must match the independently normalized grant.
 const grantPermissions=[
  branchPermission,prPermission,testPermission,
- ...approvedFiles.flatMap(permissionsFor)
+ ...[...approvedFiles].sort().flatMap(permissionsFor)
 ];
 assert.equal(grantPermissions.length,17);
 const nowMs=()=>Date.now();
