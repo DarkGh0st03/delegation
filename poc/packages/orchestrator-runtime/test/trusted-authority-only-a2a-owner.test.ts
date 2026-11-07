@@ -9,6 +9,14 @@ import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
+import {TrustedAuthorityOnlyCreateEffectStager}
+ from "../../../apps/gateway/src/trusted-authority-only-create-effect-stager.ts";
+import {TrustedAuthorityOnlyGiteaCreatePreflight}
+ from "../../../apps/gateway/src/trusted-authority-only-create-preflight.ts";
+import {DurableAuthorityOnlyGiteaCreateIntentJournal}
+ from "../../../apps/gateway/src/trusted-authority-only-create-intent-journal.ts";
+import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
+import {InMemoryRequestStore} from "../../../apps/gateway/src/prepare.ts";
 import {TrustedAuthorityOnlyRemoteEffectBootstrap}
  from "../src/trusted-authority-only-remote-effect-bootstrap.ts";
 import {TrustedAuthorityOnlyA2AOwner}
@@ -144,10 +152,12 @@ function fixture(patch?:{
   const runsTests=isTest&&!isMixed;
   const target=isTest?"tests/backend/account.test.ts":file;
   assert.deepEqual(sent.subtask.relevant_paths,runsTests?[]:[target]);
+  const isCreate=patch?.row?.permissions.length===1&&
+   String(patch.row.permissions[0]?.operation)==="create_file";
   assert.deepEqual(sent.subtask.approved_file_permissions,runsTests?[]:
    isMixed?[{path:target,operation:"read_file"},
     {path:target,operation:"update_file"}]:[{
-     path:target,operation:"update_file"
+     path:target,operation:isCreate?"create_file":"update_file"
     }]);
   assert.equal(sent.subtask.approved_run_tests,runsTests);
   assert.equal(sent.delegation_evidence.credential_id,id);
@@ -163,7 +173,7 @@ function fixture(patch?:{
    test:"http://127.0.0.1:8103/"
   }
  } as never);
- return {owner,calls,get takes(){return takes;},get roots(){return roots;}};
+ return {owner,gateway,calls,get takes(){return takes;},get roots(){return roots;}};
 }
 const request=()=>({taskId,runtimeTaskId,
  instruction:"Update the account status handler",
@@ -420,3 +430,77 @@ for(const mode of ["project-test","application-source","acceptance","claims-pass
   }
  });
 }
+
+function nativeCreateFixture(role:"backend"|"test"="backend"){
+ const create={...effect,operation:"create_file" as const};
+ const agentDid=role==="backend"?did:"did:thesis:test-agent";
+ const nativeRow={...row,agent_id:role,agent_did:agentDid,permissions:[create]};
+ const nativeChild={...child,agent_id:role,agent_did:agentDid,permissions:[create]};
+ const nativeSigned={...signed,credentialSubject:{sub:agentDid,per:[create]}};
+ const nativeReceipt={...receipt,agent_id:role,agent_did:agentDid};
+ const createdArtifact={...artifact,role,summary:"Created original signed source",
+  files_modified:[],files_created:[file]};
+ const response={card:{name:"Backend Agent"},task:{
+  id:"a2a-task-r3841",
+  status:{state:TaskState.TASK_STATE_COMPLETED},
+  artifacts:[{parts:[{content:{$case:"data",value:createdArtifact}}]}]
+ }};
+ const f=fixture({root:{...root,root_permissions:[create]} as never,
+  row:nativeRow as never,child:nativeChild as never,
+  receipt:nativeReceipt as never,signed:nativeSigned as never,response});
+ const writer=new GiteaClient({
+  baseUrl:"http://gitea.local:3000",owner:"thesis",
+  repository:"iam-console-poc",token:"disposable-owner-fixture",
+  fetchFn:async()=>{throw Error("No Gitea calls during A2A owner admission");}
+ });
+ const preflight=new TrustedAuthorityOnlyGiteaCreatePreflight({
+  admissions:f.gateway,giteaClient:writer,
+  journal:new DurableAuthorityOnlyGiteaCreateIntentJournal(
+   "/tmp/r3841-opaque-unused-intent"),
+  repository:"thesis/iam-console-poc",branch
+ });
+ const port=new TrustedAuthorityOnlyCreateEffectStager({
+  store:new InMemoryRequestStore(),admissions:f.gateway,
+  preflight,giteaClient:writer,
+  repository:"thesis/iam-console-poc",branch,
+  planTaskId:taskId,runtimeTaskId,expectedHeadSha:"b".repeat(40)
+ });
+ return {...f,port};
+}
+test("R384.1 A2A owner accepts exactly one branded native CREATE Child and sends an exact create hint",async()=>{
+ const f=nativeCreateFixture();
+ const result=await f.owner.dispatchIssuedTask({
+  taskId,runtimeTaskId,instruction:"Create one approved Backend source",
+  effectStager:f.port
+ });
+ assert.equal(result.status,"a2a_report_not_gateway_completed");
+ assert.equal(result.provider_completion_attested,false);
+ assert.deepEqual(result.artifact.files_created,[file]);
+ assert.deepEqual(result.artifact.files_modified,[]);
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+ assert.equal(f.takes,1);
+ await assert.rejects(f.owner.dispatchIssuedTask({
+  taskId,runtimeTaskId,instruction:"try again",
+  effectStager:f.port
+ }),/closed or malformed owner-selected Task/u);
+ assert.equal(f.takes,1);
+});
+test("R384.1 A2A owner rejects a forged CREATE stager before any Child disclosure",async()=>{
+ const f=nativeCreateFixture();
+ await assert.rejects(f.owner.dispatchIssuedTask({
+  taskId,runtimeTaskId,instruction:"create one file",
+  effectStager:{stagedTool:"create_file",
+   async stage(){throw Error("forged");}}
+ }),/CREATE A2A requires one original branded owner/u);
+ assert.deepEqual(f.calls,[]);
+ assert.equal(f.takes,0);
+});
+test("R384.1 original A2A owner rejects Test role CREATE even when Task and Child appear signed",async()=>{
+ const f=nativeCreateFixture("test");
+ await assert.rejects(f.owner.dispatchIssuedTask({
+  taskId,runtimeTaskId,instruction:"create forbidden app source",
+  effectStager:f.port
+ }),/Test Agent cannot create native application files/u);
+ assert.deepEqual(f.calls,[]);
+ assert.equal(f.takes,0);
+});
