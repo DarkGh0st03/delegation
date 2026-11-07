@@ -8,6 +8,8 @@ on:
       - 'poc/scripts/test/f1-real-planning-parity-manifest.test.mjs'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
+      - 'poc/apps/test-runner-controller/scripts/f1-safe-offline-planning-failure.mjs'
+      - 'poc/apps/test-runner-controller/test/f1-safe-offline-planning-failure.test.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -203,6 +205,7 @@ jobs:
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/f1-offline-planning-entry.mjs
           node --test poc/apps/gateway/native-test/f1-offline-planning-entry.test.mjs
+          node --test poc/apps/test-runner-controller/test/f1-safe-offline-planning-failure.test.mjs
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
           if ! npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller > /tmp/f1-real-gitea-only.log 2>&1; then
             echo "::error::F1 real-Gitea Planning-only failed; private log not published"
