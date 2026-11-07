@@ -243,6 +243,27 @@ happened even if no MCP reply is observed. The original owner must
 retain the durable one-shot journal and reconcile uncertain effects,
 not retry. No new keys, server listeners, models or paid services.
 
+## R382.1 — bounded whole-session native MCP watchdog
+
+The trusted stdio client now applies one finite watchdog over its
+entire SDK lifecycle: process startup/`connect`, tool discovery
+(`listTools`) and the final `callTool` returning a native Rust
+Child DC or VP. The ceiling is the configured Rust socket timeout
+plus 5 seconds for Node and MCP startup. All three asynchronous
+operations race this same deadline and the signed Task's optional
+`AbortSignal`; any timeout/abort terminates the owner-private
+session and surfaces only the sanitized failure. Neither the old
+Adapter HTTP nor direct native IPC is a fallback.
+
+The watchdog is referenced until finalization, even if an MCP
+handshake stalls without live handles; successful and unsuccessful
+calls remove the timer and abort listener. Offline tests include
+an artificially never-completing SDK connect to prove the outer
+deadline cannot be bypassed by a stuck MCP handshake. As with all
+one-shot native effects, timeout after request dispatch is
+**ambiguous**, not proof that Rust rolled the operation back;
+the durable owner journal still forbids automatic retry.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
