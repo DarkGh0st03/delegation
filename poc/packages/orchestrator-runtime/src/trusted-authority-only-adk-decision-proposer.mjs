@@ -2,6 +2,7 @@
  * authority or issues a Child DC. The original trusted Coordinator is the
  * sole register/validate boundary after this unsigned proposal.
  * No tools, URLs, keys, DIDs, receipts, or model-supplied session pins. */
+import {safeAcceptanceFailureSummary} from '../../../runner/acceptance/failure-catalog.mjs';
 import {BaseLlm,LlmAgent,Runner,InMemorySessionService} from '@google/adk';
 import {giteaPermissionCovers,isProjectTestRepairGrant}
  from '../../plan-contracts/src/gitea-permission-containment.mjs';
@@ -146,8 +147,13 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    const base=['failed_phase','source_evidence_sha256'];
    const codes=verifiedFailure&&typeof verifiedFailure==='object'&&
     Object.hasOwn(verifiedFailure,'typecheck_error_codes');
+   const acceptance=verifiedFailure&&typeof verifiedFailure==='object'&&
+    Object.hasOwn(verifiedFailure,'acceptance_failure');
    if(!(exact(verifiedFailure,base)||
-        exact(verifiedFailure,[...base,'typecheck_error_codes']))||
+        exact(verifiedFailure,[...base,'typecheck_error_codes'])||
+        exact(verifiedFailure,[...base,'acceptance_failure']))||
+      (acceptance&&(decisionKind!=='adaptive'||verifiedFailure.failed_phase!=='researcher_acceptance'||
+       !safeAcceptanceFailureSummary(verifiedFailure.acceptance_failure)))||
       !phases.has(verifiedFailure.failed_phase)||
       typeof verifiedFailure.source_evidence_sha256!=='string'||
       !/^[a-f0-9]{64}$/u.test(verifiedFailure.source_evidence_sha256)||
@@ -212,6 +218,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      source_evidence_sha256:this.verifiedFailure.source_evidence_sha256,
      ...(this.verifiedFailure.typecheck_error_codes?.length?
       {typecheck_error_codes:[...this.verifiedFailure.typecheck_error_codes]}:{}),
+     ...(this.verifiedFailure.acceptance_failure?
+      {acceptance_failure:this.verifiedFailure.acceptance_failure}:{}),
      status:'verified_failure_preflight_only_not_approval'
     }
    }:{})

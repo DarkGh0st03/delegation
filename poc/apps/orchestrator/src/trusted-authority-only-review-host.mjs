@@ -670,7 +670,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         failed_phase:adaptiveVerifiedFailures.at(-1).failed_phase,
         source_evidence_sha256:adaptiveVerifiedFailures.at(-1).source_evidence_sha256,
         ...(adaptiveVerifiedFailures.at(-1).typecheck_error_codes?.length?
-         {typecheck_error_codes:[...adaptiveVerifiedFailures.at(-1).typecheck_error_codes]}:{})
+         {typecheck_error_codes:[...adaptiveVerifiedFailures.at(-1).typecheck_error_codes]}:{}),
+        ...(adaptiveVerifiedFailures.at(-1).acceptance_failure?
+         {acceptance_failure:adaptiveVerifiedFailures.at(-1).acceptance_failure}:{})
        },verifiedFailureHistory:adaptiveVerifiedFailures.map(f=>({
         failed_task_id:f.failed_task_id,failed_phase:f.failed_phase,
         source_evidence_sha256:f.source_evidence_sha256,

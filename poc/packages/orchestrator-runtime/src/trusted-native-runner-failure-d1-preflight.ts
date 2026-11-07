@@ -44,6 +44,7 @@ type NativeVerifiedFailedTest=Readonly<{
  original_session_id:string;tested_commit_sha:string;
  failed_phase:string;source_evidence_sha256:string;
  typecheck_error_codes?:readonly string[];
+ acceptance_failure?:import("../../../apps/gateway/src/runner-client.ts").RunnerClientResult["acceptance_failure"];
  recovery_authorized:false;child_credential_issued:false;
  gateway_task_completed:false;task_registered:false;
 }>;
@@ -137,6 +138,7 @@ export async function observeTrustedNativeTestFailure(
   source_evidence_sha256:fail.evidence_sha256,
   ...(fail.typecheck_error_codes?.length?
    {typecheck_error_codes:Object.freeze([...fail.typecheck_error_codes])}:{}),
+  ...(fail.acceptance_failure?{acceptance_failure:fail.acceptance_failure}:{}),
   recovery_authorized:false as const,
   child_credential_issued:false as const,
   gateway_task_completed:false as const,

@@ -102,7 +102,8 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
         failed_phase:observed.failed_phase,
         source_evidence_sha256:observed.source_evidence_sha256,
         ...(observed.typecheck_error_codes?.length?
-         {typecheck_error_codes:[...observed.typecheck_error_codes]}:{})
+         {typecheck_error_codes:[...observed.typecheck_error_codes]}:{}),
+        ...(observed.acceptance_failure?{acceptance_failure:observed.acceptance_failure}:{})
        }))
      deny('verified Test FAIL did not preserve the original authority and success ledger');
     // The failed Task is registered (epoch advances), but NOT completed.

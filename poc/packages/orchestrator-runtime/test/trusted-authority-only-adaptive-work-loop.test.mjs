@@ -89,7 +89,7 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
 /** R355.2: the simulated owner is the ONLY party allowed to convert the
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
-function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0}={}){
+function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0,acceptanceFailure}={}){
  const done=[],events=[],history=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
  const permission=grant;
  const hooks={
@@ -107,7 +107,8 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
      operation:p.permissions.find(g=>g.operation==='update_file'||g.operation==='run_tests')?.operation??'read_file',
      instruction:p.instruction}))},
     ...(failure?{verifiedFailure:{failed_phase:failure.failed_phase,
-     source_evidence_sha256:failure.source_evidence_sha256},
+     source_evidence_sha256:failure.source_evidence_sha256,
+     ...(failure.acceptance_failure?{acceptance_failure:failure.acceptance_failure}:{})},
      verifiedFailureHistory:history.map(f=>({
       failed_task_id:f.failed_task_id,failed_phase:f.failed_phase,
       source_evidence_sha256:f.source_evidence_sha256,
@@ -139,7 +140,8 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
     failed_runtime_task_id:'dispatch_'+'F'.repeat(22),
     gateway_task_completed:false,recovery_authorized:false,
     tested_commit_sha:context.executionProgress.current_head_sha,
-    failed_phase:'typecheck',
+    failed_phase:acceptanceFailure?'researcher_acceptance':'typecheck',
+    ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
     source_evidence_sha256:String.fromCharCode(98+failedAttempts).repeat(64)};
    if(forgery==='wrong-status')return {...original,status:'a2a_claimed_test_fail'};
    if(forgery==='wrong-head')return {...original,tested_commit_sha:'f'.repeat(40)};
@@ -552,3 +554,27 @@ test('R377.3 verified FAIL can select a separate signed Test repair and then ret
  assert.deepEqual(f.done.map(p=>[p.task_id,p.tested!==undefined]),
   [['task-1',false],['task-2',true]]);
 });
+
+for(const check of ['ui_pending_actions','untrusted raw assertion']){
+ test('R377.4 adaptive ADK receives only catalogued acceptance labels: '+check,async()=>{
+  const f=verifiedFailureFixture({acceptanceFailure:{
+   failed_checks:[check],timed_out:false,unclassified_failure:false
+  }});
+  const repair=candidate('frontend',1);
+  repair.task.depends_on=[];
+  const model=new Decisions([candidate('test',0),repair,candidate('test',2),
+   {action:'ready_for_pr',reason:'The separate retest passed'}]);
+  const run=runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+  if(check==='ui_pending_actions'){
+   assert.equal((await run).source_test_task_id,'task-2');
+   const prompt=JSON.stringify(model.requests[1]);
+   assert.match(prompt,/acceptance_failure/u);
+   assert.match(prompt,/ui_pending_actions/u);
+   assert.match(prompt,/verified_failure_preflight_only_not_approval/u);
+  }else{
+   await assert.rejects(run,/Task choice denied/u);
+   assert.equal(model.calls,1);
+   assert.equal(f.retired,true);
+  }
+ });
+}

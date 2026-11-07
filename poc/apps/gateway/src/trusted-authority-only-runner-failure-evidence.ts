@@ -7,6 +7,7 @@ import {createHash,createHmac,timingSafeEqual} from "node:crypto";
 import {constants} from "node:fs";
 import {lstat,open} from "node:fs/promises";
 import {isAbsolute,resolve,join} from "node:path";
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import {GiteaClient} from "./gitea-client.ts";
 import {sanitizeTypecheckErrorCodes}
  from "../../test-runner-controller/src/typecheck-diagnostics.ts";
@@ -57,6 +58,7 @@ interface FailReceipt{
  readonly repository:string;readonly branch:string;
  readonly tested_commit_sha:string;readonly first_failed_phase:string;
  readonly typecheck_error_codes?:readonly string[];
+ readonly acceptance_failure?:RunnerClientResult["acceptance_failure"];
  readonly repair_candidate:boolean;readonly runner_profile:"poc-default";
  readonly log_reference:string;readonly policy_version:string;
  readonly completed_at_ms:number;
@@ -118,7 +120,10 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
   fail("Runner failure receipt not a structured object");
  const v=raw as Record<string,unknown>;
  const codesPresent=Object.hasOwn(v,"typecheck_error_codes");
- if(Object.keys(v).filter(k=>k!=="typecheck_error_codes").sort().join(",")!==FIELDS||
+ if(Object.keys(v).filter(k=>k!=="typecheck_error_codes"&&k!=="acceptance_failure").sort().join(",")!==FIELDS||
+    (Object.hasOwn(v,"acceptance_failure")&&
+     (v.first_failed_phase!=="researcher_acceptance"||
+      !safeAcceptanceFailureSummary(v.acceptance_failure)))||
     (codesPresent&&(v.first_failed_phase!=="typecheck"||
       !Array.isArray(v.typecheck_error_codes)||
       v.typecheck_error_codes.length===0||
@@ -209,6 +214,8 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
    first_failed_phase:stage.first_failed_phase,
    ...(stage.first_failed_phase==="typecheck"&&result.typecheck_error_codes?.length?
     {typecheck_error_codes:sanitizeTypecheckErrorCodes(result.typecheck_error_codes)}:{}),
+   ...(stage.first_failed_phase==="researcher_acceptance"&&result.acceptance_failure?
+    {acceptance_failure:result.acceptance_failure}:{}),
    repair_candidate:stage.repair_candidate,
    runner_profile:"poc-default",log_reference:result.log_reference!,
    policy_version:policyVersion,completed_at_ms:now,
@@ -248,6 +255,7 @@ export class AuthenticatedRunnerFailureObserver{
   status:"owner_authenticated_runner_failure_observed_staged";
   tested_commit_sha:string;first_failed_phase:string;
   typecheck_error_codes?:readonly string[];
+  acceptance_failure?:RunnerClientResult["acceptance_failure"];
   repair_candidate:boolean;evidence_sha256:string;
   gateway_task_completed:false;recovery_authorized:false
  }>>{
@@ -272,6 +280,7 @@ export class AuthenticatedRunnerFailureObserver{
    first_failed_phase:v.first_failed_phase,
    ...(v.typecheck_error_codes?.length?
     {typecheck_error_codes:Object.freeze([...v.typecheck_error_codes])}:{}),
+   ...(v.acceptance_failure?{acceptance_failure:safeAcceptanceFailureSummary(v.acceptance_failure)!}:{}),
    repair_candidate:v.repair_candidate,
    evidence_sha256:digest(canonical(v)),
    gateway_task_completed:false as const,recovery_authorized:false as const

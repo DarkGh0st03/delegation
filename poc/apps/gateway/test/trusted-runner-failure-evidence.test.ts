@@ -161,3 +161,25 @@ test("R337 missing durable original POST attempt cannot publish or observe FAIL"
   assert.deepEqual(await readdir(directory),[]);
  },failure(),false);
 });
+
+test("R377.4 researcher check labels survive authenticated FAIL and are MAC bound",async()=>{
+ const states=phases.map(phase=>({phase,status:phase==="researcher_acceptance"?"fail":"pass"}));
+ const summary={failed_checks:["ui_pending_actions"],timed_out:false,unclassified_failure:false};
+ const body={...failure(),phases:states,
+  project_tests:{status:"pass",phases:states.slice(0,6)},researcher_acceptance:states[6],
+  acceptance_failure:summary};
+ await fixture(async({publisher,observer,runner,directory})=>{
+  const result=await runner.run(request);
+  await publisher.publish(intent,binding,request,result,"opa-r3774");
+  assert.deepEqual((await observer.observe(intent,binding)).acceptance_failure,summary);
+  const [name]=await readdir(directory);
+  const file=join(directory,name!);
+  const row=JSON.parse(await readFile(file,"utf8"));
+  row.acceptance_failure.failed_checks=["service_persistence"];
+  await writeFile(file,JSON.stringify(row));
+  await assert.rejects(observer.observe(intent,binding),/MAC invalid/u);
+  row.acceptance_failure.failed_checks=["untrusted raw assertion"];
+  await writeFile(file,JSON.stringify(row));
+  await assert.rejects(observer.observe(intent,binding),/violates signed Task/u);
+ },body);
+});
