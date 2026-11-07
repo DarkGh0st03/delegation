@@ -95,6 +95,79 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
        root.base_revision!==snapshot.base_revision)fail();
   }
 
+  /** Execute 2-12 already-authorized source observations under ONE signed
+   * multipermission VP. The native Gateway verifies all actions and OPA
+   * before any provider read. No operational Task or arbitrary path allowed. */
+  async invokeComposite(
+    actions:readonly {tool:"read_file"|"list_directory";
+      arguments:Record<string,unknown>}[],
+    signal?:AbortSignal
+  ):Promise<unknown>{
+    if(signal?.aborted||!Array.isArray(actions)||actions.length<2||
+       actions.length>12)fail();
+    const root=this.#coordinator.trustedPlanningAuthority();
+    if(root.credential_id!==this.#credentialId||
+       root.session_id!==this.#snapshot.session_id||
+       root.base_revision!==this.#snapshot.base_revision)fail();
+    const branch=trustedPlanningSourceBranch(this.#snapshot);
+    const normalized: {tool:"read_file"|"list_directory";
+      arguments:Record<string,unknown>}[]=[];
+    const seen=new Set<string>();
+    for(const action of actions){
+      if(!action||typeof action!=="object"||
+         (action.tool!=="read_file"&&action.tool!=="list_directory"))fail();
+      let request:NormalizedToolRequest;
+      try{
+        request=validatePrepareAuthorizationRequest({
+          task_id:root.session_id,agent_role:"orchestrator",
+          tool:action.tool,arguments:action.arguments
+        }).request;
+      }catch{fail();}
+      if(request.tool!=="read_file"&&request.tool!=="list_directory")fail();
+      if(request.arguments.branch!==branch)fail();
+      if(request.tool==="read_file"&&
+         !this.#snapshot.files.includes(request.arguments.path))fail();
+      if(request.tool==="list_directory"&&
+         !this.#snapshot.directories.includes(request.arguments.path))fail();
+      const required=deriveRequiredPermission(this.#snapshot.repository,request);
+      const keyValue=key(required);
+      if(seen.has(keyValue)||
+         (!this.#allowed.has(keyValue)&&
+           !this.#hierarchicalGrants.some(parent=>
+             giteaPermissionCovers(parent,required))))fail();
+      seen.add(keyValue);
+      normalized.push({tool:request.tool,arguments:request.arguments});
+    }
+    const result=await this.#client.readCompositePlanningResources(
+      root.session_id,normalized,this.#snapshot.repository,
+      root.base_revision,signal);
+    if(signal?.aborted)fail();
+    const live=this.#coordinator.trustedPlanningAuthority();
+    if(live.credential_id!==this.#credentialId||
+       live.base_revision!==root.base_revision)fail();
+    if(!result||typeof result!=="object"||Array.isArray(result))fail();
+    const value=result as Record<string,unknown>;
+    if(value.decision!=="allow"||
+       value.pinned_revision!==root.base_revision||
+       !Array.isArray(value.executions)||
+       value.executions.length!==normalized.length)fail();
+    for(const [i,raw] of value.executions.entries()){
+      const request=normalized[i];
+      if(!raw||typeof raw!=="object"||Array.isArray(raw))fail();
+      const observed=raw as Record<string,unknown>;
+      if(observed.provider!=="gitea"||observed.performed!==true||
+         observed.tool!==request.tool||
+         observed.revision!==root.base_revision||
+         observed.branch!==branch||
+         observed.path!==request.arguments.path)fail();
+      if(request.tool==="read_file"&&
+         (observed.encoding!=="utf-8"||typeof observed.content!=="string"))fail();
+      if(request.tool==="list_directory"&&
+         !Array.isArray(observed.entries))fail();
+    }
+    return result;
+  }
+
   async invoke(tool:ReadTool,args:Record<string,unknown>,
     signal?:AbortSignal):Promise<unknown>{
     if(signal?.aborted)fail();
