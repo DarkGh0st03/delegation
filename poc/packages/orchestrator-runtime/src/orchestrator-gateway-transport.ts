@@ -4,6 +4,8 @@
  * Source encapsulation does not replace native Rust DC/VP and OPA policy.
  */
 import {createNativeOrchestratorPresentation} from "./native-orchestrator-presentation.ts";
+import {giteaPermissionCovers}
+  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 type FetchLike = typeof fetch;
 
 
@@ -27,6 +29,9 @@ export interface OrchestratorGatewayTransportConfig {
   rootCredentialId: string;
   timeoutMs?: number;
   fetchFn?: FetchLike;
+  /** Original-owner issued read-only hierarchical preliminary grants.
+   * NEVER tool/model supplied and NEVER used by operational Task signing. */
+  trustedHierarchicalPlanningGrants?:readonly RequiredPermission[];
 }
 
 
@@ -89,6 +94,7 @@ export class OrchestratorGatewayTransport {
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
   readonly #nativeSocketPath?:string;
+  readonly #hierarchicalReadGrants:readonly RequiredPermission[];
 
   constructor(config: OrchestratorGatewayTransportConfig) {
     this.#gatewayBaseUrl = nonEmptyString(
@@ -110,6 +116,16 @@ export class OrchestratorGatewayTransport {
     );
     this.#timeoutMs = config.timeoutMs ?? 10_000;
     this.#fetch = config.fetchFn ?? fetch;
+    const grants=config.trustedHierarchicalPlanningGrants??[];
+    if(!Array.isArray(grants)||grants.length>3||
+       grants.some(g=>!g||!["read_file","list_directory"].includes(g.operation)||
+         typeof g.resource!=="string"||
+         !/\/directories(?:\/[A-Za-z0-9_@.\/-]+)?$/u.test(g.resource))||
+       new Set(grants.map(g=>g.operation+"\0"+g.resource)).size!==grants.length)
+      throw new OrchestratorGatewayClientError(
+        "Untrusted hierarchical Planning presentation configuration");
+    this.#hierarchicalReadGrants=Object.freeze(grants.map(g=>
+      Object.freeze({operation:g.operation,resource:g.resource})));
     // Canonical trusted-owner path shares the SAME Rust issuer as Engineer,
     // Child DC and Agent VP. Bad socket configuration fails closed.
     const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
@@ -141,6 +157,27 @@ export class OrchestratorGatewayTransport {
     const timeout=AbortSignal.timeout(this.#timeoutMs);
     return signal?AbortSignal.any([signal,timeout]):timeout;
   }
+  /** Only the original signed directory permission is disclosed to Rust:
+   * requesting a leaf as an exact disclosure would invent a permission NOT
+   * present in the preliminary credential. Gateway still challenges each
+   * exact leaf and independently verifies its containment through Core Rust.
+   */
+  #disclosure(permissions:readonly RequiredPermission[]):readonly RequiredPermission[]{
+    if(this.#hierarchicalReadGrants.length===0)return permissions;
+    const selected=permissions.map(required=>{
+      if(required.operation!=="read_file"&&required.operation!=="list_directory")
+        return required;
+      const grant=this.#hierarchicalReadGrants.find(parent=>
+        giteaPermissionCovers(parent,required));
+      if(!grant)
+        throw new OrchestratorGatewayClientError(
+          "Signed Planning Root does not cover exact Gateway challenge");
+      return grant;
+    });
+    return [...new Map(selected.map(p=>
+      [p.operation+"\0"+p.resource,p])).values()];
+  }
+
   async invoke(
     taskId: string,
     tool: "create_branch" | "create_pull_request" |
@@ -161,7 +198,8 @@ export class OrchestratorGatewayTransport {
         "Gateway Planning challenge does not match trusted resource"
       );
     }
-    const signedVp = await this.#createPresentation(prepared,signal);
+    const signedVp = await this.#createPresentation(prepared,signal,
+      this.#disclosure([prepared.required_permission]));
     this.#assertActive(signal);
     const result=await this.#execute(prepared.request_id,signedVp,signal);
     this.#assertActive(signal);
@@ -224,7 +262,7 @@ export class OrchestratorGatewayTransport {
     // no client-side privilege synthesis or per-action VP fallback.
     const signedVp=await this.#createPresentation({
       request_id:requestId,audience,challenge,required_permission:expected[0]
-    },signal,expected);
+    },signal,this.#disclosure(expected));
     this.#assertActive(signal);
     let executed:Response;
     try{
