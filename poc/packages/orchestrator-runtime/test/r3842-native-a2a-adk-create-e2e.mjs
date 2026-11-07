@@ -81,7 +81,7 @@ assert.equal(process.env.OPENAI_API_KEY,undefined);
 const requireAddon=createRequire(import.meta.url);
 assert.equal(typeof requireAddon("../src/native/delegation-engineer.node")
  .issue_engineer_root,"function");
-const tokens=Object.fromEntries(["ENGINEER","ORCHESTRATOR","BACKEND","GATEWAY"].map(role=>{
+const tokens=Object.fromEntries(["ENGINEER","ORCHESTRATOR","BACKEND","FRONTEND","TEST","GATEWAY"].map(role=>{
  const token=process.env["ADAPTER_CALLER_"+role];
  assert.ok(token,role+" private native bearer missing");
  return [role.toLowerCase(),token];
@@ -89,6 +89,8 @@ const tokens=Object.fromEntries(["ENGINEER","ORCHESTRATOR","BACKEND","GATEWAY"].
 const engineerDid=process.env.ADAPTER_ID_ENGINEER;
 const backendDid=process.env.ADAPTER_ID_BACKEND;
 assert.match(engineerDid??"",/^did:/u);
+for(const role of ["BACKEND","FRONTEND","TEST"])
+ assert.match(process.env["ADAPTER_ID_"+role]??"",/^did:ethr:/u);
 assert.match(backendDid??"",/^did:/u);
 const sessionId="r3842-authority-native-e2e";
 class ScriptedCreate extends BaseLlm {
@@ -122,6 +124,13 @@ class ScriptedCreate extends BaseLlm {
   }
  }
  connect(){return Promise.reject(Error("Paid model connections disabled in R384.2"));}
+}
+class PassiveRoleModel extends BaseLlm{
+ constructor(role){super({model:"r3842-offline-passive-"+role});}
+ async *generateContentAsync(){
+  throw Error("R384.2 no model inference for an idle worker");
+ }
+ connect(){return Promise.reject(Error("R384.2 no live model connection"));}
 }
 async function freeRolePort(){
  const server=createServer();
@@ -394,31 +403,39 @@ try{
    throw Error("unexpected native Gateway transport route");
   };
   const roles=["backend","frontend","test"];
+  // The original owner verifies ALL THREE live Agent Cards, including
+  // the true Rust EVM signer DID for idle Frontend/Test roles. Never expose
+  // static demonstration DIDs or omit MCP pinning on those A2A hosts.
   for(const role of roles){
+   const roleDid=process.env["ADAPTER_ID_"+role.toUpperCase()];
+   assert.match(roleDid??"",/^did:ethr:/u);
+   const keys=generateKeyPairSync("ed25519");
    const options={
     role,host:"127.0.0.1",port:await freeRolePort(),
-    capabilityProfile:"approved-plan",delegatedAuthorization:true
-   };
-   if(role==="backend"){
-    const keys=generateKeyPairSync("ed25519");
-    options.mcpTaskSigning={
+    capabilityProfile:"approved-plan",delegatedAuthorization:true,
+    nativeSignerDid:roleDid,
+    mcpTaskSigning:{
      signingPrivateKeyPem:keys.privateKey.export({
       type:"pkcs8",format:"pem"
      }).toString(),
      signingPublicKeyPem:keys.publicKey.export({
       type:"spki",format:"pem"
      }).toString()
-    };
-    options.adk={
-     model,gatewayBaseUrl:"http://gateway.fixture.invalid",
-     adapterToken:tokens.backend,maxModelTurns:4,
+    },
+    adk:{
+     model:role==="backend"?model:new PassiveRoleModel(role),
+     gatewayBaseUrl:"http://gateway.fixture.invalid",
+     adapterToken:tokens[role],maxModelTurns:4,
      maxModelCallMs:15000,gatewayTimeoutMs:60000,
-     scopeModelPaths:true,trustedEffectTaskRegistry:agentRegistry,
+     scopeModelPaths:true,
+     trustedEffectTaskRegistry:role==="backend"
+      ?agentRegistry:new TrustedEffectStagingTaskRegistry(),
      fetchFn:gatewayTransport
-    };
-   }
+    }
+   };
    const server=await startSpecializedAgentServer(options);
    roleServers.push(server);urls[role]=server.baseUrl;
+   assert.equal(server.card.capabilities.extensions[0].params.agentDid,roleDid);
   }
   owner=await startTrustedAuthorityOnlySdkA2AOwner({
    coordinator,childIssuer:issuer,gateway:gate,
