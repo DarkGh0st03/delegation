@@ -31,6 +31,10 @@ export interface TrustedPlanningSnapshot {
    * already-created branch. Omitted means the historical main read boundary.
    * NEVER supplied by ADK/tool arguments or inferred from a model response. */
   planning_branch?:string;
+  /** Explicit original-owner selection of a branch-root, read-only hierarchical
+   * Planning scope. NEVER a model/tool or unsigned GUI option. The trusted
+   * snapshot still lists the exact paths discoverable by the Planner. */
+  hierarchical_preliminary_read?:boolean;
   /** Trusted operator/Gitea-discovery-derived, not model-proposed paths. */
   directories:readonly string[];
   files:readonly string[];
@@ -112,8 +116,8 @@ function path(p:string,allowRoot:boolean):string {
        piece.includes("%")))fail("invalid or noncanonical repository path");
   return p;
 }
-function distinct(values:readonly string[],label:string):void {
-  if(!Array.isArray(values) || values.length>128 ||
+function distinct(values:readonly string[],label:string,max=128):void {
+  if(!Array.isArray(values) || values.length>max ||
      new Set(values).size!==values.length)fail("duplicate or oversized "+label);
 }
 function equality(a:unknown,b:unknown):boolean {
@@ -141,8 +145,15 @@ export function preliminaryReadPermissions(
   if(typeof snapshot.base_revision!=="string" ||
      !SHA.test(snapshot.base_revision))fail("unpinned Git base revision");
   const sourceBranch=trustedPlanningSourceBranch(snapshot);
-  distinct(snapshot.directories,"directory list");
-  distinct(snapshot.files,"file list");
+  if(snapshot.hierarchical_preliminary_read!==undefined&&
+     typeof snapshot.hierarchical_preliminary_read!=="boolean")
+    fail("invalid trusted Planning hierarchy selection");
+  const hierarchical=snapshot.hierarchical_preliminary_read===true;
+  // The signed Root stays O(1) for this explicit read-only mode; trusted
+  // snapshot paths stay bounded independently of Root permission count.
+  const maxPaths=hierarchical?4096:128;
+  distinct(snapshot.directories,"directory list",maxPaths);
+  distinct(snapshot.files,"file list",maxPaths);
   if(!snapshot.directories.includes(""))fail("planning snapshot must include root directory");
   // Reading the default repository metadata at an unrelated feature HEAD
   // cannot be revision pinned; feature snapshots authorize only exact
@@ -156,7 +167,7 @@ export function preliminaryReadPermissions(
       task_id:"trusted-planning-read",agent_role:"orchestrator",
       tool:"list_directory",arguments:{branch:sourceBranch,path:dir}
     });
-    permissions.push({
+    if(!hierarchical)permissions.push({
       resource:canonicalDirectoryUri(repo,sourceBranch,request.request.arguments.path),
       operation:"list_directory"
     });
@@ -167,10 +178,18 @@ export function preliminaryReadPermissions(
       task_id:"trusted-planning-read",agent_role:"orchestrator",
       tool:"read_file",arguments:{branch:sourceBranch,path:file}
     });
-    permissions.push({
+    if(!hierarchical)permissions.push({
       resource:canonicalFileUri(repo,sourceBranch,request.request.arguments.path),
       operation:"read_file"
     });
+  }
+  if(hierarchical){
+    const root=canonicalDirectoryUri(repo,sourceBranch,"");
+    // Rust ResourceUri::contains_resource accepts a directory ancestor for
+    // the SAME operation only. These are TWO separate read/list rights:
+    // neither may grant update, create, tests or access another branch.
+    permissions.push({resource:root,operation:"list_directory"});
+    permissions.push({resource:root,operation:"read_file"});
   }
   if(permissions.length>128)fail("read-only discovery exceeds root permission limit");
   return permissions;
