@@ -240,7 +240,7 @@ test("R383.4 failed preflight cannot reserve a create attempt",async t=>{
  * R383.5 post-native boundary tests. These are intentionally OFFLINE:
  * the admission double enforces its input identity, not a real Rust/OPA
  * cryptographic result or real Task flight. The production method uses the
- * private admission class and is gated upstream by executeAuthorization.
+ * private admission class; executeAuthorization is NOT yet wired for create.
  */
 test("R383.5 immutable preflight joins consumed native Child VP, OPA and original flight without write",async t=>{
  const f=await fixture(t);
@@ -286,10 +286,10 @@ test("R383.5 fails closed on missing native admission, unconsumed request and OP
  f.record.consumed=true;
  await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
   f.record,verified,{allow:false,policy_version:"opa"} as never),
-  /native VP\\/OPA allow/u);
+  /native VP\/OPA allow/u);
  await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
   f.record,verified,{allow:true,policy_version:""} as never),
-  /native VP\\/OPA allow/u);
+  /native VP\/OPA allow/u);
  Object.assign(f.admissions,{
   assertTrustedCreateNativeAdmissionBinding(){
    throw Error("Gateway missing durable Task flight or native Child VP");
@@ -311,11 +311,13 @@ test("R383.5 rejects mutable source, changed admission binding and tampered on-d
  f.record.consumed=true;
  const verified={} as never;
  const allow={allow:true,policy_version:"opa"} as never;
- const oldContent=f.record.request.arguments.content;
- f.record.request.arguments.content=oldContent+"// unapproved change";
+ const request=f.record.request;
+ if(request.tool!=="create_file")throw Error("fixture is not create_file");
+ const oldContent=request.arguments.content;
+ request.arguments.content=oldContent+"// unapproved change";
  await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
   f.record,verified,allow),/differs from immutable reserved intent/u);
- f.record.request.arguments.content=oldContent;
+ request.arguments.content=oldContent;
  Object.assign(f.admissions,{
   assertTrustedCreateNativeAdmissionBinding(){return {...bound,epoch:99};}
  });
@@ -326,7 +328,7 @@ test("R383.5 rejects mutable source, changed admission binding and tampered on-d
  });
  const name=(await readdir(f.dir))[0];
  await writeFile(join(f.dir,name),JSON.stringify({...intent,
-  request_fingerprint:"f".repeat(64)})+"\\n");
+  request_fingerprint:"f".repeat(64)})+"\n");
  await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
   f.record,verified,allow),/differs from persistent marker/u);
  assert.equal(f.stats().writes,0);
