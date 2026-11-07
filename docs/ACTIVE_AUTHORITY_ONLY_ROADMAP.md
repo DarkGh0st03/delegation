@@ -125,8 +125,9 @@ stato avviato o autorizzato.
 - Il vecchio CLI `run-trusted-gemini-owner.mjs` rifiuta
   **sincronicamente prima di leggere le chiavi o il source pin**
   `startProtectedGeminiOwnerSession` quando l'architettura è
-  `authority-only`; non è possibile scegliere involontariamente il
-  Planning storico in quel profilo.
+  `authority-only` **o assente**: il percorso storico richiede
+  `DELEGATION_GATEWAY_ARCHITECTURE=legacy-signed-dag` esplicitamente.
+  Non è possibile scegliere involontariamente il Planning storico.
 - Test offline in Fast CI: accettazione binding originale, 15 varianti
   di dati/identità/scope/model contraffatti, rifiuto del downgrade,
   source pin e consenso prima di import/provider, wrapper
