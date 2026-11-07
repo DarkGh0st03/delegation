@@ -163,3 +163,75 @@ test("R239 native approved Task VP works without any Adapter HTTP URL",async t=>
   else process.env.APPROVED_RUNNER_NATIVE_MCP=old;
  }
 });
+
+test("R381.4 actual Agent VP signs via owner-private MCP subprocess using same native Rust socket",async t=>{
+ const rust=await fixture(t,request=>({
+  ok:true,result:{signed_vp:"signed.once.in.mcp.worker"}
+ }));
+ let forbiddenHttpCalls=0;
+ const handler=new DelegationEvidenceHandler({
+  adapterBaseUrl:"http://127.0.0.1:1",
+  adapterToken:"PRIVATE_AGENT_NATIVE_BEARER",
+  nativeSocketPath:rust.path,
+  nativePresentationTransport:"mcp-stdio",
+  evidence:{credential:"private.existing.child",
+   credential_id:"urn:child:r3814",presenter_id:"did:thesis:backend"},
+  fetchFn:(async()=>{forbiddenHttpCalls++;throw Error("FORBIDDEN HTTP FALLBACK");}) as typeof fetch
+ });
+ const challenge={
+  request_id:"r3814-gateway-prepare",
+  audience:"cloud-access-gateway",
+  challenge:"original-gateway-nonce",
+  expires_at:new Date(Date.now()+45000).toISOString(),
+  required_permission:{resource:"gitea://trusted/files/test.ts",operation:"read_file"}
+ };
+ assert.equal(await handler.createPresentation(challenge),"signed.once.in.mcp.worker");
+ assert.equal(forbiddenHttpCalls,0);
+ assert.equal(rust.calls.length,1);
+ assert.deepEqual(rust.calls[0],{
+  token:"PRIVATE_AGENT_NATIVE_BEARER",
+  operation:"create_presentation",
+  body:{
+   credential_id:"urn:child:r3814",
+   disclosed_permissions:[challenge.required_permission],
+   audience:challenge.audience,challenge:challenge.challenge
+  }
+ });
+});
+
+test("R381.4 private Agent MCP signing never retries after native failure",async t=>{
+ const rust=await fixture(t,()=>({
+  ok:false,error:"PRIVATE_NATIVE_RUST_KEY_DO_NOT_LOG"
+ }));
+ let fallbackCalls=0;
+ const handler=new DelegationEvidenceHandler({
+  adapterToken:"PRIVATE_AGENT_BEARER",
+  nativeSocketPath:rust.path,
+  nativePresentationTransport:"mcp-stdio",
+  evidence:{credential:"opaque",credential_id:"urn:child:r3814",
+   presenter_id:"did:thesis:backend"},
+  fetchFn:(async()=>{fallbackCalls++;throw Error("fallback unavailable");}) as typeof fetch
+ });
+ await assert.rejects(handler.createPresentation({
+  request_id:"r3814-failed",
+  audience:"cloud-access-gateway",challenge:"nonce",
+  expires_at:new Date(Date.now()+60000).toISOString(),
+  required_permission:{resource:"gitea://test",operation:"read_file"}
+ }),error=>{
+  assert.match(String(error),/Native Rust cryptographic presentation unavailable/u);
+  assert.doesNotMatch(String(error),/PRIVATE_NATIVE_RUST_KEY/u);
+  return true;
+ });
+ assert.equal(fallbackCalls,0);
+ assert.equal(rust.calls.length,1);
+});
+
+test("R381.4 non-native signed Agent may not choose private MCP signer",()=>{
+ assert.throws(()=>new DelegationEvidenceHandler({
+  adapterBaseUrl:"http://legacy.invalid",
+  adapterToken:"PRIVATE",
+  nativePresentationTransport:"mcp-stdio",
+  evidence:{credential:"opaque",credential_id:"some-child",
+   presenter_id:"did:thesis:backend"}
+ }),/Private MCP native presenter requires trusted Rust socket/u);
+});
