@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.3)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.4)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,42 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.3 aggiunge preflight owner-only `create_file` con grant esatto e intent `0600` non ripetibile, sulle basi Gitea CAS R383.2; emissione/ricevuta nativa, recovery generico e batch atomico multi-file ancora aperti** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.4 aggiunge un marker durable single-attempt per `create_file`, oltre alla preflight R383.3 e Gitea CAS R383.2. I passaggi Rust/OPA, executor e receipt autenticata restano NON abilitati; recovery generico e batch multi-file ancora aperti.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.4 — Marker durevole di esecuzione single-attempt (NO-WRITE)
+
+Il journal owner-private originale `DurableAuthorityOnlyGiteaCreateIntentJournal`
+dispone ora di `reserveAttempt(intent)`, con un file
+`*.create-attempt.json` distinto dalla preflight `*.create-intent.json`.
+Prima del marker richiede l'intent originale già persistito e identico,
+con Child/Task/request fingerprint/HEAD/contenuto invariati.
+Il marker nasce con `O_CREAT|O_EXCL|O_NOFOLLOW`, permessi `0600`,
+proprietario originale, `fsync` del file e della directory `0700`.
+Reinvocazioni in-process, concorrenti o dopo un riavvio falliscono:
+un effetto ambiguo non può essere ritentato. Il record preserva
+`provider_write_authorized:false`.
+
+Sono state aggiunte tre regressioni gratuite per marker valido,
+replay dopo restart, due journal concorrenti e preflight senza 404
+attendibile. **Il nuovo marker non è collegato al vero
+`executeAuthorization`**: non autorizza una POST Gitea, non attesta
+Rust VP/OPA e non completa un Task. `create_file` resta vietato
+dall'Executor authority-only. Verificare Fast CI della SHA R383.4
+prima di considerare superato questo checkpoint.
+
+**Prossimo confine:** dopo VP Rust nativa e decisione OPA reale,
+l'originale Gateway deve attestare il `PreparedRequestRecord` già
+consumato e la stessa flight Task/Child persistita, usare il marker
+single-attempt e soltanto allora chiamare il writer Gitea
+`createFileWithHeadCas`. Servono receipt MAC/observer indipendenti,
+riconciliazione fail-closed e test negativi prima del FunctionTool.
+Nessuna chiamata AI a pagamento, nessun Full E2E avviato, PR Draft.
 
 ### R383.3 — Create intent durable, signed Task binding e preflight senza provider write
 
