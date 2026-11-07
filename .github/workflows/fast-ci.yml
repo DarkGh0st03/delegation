@@ -46,6 +46,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-owner-bootstrap.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
+          # R384.6: no legacy billed pipeline may be re-enabled.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
           node --experimental-strip-types --test --test-name-pattern="R382.6|R382.7" poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-reviewed-canonical-handoff.test.mjs
           node --experimental-strip-types --test --test-name-pattern="R382.5|R382.6" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
