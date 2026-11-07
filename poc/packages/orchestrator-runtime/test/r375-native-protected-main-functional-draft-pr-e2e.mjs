@@ -55,8 +55,8 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
-import {invokeNativeCrypto}
- from "../../agent-runtime/src/native-crypto-ipc.ts";
+import {createNativeOrchestratorPresentation}
+ from "../src/orchestrator-gateway-transport.ts";
 
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
@@ -1137,18 +1137,17 @@ const tool=record?.request?.tool,role=record?.agent_role;
      assert.equal(branchPostAttempts,0);
      await assert.rejects(independentClient.getBranchMetadata(branch),
       error=>error instanceof ProviderNotFoundError);
-     const signed=await invokeNativeCrypto({
+     const signedVp=await createNativeOrchestratorPresentation({
       socketPath,token:tokens.orchestrator,timeoutMs:60000
-     },"create_presentation",{
+     },{
       credential_id:operational.credential_id,
       disclosed_permissions:[branchPermission],
       audience:prepared.audience,challenge:prepared.challenge
      });
-     assert.equal(typeof signed.signed_vp,"string");
-     privateBranchFlight.signed_vp=signed.signed_vp;
+     privateBranchFlight.signed_vp=signedVp;
      privateBranchExecuteCalls++;
      return executeAuthorization({
-      request_id:prepared.request_id,signed_vp:signed.signed_vp
+      request_id:prepared.request_id,signed_vp:signedVp
      },deps);
     }
    },
@@ -1201,18 +1200,17 @@ const tool=record?.request?.tool,role=record?.agent_role;
       (await independentClient.getBranchMetadata(branch)).commit_sha);
      assert.equal(draftPrCreateAttempts,0,
       "original PR POST cannot precede durable one-shot staging");
-     const signed=await invokeNativeCrypto({
+     const signedVp=await createNativeOrchestratorPresentation({
       socketPath,token:tokens.orchestrator,timeoutMs:60000
-     },"create_presentation",{
+     },{
       credential_id:operational.credential_id,
       disclosed_permissions:[prPermission],
       audience:prepared.audience,challenge:prepared.challenge
      });
-     assert.equal(typeof signed.signed_vp,"string");
-     privatePrFlight.signed_vp=signed.signed_vp;
+     privatePrFlight.signed_vp=signedVp;
      privatePrExecutorCalls++;
      return executeAuthorization({
-      request_id:prepared.request_id,signed_vp:signed.signed_vp
+      request_id:prepared.request_id,signed_vp:signedVp
      },deps);
     }
    }

@@ -76,3 +76,17 @@ test("R164 private root MCP errors never reveal Adapter secrets",async()=>{
   return /root revocation unavailable/.test(String(error));
  });
 });
+
+test("R378.1 private presentation MCP invokes the signer once",async()=>{
+ const {createOwnerPrivateCryptographicMcpSession}=await import(
+  "../src/owner-private-child-mcp.ts");
+ const result={signed_vp:"owner-only-vp"};
+ let calls=0;
+ const session=createOwnerPrivateCryptographicMcpSession("presentation_create",async()=>{
+  calls++;
+  return result;
+ });
+ assert.equal(await session.invokeOnce(),result);
+ await assert.rejects(session.invokeOnce(),/presentation unavailable/u);
+ assert.equal(calls,1);
+});

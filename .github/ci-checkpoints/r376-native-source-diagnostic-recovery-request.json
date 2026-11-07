@@ -1,6 +1,6 @@
 {
-  "checkpoint": "R377.11",
-  "expected": "authenticated Frontend stop after attested read and before write, fresh Frontend Task, independently authenticated Docker FAIL, separate signed Test Agent read/CAS, fresh Docker and researcher acceptance PASS, independently verified Draft PR",
+  "checkpoint": "R378.1",
+  "expected": "native authority-only flow with private MCP Child issuance and Orchestrator VP, specialist task-local MCP VP, authenticated Frontend stop and recovery, Docker FAIL and PASS, and independently verified Draft PR",
   "models": "scripted deterministic",
   "paid_inference_calls": 0,
   "status": "PENDING_NATIVE_E2E"

@@ -3,6 +3,8 @@
  * Never handed to ADK and never re-exported by the canonical runtime index.
  * Source encapsulation does not replace native Rust DC/VP and OPA policy.
  */
+import {createOwnerPrivateCryptographicMcpSession}
+  from "../../../mcp-shared/src/owner-private-child-mcp.ts";
 import {invokeNativeCrypto} from "../../agent-runtime/src/native-crypto-ipc.ts";
 type FetchLike = typeof fetch;
 
@@ -80,6 +82,36 @@ async function parseJson(response: Response, label: string): Promise<unknown> {
   }
 }
 
+
+/** Owner-private VP transport for Planning, branch creation and Draft PR.
+ * Only an opaque reference crosses MCP. Rust receives the original challenge
+ * and exact disclosure, and the returned VP stays with the caller. */
+export async function createNativeOrchestratorPresentation(
+  config: Parameters<typeof invokeNativeCrypto>[0],
+  input: Readonly<{credential_id:string;disclosed_permissions:readonly RequiredPermission[];
+    audience:string;challenge:string}>,
+  signal?: AbortSignal
+): Promise<string> {
+  const assertActive=()=>{
+    if(signal?.aborted)
+      throw new OrchestratorGatewayClientError("Trusted Gateway invocation cancelled");
+  };
+  assertActive();
+  let proof: unknown;
+  try {
+    proof=await createOwnerPrivateCryptographicMcpSession("presentation_create",()=>{
+      assertActive();
+      return invokeNativeCrypto(config,"create_presentation",input);
+    }).invokeOnce();
+  } catch {
+    assertActive();
+    throw new OrchestratorGatewayClientError("Native Rust Orchestrator presentation denied");
+  }
+  assertActive();
+  if(!proof||typeof proof!=="object"||Array.isArray(proof))
+    throw new OrchestratorGatewayClientError("Native Rust Orchestrator presentation malformed");
+  return nonEmptyString((proof as {signed_vp?:unknown}).signed_vp,"Native Rust signed_vp");
+}
 
 export class OrchestratorGatewayTransport {
   readonly #gatewayBaseUrl: string;
@@ -257,26 +289,11 @@ export class OrchestratorGatewayTransport {
       audience:prepared.audience,
       challenge:prepared.challenge
     };
-    if(this.#nativeSocketPath){
-      this.#assertActive(signal);
-      let proof:unknown;
-      try{
-        proof=await invokeNativeCrypto({
-          socketPath:this.#nativeSocketPath,token:this.#adapterToken,
-          timeoutMs:this.#timeoutMs
-        },"create_presentation",input);
-      }catch{
-        // Native rejection cannot downgrade to Adapter HTTP.
-        throw new OrchestratorGatewayClientError(
-          "Native Rust Orchestrator presentation denied");
-      }
-      this.#assertActive(signal);
-      if(!proof||typeof proof!=="object"||Array.isArray(proof))
-        throw new OrchestratorGatewayClientError(
-          "Native Rust Orchestrator presentation malformed");
-      return nonEmptyString((proof as {signed_vp?:unknown}).signed_vp,
-        "Native Rust signed_vp");
-    }
+    if(this.#nativeSocketPath)
+      return createNativeOrchestratorPresentation({
+        socketPath:this.#nativeSocketPath,token:this.#adapterToken,
+        timeoutMs:this.#timeoutMs
+      },input,signal);
     if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
       throw new OrchestratorGatewayClientError(
         "Canonical signed DAG requires native Rust Orchestrator signing");
