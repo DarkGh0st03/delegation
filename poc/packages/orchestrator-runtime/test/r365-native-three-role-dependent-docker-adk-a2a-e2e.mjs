@@ -16,6 +16,7 @@ import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {createRequire} from "node:module";
+import {fileURLToPath} from "node:url";
 
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {InMemoryAuditSink,InMemoryRequestStore,prepareAuthorization}
@@ -59,6 +60,28 @@ import {TrustedGatewayGiteaMutationEvidencePublisher,
  AuthenticatedGiteaMutationCompletionObserver} from "../../../apps/gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
 import {DurableAuthorityOnlySequentialEffectJournal}
  from "../src/trusted-authority-only-sequential-effect-journal.ts";
+import {DurableAuthorityOnlyTaskFenceJournal}
+ from "../src/trusted-authority-only-task-fence-journal.ts";
+import {TrustedAuthorityOnlyCompletionObserver}
+ from "../src/trusted-authority-only-completion-observer.ts";
+import {TrustedAuthorityOnlyRunnerPreflight}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-preflight.ts";
+import {DurableAuthorityOnlyRunnerIntentJournal}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-intent-journal.ts";
+import {TrustedAuthorityOnlyRunnerExecutor}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-executor.ts";
+import {TrustedGatewayRunnerPassEvidencePublisher,
+ AuthenticatedRunnerCompletionObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-evidence.ts";
+import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
+import {TrustedAuthorityOnlyEffectStager}
+ from "../../../apps/gateway/src/trusted-authority-only-effect-stager.ts";
+import {IsolatedDockerRunnerExecutor}
+ from "../../../apps/test-runner-controller/src/isolated-executor.ts";
+import {createRunnerHttpServer}
+ from "../../../apps/test-runner-controller/src/http.ts";
+import {stageDisposableAccountSuspensionReference}
+ from "../../../apps/test-runner-controller/scripts/stage-disposable-account-suspension-reference.mjs";
 import {TrustedGatewayGiteaReadEvidencePublisher}
  from "../../../apps/gateway/src/trusted-authority-only-gitea-publisher.ts";
 import {AuthenticatedGiteaReadCompletionObserver}
@@ -167,6 +190,14 @@ const independentClient=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL
 const created=await client.createBranch("main","feature/account-suspension");
 assert.match(created.commit_sha,/^[a-f0-9]{40}$/u);
 const branch="feature/account-suspension";
+const disposableMainHead=(await client.getBranchMetadata("main")).commit_sha;
+// CI owner only: seed fully working Account Suspension reference BEFORE
+// signing. No ADK agent can create/change any fixture outside its own Child.
+const functionalFixture=await stageDisposableAccountSuspensionReference({
+ gitea:client,branch
+});
+assert.equal(functionalFixture.engineer_approved,false);
+assert.equal(functionalFixture.delegated_agent_writes,0);
 const backendPath="apps/backend/users/account.ts";
 const mutationPath="apps/frontend/src/account/AccountSuspension.ts";
 const backendOldContent="export const backendAccountSuspended = false;\n";
@@ -233,7 +264,9 @@ const socketPath=join(parent,"owner.sock");
 process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socketPath;
 const path=name=>join(parent,name);
 const names=["approvals","root-journal","coordinator-tasks","gateway-tasks",
- "gateway-activation","child-intents","gateway-child-intents","sequences","intent","receipts"];
+ "gateway-activation","child-intents","gateway-child-intents",
+ "sequences","flights","intent","receipts",
+ "runner-intent","runner-receipts","runner-logs"];
 try{
  for(const name of names)await mkdir(path(name),{mode:0o700});
  await writeFile(path("approvals")+"/"+sessionId+".json",
@@ -328,6 +361,16 @@ try{
  let child;
  assert.deepEqual(approved.permissions,grantPermissions);
  const evidenceKey=Buffer.alloc(32,96); // disposable CI receipt key
+ const readObserver=new AuthenticatedGiteaReadCompletionObserver({
+  directory:path("receipts"),key:evidenceKey,
+  repository:"thesis/iam-console-poc",branch,
+  giteaClient:independentClient,nowMs
+ });
+ const runnerObserver=new AuthenticatedRunnerCompletionObserver({
+  directory:path("runner-receipts"),key:evidenceKey,
+  repository:"thesis/iam-console-poc",branch,
+  giteaClient:independentClient,nowMs
+ });
  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
   repository:repo,engineerDid,coordinator,approvals,
   operationalSessionStore:new TrustedOperationalSessionStore(
@@ -335,11 +378,11 @@ try{
   taskJournal:new DurableAuthorityTaskJournal(path("gateway-tasks")),
   childJournal:new DurableAuthorityOnlyChildJournal(path("gateway-child-intents")),
   sequentialEffectJournal:new DurableAuthorityOnlySequentialEffectJournal(path("sequences")),
-  completionObserver:new AuthenticatedGiteaReadCompletionObserver({
-   directory:path("receipts"),key:evidenceKey,repository:"thesis/iam-console-poc",
-   branch,giteaClient:independentClient,nowMs
-  }).toTrustedObserver(),
-  nowMs
+  effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
+  completionObserver:new TrustedAuthorityOnlyCompletionObserver({
+   readVerifiedCompletion:expected=>expected.task_id===testTaskId?
+    runnerObserver.observe(expected):readObserver.observe(expected)
+  }),nowMs
  });
  await gate.activate(sessionId,baseRevision);
  await gate.bindTrustedTask(backendTaskId,backendRuntimeId,"backend");
@@ -382,6 +425,63 @@ try{
    repository:"thesis/iam-console-poc",
    branch,independentGiteaClient:independentClient,nowMs
   }),observer,repository:"thesis/iam-console-poc",branch
+ });
+ // Separate native Test Runner path, bound to the SAME trusted Gateway.
+ // It makes no provider call until native Rust VP and real OPA both allow.
+ const runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(
+  path("runner-intent"));
+ const runnerPreflight=new TrustedAuthorityOnlyRunnerPreflight({
+  admissions:gate,giteaClient:client,journal:runnerJournal,
+  repository:"thesis/iam-console-poc",branch,nowMs
+ });
+ const runnerBearer=randomBytes(32).toString("hex");
+ const controller=new IsolatedDockerRunnerExecutor({
+  gitea_base_url:process.env.GITEA_RUNNER_BASE_URL,
+  gitea_owner:"thesis",gitea_repository:"iam-console-poc",
+  gitea_token:process.env.GITEA_RUNNER_TOKEN,
+  docker_image:"node:22.15.0-bookworm",
+  phase_timeout_ms:600000,total_timeout_ms:840000,
+  log_dir:path("runner-logs"),acceptance_enabled:true,
+  acceptance_dir:fileURLToPath(
+   new URL("../../../runner/acceptance/",import.meta.url))
+ });
+ let runnerServer=createRunnerHttpServer({
+  bind_host:"127.0.0.1",bind_port:0,gateway_token:runnerBearer,
+  contract:{repository:"gitea://gitea.local/thesis/iam-console-poc",branch}
+ },controller);
+ await new Promise((ok,bad)=>{
+  runnerServer.once("error",bad);runnerServer.listen(0,"127.0.0.1",ok);
+ });
+ const address=runnerServer.address();
+ assert.ok(address&&typeof address!=="string");
+ let runnerCalls=0;
+ class ObservedRunnerClient extends RunnerClient{
+  async run(request,signal){
+   runnerCalls++;
+   const result=await super.run(request,signal);
+   process.stdout.write(JSON.stringify({
+    event:"r365_runner_sanitized_result",
+    status:result.status,
+    project_status:result.project_tests?.status??null,
+    acceptance_status:result.researcher_acceptance?.status??null,
+    head_matches:result.tested_commit_sha===request.commit_sha
+   })+"\n");
+   return result;
+  }
+ }
+ const runnerClient=new ObservedRunnerClient({
+  baseUrl:"http://127.0.0.1:"+address.port,
+  gatewayToken:runnerBearer,timeoutMs:900000
+ });
+ const runnerExecutor=new TrustedAuthorityOnlyRunnerExecutor({
+  admissions:gate,preflight:runnerPreflight,
+  journal:runnerJournal,giteaClient:client,runnerClient,
+  publisher:new TrustedGatewayRunnerPassEvidencePublisher({
+   directory:path("runner-receipts"),key:evidenceKey,
+   runnerClient,independentGiteaClient:independentClient,
+   repository:"thesis/iam-console-poc",branch,nowMs
+  }),observer:runnerObserver,
+  repository:"thesis/iam-console-poc",branch
  });
  const readPublisher=new TrustedGatewayGiteaReadEvidencePublisher({
   directory:path("receipts"),key:evidenceKey,admissions:gate,
@@ -437,7 +537,8 @@ try{
  const deps={store,audit,verifier,policy,repository:repo,executor,
   authorityOnlyAdmissions:gate,nowMs,authorityOnlyReadEnabled:true,
   authorityOnlyReceiptWriter:readPublisher,
-  authorityOnlyMutationEnabled:true,authorityOnlyMutationExecutor:mutationExecutor};
+  authorityOnlyMutationEnabled:true,authorityOnlyMutationExecutor:mutationExecutor,
+  authorityOnlyRunnerEnabled:true,authorityOnlyRunnerExecutor:runnerExecutor};
  const prepare=(tool)=>prepareAuthorization({
   task_id:runtimeTaskId,agent_role:"frontend",tool,
   arguments:{branch,path:mutationPath,
