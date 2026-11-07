@@ -168,6 +168,92 @@ export class OrchestratorGatewayTransport {
     return result;
   }
 
+  /** One verified multi-permission VP for a Planning-only read batch.
+   * Never available for authority-only operational Tasks or write effects.
+   * The original trusted caller supplies all exact resource pins BEFORE
+   * Gateway prepare; any response widening fails before VP creation. */
+  async invokeReadComposite(
+    taskId:string,
+    actions:readonly {tool:"read_file"|"list_directory";arguments:Record<string,unknown>}[],
+    expected:readonly RequiredPermission[],
+    pinnedRevision:string,
+    signal?:AbortSignal
+  ):Promise<unknown>{
+    this.#assertActive(signal);
+    if(!Array.isArray(actions)||actions.length<2||actions.length>12||
+       !Array.isArray(expected)||expected.length!==actions.length||
+       !/^[a-f0-9]{40}$/u.test(pinnedRevision)||
+       actions.some(a=>!a||!["read_file","list_directory"].includes(a.tool))||
+       expected.some(p=>!p||typeof p.resource!=="string"||
+         !["read_file","list_directory"].includes(p.operation))||
+       new Set(expected.map(p=>p.operation+"\0"+p.resource)).size!==expected.length)
+      throw new OrchestratorGatewayClientError("Invalid trusted Planning composite request");
+    let response:Response;
+    try{
+      response=await this.#fetch(
+        this.#gatewayBaseUrl+"/v1/authorization/prepare-read-composite",{
+          method:"POST",
+          headers:{"content-type":"application/json",accept:"application/json"},
+          body:JSON.stringify({task_id:taskId,agent_role:"orchestrator",actions}),
+          signal:this.#requestSignal(signal)
+        });
+    }catch{
+      throw new OrchestratorGatewayClientError("Trusted Planning composite prepare unavailable");
+    }
+    this.#assertActive(signal);
+    const raw=await parseJson(response,"Planning composite prepare");
+    this.#assertActive(signal);
+    if(!response.ok)
+      throw new OrchestratorGatewayClientError("Trusted Planning composite prepare denied",response.status);
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))
+      throw new OrchestratorGatewayClientError("Malformed trusted Planning composite prepare");
+    const prepared=raw as Record<string,unknown>;
+    const perms=prepared.required_permissions;
+    if(prepared.authorization_only!==false||
+       prepared.pinned_revision!==pinnedRevision||
+       !Array.isArray(perms)||perms.length!==expected.length||
+       !perms.every((p,i)=>p&&typeof p==="object"&&
+         (p as RequiredPermission).resource===expected[i].resource&&
+         (p as RequiredPermission).operation===expected[i].operation))
+      throw new OrchestratorGatewayClientError(
+        "Gateway composite challenge differs from trusted Planning read permissions");
+    const requestId=nonEmptyString(prepared.request_id,"composite request_id");
+    const audience=nonEmptyString(prepared.audience,"composite audience");
+    const challenge=nonEmptyString(prepared.challenge,"composite challenge");
+    // Sign the Gateway-challenged EXACT set with one original Root. There is
+    // no client-side privilege synthesis or per-action VP fallback.
+    const signedVp=await this.#createPresentation({
+      request_id:requestId,audience,challenge,required_permission:expected[0]
+    },signal,expected);
+    this.#assertActive(signal);
+    let executed:Response;
+    try{
+      executed=await this.#fetch(
+        this.#gatewayBaseUrl+"/v1/authorization/execute-read-composite",{
+          method:"POST",
+          headers:{"content-type":"application/json",accept:"application/json"},
+          body:JSON.stringify({request_id:requestId,signed_vp:signedVp}),
+          signal:this.#requestSignal(signal)
+        });
+    }catch{
+      throw new OrchestratorGatewayClientError("Trusted Planning composite execution unavailable");
+    }
+    this.#assertActive(signal);
+    const rawResult=await parseJson(executed,"Planning composite execute");
+    this.#assertActive(signal);
+    if(!executed.ok||!rawResult||typeof rawResult!=="object"||
+       Array.isArray(rawResult))
+      throw new OrchestratorGatewayClientError("Trusted Planning composite execution denied",
+        executed.status);
+    const result=rawResult as Record<string,unknown>;
+    if(result.request_id!==requestId||result.decision!=="allow"||
+       result.pinned_revision!==pinnedRevision||
+       !Array.isArray(result.executions)||
+       result.executions.length!==actions.length)
+      throw new OrchestratorGatewayClientError("Unverified Planning composite response");
+    return result;
+  }
+
   async #prepare(
     taskId: string,
     tool: "create_branch" | "create_pull_request" |
@@ -249,11 +335,12 @@ export class OrchestratorGatewayTransport {
   }
 
   async #createPresentation(
-    prepared: PreparedAuthorization,signal?:AbortSignal
+    prepared: PreparedAuthorization,signal?:AbortSignal,
+    requiredPermissions?:readonly RequiredPermission[]
   ): Promise<string> {
     const input={
       credential_id:this.#rootCredentialId,
-      disclosed_permissions:[prepared.required_permission],
+      disclosed_permissions:requiredPermissions??[prepared.required_permission],
       audience:prepared.audience,
       challenge:prepared.challenge
     };
