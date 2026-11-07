@@ -153,6 +153,26 @@ socket. The A2A production host remains opt-out by default, and these
 unit tests do **not** certify full native A2A/Gitea/Docker execution or
 autonomous Gemini coding. The combined same-SHA CI gate remains mandatory.
 
+## R381.7 — original Review Host private Child MCP switch
+
+The canonical authority-only `TrustedAuthorityOnlyReviewHost` now supports
+a **trusted owner-only** optional
+`admitOperationalExecution({...,privateChildMcpTransport:"native-stdio"})`
+argument. This is not a model-facing, HTTP or A2A configuration key.
+The original Engineer Review Host verifies that its native Rust Child port
+implements `issueChildViaPrivateMcp` before activating its original Gateway
+and binds the same `TrustedAuthorityOnlyChildIssuer` to the existing
+Coordinator and journals. The default remains in-process; the old
+ACK-only `"stdio"` path is explicitly rejected at this canonical boundary.
+
+Offline Review Host tests cover original-root Child admission with the
+native-stdio method, no direct-port fallback, replay-protected staging,
+fail-closed missing native method/invalid mode and root retirement.
+The private method is tested with an offline signer fixture; **this is
+not an independent native EVM/OPA/Gitea/Docker green run** and does
+not authorize the final launcher or paid Gemini pilot. The native
+R375 end-to-end workflow is not yet an opt-in proof of this path.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
