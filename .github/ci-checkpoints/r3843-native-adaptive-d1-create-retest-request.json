@@ -20,6 +20,6 @@
   "changes_main": false,
   "permission_escalation": false,
   "notes": "A second authentic Test FAIL is expected; this proves native D1 continuity and fail-closed, NOT functional repair success.",
-  "revision": 5,
-  "fix": "Classify private original CREATE admission, O_EXCL, Gitea CAS and MAC failures; log only redacted reason and preserve fail-closed behavior"
+  "revision": 6,
+  "fix": "Execute free R384.3 with private native CREATE stage diagnostic classifier added to original Gateway dependencies; no paid models or expanded grants"
 }
