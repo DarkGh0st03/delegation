@@ -1814,6 +1814,28 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  ):Readonly<TrustedCompletionExpectation>{
   return this.#assertConsumedEffectBinding(record,verified,"update_file");
  }
+ /**
+  * R383.5 — post-native CREATE admission proof, NO provider mutation.
+  * Called only by the original Gateway after concrete native Rust VP
+  * verification and independent OPA allow. The original consumed
+  * Prepare, exact create-only Task/Child and durable flight must match.
+  * Neither the return value nor any journal marker is a Gitea receipt.
+  */
+ assertTrustedCreateNativeAdmissionBinding(
+  record:PreparedRequestRecord,verified:VerifiedDelegation
+ ):Readonly<TrustedCompletionExpectation>{
+  const bound=record&&this.#tasks.get(record.task_id);
+  if(!bound||record.request.tool!=="create_file"||
+     !["backend","frontend"].includes(bound.row.agent_id)||
+     bound.row.permissions.length!==1||
+     pair(bound.row.permissions[0])!==pair(record.required_permission)||
+     record.required_permission.operation!=="create_file"||
+     !verified||!Array.isArray(verified.permissions)||
+     verified.permissions.length!==1||
+     pair(verified.permissions[0])!==pair(record.required_permission))
+   deny("native create must match exact signed single-file Child grant");
+  return this.#assertConsumedEffectBinding(record,verified,"create_file");
+ }
  assertTrustedCompletedBranchEvidenceBinding(
   record:PreparedRequestRecord,verified:VerifiedDelegation
  ):Readonly<TrustedCompletionExpectation>{
@@ -1827,7 +1849,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   return this.#assertConsumedEffectBinding(record,verified,"create_pull_request");
  }
  #assertConsumedEffectBinding(record:PreparedRequestRecord,verified:VerifiedDelegation,
-  tool:"update_file"|"create_pull_request"|"create_branch"):Readonly<TrustedCompletionExpectation>{
+  tool:"update_file"|"create_file"|"create_pull_request"|"create_branch"):Readonly<TrustedCompletionExpectation>{
   const root=this.#live();
   if(!record||record.consumed!==true||
      !record.authority_only_digest||
@@ -1850,7 +1872,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      verified.credential_id!==child.credential_id||
      verified.root_credential_id!==root.root_credential_id||
      !Number.isSafeInteger(verified.hierarchy_depth)||
-     (tool!=="update_file"?verified.hierarchy_depth!==0:verified.hierarchy_depth<1)||
+     (["create_branch","create_pull_request"].includes(tool)?verified.hierarchy_depth!==0:verified.hierarchy_depth<1)||
      child.root_credential_id!==root.root_credential_id||
      child.authority_digest!==root.authority_digest||
      child.agent_did!==bound.row.agent_did||
