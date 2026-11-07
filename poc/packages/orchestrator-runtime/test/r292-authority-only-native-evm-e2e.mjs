@@ -48,12 +48,17 @@ import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 import {invokeNativeCrypto}
  from "../../agent-runtime/src/native-crypto-ipc.ts";
+import {createOwnerPrivateInterprocessMcpSession}
+ from "../../../mcp-shared/src/owner-private-crypto-stdio.ts";
 
 assert.equal(process.env.R233_NATIVE_EVM,"1");
 assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
 assert.equal(process.env.ADAPTER_TRUST_PROFILE,"evm");
 assert.equal(process.env.GATEWAY_VERIFIER_MODE,"core-rust");
 assert.equal(process.env.APPROVED_RUNNER_NATIVE_MCP,"1");
+const r3812Stdio=process.env.R3812_NATIVE_MCP_STDIO==="1";
+assert.ok(process.env.R3812_NATIVE_MCP_STDIO===undefined||r3812Stdio,
+ "R381.2 trusted test opt-in must be exactly 1");
 assert.equal(process.env.GEMINI_API_KEY,undefined);
 assert.equal(process.env.OPENAI_API_KEY,undefined);
 const requireAddon=createRequire(import.meta.url);
@@ -172,7 +177,8 @@ try{
  const issuer=new TrustedAuthorityOnlyChildIssuer({
   coordinator,nativeCryptoPort:nativePort,
   journal:new DurableAuthorityOnlyChildJournal(path("child-intents")),
-  nowMs
+  nowMs,
+  ...(r3812Stdio?{privateMcpTransport:"stdio"}:{})
  });
  const child=await issuer.issueForRegisteredTask(taskId,
   params("urn:r292:child:backend",29103,600));
@@ -201,13 +207,26 @@ try{
   arguments:{branch,path:"apps/backend/user.ts"}
  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
  {store,audit,authorityOnlyAdmissions:gate,nowMs});
+ // R381.2: both Child and EVERY Backend VP must pass an independent
+ // one-shot MCP stdio broker before the SAME Rust CryptoRuntime is invoked.
+ // Neither the broker nor ADK receives a bearer, issuer key or signed VP.
+ let nativePresentationCalls=0,privatePresentationBrokers=0;
  const sign=async(credential_id,prepared)=>{
-  const signed=await invokeNativeCrypto({
-   socketPath,token:tokens.backend,timeoutMs:60000
-  },"create_presentation",{
-   credential_id,disclosed_permissions:[grantPermission],
-   audience:prepared.audience,challenge:prepared.challenge
-  });
+  const nativeEffect=async()=>{
+   nativePresentationCalls++;
+   return invokeNativeCrypto({
+    socketPath,token:tokens.backend,timeoutMs:60000
+   },"create_presentation",{
+    credential_id,disclosed_permissions:[grantPermission],
+    audience:prepared.audience,challenge:prepared.challenge
+   });
+  };
+  let signed;
+  if(r3812Stdio){
+   privatePresentationBrokers++;
+   signed=await createOwnerPrivateInterprocessMcpSession(
+    "presentation_create",nativeEffect).invokeOnce();
+  }else signed=await nativeEffect();
   assert.equal(typeof signed.signed_vp,"string");
   return signed.signed_vp;
  };
@@ -277,6 +296,14 @@ try{
   request_id:pending.request_id,signed_vp:pendingVp
  },deps),error=>error?.code==="verification_rejected");
  assert.equal(executor.callCount,0);
+ assert.equal(nativePresentationCalls,3,
+  "all three original signed VP requests must reach native Rust once");
+ if(r3812Stdio){
+  assert.equal(privatePresentationBrokers,3,
+   "every signed VP must first use one isolated MCP broker");
+  assert.equal(issuer.assertTrustedIssuedChild(taskId,coordinator).credential_id,
+   child.credential_id);
+ }
  process.stdout.write(JSON.stringify({
   event:"r292_authority_only_native_evm_staged",
   native_engineer_roots:true,native_child_ipc:true,
@@ -284,6 +311,13 @@ try{
   native_verified_root_provenance:true,real_opa_allow:true,
   unbound_child_denied:true,revoked_root_denied:true,
   provider_calls:executor.callCount,gateway_execution_authorized:false,
+  ...(r3812Stdio?{
+   r3812_native_stdio_mcp_child_and_vp:true,
+   child_original_root_pinned:true,
+   presentation_broker_count:privatePresentationBrokers,
+   native_presentation_count:nativePresentationCalls,
+   native_root_revoked:true
+  }:{}),
   paid_model_calls:0
  })+"\n");
 }finally{
