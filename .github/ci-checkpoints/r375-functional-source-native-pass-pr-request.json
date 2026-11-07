@@ -1,31 +1,24 @@
 {
-  "checkpoint": "R375.5",
-  "previous_sha": "4116dd4346ef43bf5bd2101fb879173c839579e8",
-  "native_run": 42351935783,
-  "native_result": "FAIL_CLOSED",
-  "observed": {
-    "original_protected_main": true,
-    "backend_frontend_incomplete_D0_authenticated_cas": true,
-    "first_authentic_researcher_acceptance": "FAIL",
-    "functional_application_file_cas_completed": 7,
-    "reason": "Gate's mixed read/update requires Backend or Frontend native Child, intentionally excludes Test role"
+  "checkpoint": "R375.6",
+  "previous_sha": "348e656e0c822b4823b39c5910b0c710445ca409",
+  "previous_native_run": 42352523511,
+  "verified_application_evidence": {
+    "initial_native_docker": {
+      "project": "pass",
+      "researcher_acceptance": "fail",
+      "head_matches": true
+    },
+    "ten_authorized_gitea_cas": true,
+    "retet_native_docker": {
+      "project": "pass",
+      "researcher_acceptance": "pass",
+      "head_matches": true
+    }
   },
-  "fix": "No Gateway guard relaxation. Map 2 existing backend project test file Task updates to Backend and 1 existing frontend test file Task update to Frontend. Test Agent retains exclusive signed run_tests only. Every file stays in original 23-pair Engineer signature with one native Child, one read, one CAS.",
-  "expected": {
-    "original_root_branch": 1,
-    "d0_tasks": 2,
-    "initial_runner_failure": 1,
-    "functional_source_files": 7,
-    "updated_project_tests": 3,
-    "retest_runner_pass": 1,
-    "original_root_draft_pr": 1,
-    "all_signed_exact_permissions": 23,
-    "model_decisions": 15,
-    "native_children": 14,
-    "gateway_completed_tasks": 14,
-    "registered_tasks": 16,
-    "gitea_cas": 12,
-    "paid_model_calls": 0
-  },
-  "status": "pending native and Fast CI on same SHA"
+  "first_failure_after_pass": "ENOENT attempting Gitea read evidence receipt for r375-functional-retest, because fixture observer recognized only r375-test-task as Runner Test Task",
+  "fix": "Route original failed Test ID and replacement passed Test ID to original authenticated Runner PASS completion observer; all non-Test Tasks remain on read observer. Keep same original signed root, Rust, OPA, MAC and HEAD pin.",
+  "expected": "independent PASS completion -> ready_for_pr -> original root signed one-shot Draft PR -> independent Gitea GET, PR open Draft unmerged",
+  "no_paid_inference": true,
+  "pr38": "draft unmerged",
+  "status": "native CI pending"
 }

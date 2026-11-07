@@ -538,8 +538,14 @@ try{
    sequentialEffectJournal:new DurableAuthorityOnlySequentialEffectJournal(path("sequences")),
    effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
    completionObserver:new TrustedAuthorityOnlyCompletionObserver({
-    readVerifiedCompletion:expected=>expected.task_id==="r375-test-task"?
-     runnerObserver.observe(expected):readObserver.observe(expected)
+    // Both original Test D0 and independent replacement Test have distinct
+    // signed Task IDs. Route EITHER to the original authenticated Runner
+    // PASS observer, never to the unrelated read-only Gitea receipt store.
+    // A Test FAIL still has no PASS receipt and cannot be attested here.
+    readVerifiedCompletion:expected=>
+     (expected.task_id==="r375-test-task"||
+      expected.task_id==="r375-functional-retest")?
+      runnerObserver.observe(expected):readObserver.observe(expected)
    }),nativeCryptoPort:nativeChildPort
   });
   const gate=execution.gateway;

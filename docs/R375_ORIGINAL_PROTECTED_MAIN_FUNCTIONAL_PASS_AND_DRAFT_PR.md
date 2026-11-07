@@ -157,3 +157,33 @@ OPA, Gateway admission and evidence checks are unchanged.
 Expected role-model requests now: Backend 21, Frontend 15, Test 4.
 Do not claim R375 native success without green original Docker Runner
 on both project and independent acceptance and one-shot Draft PR GET.
+
+## R375.6 — independently authenticated replacement Test PASS router
+
+R375.5 native [#42352523511](https://github.com/DarkGh0st03/delegation/actions/runs/42352523511)
+proved the previously missing **actual source progression**:
+original protected-main branch, real Docker acceptance **FAIL**, seven
+functional code read/CAS updates plus three stronger project-test read/CAS
+updates, then real Docker **PASS** with
+`project_status=pass`, `acceptance_status=pass`, and `head_matches=true`.
+All real Docker results were emitted by the isolated native Runner.
+
+After successful Test PASS the original Gateway attempted independent
+completion attestation but the disposable fixture's completion router
+only recognized the **first** Test Task ID (`r375-test-task`) and sent
+the **replacement** passing Test (`r375-functional-retest`) to the
+Gitea read evidence observer, which correctly refused the nonexistent
+Gitea read receipt. The native workflow ended FAIL **before**
+`ready_for_pr` or a PR POST.
+
+R375.6 only adds the exact known replacement Test Task ID to the
+authenticated Runner PASS observer selection. Both IDs still require
+the same MAC receipt checks, immutable root/Child/Task bindings,
+verified Test and project acceptance PASS, and current Gitea HEAD.
+Every non-Test Task remains routed to its independent Gitea read
+observer. No receipt is fabricated and the original Gateway, OPA,
+Rust verifier and Run-Test execution code are unchanged.
+
+**Do not yet claim PR or successful native integration** until the
+new CI proves independent completion, real current-HEAD readiness,
+original signed one-shot Draft PR provider POST and independent GET.
