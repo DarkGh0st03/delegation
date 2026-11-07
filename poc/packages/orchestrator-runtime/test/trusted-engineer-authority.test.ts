@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {makeApproval} from "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {TrustedPlanningDiscoveryLedger}
+  from "../src/trusted-planning-discovery-ledger.ts";
 import {
   TrustedEngineerAuthoritySession, preliminaryReadPermissions,
   type EngineerCredentialPort, type TrustedApprovalRecord
@@ -172,6 +174,66 @@ test("R380.0 explicit hierarchical Planning Root is bounded and strictly read-on
   ])assert.throws(()=>preliminaryReadPermissions(invalid as never));
 });
 
+
+test("R380.2 only original trusted owner can select bounded dynamic discovery roots",()=>{
+ const base={...snapshot(),hierarchical_preliminary_read:true};
+ const valid={...base,dynamic_discovery_roots:["apps/backend"]};
+ assert.deepEqual(preliminaryReadPermissions(valid),preliminaryReadPermissions(base),
+   "new tool-visible discovery roots must never add signed Root permission rows");
+ for(const invalid of [
+  {...snapshot(),dynamic_discovery_roots:["apps/backend"]},
+  {...base,dynamic_discovery_roots:["apps/secrets"]},
+  {...base,dynamic_discovery_roots:["apps/backend","apps/backend"]},
+  {...base,dynamic_discovery_roots:["../secret"]},
+  {...base,dynamic_discovery_roots:["/apps/backend"]},
+  {...base,dynamic_discovery_roots:["apps/%2E%2E"]},
+  {...base,dynamic_discovery_roots:[]},
+  {...base,dynamic_discovery_roots:["","","","","","","","",""]},
+  {...base,dynamic_discovery_roots:"apps/backend"}
+ ])assert.throws(()=>preliminaryReadPermissions(invalid as never),
+   /Invalid trusted Planning dynamic discovery roots/u);
+});
+
+test("R380.2 discovery ledger accepts only verified direct children and commits no partial listing",()=>{
+ const ledger=new TrustedPlanningDiscoveryLedger({
+  ...snapshot(),hierarchical_preliminary_read:true,
+  dynamic_discovery_roots:["apps/backend"]
+ });
+ const file="apps/backend/feature.ts", nested="apps/backend/spec";
+ assert.equal(ledger.hasFile(file),false);
+ ledger.observeListings([{path:"apps/backend",entries:[
+  {path:file,type:"file"},
+  {path:nested,type:"dir"}
+ ]}]);
+ assert.equal(ledger.hasFile(file),true);
+ assert.equal(ledger.hasDirectory(nested),true);
+ ledger.observeListings([{path:nested,entries:[
+  {path:nested+"/check.ts",type:"file"}
+ ]}]);
+ assert.equal(ledger.hasFile(nested+"/check.ts"),true);
+ const previous=ledger.files();
+ for(const forged of [
+  [{path:"apps/backend/new.ts",type:"file"},
+   {path:"apps/backend/../secrets.ts",type:"file"}],
+  [{path:"apps/backend/new.ts",type:"file"},
+   {path:"apps/backend/nested/deep.ts",type:"file"}],
+  [{path:"apps/backend/new.ts",type:"file"},
+   {path:"apps/backend/new.ts",type:"file"}],
+  [{path:"apps/backend/new.ts",type:"file"},
+   {path:"apps/backend/x",type:"symlink"}],
+  [{path:"apps/backend/new.ts",type:"file"},
+   {path:"apps/backend/%2E%2E",type:"dir"}]
+ ])assert.throws(()=>ledger.observeListings([{path:"apps/backend",entries:forged}]));
+ assert.deepEqual(ledger.files(),previous,
+   "partial file discovery must not survive an invalid listing");
+ // Source listing outside the independently selected subtree can be shown
+ // to the model but cannot grow the trusted discovery catalog.
+ ledger.observeListings([{path:"apps",entries:[
+  {path:"apps/other",type:"dir"},{path:"apps/secret.ts",type:"file"}
+ ]}]);
+ assert.equal(ledger.hasDirectory("apps/other"),false);
+ assert.equal(ledger.hasFile("apps/secret.ts"),false);
+});
 test("approval revokes preliminary root before independent operational root issuance",async()=>{
   const {session,adapter}=fixture();
   const planning=await session.startPlanning(root(PREP_ID,"100",600));
