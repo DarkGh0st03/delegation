@@ -351,7 +351,70 @@ test('R377.0 pre-failure read outside signed Engineer root is denied',async()=>{
  assert.equal(f.verified.length,0);
  assert.equal(f.retired,true);
 });
-test('R377.0 read-only Test agent before any failure is denied',async()=>{
+test('R383.0 Test agent reads its signed project test source before any failure, then only a real Test run proves PR readiness',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const testPath='tests/backend/account.test.ts';
+ const resource=repo+'/branches/feature%2Faccount-suspension/files/'+testPath;
+ const readGrant={operation:'read_file',resource};
+ const original=f.hooks.readContext;
+ const excerpt='test("account suspension", () => { assert.equal(1, 2); });';
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(readGrant);
+  ctx.agents.test.capabilities.push('read_file');
+  if(ctx.previousTasks.some(p=>p.task_id==='task-0')){
+   ctx.executionProgress.source_observations=[{
+    task_id:'task-0',agent_id:'test',path:testPath,
+    revision:ctx.executionProgress.current_head_sha,
+    source_sha256:'f'.repeat(64),
+    source_bytes:excerpt.length,excerpt,excerpt_truncated:false,
+    evidence_sha256:'e'.repeat(64)
+   }];
+  }
+  return ctx;
+ };
+ const inspect=candidate('test',0,[readGrant]);
+ const testRun=candidate('test',1);
+ const model=new Decisions([inspect,testRun,
+  {action:'ready_for_pr',reason:'Current independent project Test passed'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.equal(result.source_test_task_id,'task-1',
+  'a Test read is not an independently completed run_tests');
+ assert.deepEqual(f.done.map(row=>row.permissions.map(p=>p.operation)),
+  [['read_file'],['run_tests']]);
+ assert.equal(f.retired,false);
+ assert.ok(JSON.stringify(model.requests[1]).includes(excerpt),
+  'trusted Gitea test source excerpt is available as DATA on next decision');
+ assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
+
+for(const mode of ['missing-signed-root','missing-test-capability','non-project-test-file']){
+ test('R383.0 Test read cannot bypass '+mode,async()=>{
+  const f=verifiedFailureFixture({failCount:0});
+  const target=mode==='non-project-test-file'?'apps/backend.ts':
+   'tests/backend/account.test.ts';
+  const readGrant={operation:'read_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/'+target};
+  const original=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   if(mode!=='missing-signed-root')ctx.rootPermissions.push(readGrant);
+   if(mode!=='missing-test-capability')ctx.agents.test.capabilities.push('read_file');
+   return ctx;
+  };
+  const model=new Decisions([candidate('test',0,[readGrant])]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+   /Task choice denied/u);
+  assert.equal(f.done.length,0,'no unsigned read Task can be marked complete');
+  assert.equal(f.retired,true);
+ });
+}
+
+test('R377.0 Test read of a non-project source remains denied before any failure',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
