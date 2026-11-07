@@ -1,8 +1,8 @@
 {
-  "schema": "r292-authority-only-native-evm-once-v1",
-  "candidate_parent_sha": "421d16b872a7493a6fe846a6e65b9348154099bb",
+  "schema": "r3812-authority-only-native-mcp-stdio-once-v1",
+  "candidate_parent_sha": "0929506b2c3f4056368b7c3900d11bce4b0cae5b",
   "workflow": "r292-authority-only-native-evm-e2e.yml",
-  "purpose": "One fresh-chain single-owner Rust Engineer -> native Task Child -> signed VP -> independent EVM status/accumulator verification -> real OPA -> terminal deny with zero provider effects.",
+  "purpose": "One explicit NO-AI native Rust/EVM/OPA chain. Original Engineer Root issues a Task-bound Child after private MCP stdio ACK; Backend VP requests use three separate private MCP stdio ACKs before direct Rust signing. Independent EVM/status and OPA verified; deny unauthorized execution and after revocation; no provider writes.",
   "isolated_chain": true,
   "original_r233_workflow_unchanged": true,
   "synthetic_ci_approval_only": true,
@@ -13,6 +13,11 @@
     "No main modification or merge",
     "No provider execution",
     "No HTTP Adapter",
-    "No production human approval or real Gitea state"
-  ]
+    "No production human approval or real Gitea state",
+    "No standalone MCP signer claim",
+    "No production launch or automatic merge"
+  ],
+  "r3812_native_mcp_stdio_mode": true,
+  "native_child_presentation_broker_count": 3,
+  "signed_authority_default_unchanged": true
 }
