@@ -40,14 +40,20 @@ test("R275 missing, malformed and forged child diagnostics remain unclassified",
 test("R380.3 F1 publishes only fixed-category native Planning probe counters",()=>{
  const probe={event:"r3803_planning_failure_probe_v1",
   model_turns:3,verified_lists:1,verified_files:0,denied_reads:1,
-  last_denial:"trusted_planning_read_failed",rejected_proposals:1};
+  first_denial:"trusted_planning_read_failed",
+  last_denial:"trusted_planning_read_failed",rejected_proposals:1,
+  gateway_prepares:1,gateway_executions:1,gitea_reads:1,
+  gateway_last_reason:"verifier_unavailable"};
  const stderr="secret "+secret+"\n[r3803-planning-probe] "+
    JSON.stringify(probe)+"\n"+PREFIX+JSON.stringify(
      safeNativePhaseFailure(new Error(secret),"planning_scope"))+"\n";
  const observed=safe(stderr);
  assert.deepEqual(observed.r3803_probe,{
    model_turns:3,verified_lists:1,verified_files:0,denied_reads:1,
-   last_denial:"trusted_planning_read_failed",rejected_proposals:1
+   first_denial:"trusted_planning_read_failed",
+   last_denial:"trusted_planning_read_failed",rejected_proposals:1,
+   gateway_prepares:1,gateway_executions:1,gitea_reads:1,
+   gateway_last_reason:"verifier_unavailable"
  });
  assert.equal(observed.first_failed_phase,"planning_scope");
  assert.ok(Object.isFrozen(observed.r3803_probe));
@@ -57,9 +63,14 @@ test("R380.3 denies forged/oversized probe records without echoing source",()=>{
  const prefix="[r3803-planning-probe] ";
  const good={event:"r3803_planning_failure_probe_v1",
   model_turns:2,verified_lists:0,verified_files:0,denied_reads:1,
-  last_denial:"outside_planning_scope",rejected_proposals:0};
+  first_denial:"outside_planning_scope",
+  last_denial:"outside_planning_scope",rejected_proposals:0,
+  gateway_prepares:0,gateway_executions:0,gitea_reads:1,
+  gateway_last_reason:"none"};
  for(const forged of [
-   {...good,last_denial:secret},{...good,verified_files:-1},
+   {...good,last_denial:secret},{...good,first_denial:secret},
+   {...good,gateway_last_reason:secret},
+   {...good,gateway_prepares:-1},{...good,verified_files:-1},
    {...good,model_turns:100000},{...good,source:secret},
    {...good,last_denial:{message:secret}},
    {...good,event:"other"},
