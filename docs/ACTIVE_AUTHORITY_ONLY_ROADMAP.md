@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.9)
+## Piano attivo — aggiornato al 7 novembre 2026 (R384.1)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,66 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.9 inserisce l'assembler CREATE owner-only nel bootstrap canonico mediante opt-in del manifest protetto e separa la receipt CREATE dalla UPDATE. FunctionTool resta DENY; prove Rust/EVM/OPA/Gitea reali, race/revoca e pilot ancora aperti.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R384.0: CREATE_FILE nativa Rust/EVM/OPA/Gitea CAS e MAC PASS in CI disposable #42412181760. R384.1: aperto il FunctionTool soltanto con originale Task/Child prebound, owner-private stage e MCP crittografico; test ADK offline aggiunti, CI sulla SHA finale da confermare. Il modello Gemini a pagamento resta OFF.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.0 reale Rust/EVM/OPA/Gitea CREATE e Fast CI entrambe PASS su `f2b4fead` (run #42412181760 / #42412181730). R384.1 richiede Fast CI definitiva e un E2E composito nativo A2A/ADK successivo prima del cleanup** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R384.1 — FunctionTool CREATE owner-verified e ADK/MCP controllati
+
+**Evidenza precedente:** R384.0 native Rust/EVM/OPA/Gitea
+`create_file` PASS su SHA `f2b4fead`, run
+https://github.com/DarkGh0st03/delegation/actions/runs/42412181760;
+`provider_calls=1`, `legacy_writes=0`,
+`completion_attested=true`, `revoked_root_denied=true`,
+`concurrent_head_race_denied=true`, `paid_model_calls=0`.
+Il test native è stato eseguito nel Gitea temporaneo con
+Engineer Root/Child veri; NON comprende il modello ADK o il trasporto
+A2A completo.
+
+`GatewayControlledToolClient.invoke("create_file")` è ora
+ammesso per Backend e Frontend SOLO se l'agent ha ricevuto
+il port privato `stagedTool:"create_file"` dal registro HMAC
+con Task/Child/ruolo/file approvati, modalità
+`DELEGATION_GATEWAY_ARCHITECTURE=authority-only`,
+`APPROVED_RUNNER_NATIVE_MCP=1`, e presenter crittografico
+Task-local MCP già installato. Se manca anche una sola condizione,
+si rifiuta la richiesta **prima di Prepare e di qualunque provider
+write**. Il CREATE-only Task non può invocare in alternativa
+read, update o run_tests. Dopo `Prepare`, il client attende
+la prenotazione monouso `stage` prima di emettere il VP,
+quindi invoca soltanto il Gateway `Execute`. Il risultato deve
+contenere l'esatto `request_id`/ALLOW, provider Gitea,
+`tool=create_file`, branch/path originari, `revision=commit_sha`,
+`blob_sha` e SHA a 40 caratteri. Campi non documentati
+sono rifiutati e non finiscono nell'output del modello.
+Una risposta HTTP 200 non completa il Task autonomamente:
+l'originale owner attestato deve **ancora** controllare
+il MAC, l'assenza sul parent, HEAD e la flight nativa
+attraverso la propria completion path.
+
+Test gratuiti mirati:
+- Gateway client: ordine Prepare → stage owner → VP privato →
+  Execute, Test/role/Tool non autorizzati, no MCP, permessi
+  mancanti, contenuto CAS falso o campo segreto extra, replay.
+- Integrazione vera `@google/adk` con modello scripted
+  offline, registro Task A2A, `PrivateMcpTaskRegistry`,
+  `LocalCryptoMcpBridge` e Gateway controllato;
+  il solo servizio Rust crypto è simulato esplicitamente.
+  Il modello non riceve credenziali, VP o request_id.
+  Nessuna chiamata Gemini/API, nessuna scrittura del provider.
+
+**Gate aperto prima di dichiarare A completata:**
+ricollegare e verificare il **trasporto A2A vero con un
+owner/agent IPC HMAC e Gateway Rust/EVM/OPA/Gitea reali nella
+medesima esecuzione**, oltre al completamento indipendente.
+Occorrono successivamente prove gratuite multi-task e
+recovery su FAIL applicativi, cleanup legacy e un pilot Gemini
+**solo dietro consenso esplicito**. PR #38 resta Draft, main
+immutato. La Fast CI sulla SHA finale R384.1 resta da verificare.
 
 ### R383.9 — Owner deployment CREATE opt-in, receipt distinta, original Review Host
 
