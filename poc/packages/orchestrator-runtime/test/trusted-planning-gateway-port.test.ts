@@ -248,7 +248,13 @@ function response(value:unknown,status=200){
 }
 function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:number;policyAllow?:boolean;
   revocationFails?:boolean;planningRecovery?:TrustedPlanningRecoveryStore;
-  operationalRecovery?:TrustedOperationalRecoveryStore}={}){
+  operationalRecovery?:TrustedOperationalRecoveryStore;
+  hierarchicalPlanning?:boolean}={}){
+  const planningSnapshot=options.hierarchicalPlanning
+    ?{...snapshot,hierarchical_preliminary_read:true,
+      files:[...snapshot.files,...Array.from({length:150},(_,i)=>
+        `src/billing/extra-${i}.ts`)]}
+    :snapshot;
   const observed={adapter:0,verification:0,policy:0,provider:0,
     prepare:0,execute:0,issued:0,revoked:0};
   const signed=new Map<string,{resource:string;operation:string;challenge:string;audience:string}>();
@@ -283,7 +289,7 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
   const runtime=new GatewayRuntime({
     bind_host:"127.0.0.1",bind_port:0,
     prepare:{audience:"cloud-access-gateway",request_ttl_ms:120_000,
-      repository:snapshot.repository},
+      repository:planningSnapshot.repository},
     verifier_mode:"adapter",opa_url:"http://offline-opa.invalid",
     opa_timeout_ms:500,provider_mode:"mock",gitea_timeout_ms:500
   },{
@@ -309,7 +315,7 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
     }}
   });
   const authority=new TrustedEngineerAuthoritySession({
-    snapshot,
+    snapshot:planningSnapshot,
     credentials:{
       async issueScopedOrchestratorRoot(req){
         observed.issued++;
@@ -386,7 +392,7 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
     throw Error("Unexpected transport target");
   };
   const makePort=()=>new TrustedPlanningGatewayReadPort({
-    coordinator,snapshot,
+    coordinator,snapshot:planningSnapshot,
     gatewayBaseUrl:"http://trusted-gateway",
     adapterBaseUrl:"http://trusted-adapter",
     adapterToken:"trusted-orchestrator-token",
@@ -402,6 +408,40 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
   const start=()=>coordinator.beginPlanning(root());
   return {coordinator,start,root,makePort,fetchFn,observed,revisions,audit};
 }
+
+test("R380.0 hierarchical preliminary Root issues three read grants for >128 files and executes only trusted reads",async()=>{
+  const f=fixture({hierarchicalPlanning:true});
+  const issued=await f.start();
+  assert.equal(issued.permissions.length,3);
+  assert.deepEqual(issued.permissions.map(p=>p.operation),
+    ["read_repository","list_directory","read_file"]);
+  assert.ok(issued.permissions[1].resource.endsWith("/branches/main/directories"));
+  assert.equal(issued.permissions[2].resource,issued.permissions[1].resource);
+  const port=f.makePort();
+  const first=await port.invoke("read_file",{branch:"main",path:FILE}) as {path:string};
+  assert.equal(first.path,FILE);
+  const directory=await port.invoke("list_directory",{
+    branch:"main",path:"src/billing"
+  }) as {path:string};
+  assert.equal(directory.path,"src/billing");
+  assert.equal(f.observed.prepare,2);
+  assert.equal(f.observed.adapter,2);
+  assert.equal(f.observed.verification,2);
+  assert.equal(f.observed.policy,2);
+  assert.equal(f.observed.execute,2);
+  const before=f.observed.prepare;
+  for(const [tool,args] of [
+    ["read_file",{branch:"main",path:"src/billing/not-in-snapshot.ts"}],
+    ["read_file",{branch:"feature/other",path:FILE}],
+    ["list_directory",{branch:"main",path:"src/billing/secrets"}],
+    ["update_file",{branch:"main",path:FILE,content:"mutated"}],
+    ["create_file",{branch:"main",path:"src/billing/new.ts",content:"new"}]
+  ] as const)await assert.rejects(port.invoke(tool as never,args));
+  assert.equal(f.observed.prepare,before,
+    "a scoped read-only Root is not a model-selected broad provider capability");
+  assert.ok(f.audit.events.filter(e=>e.event==="authorization_prepared")
+    .every(e=>e.pinned_revision===SHA));
+});
 
 test("trusted coordinator-issued root -> Gateway VP/OPA -> pinned Gitea -> unapproved ADK plan",async()=>{
   const f=fixture();
