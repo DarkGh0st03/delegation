@@ -236,7 +236,8 @@ export async function executeAuthorization(
         // No operational-approved Task can inherit this ancestor scope.
         (!!record.pinned_revision&&
          dependencies.planningRevisions!==undefined&&
-         dependencies.approvedPlans===undefined&&
+         record.approved_plan_digest===undefined&&
+         record.approved_plan_task_id===undefined&&
          dependencies.authorityOnlyAdmissions===undefined&&
          record.agent_role==="orchestrator"&&
          (record.request.tool==="read_file"||
