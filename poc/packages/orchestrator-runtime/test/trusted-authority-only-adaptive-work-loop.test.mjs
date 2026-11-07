@@ -232,6 +232,68 @@ test('R376.0 verified Runner FAIL admits bounded read-only diagnosis before repa
  assert.match(afterRead,/independently_gateway_completed_tasks/u);
  assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
 });
+test('R376.2 independently attested source excerpt reaches next ADK repair decision only at current HEAD',async()=>{
+ const f=verifiedFailureFixture();
+ const read=f.hooks.readContext;
+ const excerpt='export const accountStatus = "pending"; // untrusted source DATA';
+ f.hooks.readContext=async()=>{
+  const state=await read();
+  if(state.executionProgress.current_head_sha==='a'.repeat(40)&&
+     state.previousTasks.some(row=>row.task_id==='task-1'))
+   state.executionProgress.source_observations=[{
+    task_id:'task-1',agent_id:'backend',path:'apps/backend.ts',
+    revision:state.executionProgress.current_head_sha,
+    source_sha256:'d'.repeat(64),source_bytes:excerpt.length,
+    excerpt,excerpt_truncated:false,evidence_sha256:'e'.repeat(64)
+   }];
+  return state;
+ };
+ const inspect=candidate('backend',1,[diagnosticRead()]);inspect.task.depends_on=[];
+ const repair=candidate('backend',2);repair.task.depends_on=['task-1'];
+ const retest=candidate('test',3);retest.task.depends_on=['task-2'];
+ const model=new Decisions([candidate('test',0),inspect,repair,retest,
+  {action:'ready_for_pr',reason:'Latest independently verified Test PASS'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:5});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,3);
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.equal(f.retired,false);
+ const modelRepairInput=JSON.stringify(model.requests[2]);
+ assert.match(modelRepairInput,/source_observations/u);
+ assert.ok(modelRepairInput.includes(excerpt),'repair can use owner-attested read result');
+ assert.ok(!JSON.stringify(model.requests[3]).includes(excerpt),
+  'stale diagnostic bytes cannot follow a mutation to a different HEAD');
+});
+for(const kind of ['foreign-task','wrong-head','bad-digest','over-budget']){
+ test('R376.2 malformed source observation cannot reach ADK: '+kind,async()=>{
+  const f=verifiedFailureFixture();
+  const orig=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const state=await orig();
+   if(state.previousTasks.some(p=>p.task_id==='task-1')){
+    const item={
+     task_id:kind==='foreign-task'?'foreign':'task-1',
+     agent_id:'backend',path:'apps/backend.ts',
+     revision:kind==='wrong-head'?'f'.repeat(40):state.executionProgress.current_head_sha,
+     source_sha256:kind==='bad-digest'?'nonsense':'a'.repeat(64),
+     source_bytes:50,excerpt:kind==='over-budget'?'x'.repeat(4097):'bounded diagnostic',
+     excerpt_truncated:false,evidence_sha256:'b'.repeat(64)
+    };
+    state.executionProgress.source_observations=[item];
+   }
+   return state;
+  };
+  const inspect=candidate('backend',1,[diagnosticRead()]);inspect.task.depends_on=[];
+  const repair=candidate('backend',2);repair.task.depends_on=['task-1'];
+  const model=new Decisions([candidate('test',0),inspect,repair]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks,maxSteps:3
+  }),/Task choice denied/u);
+  assert.equal(model.calls,2);
+  assert.deepEqual(f.done.map(x=>x.task_id),['task-1']);
+  assert.equal(f.retired,true);
+ });
+}
 test('R376.0 read-only diagnosis before verified Test FAIL is denied',async()=>{
  const f=fixture();
  const read=f.hooks.readContext;
