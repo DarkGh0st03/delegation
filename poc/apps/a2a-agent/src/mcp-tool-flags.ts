@@ -46,3 +46,25 @@ export function requireProductionNativeCrypto(
     env.APPROVED_RUNNER_NATIVE_MCP!=="1")
   throw Error("production_adk_requires_native_rust_crypto");
 }
+
+/**
+ * R381.4: host-only feature selection. Never accept this flag in A2A Task,
+ * ADK tool arguments, Agent Card or MCP tool parameters. It cannot replace
+ * the original Rust signer or resurrect an HTTP Adapter.
+ */
+export function selectOwnerPrivateNativeMcpSigning(
+ env:Record<string,string|undefined>,
+ architecture:string|undefined,
+ engine:"adk"|"deterministic"
+):boolean{
+ const selected=env.DELEGATION_PRIVATE_NATIVE_MCP_SIGNING;
+ if(selected===undefined)return false;
+ if(selected!=="1")
+  throw Error("Private native MCP signing selector must be exactly 1");
+ if(architecture!=="authority-only"||engine!=="adk")
+  throw Error("Private native MCP signing requires authority-only ADK host");
+ requireProductionNativeCrypto({
+  ...env,APPROVED_RUNNER_NATIVE_MCP:"1"
+ },engine);
+ return true;
+}
