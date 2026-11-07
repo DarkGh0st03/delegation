@@ -379,6 +379,44 @@ configuration before the paid autonomous pilot. R3818 native
 end-to-end SUCCESS on `a458b441` remains a distinct scripted
 baseline, not automatic validation for R382.5.
 
+## R382.6 — the actual Gemini ADK model enters the ORIGINAL canonical Review Host
+
+An operator-only programmatic entrypoint
+`startProtectedCanonicalGeminiOwnerSession({authority, expectedSourceSha,
+inputFile, chargeAuthorization, provision})`
+is now available in `poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs`.
+It is **not** an A2A/HTTP/MCP/model/GitHub command. It requires a
+locally clean, pinned GitHub source SHA, independent explicit
+`I AUTHORIZE GEMINI API CHARGES` consent, 0600-protected backend/model
+key files, `DELEGATION_GATEWAY_ARCHITECTURE=authority-only` and
+`APPROVED_RUNNER_NATIVE_MCP=1`. Only after these checks does it
+instantiate the genuine Gemini ADK model and start the **same original**
+`TrustedAuthorityOnlyReviewHost` Planning loop.
+
+Its pure, no-inference binder compares the protected operator Planning
+snapshot, source revision, inventory, Root, requirement, three Agent
+identities, Gateway endpoint and plan ID with the original Host
+configuration. It prevents injecting a second Planning model/limits
+or changing a trusted Engineer grant. The Host checks the Backend
+signer against its original signed checkpoint and subsequently
+requires the independent Ed25519 Engineer signature.
+
+The loopback Host's returned *in-process object* forwards
+`createReviewedCanonicalHandoff`; the browser cannot invoke this
+method. A fresh signature and the original native Rust identity are
+still required before the single canonical Root/Branch/ADK/Runner
+execution. On provider failure the original Host retires; there is
+no legacy Signed DAG fallback. The historical
+`startProtectedGeminiOwnerSession` now denies any authority-only
+process before touching keys or starting the old Coordinator.
+
+The binding is covered with offline BaseLlm fakes and negative
+identity/scope tests, and the real Review Host wrapper is covered
+without paid inference. **No paid Gemini Planning was run**.
+The final deployable 0600 authority-dependency bootstrap and a
+fresh native same-SHA full E2E are still required for phase C/D
+completion. R3818's prior SUCCESS does not certify this new code.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
