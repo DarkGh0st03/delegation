@@ -93,7 +93,12 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
     typeof provision!=="function")
   deny("original Planning host, signed review pins and native owner required");
  let closed=false,preparing=false,attempted=false;
- let flight,shutdown;
+ let flight,shutdown,retirementFlight;
+ const retireOriginal=()=>{
+  if(!retirementFlight)retirementFlight=Promise.resolve().then(
+   ()=>reviewHost.close());
+  return retirementFlight;
+ };
  const review=async()=>{
   if(closed||preparing||attempted||!liveNative()||
      reviewHost.phase!=="planning")
@@ -115,7 +120,7 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
   closed=true; // fence all future owner operations synchronously
   shutdown=(async()=>{
    let error;
-   try{await reviewHost.close();}catch(e){error=e;}
+   try{await retireOriginal();}catch(e){error=e;}
    if(flight)try{await flight;}catch{/* caller receives own failure */}
    if(error)deny("original Root retirement unconfirmed");
   })();
@@ -160,7 +165,7 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
       // Mark closed synchronously. Do NOT call close() here: it waits
       // for this in-flight promise and would deadlock on itself.
       closed=true;
-      try{await reviewHost.close();}catch{
+      try{await retireOriginal();}catch{
        deny("original Root retirement unconfirmed after ambiguous execution");
       }
      }
