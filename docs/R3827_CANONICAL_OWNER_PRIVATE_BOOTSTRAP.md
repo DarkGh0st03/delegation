@@ -102,6 +102,17 @@ Ed25519 signature; `runApprovedCanonical()` is the sole one-shot
 approved operational entry. Neither runs automatically. If shutdown or
 Rust retirement is ambiguous, do not repeat the Root/Task effects.
 
+## Built-in operational provision
+
+Pass an in-process `operational` object in place of `provision`. Supply
+`journalDirectory` with existing private subdirectories `gateway-tasks`,
+`issuer-children`, `gateway-children`, `effect-fences`, and `sequences`,
+plus an owner-private `orchestratorTokenFile`. The bootstrap reuses the
+original operational session store and builds the five journals and native
+MCP Child port. It calls the trusted `reserveRoot` capability once, after
+signature verification. The trusted process still supplies the
+`completionObserver`, `workflow`, and `prepareNativeEffects` capabilities.
+
 **Not yet complete:** the executable owner process needs its
 trusted operational `provision` implementation and a newly validated
 same-SHA full native E2E after the CLI/bootstrap migration. R381.8

@@ -5,8 +5,14 @@ import {mkdtemp,mkdir,writeFile,chmod,symlink,rm,readdir} from "node:fs/promises
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {
- loadProtectedCanonicalOwnerManifest,assembleProtectedCanonicalOwnerAuthority
+ loadProtectedCanonicalOwnerManifest,assembleProtectedCanonicalOwnerAuthority,
+ createProtectedCanonicalOperationalProvision
 } from "../src/trusted-authority-only-owner-bootstrap.mjs";
+
+import {TrustedOperationalSessionStore}
+ from "../../gateway/src/trusted-operational-session-store.ts";
+import {TrustedAuthorityOnlyCompletionObserver}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
 
 const SHA="a".repeat(40);
 const ROLES=["backend","frontend","test","orchestrator"];
@@ -186,4 +192,46 @@ test("R382.7 forbids CI, missing native Rust, no explicit architecture and forge
  await assert.rejects(assembleProtectedCanonicalOwnerAuthority({
   pins:f.config
  }),/Protected canonical authority bootstrap denied/u);
+});
+
+test("operational bootstrap reuses the original session store and reserves the Root at most once",async t=>{
+ const f=await fixture(t);
+ const journalDirectory=f.at("operational");
+ await mkdir(journalDirectory,{mode:0o700});
+ for(const name of ["gateway-tasks","issuer-children","gateway-children","effect-fences","sequences"])
+  await mkdir(join(journalDirectory,name),{mode:0o700});
+ const orchestratorTokenFile=f.at("orchestrator.token");
+ await writeFile(orchestratorTokenFile,"ORIGINAL_ORCHESTRATOR_TOKEN",{mode:0o600});
+ const authority={
+  workBranch:f.config.workBranch,
+  operationalSessionStore:new TrustedOperationalSessionStore(f.config.directories.operationalSessions)
+ };
+ let reservations=0;
+ const root={credential_id:"urn:operational-root"};
+ const operational={
+  journalDirectory,orchestratorTokenFile,
+  workflow:{createBranch:{branch:authority.workBranch,baseBranch:"main"}},
+  reserveRoot:async()=>{reservations++;return root;},
+  completionObserver:new TrustedAuthorityOnlyCompletionObserver({
+   readVerifiedCompletion:async()=>{throw Error("unexpected provider call");}
+  }),
+  prepareNativeEffects:async()=>{throw Error("unexpected native binding");}
+ };
+ await assert.rejects(createProtectedCanonicalOperationalProvision(authority,{
+  ...operational,workflow:{createBranch:{branch:"feature/foreign",baseBranch:"main"}}
+ }),/bootstrap denied/u);
+ await chmod(orchestratorTokenFile,0o644);
+ await assert.rejects(createProtectedCanonicalOperationalProvision(authority,operational),
+  /bootstrap denied/u);
+ await chmod(orchestratorTokenFile,0o600);
+ const provision=await createProtectedCanonicalOperationalProvision(authority,operational);
+ assert.equal(reservations,0);
+ const result=await provision();
+ assert.equal(result.root,root);
+ assert.equal(result.dependencies.operationalSessionStore,authority.operationalSessionStore);
+ assert.notEqual(result.dependencies.issuerChildJournal,result.dependencies.gatewayChildJournal);
+ assert.equal(result.dependencies.nativeCryptoPort.kind,"rust-native");
+ assert.equal(typeof result.dependencies.nativeCryptoPort.issueChildViaPrivateMcp,"function");
+ await assert.rejects(provision(),/bootstrap denied/u);
+ assert.equal(reservations,1);
 });

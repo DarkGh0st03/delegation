@@ -10,7 +10,7 @@
  */
 import {constants} from "node:fs";
 import {lstat,open,realpath} from "node:fs/promises";
-import {isAbsolute,dirname,resolve} from "node:path";
+import {isAbsolute,dirname,join,resolve} from "node:path";
 import {createPublicKey,createPrivateKey,timingSafeEqual} from "node:crypto";
 import {AuthorityPlanningCheckpointStore}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts";
@@ -28,6 +28,17 @@ import {createTrustedEngineerCredentialPort}
  from "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {preliminaryReadPermissions}
  from "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
+
+import {createNativeRustChildCryptographyPort}
+ from "../../../packages/orchestrator-runtime/src/trusted-child-crypto-port.ts";
+import {DurableAuthorityOnlyChildJournal}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts";
+import {DurableAuthorityOnlyTaskFenceJournal}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts";
+import {DurableAuthorityOnlySequentialEffectJournal}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-sequential-effect-journal.ts";
+import {TrustedAuthorityOnlyCompletionObserver}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
 
 const SHA=/^[0-9a-f]{40}$/u;
 const HEX=/^[0-9a-f]+$/u;
@@ -288,4 +299,53 @@ export async function assembleProtectedCanonicalOwnerAuthority(loaded){
    adapterToken,fetchFn:fetch,timeoutMs:60000
   }
  });
+}
+
+/** Assemble the fixed operational dependencies without reserving or issuing
+ * a Root. Provider and A2A capabilities are supplied by the trusted host. */
+export async function createProtectedCanonicalOperationalProvision(
+ authority,operational
+){
+ if(process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+    process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+    !exact(operational,["journalDirectory","orchestratorTokenFile",
+    "reserveRoot","completionObserver","workflow","prepareNativeEffects"])||
+    typeof operational.reserveRoot!=="function"||
+    typeof operational.prepareNativeEffects!=="function"||
+    !(operational.completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
+    !(authority?.operationalSessionStore instanceof TrustedOperationalSessionStore)||
+    operational.workflow?.createBranch?.branch!==authority.workBranch||
+    operational.workflow?.createBranch?.baseBranch!=="main")
+  deny();
+ const {journalDirectory,orchestratorTokenFile,reserveRoot,completionObserver,
+  workflow,prepareNativeEffects}=operational;
+ const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ if(!path(socketPath)||socketPath.length>100)deny();
+ await dirOwned(journalDirectory);
+ const directories=["gateway-tasks","issuer-children","gateway-children",
+  "effect-fences","sequences"].map(name=>join(journalDirectory,name));
+ await Promise.all(directories.map(dirOwned));
+ const bearerToken=(await privateText(orchestratorTokenFile,8192)).trim();
+ if(bearerToken.length<8||/\s/u.test(bearerToken))deny();
+
+ const [tasks,issuer,gateway,fences,sequences]=directories;
+ const dependencies=Object.freeze({
+  operationalSessionStore:authority.operationalSessionStore,
+  gatewayTaskJournal:new DurableAuthorityTaskJournal(tasks),
+  issuerChildJournal:new DurableAuthorityOnlyChildJournal(issuer),
+  gatewayChildJournal:new DurableAuthorityOnlyChildJournal(gateway),
+  effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(fences),
+  sequentialEffectJournal:new DurableAuthorityOnlySequentialEffectJournal(sequences),
+  completionObserver,
+  nativeCryptoPort:createNativeRustChildCryptographyPort({
+   bearerToken,timeoutMs:60000
+  },socketPath)
+ });
+ let consumed=false;
+ return async()=>{
+  if(consumed)deny();
+  consumed=true;
+  const root=await reserveRoot();
+  return {root,dependencies,workflow,prepareNativeEffects};
+ };
 }
