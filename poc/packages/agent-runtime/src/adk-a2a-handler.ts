@@ -187,6 +187,13 @@ class BoundedModel extends BaseLlm {
  */
 export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): DeterministicTaskHandler {
   // Reject bad configuration at server startup, before accepting any requests.
+  // Programmatic users of the ADK handler cannot bypass the A2A host's
+  // private Task registry or authority-only staged owner when using a real
+  // interprocess Rust presentation transport.
+  if(config.nativePresentationTransport==="mcp-stdio"&&(
+       process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+       !config.trustedEffectTaskRegistry||!config.mcpTaskRegistry))
+    throw Error("private_native_mcp_requires_owner_bound_task");
   if(config.trustedBackendDiscovery)
     validateTrustedBackendDiscoveryA2ABinding(config.trustedBackendDiscovery);
   if(config.trustedBackendDiscovery&&config.trustedBackendDiscoverySlot)
