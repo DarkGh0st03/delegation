@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.8)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.9)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,61 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.8 introduce lo stager `create_file` nel percorso owner-only e i pin Task/Child/branch su IPC privato. La chiamata del FunctionTool resta DENY, l'owner launcher produttivo e l'E2E Rust/EVM/OPA/Gitea restano aperti.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.9 inserisce l'assembler CREATE owner-only nel bootstrap canonico mediante opt-in del manifest protetto e separa la receipt CREATE dalla UPDATE. FunctionTool resta DENY; prove Rust/EVM/OPA/Gitea reali, race/revoca e pilot ancora aperti.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.9 — Owner deployment CREATE opt-in, receipt distinta, original Review Host
+
+Il modulo `trusted-authority-only-native-create-effects.mjs`
+assembla `TrustedAuthorityOnlyGiteaCreatePreflight`, journal
+CREATE, `TrustedAuthorityOnlyGiteaCreateExecutor`, publisher e
+observer MAC con stesso Gateway owner, repository/branch, writer Gitea
+e read-only client indipendente. **La costruzione non emette una
+chiamata al provider e non abilita il modello**.
+
+Il bootstrap originale accetta 7 directory soltanto se entrambe le
+nuove `createIntent` e `createReceipts` sono presenti, distinte dalle
+5 vecchie; devono essere directory pre-provisioned, owner-only,
+`0700`, senza symlink. Qualsiasi configurazione parziale o con
+permessi impropri fallisce prima della Root operativa. Il
+`canonical-owner-deployment.mjs` richiede **opt-in esplicito**
+`enableNativeCreateFile:true` nel manifest 0600 e usa directory
+`<directory>/createIntent` e `<directory>/createReceipts`.
+Se il campo manca, il codice nuovo rimane disabilitato.
+
+L'Original Review Host ammette la coppia create preflight/observer
+solo se corrisponde all'originale Gateway, Task, owner Gitea,
+repository e branch. Dopo l'enrollment del Child può costruire
+`TrustedAuthorityOnlyCreateEffectStager` con HEAD stabilita
+dall'owner; non acquisisce source, signer, grant o path da una
+richiesta A2A. Il risultato di una CREATE può essere osservato
+**solo** da `AuthenticatedGiteaCreateCompletionObserver`,
+che verifica il receipt MAC con precedente file assente: la
+precedente associazione al mutation UPDATE observer viene rimossa.
+L'adaptive loop non può completare un Task sulla base di un
+report A2A non autenticato.
+
+Nuove regressioni gratuite verificano l'assembler senza I/O,
+il rifiuto di writer/reader non indipendenti e repository errate,
+la mancanza di intent originale, le directory incomplete/condivise
+o `0755`. Fast CI della SHA finale da confermare per R383.9.
+
+**Gate aperto:** non è ancora stata eseguita una vera CREATE
+su Gitea con VP Rust/EVM e OPA reali. Il FunctionTool
+`GatewayControlledToolClient.invoke("create_file")` continua a
+rispondere DENY. Prima di abilitarlo occorre una prova end-to-end
+gratuita con Root/Child veri, branch HEAD/assenza e race/revoca,
+receipt indipendente, completamento Task e recovery fail-closed.
+Per aprire l'opt-in reale vanno precreate entrambe le directory
+su un owner host già autorizzato; nessuna credenziale, chiave
+o permesso deve essere aggiunto da un model tool. Non eseguire
+un pilot Gemini a pagamento senza consenso esplicito.
+La PR resta Draft e `main` non viene toccato.
 
 ### R383.8 — Preflight CREATE e flight monouso nel binding owner/A2A (NO-WRITE)
 
