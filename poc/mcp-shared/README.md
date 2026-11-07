@@ -224,6 +224,25 @@ listing only includes pull-request-triggered runs; an empty listing
 does not establish the state of a push-triggered native checkpoint.
 Do not rerun the long E2E blindly until the previous run is observed.
 
+## R382.0 — Task-scoped cancellation of the native MCP subprocess
+
+The trusted `createOwnerPrivateNativeCryptoMcpSession` optionally accepts
+a host-owned `AbortSignal`. An already-cancelled Task cannot spawn the
+worker or send Rust credentials. A Task cancelled during an in-flight
+MCP call closes the private MCP client and stdio worker, while the
+`DelegationEvidenceHandler` never exposes the returned signed VP or
+tries the old HTTP Adapter/direct IPC. The subscriber is removed during
+finalization, so completed Tasks retain no abort hook.
+
+The offline tests cancel both before launch (zero Rust calls) and in
+the native socket callback after exactly one IPC (VP cannot escape
+and replay cannot issue a second call). These are fail-closed
+cancellation tests, **not proof of native side-effect rollback**:
+once issued to Rust, Child/VP cryptographic operations may have
+happened even if no MCP reply is observed. The original owner must
+retain the durable one-shot journal and reconcile uncertain effects,
+not retry. No new keys, server listeners, models or paid services.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
