@@ -81,6 +81,8 @@ import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
 import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {invokeNativeCrypto} from "../../../packages/agent-runtime/src/native-crypto-ipc.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
+import {VerificationRejectedError,VerificationUnavailableError}
+  from "../src/errors.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {GiteaReadOnlyExecutor} from "../src/gitea-read-executor.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -532,14 +534,36 @@ const config={bind_host:"127.0.0.1",bind_port:0,
   prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
   opa_url:opaUrl,opa_timeout_ms:15000,
   provider_mode:"mock",gitea_timeout_ms:15000};
+// Test-only non-source verifier phase observer. The original native binding
+// still performs all signatures/trust/status; errors stay private.
+const r3803VerifierStatus={single:"not_called",multi:"not_called"};
+const nativePlanningVerifier=loadDirectCoreRustVerifier({
+  allowGiteaScopeCoverage:r3803NativeDiscovery
+});
+if(r3803NativeDiscovery){
+  for(const [method,field] of [["verify","single"],["verifyMultiple","multi"]]){
+    const original=nativePlanningVerifier[method].bind(nativePlanningVerifier);
+    nativePlanningVerifier[method]=async(...args)=>{
+      try{
+        const result=await original(...args);
+        r3803VerifierStatus[field]="verified";
+        return result;
+      }catch(error){
+        r3803VerifierStatus[field]=
+          error instanceof VerificationUnavailableError?"native_result_invalid":
+          error instanceof VerificationRejectedError?"native_verification_rejected":
+          "other";
+        throw error;
+      }
+    };
+  }
+}
 const runtime=new GatewayRuntime(config,{
   planningRevisions:revisions,audit,
   ...(approvedPlans?{approvedPlans}:{}),
   // Only the opt-in original preliminary READ hierarchy; signed-DAG
   // operational rights and the default Rust verifier remain exact-match.
-  verifier:loadDirectCoreRustVerifier({
-    allowGiteaScopeCoverage:r3803NativeDiscovery
-  }),
+  verifier:nativePlanningVerifier,
   policy:new OpaPolicyClient({baseUrl:opaUrl,timeoutMs:15000}),
   // This read-only Gitea provider remains intentionally INCAPABLE of writes
   // even after genuine operational authority is issued by Rust.
@@ -623,7 +647,8 @@ let pilotPlanningRejectionHistory=[];
 const r3803Probe={model_turns:0,verified_lists:0,verified_files:0,
   denied_reads:0,first_denial:"none",last_denial:"none",
   rejected_proposals:0,gateway_prepares:0,gateway_executions:0,
-  gitea_reads:0,gateway_last_reason:"none"};
+  gitea_reads:0,gateway_last_reason:"none",
+  single_verifier:"not_called",composite_verifier:"not_called"};
 globalThis.__nativeDagBootstrapStage="root_issuance";
 try{
   const started=await coordinator.beginPlanning(root);
@@ -2092,6 +2117,8 @@ try{
     r3803Probe.gateway_prepares=log.prepares;
     r3803Probe.gateway_executions=log.executions;
     r3803Probe.gitea_reads=log.giteaReads;
+    r3803Probe.single_verifier=r3803VerifierStatus.single;
+    r3803Probe.composite_verifier=r3803VerifierStatus.multi;
     const lastDenied=audit.events.filter(e=>
       (e.event==="authorization_executed"||
         e.event==="composite_read_executed"||
