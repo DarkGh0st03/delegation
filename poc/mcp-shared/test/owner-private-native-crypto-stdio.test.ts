@@ -128,3 +128,51 @@ test("R381.3 close-before-connect and concurrency cannot duplicate Rust effect",
    assert.equal(calls.length,1);
   });
 });
+
+test("R382.0 aborted trusted Task cannot even start its private MCP Rust session",async()=>{
+ await fixture(
+  ()=>({ok:true,result:{signed_vp:"must-never-sign"}}),
+  async(socketPath,calls)=>{
+   const controller=new AbortController();
+   controller.abort();
+   const session=createOwnerPrivateNativeCryptoMcpSession(
+    "presentation_create",{socketPath,bearerToken:"PRIVATE",
+     signal:controller.signal},{
+     credential_id:"urn:child:cancelled",
+     challenge:"a-gateway-challenge",audience:"cloud-access-gateway",
+     disclosed_permissions:[{resource:"gitea://trusted",operation:"read_file"}]
+    });
+   await assert.rejects(session.invokeOnce(),/presentation unavailable/u);
+   assert.equal(calls.length,0,"cancelled Task cannot reach Rust");
+   await assert.rejects(session.invokeOnce(),/presentation unavailable/u);
+  });
+});
+
+test("R382.0 cancellation during native Rust IPC never releases VP or retries",async()=>{
+ const controller=new AbortController();
+ await fixture(
+  request=>{
+   // Synchronize cancellation to the moment the native socket sees the
+   // one-time call; no timing-based sleeps or paid model inference.
+   controller.abort();
+   return {ok:true,result:{signed_vp:"PRIVATE_RESULT_MUST_NOT_ESCAPE"}};
+  },
+  async(socketPath,calls)=>{
+   const session=createOwnerPrivateNativeCryptoMcpSession(
+    "presentation_create",{socketPath,bearerToken:"PRIVATE",
+     signal:controller.signal,timeoutMs:10000},{
+     credential_id:"urn:child:r3820",challenge:"signed-gateway-challenge",
+     audience:"cloud-access-gateway",disclosed_permissions:[{
+      resource:"gitea://trusted",operation:"read_file"
+     }]
+    });
+   await assert.rejects(session.invokeOnce(),error=>{
+    assert.match(String(error),/presentation unavailable/u);
+    assert.doesNotMatch(String(error),/PRIVATE_RESULT_MUST_NOT_ESCAPE/u);
+    return true;
+   });
+   assert.equal(calls.length,1,"an already sent native effect is not retried");
+   await assert.rejects(session.invokeOnce(),/presentation unavailable/u);
+   assert.equal(calls.length,1);
+  });
+});
