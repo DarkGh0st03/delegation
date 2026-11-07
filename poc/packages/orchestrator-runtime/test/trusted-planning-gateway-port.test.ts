@@ -80,6 +80,9 @@ import {R5ScriptedNoProviderPlanningModel}
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
 const SECOND_FILE="src/billing/tax.ts";
+const DYNAMIC_FILE="src/billing/emergent.ts";
+const DYNAMIC_DIR="src/billing/extensions";
+const DEEP_FILE=DYNAMIC_DIR+"/additional.ts";
 const rootId="urn:test:planning-root";
 const snapshot={
   session_id:"trusted-billing-planning",
@@ -249,12 +252,16 @@ function response(value:unknown,status=200){
 function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:number;policyAllow?:boolean;
   revocationFails?:boolean;planningRecovery?:TrustedPlanningRecoveryStore;
   operationalRecovery?:TrustedOperationalRecoveryStore;
-  hierarchicalPlanning?:boolean}={}){
-  const planningSnapshot=options.hierarchicalPlanning
-    ?{...snapshot,hierarchical_preliminary_read:true,
-      files:[...snapshot.files,...Array.from({length:150},(_,i)=>
-        `src/billing/extra-${i}.ts`)]}
-    :snapshot;
+  hierarchicalPlanning?:boolean;dynamicDiscovery?:boolean;
+  malformedDiscoveryListing?:boolean}={}){
+  const planningSnapshot=options.dynamicDiscovery?
+    {...snapshot,hierarchical_preliminary_read:true,
+      dynamic_discovery_roots:["src/billing"],files:[...snapshot.files]}:
+    options.hierarchicalPlanning
+      ?{...snapshot,hierarchical_preliminary_read:true,
+        files:[...snapshot.files,...Array.from({length:150},(_,i)=>
+          `src/billing/extra-${i}.ts`)]}
+      :snapshot;
   const observed={adapter:0,verification:0,policy:0,provider:0,
     prepare:0,execute:0,issued:0,revoked:0};
   const signed=new Map<string,{permissions:{resource:string;operation:string}[];
@@ -267,9 +274,13 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
     async readTextFile(branch:string,path:string,revision?:string){
       observed.provider++;
       assert.equal(branch,"main");
-      assert.ok([FILE,SECOND_FILE].includes(path));assert.equal(revision,SHA);
+      assert.ok([FILE,SECOND_FILE,
+        ...(options.dynamicDiscovery?[DYNAMIC_FILE,DEEP_FILE]:[])].includes(path));
+      assert.equal(revision,SHA);
       const content=path===FILE?"export const invoices = [];\n":
-        "export const taxRate = 0.22;\n";
+        path===SECOND_FILE?"export const taxRate = 0.22;\n":
+          path===DYNAMIC_FILE?"export const emergent = true;\n":
+            "export const additional = true;\n";
       return {branch,path,revision:SHA,content,
         encoding:"utf-8" as const,blob_sha:"b".repeat(40),
         last_commit_sha:SHA,size:Buffer.byteLength(content,"utf8")};
@@ -281,8 +292,15 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
         [{name:"src",path:"src",type:"dir"}]:
         path==="src"?
           [{name:"billing",path:"src/billing",type:"dir"}]:
-          [{name:"invoice.ts",path:FILE,type:"file"},
-            {name:"tax.ts",path:SECOND_FILE,type:"file"}]};
+          path===DYNAMIC_DIR&&options.dynamicDiscovery?
+            [{name:"additional.ts",path:DEEP_FILE,type:"file"}]:
+            [...[{name:"invoice.ts",path:FILE,type:"file"},
+              {name:"tax.ts",path:SECOND_FILE,type:"file"}],
+             ...(options.dynamicDiscovery?
+               [{name:"emergent.ts",path:DYNAMIC_FILE,type:"file"},
+                {name:"extensions",path:DYNAMIC_DIR,type:"dir"}]:[]),
+             ...(options.malformedDiscoveryListing?
+               [{name:"escape.ts",path:"src/billing/../secret.ts",type:"file"}]:[])]};
     }
   };
   const revisions=new TrustedPlanningRevisions(client);
@@ -441,7 +459,8 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
       statusListCredential:"https://example.test/status/planning"}
   });
   const start=()=>coordinator.beginPlanning(root());
-  return {coordinator,start,root,makePort,fetchFn,observed,revisions,audit};
+  return {coordinator,start,root,makePort,fetchFn,observed,revisions,audit,
+    planningSnapshot};
 }
 
 test("R380.0 hierarchical preliminary Root issues three read grants for >128 files and executes only trusted reads",async()=>{
