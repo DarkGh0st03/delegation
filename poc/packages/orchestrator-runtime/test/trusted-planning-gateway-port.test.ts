@@ -463,6 +463,125 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
     planningSnapshot};
 }
 
+
+test("R380.2 owner-selected Gitea discovery enables newly listed source paths, never arbitrary ones",async()=>{
+ const f=fixture({dynamicDiscovery:true});
+ const root=await f.start();
+ assert.deepEqual(root.permissions.map(x=>x.operation),
+   ["read_repository","list_directory","read_file"]);
+ const port=f.makePort();
+ const opts=(path:string)=>({branch:"main",path});
+ await assert.rejects(port.invoke("read_file",opts(DYNAMIC_FILE)));
+ await assert.rejects(port.invoke("list_directory",opts(DYNAMIC_DIR)));
+ assert.equal(f.observed.prepare,0);
+ const listing=await port.invoke("list_directory",opts("src/billing")) as {
+   entries:{path:string}[]
+ };
+ assert.ok(listing.entries.some(x=>x.path===DYNAMIC_FILE));
+ const seen=await port.invoke("read_file",opts(DYNAMIC_FILE)) as {
+   path:string;content:string;revision:string
+ };
+ assert.equal(seen.path,DYNAMIC_FILE);
+ assert.equal(seen.revision,SHA);
+ assert.match(seen.content,/emergent = true/u);
+ await port.invoke("list_directory",opts(DYNAMIC_DIR));
+ const deeper=await port.invoke("read_file",opts(DEEP_FILE)) as {
+   content:string
+ };
+ assert.match(deeper.content,/additional = true/u);
+ const before=f.observed.prepare;
+ for(const [tool,args] of [
+   ["read_file",opts("src/secrets/passwords.txt")],
+   ["list_directory",opts("src/secrets")],
+   ["read_file",opts("src/billing/ghost.ts")],
+   ["read_file",{branch:"feature/other",path:DYNAMIC_FILE}],
+   ["update_file",{...opts(DYNAMIC_FILE),content:"evil"}]
+ ] as const)await assert.rejects(port.invoke(tool as never,args));
+ assert.equal(f.observed.prepare,before);
+ f.revisions.end(snapshot.session_id);
+ await assert.rejects(port.invoke("read_file",opts(DYNAMIC_FILE)));
+ assert.equal(f.observed.adapter,4,"one scoped VP for each permitted list/read");
+});
+
+test("R380.2 malformed source listing cannot partially expand the trusted Planning ledger",async()=>{
+ const f=fixture({dynamicDiscovery:true,malformedDiscoveryListing:true});
+ await f.start();
+ const port=f.makePort();
+ await assert.rejects(port.invoke("list_directory",{
+   branch:"main",path:"src/billing"
+ }),/Planning discovery entry/u);
+ const before=f.observed.prepare;
+ await assert.rejects(port.invoke("read_file",{
+   branch:"main",path:DYNAMIC_FILE
+ }));
+ assert.equal(f.observed.prepare,before);
+});
+
+test("R380.2 ADK proposes only a verified newly discovered source file for Engineer review",async()=>{
+ class SourceDrivenPlanner extends BaseLlm {
+   readonly requests:LlmRequest[]=[];
+   constructor(private readonly skipListing=false){
+     super({model:"offline-r3802-source-discovery"});
+   }
+   override async *generateContentAsync(request:LlmRequest):
+     AsyncGenerator<LlmResponse,void>{
+     this.requests.push(request);
+     const turn=this.requests.length;
+     if(turn===1&&!this.skipListing){
+       yield {content:{role:"model",parts:[{functionCall:{
+         id:"discover-billing",name:"list_directory",
+         args:{branch:"main",path:"src/billing"}
+       }}]}};
+     }else if((turn===2&&!this.skipListing)||(turn===1&&this.skipListing)){
+       yield {content:{role:"model",parts:[{functionCall:{
+         id:"read-new-source",name:"read_file",
+         args:{branch:"main",path:DYNAMIC_FILE}
+       }}]}};
+     }else{
+       yield {content:{role:"model",parts:[{text:JSON.stringify({
+         requested_permissions:[
+           {operation:"update_file",resource_type:"file",path:DYNAMIC_FILE},
+           {operation:"run_tests",resource_type:"branch",path:null}
+         ],assumptions:[],uncertainties:[]
+       })}]}};
+     }
+   }
+   override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+     return Promise.reject(Error("No model API in dynamic-discovery test"));
+   }
+ }
+ const f=fixture({dynamicDiscovery:true});await f.start();
+ const model=new SourceDrivenPlanner();
+ const draft=await new TrustedAdkReadOnlyPlanner({
+   model,snapshot:f.planningSnapshot,
+   requirement:"Adjust discovered billing source and verify its tests",
+   planId:"r3802-dynamic-intake",workBranch:"feature/invoice-sort",
+   agents,readPort:f.makePort()
+ }).proposeAuthority();
+ assert.equal(draft.status,"unapproved_authority_proposal");
+ assert.equal(draft.verified_source_reads,1);
+ assert.ok(draft.proposal.requested_permissions.some(p=>
+   p.resource.endsWith("/files/"+DYNAMIC_FILE)&&
+   p.operation==="update_file"));
+ assert.deepEqual({adapter:f.observed.adapter,
+   verification:f.observed.verification,policy:f.observed.policy},
+   {adapter:2,verification:2,policy:2});
+ assert.equal(model.requests.length,3);
+ const first=JSON.stringify(model.requests[0]);
+ assert.ok(first.includes("list_directory"));
+ assert.ok(first.includes("dynamic_discovery_roots"));
+ assert.ok(!first.includes(rootId));
+ const f2=fixture({dynamicDiscovery:true});await f2.start();
+ await assert.rejects(new TrustedAdkReadOnlyPlanner({
+   model:new SourceDrivenPlanner(true),snapshot:f2.planningSnapshot,
+   requirement:"Attempt to skip attested discovery",
+   planId:"r3802-deny-ungrounded",workBranch:"feature/invoice-sort",
+   agents,readPort:f2.makePort()
+ }).proposeAuthority(),/no verified read-only grounded proposal/u);
+ assert.equal(f2.observed.adapter,0,
+   "model must not get a signed VP for a guessed new path");
+});
+
 test("R380.0 hierarchical preliminary Root issues three read grants for >128 files and executes only trusted reads",async()=>{
   const f=fixture({hierarchicalPlanning:true});
   const issued=await f.start();
