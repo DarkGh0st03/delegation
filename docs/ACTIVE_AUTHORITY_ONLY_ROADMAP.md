@@ -250,6 +250,20 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   per Child e tre VP, **ma non è ancora certificato PASS in tale modalità**.
   Richiesti Fast CI e successiva prova nativa Rust/EVM/OPA sulla stessa SHA;
   launcher definitivo, adapter MCP per gli agenti e gate B restano aperti.
+- **R381.4 — originale Agent ADK/A2A VP con trasporto MCP nativo opt-in**:
+  il trusted host `poc/apps/a2a-agent` accetta
+  `DELEGATION_PRIVATE_NATIVE_MCP_SIGNING=1` esclusivamente in
+  `authority-only` + ADK con il socket Rust originale.
+  Il `DelegationEvidenceHandler` genera la VP tramite processo MCP
+  privato che esegue direttamente `create_presentation` sul medesimo
+  CryptoRuntime, vincolato alla Child e al Gateway prepare del Task.
+  Nessun fallback in-process/HTTP dopo errore ambiguo; il percorso
+  predefinito rimane invariato e nessun tool modello può cambiare il mode.
+  Test offline aggiunti per VP positiva, errori sanificati, modalità
+  legacy vietata e socket mancante. **Non è ancora una prova integrata
+  nativa A2A/Rust/EVM/OPA/Gitea/Docker; CI su nuova SHA da verificare**.
+  Il gate B resta aperto per la scelta finale del trasporto, il launcher
+  canonico e la regressione reale.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
