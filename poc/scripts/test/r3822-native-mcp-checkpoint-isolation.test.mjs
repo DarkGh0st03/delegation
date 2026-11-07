@@ -26,7 +26,12 @@ test("R382.2 simulated Review Host preflight cannot claim to have a native signe
   "env -u ADAPTER_ENGINEER_NATIVE_SOCKET APPROVED_RUNNER_NATIVE_MCP=0"
  ));
  assert.ok(offline.includes("R3818_CANONICAL_NATIVE_MCP=0"));
- assert.ok(offline.includes('node --experimental-strip-types --test --test-name-pattern="R381.7"'));
+ // The offline fixture filters BOTH the original MCP binding tests and
+ // the later canonical-only launcher denial. This remains one mocked
+ // subprocess, never the native full-stack signer.
+ assert.ok(offline.includes(
+  'node --experimental-strip-types --test --test-name-pattern="R381.7|R382.4"'
+ ));
  assert.ok(offline.includes("owner-private-native-crypto-stdio.test.ts"));
  assert.ok(offline.includes("native-crypto-ipc.test.ts"));
 });
