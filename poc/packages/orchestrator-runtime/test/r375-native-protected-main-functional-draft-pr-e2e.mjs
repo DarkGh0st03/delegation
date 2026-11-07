@@ -124,6 +124,11 @@ assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
 assert.equal(process.env.ADAPTER_TRUST_PROFILE,"evm");
 assert.equal(process.env.GATEWAY_VERIFIER_MODE,"core-rust");
 assert.equal(process.env.APPROVED_RUNNER_NATIVE_MCP,"1");
+const r3818NativeMcp=process.env.R3818_CANONICAL_NATIVE_MCP==="1";
+assert.ok(process.env.R3818_CANONICAL_NATIVE_MCP===undefined||
+ process.env.R3818_CANONICAL_NATIVE_MCP==="0"||r3818NativeMcp);
+if(r3818NativeMcp)
+ assert.equal(process.env.DELEGATION_GATEWAY_ARCHITECTURE,"authority-only");
 assert.equal(process.env.GEMINI_API_KEY,undefined);
 assert.equal(process.env.OPENAI_API_KEY,undefined);
 const requireAddon=createRequire(import.meta.url);
@@ -537,16 +542,25 @@ try{
    bearerToken:tokens.orchestrator,timeoutMs:60000
   },socketPath);
   let backendChild,child,runnerChild,issuedChildren=0;
+  let nativeMcpChildCalls=0;
+  const recordChild=(request,signed)=>{
+   issuedChildren++;
+   if(request.delegatee==="backend")backendChild=signed;
+   else if(request.delegatee==="frontend")child=signed;
+   else if(request.delegatee==="test")runnerChild=signed;
+   else throw Error("Unexpected delegated specialist");
+   return signed;
+  };
   const nativeChildPort={kind:"rust-native",
    async issueChild(request){
-    const signed=await nativePort.issueChild(request);
-    issuedChildren++;
-    if(request.delegatee==="backend")backendChild=signed;
-    else if(request.delegatee==="frontend")child=signed;
-    else if(request.delegatee==="test")runnerChild=signed;
-    else throw Error("Unexpected delegated specialist");
-    return signed;
-   }
+    return recordChild(request,await nativePort.issueChild(request));
+   },
+   ...(r3818NativeMcp?{
+    async issueChildViaPrivateMcp(request){
+     nativeMcpChildCalls++;
+     return recordChild(request,await nativePort.issueChildViaPrivateMcp(request));
+    }
+   }:{})
   };
   const execution=await host.admitOperationalExecution({
    operationalSessionStore:operationalSessions,
@@ -564,7 +578,8 @@ try{
      (expected.task_id==="r375-test-task"||
       expected.task_id==="r375-functional-retest")?
       runnerObserver.observe(expected):readObserver.observe(expected)
-   }),nativeCryptoPort:nativeChildPort
+   }),nativeCryptoPort:nativeChildPort,
+   ...(r3818NativeMcp?{privateChildMcpTransport:"native-stdio"}:{})
   });
   const gate=execution.gateway;
   assert.equal(gate.phase,"active");
@@ -777,6 +792,7 @@ try{
  // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
  // All hooks delegate to the original implementations and are restored.
  const cryptoTrace=[];
+ const nativeMcpVpByRole={backend:0,frontend:0,test:0};
  let nativeE2eResultEmitted=false;
  // Diagnostic trace holds only fixed local phases, no paths or credentials.
  const recordPhase=(phase)=>{
@@ -843,6 +859,14 @@ try{
   recordPhase("private_rust_presentation_entered");
   try{
    const result=await originalCreate.call(this,prepared);
+   if(r3818NativeMcp){
+    const presenter=this.presenterId;
+    const role=presenter===backendDid?"backend":
+     presenter===frontendDid?"frontend":
+     presenter===testDid?"test":undefined;
+    if(!role)throw Error("Unrecognized original Rust MCP presenter DID");
+    nativeMcpVpByRole[role]++;
+   }
    recordPhase("private_rust_presentation_signed");return result;
   }catch(error){recordPhase("private_rust_presentation_denied");throw error;}
  };
@@ -938,7 +962,8 @@ const tool=record?.request?.tool,role=record?.agent_role;
      model:models[role],gatewayBaseUrl:"http://gateway.fixture.invalid",
      adapterToken:tokens[role],maxModelTurns:4,maxModelCallMs:15000,
      gatewayTimeoutMs:role==="test"?900000:60000,scopeModelPaths:true,
-     trustedEffectTaskRegistry:registries[role],fetchFn:gatewayTransport
+     trustedEffectTaskRegistry:registries[role],fetchFn:gatewayTransport,
+     ...(r3818NativeMcp?{nativePresentationTransport:"mcp-stdio"}:{})
     };
    }
    const server=await startSpecializedAgentServer(opts);
@@ -1311,6 +1336,12 @@ const tool=record?.request?.tool,role=record?.agent_role;
   }),/already been attempted/);
   assert.equal(branchPostAttempts,1);
   assert.equal(draftPrCreateAttempts,1);
+  if(r3818NativeMcp){
+   assert.equal(nativeMcpChildCalls,issuedChildren,
+    "Every original Child issuance must traverse private MCP Rust");
+   for(const role of roles)assert.ok(nativeMcpVpByRole[role]>0,
+    "Every original A2A role must sign via native MCP: "+role);
+  }
   nativeE2eResultEmitted=true;
   process.stdout.write(JSON.stringify({
    event:specialistStop?"r377_specialist_no_change_native_docker_pass_draft_pr":
@@ -1337,6 +1368,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
    completed_gateway_tasks:gate.stagedCompletedTaskCount,
    registered_tasks:coordinator.registeredTaskCount,
    distinct_child_credentials:issuedChildren,original_engineer_approval_count:1,
+   ...(r3818NativeMcp?{
+    r3818_canonical_private_mcp_native_signing:true,
+    native_mcp_child_issuances:nativeMcpChildCalls,
+    native_mcp_presentations_by_role:nativeMcpVpByRole
+   }:{}),
    original_root_pr_created:true,independent_pr_get:true,
    pr_draft:true,pr_open:true,pr_merged:false,
    pr_post_attempts:draftPrCreateAttempts,
