@@ -278,6 +278,25 @@ test("R376.2 only the independent authenticated read exposes a bounded source ob
   assert.equal(value.evidence_sha256,(await observer.observe(expected)).evidence_sha256);
  });
 });
+test("R376.2 spoofed read-observer prototype cannot authenticate repository or source",async()=>{
+ await fixture(async({record,sign,save,reader})=>{
+  await save(sign(record()));
+  const fake=Object.create(AuthenticatedGiteaReadCompletionObserver.prototype);
+  assert.throws(()=>AuthenticatedGiteaReadCompletionObserver.prototype
+   .isForRepository.call(fake,"thesis/iam-console-poc","feature/account-suspension"),
+   TypeError);
+  await assert.rejects(AuthenticatedGiteaReadCompletionObserver.prototype
+   .observeSource.call(fake,expected),TypeError);
+  const original=reader();
+  const forged=Object.assign(original,{observeSource:async()=>({
+   status:"owner_verified_bounded_gitea_source_observation",
+   excerpt:"FAKE",source_sha256:"f".repeat(64)})});
+  const verified=await AuthenticatedGiteaReadCompletionObserver.prototype
+   .observeSource.call(forged,expected);
+  assert.equal(verified.excerpt,contents);
+  assert.notEqual(verified.excerpt,"FAKE");
+ });
+});
 test("R376.2 diagnostic excerpt is bounded, controls sanitized and signed bytes immutable",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   const long="const value = 1;\n"+"x".repeat(4700)+"\u0007";
