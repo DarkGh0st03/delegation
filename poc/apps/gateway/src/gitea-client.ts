@@ -81,6 +81,13 @@ export interface GiteaHeadCasFileMutation extends GiteaFileMutation {
   staging_branch:string;
   next_content_sha256:string;
 }
+/** R383.2 — CAS-created file; absence, unlike update_file, has no old blob. */
+export interface GiteaHeadCasCreatedFile extends GiteaFileMutation {
+  previous_head_sha:string;
+  staging_branch:string;
+  next_content_sha256:string;
+  old_path_absent_at_pinned_head:true;
+}
 export interface GiteaCreatedPullRequest {
   id: number;
   number: number;
@@ -732,6 +739,132 @@ export class GiteaClient {
       staging_branch:stagingBranch,
       next_content_sha256:nextHash
     };
+  }
+
+  /**
+   * R383.2 private Gateway owner transport: create a file that provably did
+   * not exist at the original HEAD, using an isolated staged commit and the
+   * same Gitea remote old_commit_id compare-and-swap as update_file.
+   *
+   * This is NOT an agent/Gateway Prepare/Execute permission or a signed
+   * completion. Until a durable create-intent, native Rust/OPA admission and
+   * independent authenticated receipt are wired, the canonical native owner
+   * MUST NOT call this method as a model-requested create_file operation.
+   *
+   * Every invocation is a SINGLE attempt. A lost response after a staging
+   * ref or branch CAS is ambiguous: do NOT retry; reconcile out of band.
+   */
+  async createFileWithHeadCas(input:Readonly<{
+    branch:string;path:string;content:string;message:string;
+    requestId:string;expectedHeadSha:string;
+  }>):Promise<GiteaHeadCasCreatedFile>{
+    if(!input||typeof input!=="object")throw new ProviderConflictError(
+      "Original owner-pinned conditional Gitea create input required");
+    const {branch,path,content,message,requestId,expectedHeadSha}=input;
+    if(typeof branch!=="string"||branch==="main"||
+       !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
+       branch.includes("..")||branch.includes("//")||
+       branch.startsWith("feature/r302-internal-")||
+       branch.startsWith("feature/r3832-create-")||
+       typeof path!=="string"||!path||path.length>512||
+       path.startsWith("/")||path.split("/").some(x=>
+        !x||x==="."||x===".."||x.includes("%")||x.includes("\\"))||
+       typeof content!=="string"||
+       Buffer.byteLength(content,"utf8")<1||
+       Buffer.byteLength(content,"utf8")>2_000_000||
+       content.includes("\0")||
+       typeof message!=="string"||!message.trim()||
+       message.length>300||
+       typeof requestId!=="string"||
+       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(requestId)||
+       !/^[a-f0-9]{40}$/u.test(expectedHeadSha))
+      throw new ProviderConflictError(
+       "Untrusted owner-pinned conditional Gitea create");
+    const branchBefore=await this.getBranchMetadata(branch);
+    if(branchBefore.commit_sha!==expectedHeadSha)
+      throw new ProviderConflictError(
+       "Signed feature branch advanced before create CAS");
+    const assertAbsent=async (atBranch:string,revision:string)=>{
+      try{await this.readTextFile(atBranch,path,revision);}
+      catch(error){
+        // A 404 is sufficient only after the BRANCH HEAD itself was
+        // verified, not when an HTTP/permission/parse error is masked.
+        if(error instanceof ProviderNotFoundError)return;
+        throw error;
+      }
+      throw new ProviderConflictError(
+       "New file path already exists on original source snapshot");
+    };
+    await assertAbsent(branch,expectedHeadSha);
+    if((await this.getBranchMetadata(branch)).commit_sha!==expectedHeadSha)
+      throw new ProviderConflictError(
+       "Source HEAD changed while attesting create absence");
+    const nextHash=createHash("sha256").update(content,"utf8").digest("hex");
+    const stageHash=createHash("sha256")
+      .update(branch+"\n"+path+"\n"+requestId+"\n"+expectedHeadSha)
+      .digest("hex").slice(0,28);
+    const stagingBranch="feature/r3832-create-"+stageHash;
+    const stage=object(await this.#requestJson(this.#repoApi("/branches"),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        new_branch_name:stagingBranch,old_ref_name:expectedHeadSha
+      })
+    }),"Gitea pinned create staging branch");
+    const stageCommit=object(stage.commit,"Gitea create staging ref commit");
+    if(stage.name!==stagingBranch||
+       requiredString(stageCommit.id,"staging commit id")!==expectedHeadSha)
+      throw new ProviderUnavailableError(
+       "Create staging ref did not start at pinned HEAD");
+    if((await this.getBranchMetadata(stagingBranch)).commit_sha!==expectedHeadSha)
+      throw new ProviderUnavailableError(
+       "Create staging HEAD diverged before file creation");
+    await assertAbsent(stagingBranch,expectedHeadSha);
+    const staged=await this.createFile(
+      stagingBranch,path,content,message);
+    if(!/^[a-f0-9]{40}$/u.test(staged.commit_sha)||
+       staged.commit_sha===expectedHeadSha||
+       !/^[a-f0-9]{40}$/u.test(staged.blob_sha))
+      throw new ProviderUnavailableError(
+       "Staged create commit or blob is not trustworthy");
+    // Crucially, absence is pinned to the *parent* tree, not asserted
+    // from an arbitrary model-returned success or from staging alone.
+    if(await this.getSingleGitCommitParent(staged.commit_sha)!==
+       expectedHeadSha)
+      throw new ProviderUnavailableError(
+       "Staged create commit has unexpected parent");
+    const actualStage=await this.readTextFile(
+      stagingBranch,path,staged.commit_sha);
+    if((await this.getBranchMetadata(stagingBranch)).commit_sha!==staged.commit_sha||
+       actualStage.blob_sha!==staged.blob_sha||
+       actualStage.content!==content)
+      throw new ProviderUnavailableError(
+       "Staged create file differs from owner-pinned bytes");
+    if((await this.getBranchMetadata(branch)).commit_sha!==expectedHeadSha)
+      throw new ProviderConflictError(
+       "Feature HEAD moved while staging created file");
+    // This exact old/new commit CAS is the only authorized main feature
+    // branch movement; plain create_file POST is never used on that ref.
+    await this.#requestJson(this.#repoApi(
+      "/branches/"+encodeURIComponent(branch)),{
+        method:"PUT",headers:{"content-type":"application/json"},
+        body:JSON.stringify({
+          new_commit_id:staged.commit_sha,
+          old_commit_id:expectedHeadSha,force:false
+        })
+    });
+    if((await this.getBranchMetadata(branch)).commit_sha!==staged.commit_sha)
+      throw new ProviderUnavailableError(
+       "Gitea create branch CAS outcome ambiguous");
+    const committed=await this.readTextFile(branch,path,staged.commit_sha);
+    if(committed.blob_sha!==staged.blob_sha||committed.content!==content)
+      throw new ProviderUnavailableError(
+       "Committed created file differs from pinned staged blob");
+    return Object.freeze({
+      branch,path,revision:staged.commit_sha,
+      commit_sha:staged.commit_sha,blob_sha:staged.blob_sha,
+      previous_head_sha:expectedHeadSha,staging_branch:stagingBranch,
+      next_content_sha256:nextHash,old_path_absent_at_pinned_head:true
+    });
   }
 
   #parseFileMutation(body: JsonObject, branch: string, path: string): GiteaFileMutation {
