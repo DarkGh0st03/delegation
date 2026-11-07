@@ -143,6 +143,9 @@ assert.match(frontendDid??"",/^did:/u);
 assert.match(backendDid??"",/^did:/u);
 assert.match(testDid??"",/^did:/u);
 const sessionId="r375-original-review-host-e2e";
+// Opt-in native R376 shares the existing disposable Account Suspension proof.
+const diagnosticMode=process.env.R376_NATIVE_DIAGNOSIS==="1";
+assert.ok(process.env.R376_NATIVE_DIAGNOSIS===undefined||diagnosticMode);
 /**
  * SCRIPTED fixture, NOT a generative coding LLM. One Task holds only one
  * signer-authorized directory (or file) UPDATE permission; each effect reads
@@ -159,9 +162,12 @@ class ScriptedScopedReferenceWriter extends BaseLlm{
   this.requests.push(request);
   const stage=this.stages[this.stageIndex];
   if(!stage)throw Error("R375 exhausted signed scripted "+this.role+" source stages");
-  const turn=++this.stageTurn,limit=2*stage.files.length+1;
+  const turn=++this.stageTurn,limit=stage.readOnly?2:2*stage.files.length+1;
   if(turn>limit)throw Error("R375 model exceeded one Task's approved file stage");
   if(turn===limit){
+   if(stage.readOnly&&!JSON.stringify(request).includes(
+     JSON.stringify(stage.files[0].previous).slice(1,-1)))
+    throw Error("R376 diagnostic read lacks actual protected Gitea source");
    this.stageIndex++;this.stageTurn=0;
    yield {content:{role:"model",parts:[{text:
     "Completed one signed "+this.role+" source group with independently confirmed CAS tool responses"
@@ -557,6 +563,9 @@ try{
  const taskId="r375-frontend-task";let runtimeTaskId="dispatch_"+"F".repeat(22);
  const backendTaskId="r375-backend-task";let backendRuntimeId="dispatch_"+"B".repeat(22);
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
+ const diagnosticTaskId="r376-authenticated-source-read";
+ const diagnosticPermissions=[pair(sharedPath,"read_file")];
+ const decisionOffset=diagnosticMode?1:0;
  const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
   file,task_id:"r375-functional-file-"+(index+1),
   agent_id:file.startsWith("apps/frontend/")||
@@ -685,6 +694,7 @@ try{
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:preflight,runner:runnerPreflight,
   giteaClient:client,mutationObserver:observer,
+  ...(diagnosticMode?{readObserver}:{}),
   runnerPassObserver:runnerObserver,failureObserver:failObserver,
   pullRequestExecutor:prExecutor,branchExecutor
  }).status,"owner_native_gateway_effects_bound_no_execution");
@@ -726,6 +736,8 @@ try{
  const models={
   backend:new ScriptedScopedReferenceWriter(branch,"backend",[
    {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
+   ...(diagnosticMode?[{readOnly:true,files:[{path:sharedPath,
+    previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath]}]}]:[]),
    {files:[{path:sharedPath,
      previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
      replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
@@ -937,16 +949,31 @@ const tool=record?.request?.tool,role=record?.agent_role;
    async *generateContentAsync(req){
     const n=this.calls++,context=JSON.stringify(req);
     this.requests.push(req);
-    assert.ok(n<15,"native original owner adaptive loop exceeded bounded decisions");
+    assert.ok(n<15+decisionOffset,
+     "native original owner adaptive loop exceeded bounded decisions");
     if(n===0)assert.match(context,/r375-original-root-branch/u);
     if(n===1||n===2)
      assert.ok(context.includes(firstChoices[n-1].task.task_id),
       "ADK next Task requires previous original independent completion");
     let choice;
     if(n<3)choice=firstChoices[n];
-    else if(n>=3&&n<=12){
-     const j=n-3,entry=sourceTasks[j];
+    else if(diagnosticMode&&n===3){
+     assert.match(context,/independent_runner_failure/u);
+     assert.match(context,/researcher_acceptance/u);
+     choice={action:"delegate",task:{
+      task_id:diagnosticTaskId,agent_id:"backend",
+      depends_on:[taskId],permissions:diagnosticPermissions,
+      instruction:"Read original shared account-status source with the signed read-only Child before proposing correction"
+     }};
+    }else if(n>=3+decisionOffset&&n<=12+decisionOffset){
+     const j=n-3-decisionOffset,entry=sourceTasks[j];
      if(j===0){
+      if(diagnosticMode){
+       assert.ok(context.includes(diagnosticTaskId));
+       assert.match(context,/source_observations/u);
+       assert.match(context,/source_sha256/u);
+       assert.match(context,/account-status.ts/u);
+      }
       assert.match(context,/independent_runner_failure/u);
       assert.match(context,/independently_verified_test_failures/u);
       assert.match(context,/source_evidence_sha256/u);
@@ -959,17 +986,21 @@ const tool=record?.request?.tool,role=record?.agent_role;
       this.verifiedFailBeforeRepair=true;
      }else{
       assert.equal(this.verifiedFailBeforeRepair,true);
+      if(diagnosticMode&&j===1)
+       assert.equal(context.includes("source_observations"),false,
+        "old diagnostic source cannot be reused after first CAS advances HEAD");
       assert.ok(context.includes(sourceTasks[j-1].task_id),
        "No functional edit may precede the last independent source CAS");
      }
      choice={action:"delegate",task:{
       task_id:entry.task_id,agent_id:entry.agent_id,
-      depends_on:[j===0?taskId:sourceTasks[j-1].task_id],
+      depends_on:[j===0?(diagnosticMode?diagnosticTaskId:taskId):
+       sourceTasks[j-1].task_id],
       permissions:entry.permissions,
       instruction:"Read real Gitea "+entry.file+
        " then submit one authorized full-file CAS for Account Suspension"
      }};
-    }else if(n===13){
+    }else if(n===13+decisionOffset){
      assert.ok(context.includes(sourceTasks.at(-1).task_id));
      assert.match(context,/independent_runner_failure/u);
      choice={action:"delegate",task:{
@@ -1087,7 +1118,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    },
    sdk:{stageChannels,agentBindingChannels,agentBaseUrls:urls,
     a2aPolling:{deadlineMs:960000,initialIntervalMs:40,maxIntervalMs:1000}},
-   adaptive:{model:controller,maxSteps:15,
+   adaptive:{model:controller,maxSteps:15+decisionOffset,
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
      if(epoch===2&&agent_id==="backend")
@@ -1096,14 +1127,16 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r375:child:frontend-d0",29154,600);
      if(epoch===4&&agent_id==="test")
       return freshChildParams("urn:r375:child:test-failed",29155,1200);
-     if(epoch>=5&&epoch<=14){
-      const entry=sourceTasks[epoch-5];
+     if(diagnosticMode&&epoch===5&&agent_id==="backend")
+      return freshChildParams("urn:r376:child:diagnostic-read",29167,900);
+     if(epoch>=5+decisionOffset&&epoch<=14+decisionOffset){
+      const entry=sourceTasks[epoch-5-decisionOffset];
       if(!entry||entry.agent_id!==agent_id)
        throw Error("R375 signed repair epoch/agent differs from original proposal");
-      return freshChildParams("urn:r375:child:functional-"+(epoch-4),
-       29156+(epoch-5),900);
+      return freshChildParams("urn:r375:child:functional-"+(epoch-4-decisionOffset),
+       29156+(epoch-5-decisionOffset),900);
      }
-     if(epoch===15&&agent_id==="test")
+     if(epoch===15+decisionOffset&&agent_id==="test")
       return freshChildParams("urn:r375:child:retest-pass",29166,1200);
      throw Error("Original Host rejected unexpected model-selected Child");
     }},
@@ -1157,21 +1190,22 @@ const tool=record?.request?.tool,role=record?.agent_role;
   const report=workflow.adaptive;
   assert.equal(report.status,"owner_adaptive_work_ready_for_pr");
   assert.equal(report.pr_created,false);
-  assert.equal(report.executed_tasks,13);
+  assert.equal(report.executed_tasks,13+decisionOffset);
   assert.equal(report.source_test_task_id,retestTaskId);
   assert.match(report.source_test_runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
   assert.equal(branchModel.calls,1);
   assert.equal(branchPostAttempts,1);
   assert.equal(privateBranchExecuteCalls,1);
-  assert.equal(controller.calls,15);
+  assert.equal(controller.calls,15+decisionOffset);
   assert.equal(controller.verifiedFailBeforeRepair,true);
-  assert.equal(childMetadataCount,14);
-  assert.equal(issuedChildren,14,"original root PR must never create an agent Child");
-  assert.equal(coordinator.registeredTaskCount,16);
+  assert.equal(childMetadataCount,14+decisionOffset);
+  assert.equal(issuedChildren,14+decisionOffset,
+   "original root PR must never create an agent Child");
+  assert.equal(coordinator.registeredTaskCount,16+decisionOffset);
   // The immutable original failed Test never completes. Of 16 registered
   // Tasks, its one missing completion leaves 15 attested: the original Branch,
   // 13 successful adaptive work Tasks, and the separately verified root PR.
-  assert.equal(gate.stagedCompletedTaskCount,15,
+  assert.equal(gate.stagedCompletedTaskCount,15+decisionOffset,
    "only original failed Test remains incomplete; the root PR is completed");
   assert.equal(gatewayCasWrites,12);
   assert.equal(privateCasStagingBranchPosts,12);
@@ -1180,9 +1214,9 @@ const tool=record?.request?.tool,role=record?.agent_role;
    .filter(name=>name.endsWith(".runner-fail.json")).length,1);
   assert.equal((await readdir(path("runner-receipts")))
    .filter(name=>name.endsWith(".runner.json")).length,1);
-  assert.equal(models.backend.stageIndex,7);
+  assert.equal(models.backend.stageIndex,7+decisionOffset);
   assert.equal(models.frontend.stageIndex,5);
-  assert.equal(models.backend.requests.length,21);
+  assert.equal(models.backend.requests.length,21+2*decisionOffset);
   assert.equal(models.frontend.requests.length,15);
   assert.equal(models.test.requests.length,4);
   assert.equal(legacyWriteCalls,0);
@@ -1208,7 +1242,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(draftPrCreateAttempts,1);
   assert.equal(workflow.source_test_task_id,retestTaskId);
   assert.equal(workflow.pull_request_task_id,"r375-gitea-draft-pr");
-  assert.equal(workflow.completed_work_tasks,13);
+  assert.equal(workflow.completed_work_tasks,13+decisionOffset);
   assert.match(privatePrFlight?.request?.task_id??"",/^dispatch_[A-Za-z0-9_-]{22}$/u);
   assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
    workflow.pull_request_task_id,coordinator));
@@ -1236,7 +1270,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(branchPostAttempts,1);
   assert.equal(draftPrCreateAttempts,1);
   process.stdout.write(JSON.stringify({
-   event:"r375_original_protected_main_functional_native_docker_pass_draft_pr",
+   event:diagnosticMode?
+    "r376_authenticated_diagnostic_read_native_docker_pass_draft_pr":
+    "r375_original_protected_main_functional_native_docker_pass_draft_pr",
+   authenticated_diagnostic_source_seen_by_decider:diagnosticMode,
+   signed_read_only_diagnostic_tasks:decisionOffset,
    status:"pass",
    original_main_immutable:true,
    feature_branch_created_from_original_root:true,
