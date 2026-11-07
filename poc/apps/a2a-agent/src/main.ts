@@ -151,7 +151,10 @@ try{
   port,
   host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
   ...(adk ? { adk } : {}),
-  ...(mcpTaskSigning ? {mcpTaskSigning} : {})
+  ...(mcpTaskSigning ? {mcpTaskSigning} : {}),
+  // The canonical Agent Card DID must equal the role's actual native
+  // Rust signer DID, never the old synthetic Agent Card identity.
+  ...(ownerOnly?{nativeSignerDid:required("ADAPTER_ID_"+role.toUpperCase())}:{})
  });
 }catch(error){
  await bindingServer?.close(); // close and fence pending Task pins
