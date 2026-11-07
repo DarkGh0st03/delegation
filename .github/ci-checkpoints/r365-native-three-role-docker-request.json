@@ -1,10 +1,10 @@
 {
-  "checkpoint": "R365.2",
+  "checkpoint": "R365.3",
   "baseline_native_sha": "65274c4a987d45e89e2fcdc61db0955bb11e7598",
   "objective": "Extend exact signed immutable root DAG to Test Agent Task at epoch 3, guarantee no Test Child issued/enrolled until after independently completed native Frontend, future Docker execution deliberately excluded from this first native checkpoint",
   "scope": "account-suspension",
   "paid_model_calls_allowed": false,
-  "status": "native Docker run requested, not yet independently verified",
+  "status": "native rerun requested",
   "baseline_R364_success_sha": "65274c4a987d45e89e2fcdc61db0955bb11e7598",
   "root_plan": [
     "backend read_file/update_file",
@@ -12,5 +12,9 @@
     "test run_tests"
   ],
   "native_proof": "real signed Test Child, original Gateway Prepare, MCP Rust VP, OPA and authenticated Docker Runner PASS, independent evidence at exact Frontend HEAD, replay and root revocation",
-  "functional_application_source": "CI-owner-seeded disposable reference only; agents modify only scoped existing files"
+  "functional_application_source": "CI-owner-seeded disposable reference only; agents modify only scoped existing files",
+  "previous_sha": "8cddb53003487a40377ecb931e663e741495ded5",
+  "failure_run": 42327856671,
+  "previous_failure": "Fixture expected signed grant order incorrectly; actual canonical grant has run_tests branch-level permission first",
+  "fix": "Reorder identical five expected permissions to signed canonical order, no authority expansion, no provider effect"
 }

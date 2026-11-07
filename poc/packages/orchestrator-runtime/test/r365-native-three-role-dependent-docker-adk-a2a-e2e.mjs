@@ -238,11 +238,14 @@ const requirement="R365 disposable EVM proof for account suspension permission";
 const resourcePrefix="gitea://gitea.local/thesis/iam-console-poc/branches/"+
  "feature%2Faccount-suspension";
 const testPermission={resource:resourcePrefix,operation:"run_tests"};
+// Signed grant canonicalization orders shorter branch-level Test authority
+// before longer exact role-directory grants. Preserve the SAME five grants.
 const grantPermissions=[
+ testPermission,
  ...["backend","frontend"].flatMap(role=>
   ["read_file","update_file"].map(operation=>({
    resource:resourcePrefix+"/directories/apps/"+role,operation
-  }))),testPermission
+  })))
 ];
 assert.equal(grantPermissions.length,5);
 const readPermission={resource:resourcePrefix+"/files/"+mutationPath,
