@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R384.1)
+## Piano attivo — aggiornato al 7 novembre 2026 (R384.3 increment 1)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,66 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R384.0: CREATE_FILE nativa Rust/EVM/OPA/Gitea CAS e MAC PASS in CI disposable #42412181760. R384.1: aperto il FunctionTool soltanto con originale Task/Child prebound, owner-private stage e MCP crittografico; test ADK offline aggiunti, CI sulla SHA finale da confermare. Il modello Gemini a pagamento resta OFF.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R384.2 native A2A/ADK/MCP → Rust/EVM/OPA → Gitea CREATE CAS + MAC + Task completion PASS SHA `fcfcc676`, run #42417275100 e Fast CI #42417275078. R384.3 increment 1: CREATE inclusa nella selezione adattiva e nel D1 dopo FAIL Runner indipendente, sotto originale grant Engineer; nuovo E2E multi-Task FAIL→D1→retest ancora aperto. Nessun Gemini a pagamento.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.0 reale Rust/EVM/OPA/Gitea CREATE e Fast CI entrambe PASS su `f2b4fead` (run #42412181760 / #42412181730). R384.1 richiede Fast CI definitiva e un E2E composito nativo A2A/ADK successivo prima del cleanup** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.2 E2E composito nativo e Fast CI entrambi SUCCESS su `fcfcc676` (runs #42417275100 / #42417275078). R384.3 nuove regressioni decisione adattiva/D1 in Fast CI su SHA corrente da confermare; validazione recovery multi-Task da eseguire.** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R384.3 — Incremento 1: CREATE come Task adattivo e candidato D1 (preflight only)
+
+L'evidenza R384.2 su SHA `fcfcc67635684462b21f9e2364e9a875679b3ea5`
+è disponibile nelle run:
+- https://github.com/DarkGh0st03/delegation/actions/runs/42417275100
+- https://github.com/DarkGh0st03/delegation/actions/runs/42417275078
+
+Il log nativo conferma un'unica chiamata atomica Gitea
+`gateway_atomic_create_calls=1`, `legacy_writes=0`,
+`real_opa=true`, `independently_verified_rust_evm=true`,
+`remote_a2a_transport=true`, `task_local_crypto_mcp=true`,
+`independent_create_receipt_attested=true`,
+`task_finalized=true`, `revoked_root_denied=true`,
+`paid_model_calls=0`. Non dimostra ancora recovery multi-Task.
+
+R384.3 elimina un blocco ormai obsoleto nel
+`TrustedAuthorityOnlyAdkDecisionProposer` che vietava al
+modello ogni `create_file` in modalità adattiva. Il nuovo
+Task deve avere una **sola** permission `create_file`,
+presentarsi come Backend/Frontend e rientrare sia nella
+Agent Card sia nella Root firmata; niente create+read,
+create+update, due create, Runner o Test come side effect
+accorpato. L'effettiva assenza alla HEAD, Child nativo,
+Prepare, MAC e completamento sono verificati altrove dal
+Gateway originale, non dalla decisione ADK.
+
+La `preflightNativeD1FailureCandidate` applica gli stessi
+limiti a una proposta di primo recovery dopo **Runner FAIL
+autenticato e indipendente**: richiede l'operazione create
+firmata nell'Engineer Root originale, file/branch canonici,
+un solo effetto e ruolo Backend/Frontend. La prova FAIL
+è ricalcolata contro il Child, Gateway flight, receipt HMAC
+e HEAD originale. La preflight di per sé **non**
+crea un file, un Child, un Task o una prova di PASS.
+`admitFirstNativeD1RepairTask` continua ad esigere un
+marker persistente `O_EXCL` prima della registrazione
+del nuovo Task D1 e non amplia i permessi.
+
+Regressioni gratuite aggiunte per CREATE→Test→readiness
+con progresso owner simulato, tentativi illegittimi
+prima del dispatch, FAIL autentico/forgiato, root
+estranea, scope non canonico, operazioni multiple
+e ammissione monouso del nuovo Task. Fast CI della
+SHA finale da verificare prima di segnare PASS.
+
+**Ancora aperto in R384.3:** integrare un caso reale
+multi-Task Backend/Frontend/Test con FAIL applicativo
+del Runner, scelta D1 del modello, Child/VP nuovo
+su Root originale, eventuale CREATE eseguito con
+CAS/MAC reale, Test nuovo su HEAD corretta e
+attestazione indipendente. Nessuna chiamata Gemini
+pagata senza consenso, nessun merge, `main` invariato.
 
 ### R384.1 — FunctionTool CREATE owner-verified e ADK/MCP controllati
 
