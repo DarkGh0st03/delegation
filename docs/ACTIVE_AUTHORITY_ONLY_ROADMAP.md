@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.6)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.7)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,56 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.6 aggiunge l'executor owner-only `create_file`, con CAS Gitea, tentativo monouso durable e receipt MAC verificata due volte; ancora NON collegato al Gateway runtime, FunctionTools o al pilot. La Fast CI e la prova nativa integrata sono da confermare.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.7 collega l'executor `create_file` al Gateway `executeAuthorization`, `GatewayRuntime` e owner host con opt-in esplicito, verifier Rust e OPA concreti e class/Task binding. FunctionTools, attivazione owner reale e prova nativa E2E restano aperti.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.7 — Dispatch CREATE_FILE nel Gateway canonico con native guard
+
+Il `executeAuthorization` ha un ramo dedicato `create_file`,
+distinto dal writer Gitea legacy: è raggiungibile solo con
+`authorityOnlyCreateEnabled:true`, stesso originale
+`TrustedAuthorityOnlyGiteaCreateExecutor` e
+`TrustedAuthorityOnlyGatewayAdmissions`, role Backend/Frontend,
+`DirectCoreRustVerifier`, `OpaPolicyClient` e `GiteaExecutor`
+concreti, senza `approvedPlans` o `planningRevisions` legacy.
+Dopo la VP Rust e la decisione OPA allow viene riesaminata la
+flight Task/Child firmata. L'executor viene chiamato mediante
+il metodo originale della classe: l'implementazione conserva
+`reserveAttempt`, CAS e doppia receipt MAC già introdotti in
+R383.6. Il risultato `create_file` può passare la provenance
+check finale solo nello stesso ramo opt-in, senza fallback legacy.
+
+Il `GatewayRuntime` accetta una coppia coerente
+`authorityOnlyCreateEnabled` / `authorityOnlyCreateExecutor`,
+verifica l'identità owner e inoltra i riferimenti privati
+all'esecuzione. `createTrustedAuthorityOnlyGatewayServer`
+riceve facoltativamente `owner.createExecutor`: se assente
+la create rimane negata, se presente deve appartenere alle
+stesse Admissions già attive. L'owner HTTP non accetta
+signer né queste capabilities da una route pubblica.
+
+Test offline aggiunti: dispatch con vere classi wrapper
+`DirectCoreRustVerifier` / `OpaPolicyClient` ma
+risposte simulated, deny Rust, deny OPA, owner estraneo,
+opt-in mancante, verifier e policy generici falsificati,
+controllo della singola execution e zero legacy Gitea call.
+Questo non è una prova crittografica Rust/EVM reale.
+Le nuove verifiche restano in Fast CI gratuita; un PASS
+sulla **SHA finale** è necessario prima di considerare
+R383.7 validato.
+
+**Ancora aperto:** l'owner operativo deve assemblare una
+istanza `createExecutor` a partire da manifest privato 0600,
+con staged preflight + flight originale prima di esporre
+la capability agli agenti. Servono nuovi E2E nativi gratuiti
+Rust/OPA/Gitea (incluso revoca/HEAD race) e un percorso di
+completion A2A attestato, prima di abilitare il Tool Gemini.
+Nessuna chiamata AI a pagamento e nessun merge.
 
 ### R383.6 — Executor CREATE CAS e ricevuta MAC indipendente (non attivato)
 
