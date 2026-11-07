@@ -57,8 +57,8 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
-import {createNativeOrchestratorPresentation}
- from "../src/native-orchestrator-presentation.ts";
+import {createTrustedAuthorityOnlyRootEffectTransport}
+ from "../../../apps/orchestrator/src/trusted-authority-only-root-effect-transport.mjs";
 
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
@@ -1054,11 +1054,27 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(branchPostAttempts,0);
   await assert.rejects(independentClient.getBranchMetadata(branch),
    error=>error instanceof ProviderNotFoundError);
+  const rootTransport=(permission,record)=>createTrustedAuthorityOnlyRootEffectTransport({
+   native:{socketPath,token:tokens.orchestrator,timeoutMs:60000},
+   credentialId:operational.credential_id,permission,
+   prepareGateway:request=>prepareAuthorization(request,{
+    audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
+   },{store,audit,authorityOnlyAdmissions:gate,nowMs}),
+   executeGateway:input=>{record(input.signed_vp);return executeAuthorization(input,deps);}
+  });
+  const branchTransport=rootTransport(branchPermission,vp=>{
+   privateBranchFlight.signed_vp=vp;
+   privateBranchExecuteCalls++;
+  });
+  const prTransport=rootTransport(prPermission,vp=>{
+   privatePrFlight.signed_vp=vp;
+   privatePrExecutorCalls++;
+  });
   const workflow=await execution.runCanonicalOperationalWorkflow({
    createBranch:{
     model:branchModel,branch,baseBranch:"main",
     permission:branchPermission,
-    prepare:request=>{
+    prepare:async request=>{
      assert.equal(privateBranchFlight,undefined);
      assert.equal(request.agent_role,"orchestrator");
      assert.equal(request.tool,"create_branch");
@@ -1067,9 +1083,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
      assert.equal(coordinator.registeredTaskCount,1,
       "Root Branch must be the first and only registered Task");
      assert.equal(issuedChildren,0);
-     const prepared=prepareAuthorization(request,{
-      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
-     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
+     const prepared=await branchTransport.prepare(request);
      assert.deepEqual(prepared.required_permission,branchPermission);
      privateBranchFlight={request,prepared};
      return prepared;
@@ -1081,18 +1095,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
      assert.equal(branchPostAttempts,0);
      await assert.rejects(independentClient.getBranchMetadata(branch),
       error=>error instanceof ProviderNotFoundError);
-     const signedVp=await createNativeOrchestratorPresentation({
-      socketPath,token:tokens.orchestrator,timeoutMs:60000
-     },{
-      credential_id:operational.credential_id,
-      disclosed_permissions:[branchPermission],
-      audience:prepared.audience,challenge:prepared.challenge
-     });
-     privateBranchFlight.signed_vp=signedVp;
-     privateBranchExecuteCalls++;
-     return executeAuthorization({
-      request_id:prepared.request_id,signed_vp:signedVp
-     },deps);
+     return branchTransport.execute({request,prepared});
     }
    },
    sdk:{stageChannels,agentBindingChannels,agentBaseUrls:urls,
@@ -1124,15 +1127,13 @@ const tool=record?.request?.tool,role=record?.agent_role;
     title:"Account Suspension — original protected-main native acceptance PASS",
     body:"Immutable Engineer grant; original root, three worker roles, independently attested Docker and researcher acceptance PASS",
     permission:prPermission,
-    prepare:request=>{
+    prepare:async request=>{
      assert.equal(privatePrFlight,undefined);
      assert.equal(request.agent_role,"orchestrator");
      assert.equal(request.tool,"create_pull_request");
      assert.equal(request.arguments.head_branch,branch);
      assert.equal(draftPrCreateAttempts,0);
-     const prepared=prepareAuthorization(request,{
-      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
-     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
+     const prepared=await prTransport.prepare(request);
      assert.deepEqual(prepared.required_permission,prPermission);
      privatePrFlight={request,prepared};
      return prepared;
@@ -1144,18 +1145,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
       (await independentClient.getBranchMetadata(branch)).commit_sha);
      assert.equal(draftPrCreateAttempts,0,
       "original PR POST cannot precede durable one-shot staging");
-     const signedVp=await createNativeOrchestratorPresentation({
-      socketPath,token:tokens.orchestrator,timeoutMs:60000
-     },{
-      credential_id:operational.credential_id,
-      disclosed_permissions:[prPermission],
-      audience:prepared.audience,challenge:prepared.challenge
-     });
-     privatePrFlight.signed_vp=signedVp;
-     privatePrExecutorCalls++;
-     return executeAuthorization({
-      request_id:prepared.request_id,signed_vp:signedVp
-     },deps);
+     return prTransport.execute({request,prepared});
     }
    }
   });

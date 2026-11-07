@@ -3035,3 +3035,28 @@ test('native effects assembly binds real provider ports to the admitted Review H
   assert.equal(providerCalls,0);
  }finally{await host.close();}
 });
+
+test('Root effect transport rejects changed challenges and consumes a failed native signing attempt',async()=>{
+ const {createTrustedAuthorityOnlyRootEffectTransport}=await import(
+  '../src/trusted-authority-only-root-effect-transport.mjs');
+ const permission={resource:'gitea://gitea.local/thesis/iam-console-poc',operation:'create_branch'};
+ const request={agent_role:'orchestrator',tool:'create_branch',
+  task_id:'dispatch_original',arguments:{branch:'feature/example',base_branch:'main'}};
+ const prepared={request_id:'original',audience:'gateway',challenge:'original-nonce',
+  required_permission:permission};
+ let prepares=0,executes=0;
+ const transport=createTrustedAuthorityOnlyRootEffectTransport({
+  credentialId:'urn:original-root',permission,native:{socketPath:'invalid',token:'offline'},
+  prepareGateway:async()=>{prepares++;return prepared;},
+  executeGateway:async()=>{executes++;}
+ });
+ await assert.rejects(transport.prepare({...request,tool:'create_pull_request'}),/Prepare denied/u);
+ assert.equal(prepares,0);
+ await transport.prepare(request);
+ await assert.rejects(transport.prepare(request),/Prepare denied/u);
+ await assert.rejects(transport.execute({request,prepared:{...prepared,challenge:'changed'}}),/Execute denied/u);
+ await assert.rejects(transport.execute({request,prepared}),/Native Rust Orchestrator presentation denied/u);
+ await assert.rejects(transport.execute({request,prepared}),/Execute denied/u);
+ assert.equal(prepares,1);
+ assert.equal(executes,0);
+});
