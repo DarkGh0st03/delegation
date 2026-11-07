@@ -10,7 +10,7 @@
 import {A2A_PROTOCOL_VERSION,type AgentCard} from "@a2a-js/sdk";
 import {APPROVED_SPECIALIZED_AGENT_PROFILES}
   from "../../agent-runtime/src/approved-specialized-profiles.ts";
-import {agentDid} from "../../agent-runtime/src/cards.ts";
+import {trustedSignerAgentDid} from "../../agent-runtime/src/cards.ts";
 import {DELEGATED_AUTHORIZATION_EXTENSION_URI}
   from "../../agent-runtime/src/contracts.ts";
 
@@ -40,6 +40,9 @@ export function verifyTrustedApprovedAgentCard(role:Role,base:string,card:AgentC
   const interfaces=card?.supportedInterfaces;
   const ext=card?.capabilities?.extensions;
   const capabilities=ext?.[0]?.params?.taskCapabilities;
+  // The trusted role DID must agree with the original Rust signer in
+  // authority-only mode. Historical Cards retain their fixed demonstration DID.
+  const expectedDid=trustedSignerAgentDid(role);
   const supported=new Set<string>(APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools);
   if(!Array.isArray(capabilities)||capabilities.length===0||
      capabilities.length>supported.size||new Set(capabilities).size!==capabilities.length||
@@ -52,7 +55,7 @@ export function verifyTrustedApprovedAgentCard(role:Role,base:string,card:AgentC
      !Array.isArray(ext)||ext.length!==1||
      ext[0]?.uri!==DELEGATED_AUTHORIZATION_EXTENSION_URI||
      ext[0]?.required!==true||
-     ext[0]?.params?.agentDid!==agentDid(role)||
+     ext[0]?.params?.agentDid!==expectedDid||
      ext[0]?.params?.evidenceLocation!==
        "message.metadata.delegation_evidence"||
      !Array.isArray(card?.skills)||
@@ -60,7 +63,7 @@ export function verifyTrustedApprovedAgentCard(role:Role,base:string,card:AgentC
        typeof s==="object"&&s!==null&&
        (s as {id?:string}).id===SKILLS[role]))
     denied();
-  return Object.freeze({did:agentDid(role),
+  return Object.freeze({did:expectedDid,
     capabilities:Object.freeze([...capabilities])});
 }
 export async function assertTrustedApprovedA2AStartup(input:{
