@@ -23,5 +23,7 @@
   ],
   "provider": "local-disposable-gitea",
   "paid_ai": false,
-  "main_unchanged": true
+  "main_unchanged": true,
+  "run": 2,
+  "repair": "R384.2 original native DID on backend/frontend/test verified Agent Cards with private MCP"
 }
