@@ -499,7 +499,10 @@ try{
    ProviderNotFoundError
   );
   assert.deepEqual(prepared.map(p=>p.tool),["create_file"]);
-  assert.equal(store.get(prepared[0].response.request_id).pinned_revision,
+  // CREATE deliberately has NO UPDATE-like old-blob/pinned_revision
+  // property in Prepare. Its pinned HEAD and old-file absence are
+  // asserted in the original O_EXCL/fsync CREATE intent above.
+  assert.equal(preflight.getReservedIntent(exactRecord).expected_head_sha,
    baseRevision);
   assert.deepEqual(events,["prepare_create_file","execute_create_file"]);
   // An A2A-completed report is not permission to dispatch the next Task.
