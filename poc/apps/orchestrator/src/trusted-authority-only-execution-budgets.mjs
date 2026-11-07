@@ -4,7 +4,7 @@ function deny(){throw Error('Protected canonical execution budget denied');}
 export function resolveTrustedAuthorityOnlyExecutionBudgets({childCount,ownerBudget}={}){
  if(!Number.isSafeInteger(childCount)||childCount<1||childCount>24)deny();
  if(ownerBudget===undefined)
-  return Object.freeze({maxDecisions:childCount,maxVerifiedFailures:2});
+  return Object.freeze({maxDecisions:childCount,maxVerifiedFailures:Math.min(2,childCount)});
  if(!ownerBudget||typeof ownerBudget!=='object'||Array.isArray(ownerBudget)||
     Object.getPrototypeOf(ownerBudget)!==Object.prototype||
     Object.keys(ownerBudget).length!==2||
