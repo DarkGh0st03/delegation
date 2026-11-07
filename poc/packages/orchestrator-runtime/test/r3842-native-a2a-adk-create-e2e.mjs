@@ -466,7 +466,10 @@ try{
   assert.equal(model.requests.length,2);
   assert.equal(gatewayCasWrites,1);
   assert.equal(legacyWriteCalls,0);
-  assert.equal(gate.stagedCompletedTaskCount,1);
+  // Critical trust boundary: an SDK A2A "COMPLETED" is NOT authoritative
+  // task completion. Only the independently observed Gitea MAC below
+  // may advance this original Gateway Task.
+  assert.equal(gate.stagedCompletedTaskCount,0);
   const exactRecord=store.get(prepared[0]?.response?.request_id);
   assert.ok(exactRecord);
   const intent=preflight.getReservedIntent(exactRecord);
@@ -505,6 +508,7 @@ try{
   );
   assert.equal(confirmed.status,"owner_gateway_completion_independently_observed");
   assert.equal(confirmed.gateway_execution_authorized,false);
+  assert.equal(gate.stagedCompletedTaskCount,1);
   await assert.rejects(owner.attestIndependentGatewayCompletion(
    taskId,runtimeTaskId),/closed or repeated independent completion/u);
   assert.equal((await client.getBranchMetadata(branch)).commit_sha,
