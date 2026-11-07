@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.1)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.2)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -371,6 +371,36 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   Actions PASS recuperabile; non chiudere B sulla base dei test
   scritti.** La cancellazione non annulla effetti già inviati
   al Rust signer; resta obbligatorio il journal fail-closed.
+- **R382.2 — R381.8 FAIL effettivo recuperato, preflight corretto senza downgrade**:
+  recuperati finalmente **i risultati reali degli eventi `push`** con GitHub REST
+  `/actions/runs`: R382.1 Fast CI
+  [#42386677279](https://github.com/DarkGh0st03/delegation/actions/runs/42386677279)
+  **SUCCESS**; due suite MCP offline
+  [#42386677234](https://github.com/DarkGh0st03/delegation/actions/runs/42386677234)
+  e [#42386677440](https://github.com/DarkGh0st03/delegation/actions/runs/42386677440)
+  **SUCCESS** sulla stessa SHA `6236599e`.
+  L'E2E R381.8
+  [#42384687716](https://github.com/DarkGh0st03/delegation/actions/runs/42384687716)
+  **FAIL** sul checkpoint `f2b8bc51`, **solo nello step 9 preflight**:
+  tre test offline R381.7 costruivano il Planning Review Host con Gateway
+  e Child mock mentre la variabile di **job**
+  `APPROVED_RUNNER_NATIVE_MCP=1` richiedeva, correttamente,
+  `ADAPTER_ENGINEER_NATIVE_SOCKET` (non ancora avviato). Nessuna prova
+  reale Rust/Gitea/Docker è stata eseguita in quella run: il job è uscito
+  prima dell'avvio di Anvil/OPA/Gitea.
+  Il workflow R381.8 ora isola **soltanto il sottoprocesso di unit test**
+  R381.7 con `APPROVED_RUNNER_NATIVE_MCP=0`,
+  `R3818_CANONICAL_NATIVE_MCP=0`, e senza socket in eredità.
+  La vera fase native E2E conserva il flag di job `=1`, controllato
+  esplicitamente dopo i file runtime, con `authority-only`, Rust reale,
+  nessun Adapter fallback e zero modello a pagamento. Due test di
+  regressione `r3822-native-mcp-checkpoint-isolation.test.mjs` verificano
+  che il preflight resti confinato e che il gate nativo non sia disabilitato;
+  sono collegati a Fast CI e al preflight del workflow. L'E2E **deve
+  essere rieseguito una sola volta** dopo il cambio per ottenere la
+  prova su una SHA finale. Non attribuire mai il vecchio FAIL a Docker,
+  Planner/Executor generativo o Rust nativo, perché non erano stati
+  avviati.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
