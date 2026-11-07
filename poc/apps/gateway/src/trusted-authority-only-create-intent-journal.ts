@@ -209,4 +209,66 @@ export class DurableAuthorityOnlyGiteaCreateIntentJournal {
    try{await dirfd.sync();}finally{await dirfd.close();}
   }finally{this.#writeInFlight=false;}
  }
+
+ /**
+  * R383.6 — remember ONLY an independently verified signed CREATE receipt.
+  * An existing attempt marker is necessary; a successful Gitea callback
+  * without owner MAC and independent observation is NOT sufficient.
+  */
+ async reserveCompletedEvidence(intent:TrustedGiteaCreateIntent,
+  verifiedEvidenceSha256:string):Promise<void>{
+  if(!SHA64.test(verifiedEvidenceSha256))
+   deny("unauthenticated create completion digest");
+  if(this.#writeInFlight)deny("concurrent create completion reservation");
+  this.#writeInFlight=true;
+  try{
+   await this.assertReserved(intent);
+   const stem=this.#filename(intent).replace(".create-intent.json","");
+   const attempt=await this.#read(stem+".create-attempt.json");
+   if(!attempt||typeof attempt!=="object"||Array.isArray(attempt))
+    deny("missing durable create provider attempt");
+   const a=attempt as Record<string,unknown>;
+   if(a.schema!=="authority-only-gitea-create-attempt-v1"||
+      a.session_id!==intent.session_id||
+      a.root_credential_id!==intent.root_credential_id||
+      a.authority_digest!==intent.authority_digest||
+      a.task_id!==intent.task_id||
+      a.runtime_task_id!==intent.runtime_task_id||
+      a.epoch!==intent.epoch||
+      a.agent_did!==intent.agent_did||
+      a.credential_id!==intent.credential_id||
+      a.request_id!==intent.request_id||
+      a.request_fingerprint!==intent.request_fingerprint||
+      a.repository!==intent.repository||
+      a.branch!==intent.branch||a.path!==intent.path||
+      a.expected_head_sha!==intent.expected_head_sha||
+      a.next_content_sha256!==intent.next_content_sha256||
+      a.next_content_bytes!==intent.next_content_bytes||
+      a.provider_write_authorized!==false)
+    deny("create attempt differs from protected original Task");
+   await this.#privateDirectory();
+   const file=stem+".create-completed.json";
+   const fd=await open(join(this.#directory,file),
+    constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|
+    constants.O_NOFOLLOW,0o600);
+   try{
+    const st=await fd.stat();
+    if(!st.isFile()||st.nlink!==1||
+       (st.mode&0o777)!==0o600||
+       (typeof process.getuid==="function"&&st.uid!==process.getuid()))
+     deny("unsafe create-completion marker");
+    await fd.writeFile(JSON.stringify({
+     schema:"authority-only-gitea-create-completion-v1",
+     session_id:intent.session_id,task_id:intent.task_id,
+     request_id:intent.request_id,
+     request_fingerprint:intent.request_fingerprint,
+     verified_evidence_sha256:verifiedEvidenceSha256
+    })+"\n","utf8");
+    await fd.sync();
+   }finally{await fd.close();}
+   const d=await open(this.#directory,
+    constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+   try{await d.sync();}finally{await d.close();}
+  }finally{this.#writeInFlight=false;}
+ }
 }
