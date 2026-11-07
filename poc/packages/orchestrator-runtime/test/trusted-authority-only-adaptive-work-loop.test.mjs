@@ -7,6 +7,8 @@ import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../src/trusted-authority-
 const branch='feature/account-suspension',repo='gitea://gitea.local/thesis/iam-console-poc';
 const grant=role=>({operation:role==='test'?'run_tests':'update_file',
  resource:repo+'/branches/feature%2Faccount-suspension'+(role==='test'?'':'/files/apps/'+role+'.ts')});
+const diagnosticRead=()=>({operation:'read_file',
+ resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend.ts'});
 const candidate=(role,index,permissions=[grant(role)])=>({action:'delegate',task:{
  task_id:'task-'+index,agent_id:role,depends_on:index?['task-'+(index-1)]:[],permissions,
  instruction:'Perform '+role+' approved work'}});
@@ -94,13 +96,15 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
   async readContext(){if(retired)throw Error('retired');
    return {
     requirement:'Implement Account Suspension',branch,
-    rootPermissions:['backend','frontend','test'].map(permission),
+    rootPermissions:[...['backend','frontend','test'].map(permission),diagnosticRead()],
     agents:Object.fromEntries(['backend','frontend','test'].map(agent_id=>[
-     agent_id,{capabilities:[permission(agent_id).operation]}])),
+     agent_id,{capabilities:[permission(agent_id).operation,
+      ...(agent_id==='backend'?['read_file']:[])]}])),
     previousTasks:done.map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
     nextEpoch:epoch,
     executionProgress:{current_head_sha:head,completed_work:done.map(p=>({
-     task_id:p.task_id,agent_id:p.agent_id,operation:permission(p.agent_id).operation,
+     task_id:p.task_id,agent_id:p.agent_id,
+     operation:p.permissions.find(g=>g.operation==='update_file'||g.operation==='run_tests')?.operation??'read_file',
      instruction:p.instruction}))},
     ...(failure?{verifiedFailure:{failed_phase:failure.failed_phase,
      source_evidence_sha256:failure.source_evidence_sha256},
@@ -121,7 +125,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
      throw Error('A2A Test FAILED: untrusted error is NOT proof');
     return {status:'owner_verified_native_test_failure_preflight_only'};
    }
-   if(task.agent_id!=='test')head='b'.repeat(40);
+   if(task.permissions.some(g=>g.operation==='update_file'))head='b'.repeat(40);
    done.push({...task,tested:task.agent_id==='test'?head:undefined});
    events.push('gateway_attested:'+task.task_id);
   },
@@ -204,6 +208,57 @@ test('R355.6 untrusted thrown Test A2A failure cannot invoke recovery observer',
  assert.equal(model.calls,1);
  assert.equal(f.retired,true);
  assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
+test('R376.0 verified Runner FAIL admits bounded read-only diagnosis before repair',async()=>{
+ const f=verifiedFailureFixture();
+ const inspect=candidate('backend',1,[diagnosticRead()]);
+ inspect.task.depends_on=[];
+ const edit=candidate('backend',2);
+ edit.task.depends_on=['task-1'];
+ const retest=candidate('test',3);
+ retest.task.depends_on=['task-2'];
+ const model=new Decisions([candidate('test',0),inspect,edit,retest,
+  {action:'ready_for_pr',reason:'Latest independently verified Runner PASS'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:5});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,3);
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-2','task-3']);
+ assert.equal(f.retired,false);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,1);
+ const afterRead=JSON.stringify(model.requests[2]);
+ assert.match(afterRead,/read_file/u);
+ assert.match(afterRead,/task-1/u);
+ assert.match(afterRead,/independently_gateway_completed_tasks/u);
+ assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
+});
+test('R376.0 read-only diagnosis before verified Test FAIL is denied',async()=>{
+ const f=fixture();
+ const read=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await read();
+  ctx.rootPermissions.push(diagnosticRead());
+  ctx.agents.backend.capabilities.push('read_file');
+  return ctx;
+ };
+ const model=new Decisions([candidate('backend',0,[diagnosticRead()])]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.verified.length,0);
+ assert.equal(f.retired,true);
+});
+test('R376.0 diagnostic read outside immutable Engineer root is denied',async()=>{
+ const f=verifiedFailureFixture();
+ const inspect=candidate('backend',1,[{
+  operation:'read_file',resource:repo+'/branches/main/files/private.ts'}]);
+ inspect.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),inspect]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,2);
+ assert.equal(f.done.length,0);
+ assert.equal(f.retired,true);
 });
 test('R355.7 adaptive Test FAIL twice, two different corrections, final Test PASS',async()=>{
  const f=verifiedFailureFixture({failCount:2});
