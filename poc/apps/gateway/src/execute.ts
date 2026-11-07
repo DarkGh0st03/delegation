@@ -224,12 +224,24 @@ export async function executeAuthorization(
     // The concrete native Rust verifier must have explicitly verified the
     // required leaf against a signed directory grant and its chain.
     validateVerifiedDelegation(verified, record,
-      !!record.authority_only_digest&&
-      dependencies.authorityOnlyReadEnabled===true&&
-      dependencies.authorityOnlyAdmissions!==undefined&&
       dependencies.verifier instanceof DirectCoreRustVerifier&&
       dependencies.verifier.allowsGiteaScopeCoverage&&
-      record.request.tool==="read_file");
+      (
+        // Existing R299 authority-only signed Task read, unchanged.
+        (!!record.authority_only_digest&&
+         dependencies.authorityOnlyReadEnabled===true&&
+         dependencies.authorityOnlyAdmissions!==undefined&&
+         record.request.tool==="read_file")||
+        // R380.3 separately bounded ORIGINAL preliminary Planning Root.
+        // No operational-approved Task can inherit this ancestor scope.
+        (!!record.pinned_revision&&
+         dependencies.planningRevisions!==undefined&&
+         dependencies.approvedPlans===undefined&&
+         dependencies.authorityOnlyAdmissions===undefined&&
+         record.agent_role==="orchestrator"&&
+         (record.request.tool==="read_file"||
+          record.request.tool==="list_directory"))
+      ));
   } catch (error) {
     const verificationMs = elapsed(verificationStarted, durationNow);
     const unavailable = error instanceof VerificationUnavailableError;
