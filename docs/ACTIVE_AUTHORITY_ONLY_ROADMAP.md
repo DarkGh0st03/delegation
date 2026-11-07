@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R381.0)
+## Piano attivo — aggiornato al 7 novembre 2026 (R381.1)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,7 +16,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.0: broker MCP stdio interprocesso provato offline, integrazione issuer aperta)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.1: Child issuer stdio opt-in provato offline, native E2E aperto)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -182,12 +182,27 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   invocazione concorrente, input sconosciuto ed errore privato
   sanificato in
   [Cryptographic MCP Profile](https://github.com/DarkGh0st03/delegation/actions/workflows/crypto-mcp-offline.yml).
-  **Limite esplicito**: è un broker di capability/trasporto e NON
-  ancora il servizio MCP crittografico che emette davvero la Child
-  o crea la VP tra processi. Non è attivato nell'issuer canonico,
-  né sufficiente per chiudere B. Il passo successivo deve associare
-  il processo privato all'Owner/Task originale e riprovare una
-  vera Child e VP nativa senza fallback a un secondo signer.
+  **R381.1 opt-in originale Child**: il costruttore
+  `TrustedAuthorityOnlyChildIssuer` accetta ora `privateMcpTransport`
+  dal SOLO trusted Owner (`"in-process"` per default, oppure `"stdio"`).
+  Il broker isolato viene usato **solo dopo** journal reserve e
+  verifica di Root/Task; il medesimo `nativeCryptoPort.issueChild`
+  continua a firmare nell'originale Owner. Un ACK ambiguo o Child non
+  valida non fa fallback, non riusa il Task e non amplia il signed
+  Engineer permission ceiling. Un nuovo test offline invoca
+  `issueForRegisteredTask` con subprocess MCP reale e verifica
+  trasferimento Child one-shot, replay e risposta corrotta.
+  [Fast CI #42377180297](https://github.com/DarkGh0st03/delegation/actions/runs/42377180297)
+  SUCCESS 2/2 sulla SHA `7e30b9e8`; le prove crypto SDK stdio
+  [#42376726090](https://github.com/DarkGh0st03/delegation/actions/runs/42376726090)
+  SUCCESS sulla SHA `0d315afe` (checkpoint precedenti).
+  **Limite esplicito**: è un broker di capability/trasporto opzionale,
+  NON ancora il servizio MCP che esegue la firma effettiva in un
+  processo separato. Il launcher operativo non ha ancora attivato
+  `"stdio"` per il pilot nativo; Root/VP/Engineer non sono migrati.
+  B e C restano aperte. Prossimo passaggio: test R381.2 nativo
+  Rust/EVM di Child con questo opt-in, poi confine privato per VP
+  senza seconda autorità né endpoint modello.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
