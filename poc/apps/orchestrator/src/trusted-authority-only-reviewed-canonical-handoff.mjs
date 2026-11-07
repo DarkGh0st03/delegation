@@ -129,7 +129,6 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
     deny("one-use original canonical execution already attempted");
    preparing=true; // serialize BEFORE first asynchronous review load
    const running=(async()=>{
-    let operational=false;
     try{
      const signed=await readSignedReview();
      if(!validatedProof(signed,sessionId,baseRevision,planDigest,engineerDid))
@@ -142,7 +141,6 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
       deny("original owner retired before Root");
      // The Review Host re-reads and independently verifies the signed
      // approved permission subset before its durable issue intent.
-     operational=true;
      await reviewHost.activateOperational(owned.root);
      if(closed||reviewHost.phase!=="operational"||!liveNative())
       deny("original Root retired after activation");
@@ -157,10 +155,12 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
      if(closed)deny("original Review Host retired during execution");
      return result;
     }catch(e){
-     if(operational){
-      // A Rust issue, Task, or Gateway effect may already have happened.
-      // Retire once; do not retry or convert it into a legacy Signed DAG.
-      try{await close();}catch{
+     if(attempted){
+      // A Rust issue, Task, or Gateway effect MAY have happened.
+      // Mark closed synchronously. Do NOT call close() here: it waits
+      // for this in-flight promise and would deadlock on itself.
+      closed=true;
+      try{await reviewHost.close();}catch{
        deny("original Root retirement unconfirmed after ambiguous execution");
       }
      }
