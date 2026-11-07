@@ -58,7 +58,7 @@ jobs:
       - name: Validate actual ADK read-only Planner contract using scripted model
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
       - name: R350.14 and R380.0 verify read-only Gateway Planning with scoped preliminary root
-        run: node --experimental-strip-types --test --test-name-pattern="R350.14|R380.0" poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts
+        run: node --experimental-strip-types --test --test-name-pattern="R350.14|R380.0|R380.1" poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts
       - name: F1 frozen old/new requirement x guidance (no inference)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/f1-planner-ablation.test.mjs
       - name: Assert no Gemini API key or manual billable execution in this workflow
