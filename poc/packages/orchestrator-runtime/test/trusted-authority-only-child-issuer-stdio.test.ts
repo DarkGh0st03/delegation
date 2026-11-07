@@ -24,7 +24,7 @@ const status={
  statusListIndex:"81",statusListCredential:"https://issuer.example/status"
 };
 
-function fixture(transport:"stdio"|"in-process"="stdio",badChild=false){
+function fixture(transport:"stdio"|"in-process"|"native-stdio"="stdio",badChild=false){
  const now=Date.now(),start=new Date(now).toISOString();
  const root={
    session_id:"r381-native-session",
@@ -53,7 +53,7 @@ function fixture(transport:"stdio"|"in-process"="stdio",badChild=false){
      assertTrustedGatewayAuthorityBinding(){return root;}
    }
  ) as TrustedAuthorityOnlyExecutionCoordinator;
- let reservations=0,issues=0;
+ let reservations=0,issues=0,nativeMcpInvocations=0;
  const journal=Object.assign(
    Object.create(DurableAuthorityOnlyChildJournal.prototype),
    {async reserveChild(input:Record<string,unknown>){
@@ -82,8 +82,14 @@ function fixture(transport:"stdio"|"in-process"="stdio",badChild=false){
      };
    }
  };
+ const port={...signer,
+   async issueChildViaPrivateMcp(input:Parameters<typeof signer.issueChild>[0]){
+     nativeMcpInvocations++;
+     return signer.issueChild(input);
+   }
+ };
  const issuer=new TrustedAuthorityOnlyChildIssuer({
-   coordinator,nativeCryptoPort:signer as never,journal,
+   coordinator,nativeCryptoPort:port as never,journal,
    privateMcpTransport:transport,nowMs:()=>now
  });
  const parameters={
@@ -92,6 +98,7 @@ function fixture(transport:"stdio"|"in-process"="stdio",badChild=false){
  };
  return {coordinator,issuer,parameters,root,row,
    get issues(){return issues;},
+   get nativeMcpInvocations(){return nativeMcpInvocations;},
    get reservations(){return reservations;}
  };
 }
@@ -134,4 +141,30 @@ test("R381.1 malformed returned Child after stdio ACK fails closed with no retry
    /ambiguous or concurrent issuance denied/u);
  assert.equal(f.issues,1);
  assert.equal(f.reservations,1);
+});
+
+
+test("R381.3 original trusted issuer selects native MCP service without ACK-only callback",async()=>{
+ const f=fixture("native-stdio");
+ const signed=await f.issuer.issueForRegisteredTask(taskId,f.parameters);
+ assert.equal(signed.credential_id,childId);
+ assert.equal(f.nativeMcpInvocations,1);
+ assert.equal(f.issues,1);
+ assert.equal(f.reservations,1);
+ await assert.rejects(f.issuer.issueForRegisteredTask(taskId,f.parameters),
+  /replayed Task issuance/u);
+ assert.equal(f.nativeMcpInvocations,1);
+});
+
+test("R381.3 rejects native MCP opt-in when port lacks service capability",()=>{
+ const f=fixture("in-process");
+ assert.throws(()=>new TrustedAuthorityOnlyChildIssuer({
+  coordinator:f.coordinator,nativeCryptoPort:{
+   kind:"rust-native",
+   async issueChild(){throw Error("MUST_NOT_BE_CALLED");}
+  } as never,
+  journal:Object.assign(Object.create(DurableAuthorityOnlyChildJournal.prototype),
+   {async reserveChild(){throw Error("MUST_NOT_BE_CALLED");}}),
+  privateMcpTransport:"native-stdio"
+ }),/trusted Coordinator, native Rust issuer and private journal required/u);
 });
