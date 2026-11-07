@@ -3061,7 +3061,8 @@ test('Root effect transport rejects changed challenges and consumes a failed nat
  assert.equal(executes,0);
 });
 
-test('R382.7 protected bootstrap reaches the native Branch boundary through the signed Review Host handoff',async t=>{
+for(const nativeReply of [false,true])test('R382.7 signed bootstrap '+
+ (nativeReply?'attests Branch before rejecting missing A2A channels':'retires at failed native Branch signing'),async t=>{
  const f=await fixture(t,{includeBranchPermission:true}),host=await f.start();
  const saved=new Map(['DELEGATION_GATEWAY_ARCHITECTURE','APPROVED_RUNNER_NATIVE_MCP',
   'ADAPTER_ENGINEER_NATIVE_SOCKET'].map(key=>[key,process.env[key]]));
@@ -3082,17 +3083,54 @@ test('R382.7 protected bootstrap reaches the native Branch boundary through the 
   process.env.APPROVED_RUNNER_NATIVE_MCP='1';
   process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=at('absent-rust.sock');
   const {owner,repository}=snapshot.repository;
-  let gets=0,installs=0;
+  const permission={operation:'create_branch',resource:'gitea://gitea.local/'+owner+'/'+repository};
+  let gets=0,posts=0,independentGets=0,installs=0,signs=0,rootId;
+  if(nativeReply){
+   const socket=at('fixture-rust.sock');
+   const signer=createServer({allowHalfOpen:true},stream=>{
+    let data='';
+    stream.setEncoding('utf8');
+    stream.on('data',chunk=>{data+=chunk;});
+    stream.on('end',()=>{
+     const request=JSON.parse(data);
+     assert.equal(request.operation,'create_presentation');
+     assert.deepEqual(request.body.disclosed_permissions,[permission]);
+     assert.equal(request.body.credential_id,rootId);
+     signs++;
+     stream.end(JSON.stringify({ok:true,result:{signed_vp:'offline-root-vp'}}));
+    });
+   });
+   try{
+    await new Promise((ok,bad)=>{signer.once('error',bad);signer.listen(socket,ok);});
+   }catch(error){
+    if(error.code!=='EPERM'&&error.code!=='EACCES')throw error;
+    if(process.env.GITHUB_ACTIONS==='true')throw error;
+    t.skip('Local sandbox prevents Unix socket listeners');
+    return;
+   }
+   t.after(()=>new Promise((ok,bad)=>signer.close(error=>error?bad(error):ok())));
+   process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socket;
+  }
   const client=token=>new GiteaClient({baseUrl:'http://offline.invalid',token,owner,repository,
    fetchFn:async(url,init)=>{
-    assert.equal(init?.method??'GET','GET');
-    assert.ok(String(url).endsWith('/branches/main'));
+    const method=init?.method??'GET';
+    if(method==='POST'){
+     assert.equal(token,'writer');
+     assert.equal(signs,1);
+     posts++;
+     assert.deepEqual(JSON.parse(init.body),{new_branch_name:branch,old_ref_name:snapshot.base_revision});
+     return Response.json({name:branch,commit:{id:snapshot.base_revision}});
+    }
+    assert.equal(method,'GET');
+    if(token==='reader')independentGets++;
     gets++;
-    return Response.json({name:'main',commit:{id:snapshot.base_revision}});
+    if(String(url).endsWith('/branches/main'))
+     return Response.json({name:'main',commit:{id:snapshot.base_revision}});
+    if(!posts)return Response.json({message:'not found'},{status:404});
+    return Response.json({name:branch,commit:{id:snapshot.base_revision}});
    }});
   const writer=client('writer'),reader=client('reader');
   const key=Buffer.alloc(32,23),store=new InMemoryRequestStore();
-  const permission={operation:'create_branch',resource:'gitea://gitea.local/'+owner+'/'+repository};
   const model=new R351ScriptedDecision({task_id:'bootstrap-branch',agent_id:'orchestrator',
    depends_on:[],permissions:[permission],instruction:'Create the approved Branch'});
   const provision=await createProtectedCanonicalOperationalProvision(f.options,{
@@ -3109,18 +3147,39 @@ test('R382.7 protected bootstrap reaches the native Branch boundary through the 
     }),directories,evidenceKey:key,
     installAuthorization(deps){assert.equal(deps.store,store);installs++;}
    },
-   rootGateway:{audit:new InMemoryAuditSink(),verifier:{},policy:{},executor:{}},
+   rootGateway:{audit:new InMemoryAuditSink(),
+    verifier:new DirectCoreRustVerifier({verify_verifiable_presentation:async()=>JSON.stringify({
+     presenter_id:fixtureDid('orchestrator'),issuer_id:did,credential_id:rootId,
+     root_credential_id:rootId,permissions:[permission],hierarchy_depth:0,
+     expiration:'1900000000000000000'
+    })},Object.fromEntries(['orchestrator','backend','frontend','test'].map(role=>[role,fixtureDid(role)]))),
+    policy:new OpaPolicyClient({baseUrl:'http://offline.invalid',fetchFn:async()=>
+     Response.json({result:{allow:true,policy_version:'offline-branch'}})}),
+    executor:new GiteaExecutor(writer)
+   },
    workflow:{sdk:{},adaptive:{nextChildParameters(){throw Error('unexpected Child');}},
     createBranch:{model,branch,baseBranch:'main',permission}}
   });
-  const handoff=host.createReviewedCanonicalHandoff({provision});
+  const handoff=host.createReviewedCanonicalHandoff({async provision(){
+   const result=await provision();
+   rootId=result.root.credential_id;
+   return result;
+  }});
   await assert.rejects(handoff.runApprovedCanonical(),/approval|receipt/u);
   assert.deepEqual(await readdir(at('reservations')),[]);
   await f.approve(['permission-1','permission-2','permission-3']);
-  await assert.rejects(handoff.runApprovedCanonical(),/Native Rust Orchestrator presentation denied/u);
+  await assert.rejects(handoff.runApprovedCanonical(),nativeReply?
+   /A2A Owner cannot accept root, transport overrides or legacy channels/u:/Native Rust Orchestrator presentation denied/u);
   assert.equal(installs,1);
   assert.equal(model.calls,1);
-  assert.equal(gets,1);
+  if(nativeReply){
+   assert.equal(posts,1);
+   assert.equal(signs,1);
+   assert.ok(independentGets>0);
+  }else{
+   assert.equal(posts,0);
+   assert.equal(gets,1);
+  }
   assert.equal(store.size(),1);
   assert.equal((await readdir(at('reservations'))).length,1);
   assert.equal(host.phase,'revoked');
