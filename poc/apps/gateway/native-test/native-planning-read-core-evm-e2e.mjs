@@ -159,6 +159,13 @@ const realGitea=[disposableBase,disposableToken,disposableSha]
   .some(v=>v!==undefined);
 const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
 const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
+// R380.3 is a ZERO-BILLING extension of the genuine preliminary Planning
+// host. It has NO effect on the legacy/full Gemini Signed-DAG launchers.
+const r3803NativeDiscovery=process.env.R3803_NATIVE_DISCOVERY==="1";
+if(r3803NativeDiscovery&&(!realPlanningOnly||!realGitea||
+   geminiPilot||!positiveDag||!signedHandoff||
+   process.env.GEMINI_API_KEY))
+  throw Error("R380.3 requires exclusively free isolated real-Gitea Planning");
 const ownerD1Probe=process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1";
 // R151.12: independently opted-in paid repair uses the original runtime
 // root, never the TS2820 offline injection or deterministic repair model.
@@ -279,7 +286,15 @@ const snapshot={
     "","apps","apps/backend","apps/backend/src","apps/backend/src/users",
     "apps/frontend","apps/frontend/src","apps/frontend/src/pages"
   ],
-  files:positiveDag?existingFiles:[file,frontendFile]
+  // Deliberately OMIT the actual existing Frontend source on the R380.3
+  // path: a model can only read it AFTER native, pinned Gitea discovery.
+  files:positiveDag?(r3803NativeDiscovery
+    ?existingFiles.filter(path=>path!==frontendFile):existingFiles)
+    :[file,frontendFile],
+  ...(r3803NativeDiscovery?{
+    hierarchical_preliminary_read:true,
+    dynamic_discovery_roots:["apps/frontend/src/pages"]
+  }:{})
 };
 const agentDids={
   backend:process.env.ADAPTER_ID_BACKEND,
@@ -332,7 +347,14 @@ class ScriptedReadPlanner extends BaseLlm{
     // Exercise the same bounded, read-only repository discovery tools that
     // a real Planner may use. No scripted source write or approval occurs.
     // The original negative/handoff fixture keeps its single pinned read.
-    const exploration=positiveDag?[
+    const exploration=r3803NativeDiscovery?[
+      // The Frontend path is absent from the initial snapshot. This call
+      // can only add it after independent Rust/EVM/OPA/Gitea checks.
+      {name:"list_directory",args:{branch:"main",path:"apps/frontend/src/pages"}},
+      // One native signed multipermission VP for EXISTING + newly discovered
+      // source, with no single-read fallback or provider writes.
+      {name:"read_files",args:{branch:"main",paths:[file,frontendFile]}}
+    ]:positiveDag?[
       // Gemini requires the repository selector in its tool declaration.
       // Runtime still authorizes an argument-free, pinned read_repository.
       {name:"read_repository",args:{repository:repo.repository}},
@@ -557,6 +579,16 @@ const transport=async(url,options)=>{
       log.executions++;
       return json(await runtime.execute(body));
     }
+    if(r3803NativeDiscovery&&
+       endpoint==="http://native-planning-gateway/v1/authorization/prepare-read-composite"){
+      log.prepares++;
+      return json(await runtime.prepareReadComposite(body),201);
+    }
+    if(r3803NativeDiscovery&&
+       endpoint==="http://native-planning-gateway/v1/authorization/execute-read-composite"){
+      log.executions++;
+      return json(await runtime.executeReadComposite(body));
+    }
   }catch{
     return json({error:"protected_operation_denied"},403);
   }
@@ -584,7 +616,11 @@ try{
   assert.equal(started.phase,"planning");
   assert.equal(started.credential_id,rootId);
   assert.equal(coordinator.trustedPlanningAuthority().permissions.length,
-    1+snapshot.directories.length+snapshot.files.length);
+    r3803NativeDiscovery?3:1+snapshot.directories.length+snapshot.files.length);
+  if(r3803NativeDiscovery)
+    assert.deepEqual(coordinator.trustedPlanningAuthority()
+      .permissions.map(p=>p.operation),
+      ["read_repository","list_directory","read_file"]);
   const port=new TrustedPlanningGatewayReadPort({
     coordinator,snapshot,
     gatewayBaseUrl:"http://native-planning-gateway",
@@ -599,6 +635,14 @@ try{
   await assert.rejects(port.invoke("read_file",{
     branch:"main",path:"private/credentials.env"
   }));
+  if(r3803NativeDiscovery){
+    await assert.rejects(port.invoke("read_file",{
+      branch:"main",path:frontendFile
+    }),"file not in initial trusted discovery catalog must be denied");
+    await assert.rejects(port.invoke("list_directory",{
+      branch:"feature/other",path:"apps/frontend/src/pages"
+    }));
+  }
   assert.equal(log.executions,noWrite);
   // Gemini receives the SAME trusted Gitea-backed read-only Gateway tools.
   // No offline planSketch is passed to the model in the consented pilot.
@@ -689,7 +733,8 @@ try{
   // number of reads is not an architecture invariant and would reject an
   // otherwise valid model-generated plan for choosing a different path.
   if(!geminiPilot)
-    assert.equal(proposed.verified_source_reads,positiveDag?2:1);
+    assert.equal(proposed.verified_source_reads,
+      r3803NativeDiscovery?2:positiveDag?2:1);
   assert.equal(proposed.plan.base_revision,baseSha);
   assert.equal(proposed.plan.repository.repository,"iam-console-poc");
   // Exact permission cardinalities belong to deterministic offline fixtures.
@@ -704,9 +749,9 @@ try{
     // verifier. The count is whatever the model legitimately needed.
     assert.equal(log.prepares,log.executions);
   }else{
-    assert.equal(log.prepares,positiveDag?4:1);
-    assert.equal(log.executions,positiveDag?4:1);
-    assert.equal(log.giteaReads,positiveDag?5:2);
+    assert.equal(log.prepares,r3803NativeDiscovery?2:positiveDag?4:1);
+    assert.equal(log.executions,r3803NativeDiscovery?2:positiveDag?4:1);
+    assert.equal(log.giteaReads,r3803NativeDiscovery?4:positiveDag?5:2);
   }
   // Trusted SHA bootstrap plus bounded real read-only model discovery.
   if(liveClient){
@@ -718,7 +763,25 @@ try{
   }
   const executed=audit.events.filter(e=>e.event==="authorization_executed");
   assert.equal(executed.length,geminiPilot
-    ?log.executions:(positiveDag?4:1));
+    ?log.executions:(r3803NativeDiscovery?1:positiveDag?4:1));
+  if(r3803NativeDiscovery){
+    assert.deepEqual(executed.map(x=>x.tool),["list_directory"]);
+    const batches=audit.events.filter(x=>x.event==="composite_read_executed");
+    assert.equal(batches.length,1,"one signed two-file read batch required");
+    assert.equal(batches[0].provider_result,"success");
+    assert.equal(batches[0].pinned_revision,baseSha);
+    assert.equal(batches[0].decision,"allow");
+    assert.equal(proposed.plan.tasks.find(x=>x.id==="frontend")?.agent_id,"frontend");
+    assert.ok(proposed.plan.requested_permissions.some(p=>
+      p.resource.includes("/files/"+frontendFile)&&p.operation==="update_file"));
+    // Even though the signed preliminary Root covers the branch subtree,
+    // an invented path NEVER becomes a model Tool capability.
+    const beforeDenied=log.prepares;
+    await assert.rejects(port.invoke("read_file",{
+      branch:"main",path:"apps/frontend/src/pages/not-discovered.ts"
+    }));
+    assert.equal(log.prepares,beforeDenied);
+  }
   for(const effect of executed){
     assert.equal(effect.decision,"allow");
     assert.equal(effect.policy_decision,"allow");
@@ -726,7 +789,7 @@ try{
     assert.equal(effect.provider_result,"success");
   }
   if(positiveDag&&!geminiPilot){
-    assert.deepEqual(executed.map(e=>e.tool),[
+    if(!r3803NativeDiscovery)assert.deepEqual(executed.map(e=>e.tool),[
       "read_repository","list_directory","read_file","read_file"
     ]);
     assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="frontend")?.depends_on,
@@ -760,7 +823,21 @@ try{
     revisions.end(session);
     const beforeDenied=log.giteaReads;
     await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
+    if(r3803NativeDiscovery)await assert.rejects(port.invoke("read_file",{
+      branch:"main",path:frontendFile
+    }));
     assert.equal(log.giteaReads,beforeDenied);
+    if(r3803NativeDiscovery)process.stdout.write(JSON.stringify({
+      event:"r3803_native_planning_dynamic_discovery",status:"pass",
+      verified_new_source_from_real_gitea:true,
+      real_native_rust_evm_root_and_vp:true,opa_all_checks_before_reads:true,
+      signed_multi_permission_vp_count:1,
+      new_source_absent_from_initial_snapshot:true,
+      independently_verified_read_count:2,
+      verified_root_revoked:true,
+      approved_engineer_execution:false,provider_writes:0,
+      paid_model_calls:0
+    })+"\n");
     process.stdout.write(JSON.stringify({
       event:"f1_real_gitea_pilot_parity",status:"pass",
       source_revision:baseSha,
