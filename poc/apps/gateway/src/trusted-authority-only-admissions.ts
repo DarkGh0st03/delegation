@@ -73,6 +73,7 @@ interface SequentialTaskProgress {
  readPath?:string;
  /** Original owner-pinned Gitea HEAD for both immutable typed effects. */
  pinnedHead?:string;
+ writeFenced?:true;
 }
 function assertObservedCompletion(
  expected:TrustedCompletionExpectation,observed:unknown,nowMs:number
@@ -1244,6 +1245,43 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#completionInFlight=false;}
  }
  /**
+  * Irreversibly fence a mixed Backend/Frontend Task after an attested read,
+  * before any write flight exists. This records provider progress only.
+  * A trusted caller still needs an authenticated application outcome before
+  * deciding whether the session can continue.
+  */
+ fenceTrustedSequentialTaskBeforeWrite(taskId:string,runtimeTaskId:string){
+  const root=this.#live();
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const state=this.#sequential.get(taskId);
+  if(this.#flightInFlight||this.#completionInFlight||this.#bindingInFlight||
+     this.#enrollmentInFlight||!bound||!child||!state||
+     bound.row.task_id!==taskId||!["backend","frontend"].includes(bound.row.agent_id)||
+     state.manifest.runtime_task_id!==runtimeTaskId||
+     state.manifest.session_id!==root.session_id||
+     state.manifest.root_credential_id!==root.root_credential_id||
+     state.manifest.authority_digest!==root.authority_digest||
+     state.manifest.credential_id!==child.credential_id||
+     state.manifest.epoch!==bound.row.epoch||
+     state.manifest.effect_plan?.join(",")!=="read_file,update_file"||
+     state.completed!==1||state.active||state.writeFenced||
+     this.#flights.has(taskId)||this.#completed.has(taskId)||
+     !SHA64.test(state.latest_evidence_sha256??"")||
+     !SHA40.test(state.readRevision??"")||state.readRevision!==state.pinnedHead||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("pre-write fence requires one attested read and no original write flight");
+  state.writeFenced=true;
+  return Object.freeze({
+   status:"sequential_task_fenced_before_write" as const,
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   read_revision:state.readRevision!,
+   read_evidence_sha256:state.latest_evidence_sha256!,
+   gateway_task_completed:false as const,
+   recovery_authorized:false as const
+  });
+ }
+ /**
   * R359.6 post-dispatch assertion of TWO independently sealed provider
   * effects. An A2A artifact is never a source of trusted completion.
   */
@@ -1471,6 +1509,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !this.#rootPermissions!.some(p=>giteaPermissionCovers(p,required)))
    deny("request operation or resource not in exact signed Task grant");
   const typed=this.#sequential.get(bound.row.task_id);
+  if(typed?.writeFenced)deny("original mixed Task fenced before write");
   if(request.agent_role==="test"&&request.request.tool==="update_file"&&
      (!typed?.manifest.effect_plan||!isProjectTestSource(request.request.arguments.path)))
    deny("Test updates require an owner-pinned read/update Task for project test source");

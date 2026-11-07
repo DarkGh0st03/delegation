@@ -31,6 +31,12 @@ async function fixture(){
   async attestTrustedSequentialReadEffect(){calls.push("attest_read");return {
    status:"sequential_read_effect_attested_staged",sequence:1,
    task_id:task,gateway_execution_authorized:false};},
+  fenceTrustedSequentialTaskBeforeWrite(taskId:string,runtimeTaskId:string){
+   calls.push("fence");
+   return {status:"sequential_task_fenced_before_write",task_id:taskId,runtime_task_id:runtimeTaskId,
+    read_revision:head,read_evidence_sha256:"b".repeat(64),
+    gateway_task_completed:false,recovery_authorized:false};
+  },
   async stageTrustedSequentialMutationEffect(){calls.push("stage_update");return {
    status:"sequential_mutation_effect_reserved_staged",sequence:2,
    task_id:task,gateway_execution_authorized:false};},
@@ -97,4 +103,29 @@ test("R359.7 a missing Gateway Prepare consumes the typed owner slot",async()=>{
  await assert.rejects(f.stager.stage("nonexistent"),/original Task, path or expected HEAD/u);
  await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
  assert.deepEqual(f.calls,["begin"]);
+});
+
+test("R377.7 owner fences an attested read without allowing a late update",async()=>{
+ const f=await fixture();
+ assert.throws(()=>f.stager.fenceBeforeWrite(),/independently attested read/u);
+ await f.stager.stage("read");
+ await f.stager.attestRead("read");
+ const proof=f.stager.fenceBeforeWrite();
+ assert.equal(proof.task_id,task);
+ assert.equal(proof.runtime_task_id,runtime);
+ assert.equal(proof.gateway_task_completed,false);
+ assert.equal(proof.recovery_authorized,false);
+ await assert.rejects(f.stager.stage("update"),/terminated owner effect/u);
+ assert.throws(()=>f.stager.fenceBeforeWrite(),/no update attempt/u);
+ assert.deepEqual(f.calls,["begin","stage_read","attest_read","fence"]);
+});
+test("R377.7 an in-flight write cannot be classified as a pre-write stop",async()=>{
+ const f=await fixture();
+ await f.stager.stage("read");
+ await f.stager.attestRead("read");
+ const update=f.stager.stage("update");
+ assert.throws(()=>f.stager.fenceBeforeWrite(),/no update attempt/u);
+ await update;
+ assert.throws(()=>f.stager.fenceBeforeWrite(),/no update attempt/u);
+ assert.deepEqual(f.calls,["begin","stage_read","attest_read","cas_preflight","stage_update"]);
 });

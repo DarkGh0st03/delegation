@@ -76,6 +76,17 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
    #admissions in value&&value.#admissions===admissions&&
    value.#planTaskId===planTaskId&&value.#runtimeTaskId===runtimeTaskId;
  }
+ /**
+  * Called by the original owner only. Burn the stager synchronously before
+  * checking the Gateway, so a late update cannot race the fence.
+  */
+ fenceBeforeWrite(){
+  if(this.#state!=="read_verified")
+   deny("pre-write fence requires an independently attested read and no update attempt");
+  this.#state="failed";
+  return this.#admissions.fenceTrustedSequentialTaskBeforeWrite(
+   this.#planTaskId,this.#runtimeTaskId);
+ }
  /** Native IPC acknowledgement is independently verified, not a PASS flag. */
  async attest(requestId:string,tool:"read_file"|"update_file"):Promise<void>{
   if(tool==="read_file")return this.attestRead(requestId);

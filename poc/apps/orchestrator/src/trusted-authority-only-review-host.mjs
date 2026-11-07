@@ -1294,6 +1294,21 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          return verified;
         }catch(observeError){failure=observeError;}
        }
+       // A known provider boundary is useful for diagnosis even when the
+       // specialist outcome is ambiguous. The same terminal policy applies.
+       if(sequential&&['backend','frontend'].includes(pin.agent_id)){
+        try{
+         const fence=TrustedAuthorityOnlySequentialReadUpdateStager.prototype
+          .fenceBeforeWrite.call(input.effectStager);
+         if(fence.status==='sequential_task_fenced_before_write'&&
+            fence.task_id===input.taskId&&fence.runtime_task_id===input.runtimeTaskId&&
+            fence.gateway_task_completed===false&&fence.recovery_authorized===false)
+          failure=Error('Specialist dispatch failed after an attested read and before write staging',
+           {cause:failure});
+        }catch{
+         // Preserve the original error if the provider boundary cannot be proven.
+        }
+       }
        dispatchFailed=true;
        if(session.phase==='operational'){
         try{await retire();}
