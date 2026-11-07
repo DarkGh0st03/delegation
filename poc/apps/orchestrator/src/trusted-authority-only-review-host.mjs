@@ -3,6 +3,8 @@ import {randomBytes} from 'node:crypto';
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs';
 import {runTrustedAuthorityOnlyOperationalWorkflow}
  from './trusted-authority-only-operational-launcher.mjs';
+import {createTrustedAuthorityOnlyReviewedCanonicalHandoff}
+ from './trusted-authority-only-reviewed-canonical-handoff.mjs';
 import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
 /** Owner-assembled permission-only Planning -> authenticated Engineer review
  * -> independent native root -> dynamic Coordinator. No public root issuer.
@@ -212,8 +214,40 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   }
   throw error;
  }
- return Object.freeze({server,readOnlySessionId:snapshot.session_id,
+ const originalReviewHost=Object.freeze({server,readOnlySessionId:snapshot.session_id,
   get phase(){return session.phase;},
+  /** R382.5 private signed-Planning -> ONE original Root -> canonical
+   * native MCP Executor owner capability. This method is never placed
+   * on the Engineer HTTP server, a Gemini tool, or an A2A/MCP server.
+   * The signed authority is reloaded from the SAME checkpoint store,
+   * with the SAME Engineer receipt the original activation checks.
+   * No second signed grant, provider signer, or model-selected scope. */
+  createReviewedCanonicalHandoff({provision}={}){
+   if(closed||session.phase!=='planning'||!proposal||!pinnedDigest||
+      process.env.DELEGATION_GATEWAY_ARCHITECTURE!=='authority-only'||
+      process.env.APPROVED_RUNNER_NATIVE_MCP!=='1'||
+      typeof provision!=='function')
+    deny('reviewed canonical handoff requires original approved Planning');
+   return createTrustedAuthorityOnlyReviewedCanonicalHandoff({
+    reviewHost:originalReviewHost,provision,
+    sessionId:snapshot.session_id,
+    baseRevision:snapshot.base_revision,planDigest:pinnedDigest,
+    engineerDid:approval.engineerDid,
+    readSignedReview:async()=>{
+     // This private read verifies BOTH the Ed25519 Engineer signature
+     // and the immutable Backend Planning checkpoint/permission subset.
+     await approvals.loadAuthenticatedAuthority(snapshot.session_id);
+     return Object.freeze({
+      status:'signed_human_review_verified_only_not_oidc_admitted',
+      session_id:snapshot.session_id,base_revision:snapshot.base_revision,
+      plan_digest:pinnedDigest,
+      authenticated_engineer_did:approval.engineerDid,
+      operational_root_issued:false,dag_executed:false,
+      source_sha_verified_here:false
+     });
+    }
+   });
+  },
   /** Private service-owner action; never registered on Engineer HTTP/ADK/MCP. */
   async activateOperational(root){
    if(closed||attempted||activationFlight)deny('activation already attempted or host closed');
@@ -1783,6 +1817,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
    })();return closing;
   }
  });
+ return originalReviewHost;
 }
 
 /** Operator-private recovery only. No automatic reapproval, no issuance,
