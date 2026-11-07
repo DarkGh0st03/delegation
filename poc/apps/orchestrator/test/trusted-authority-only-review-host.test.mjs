@@ -60,6 +60,13 @@ import {TrustedAuthorityOnlyEngineerSession} from '../../../packages/orchestrato
 import {TrustedPlanningGatewayReadPort} from '../../../packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts';
 import {selectAuthorityOnlyGrant,signAuthorityOnlyGrant} from '../../../packages/plan-contracts/src/authority-only-approval.mjs';
 import {RUST_OPERATIONS} from '../../gateway/src/operation-catalog.ts';
+test('R367 reject mutation observer prototype forgery',()=>{
+ const fake=Object.create(AuthenticatedGiteaMutationCompletionObserver.prototype);
+ assert.equal(AuthenticatedGiteaMutationCompletionObserver.isForRepository(
+  fake,'thesis/iam-console-poc','feature/account-suspension'),false);
+ assert.equal(AuthenticatedGiteaMutationCompletionObserver.isForRepository(
+  {},'thesis/iam-console-poc','feature/account-suspension'),false);
+});
 const snapshot={session_id:'same-root-review',repository:{authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'},base_revision:'a'.repeat(40),directories:['','apps'],files:['apps/user.ts']};
 const requirement='Suspend accounts',branch='feature/account-suspension',did='did:thesis:engineer';
 const draft={requested_permissions:[{operation:'update_file',resource_type:'file',path:'apps/user.ts'},{operation:'read_file',resource_type:'file',path:'apps/user.ts'}],assumptions:[],uncertainties:[]};
@@ -633,6 +640,9 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
    store:nativeStore,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea
   }),{status:'owner_native_gateway_effects_bound_no_execution',
    gateway_execution_authorized:false});
+  await assert.rejects(execution.createEnrolledNativeSequentialReadUpdateStager({
+   runtimeTaskId:stage.runtimeTaskId,expectedHeadSha:'a'.repeat(40)
+  }),/native sequential staging requires original mutation observer/u);
   const genuineStager=createEnrolledNativeEffectStager({
    runtimeTaskId:stage.runtimeTaskId,expectedHeadSha:'a'.repeat(40)
   });

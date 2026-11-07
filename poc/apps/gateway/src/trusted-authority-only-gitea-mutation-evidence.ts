@@ -199,6 +199,13 @@ export class AuthenticatedGiteaMutationCompletionObserver{
   this.#client=opts.giteaClient;
   this.#nowMs=opts.nowMs??Date.now;
  }
+ /** R367: refuse prototype-forged or foreign repository/branch observer. */
+ static isForRepository(value:unknown,repository:string,branch:string):
+  value is AuthenticatedGiteaMutationCompletionObserver{
+  return value instanceof AuthenticatedGiteaMutationCompletionObserver&&
+   #repository in value&&value.#repository===repository&&
+   value.#branch===branch;
+ }
  async observe(expected:TrustedCompletionExpectation):
  Promise<ObservedTrustedTaskCompletion>{
   const raw=await readPrivateReceipt(this.#dir,filename(expected));

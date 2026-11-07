@@ -24,6 +24,10 @@ import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
  from '../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts';
 import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
+import {TrustedAuthorityOnlySequentialReadUpdateStager}
+ from '../../gateway/src/trusted-authority-only-sequential-read-update-stager.ts';
+import {AuthenticatedGiteaMutationCompletionObserver}
+ from '../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
@@ -473,7 +477,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver'])||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
          deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
@@ -483,6 +487,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
          deps.runner,gateway,deps.giteaClient,
          snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
+        (deps.mutationObserver!==undefined&&
+         !AuthenticatedGiteaMutationCompletionObserver.isForRepository(
+          deps.mutationObserver,
+          snapshot.repository.owner+'/'+snapshot.repository.repository,branch))||
         (deps.branchExecutor!==undefined&&
          !TrustedAuthorityOnlyBranchExecutor.isNativeForOwner(deps.branchExecutor,gateway,deps.giteaClient))||
         (deps.pullRequestExecutor!==undefined&&
@@ -649,8 +657,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         const staged=await executionHandle.stageTask({task:{task_id:choice.task_id,epoch:context.nextEpoch,
          agent_id:choice.agent_id,depends_on:[...choice.depends_on],permissions:[...choice.permissions]},
          runtimeTaskId,childParameters});
-        const stager=executionHandle.createEnrolledNativeEffectStager({runtimeTaskId,
-         expectedHeadSha:context.executionProgress.current_head_sha});
+        // Model-selected read + CAS uses the existing typed native two-effect
+        // Gateway journal, never a blind one-shot update.
+        const mixed=choice.permissions.some(p=>p.operation==='read_file')&&
+         choice.permissions.some(p=>p.operation==='update_file');
+        const stager=mixed
+         ?await executionHandle.createEnrolledNativeSequentialReadUpdateStager({
+          runtimeTaskId,expectedHeadSha:context.executionProgress.current_head_sha})
+         :executionHandle.createEnrolledNativeEffectStager({runtimeTaskId,
+          expectedHeadSha:context.executionProgress.current_head_sha});
         const dispatched=await executionHandle.dispatchEnrolledTask({
          taskId:staged.task_id,runtimeTaskId,
          instruction:choice.instruction,effectStager:stager
@@ -998,6 +1013,53 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      issuedEffectStagers.set(input.runtimeTaskId,stager);
      return stager;
     },
+     /** R367: the original owner reserves the exact Task/Child/HEAD and
+      * immutable two-effect read -> CAS journal. This is not an A2A tool. */
+     async createEnrolledNativeSequentialReadUpdateStager(input){
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         !nativeEffectBinding?.mutationObserver||taskStageFlight||dispatchFlight||
+         taskStageFailed||dispatchFailed||
+         !fields(input,['runtimeTaskId','expectedHeadSha'])||
+         typeof input?.runtimeTaskId!=='string'||
+         !/^[a-f0-9]{40}$/u.test(input.expectedHeadSha))
+       deny('native sequential staging requires original mutation observer, live owner and HEAD');
+      const pin=stagedTaskIds.get(input.runtimeTaskId);
+      if(!pin||pin.operation!=='update_file'||
+         issuedEffectStagers.has(input.runtimeTaskId)||
+         dispatchAttempts.has(input.runtimeTaskId))
+       deny('native sequential staging requires enrolled unspent update Task');
+      const row=operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id);
+      const reads=row.permissions.filter(p=>p.operation==='read_file');
+      const updates=row.permissions.filter(p=>p.operation==='update_file');
+      if(row.agent_id!==pin.agent_id||row.permissions.length!==2||
+         reads.length!==1||updates.length!==1||
+         reads[0].resource!==updates[0].resource)
+       deny('native sequential staging requires exact same-file read and update grants');
+      // Consume owner's one-shot slot BEFORE awaiting journal admission.
+      const flight=TrustedAuthorityOnlySequentialReadUpdateStager.begin({
+       store:nativeEffectBinding.store,admissions:gateway,
+       mutation:nativeEffectBinding.mutation,
+       mutationObserver:nativeEffectBinding.mutationObserver,
+       planTaskId:pin.task_id,runtimeTaskId:input.runtimeTaskId,
+       expectedHeadSha:input.expectedHeadSha
+      });
+      issuedEffectStagers.set(input.runtimeTaskId,flight);
+      try{
+       const stager=await flight;
+       if(closed||session.phase!=='operational')
+        deny('native sequential staging lost original operational root');
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       issuedEffectStagers.set(input.runtimeTaskId,stager);
+       return stager;
+      }catch(error){
+       taskStageFailed=true;
+       if(session.phase==='operational'){
+        try{await retire();}
+        catch{deny('native sequential staging failed and root retirement unconfirmed');}
+       }
+       throw error;
+      }
+     },
      /** R350.5 — dispatch only the original enrolled Task with a genuine
       * owner-private stager created for this Gateway, runtime ID and effect.
       * A2A output is a report, never Gateway provider completion. */
@@ -1010,11 +1072,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       if(!fields(input,['taskId','runtimeTaskId','instruction','effectStager','d1Candidate']))
        deny('protected A2A dispatch rejects credentials or authority overrides');
       const pin=stagedTaskIds.get(input.runtimeTaskId);
+      const ordinary=input.effectStager instanceof TrustedAuthorityOnlyEffectStager&&
+       input.effectStager.isForOwnerTask(gateway,input.runtimeTaskId,pin?.operation);
+      const sequential=pin?.operation==='update_file'&&
+       TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
+        input.effectStager,gateway,input.taskId,input.runtimeTaskId);
       if(!pin||pin.task_id!==input.taskId||
          !['update_file','run_tests'].includes(pin.operation)||
-         !(input.effectStager instanceof TrustedAuthorityOnlyEffectStager)||
          issuedEffectStagers.get(input.runtimeTaskId)!==input.effectStager||
-         !input.effectStager.isForOwnerTask(gateway,input.runtimeTaskId,pin.operation))
+         !(ordinary||sequential))
        deny('protected A2A dispatch requires an original owner-bound effect stager');
       if(input.d1Candidate!==undefined&&
          (pin.operation!=='run_tests'||pin.agent_id!=='test'||
