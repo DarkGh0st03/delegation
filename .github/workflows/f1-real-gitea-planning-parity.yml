@@ -153,9 +153,10 @@ jobs:
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
           docker pull openpolicyagent/opa:1.21.1
-      - name: Run real Gitea native Planning-only, stop before approval (NO AI)
+      - name: R380.3 native Rust/EVM/Gitea dynamic Planning discovery and signed read batch (No AI)
         env:
           APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY: "1"
+          R3803_NATIVE_DISCOVERY: "1"
           APPROVED_RUNNER_NATIVE_EVM: "1"
           APPROVED_RUNNER_THREE_AGENT_DAG: "1"
           APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
@@ -196,10 +197,15 @@ jobs:
           assert.equal(event?.provider_writes,0);
           assert.equal(event?.pr_created,false);
           assert.equal(event?.gemini_calls,0);
-          console.log(JSON.stringify({event:event.event,status:"pass",
-            source_revision:event.source_revision,
+          assert.equal(event?.r3803_dynamic_discovery_native_verified,true);
+          assert.equal(event?.r3803_signed_multipermission_vp_count,1);
+          console.log(JSON.stringify({event:"r3803_native_planning_source_discovery_verified",
+            status:"pass",source_revision:event.source_revision,
             input_manifest_digest:event.input_manifest_digest,
-            gemini_calls:0,approval_created:false,pr_created:false}));
+            native_rust_evm_opa_gitea:true,
+            dynamic_source_discovered:true,signed_multi_permission_vp_count:1,
+            preliminary_root_revoked:true,gemini_calls:0,
+            approval_created:false,provider_writes:0,pr_created:false}));
           NODE
       - name: Stop disposable services
         if: always()
