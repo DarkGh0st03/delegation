@@ -1,0 +1,23 @@
+{
+  "checkpoint": "R370.0",
+  "prior_unchanged_native_success": {
+    "sha": "5ef192c2d574bf1b50d5562046bf19e64187501b",
+    "run_id": 42340629011
+  },
+  "goal": "Reusable owner-private operational launcher bound as method on original Engineer Review Host execution handle. No parallel Coordinator/Gateway, no direct A2A or PR choreography in native fixture.",
+  "scope": "Disposable Account Suspension Gitea",
+  "source": "Protected Engineer owner and authenticated signed permission-only root",
+  "entrypoint": "execution.runCanonicalOperationalWorkflow({sdk,adaptive,draftPullRequest?})",
+  "statuses": [
+    "owner_operational_ready_for_review_not_pr_authorized",
+    "owner_operational_draft_pr_independently_attested"
+  ],
+  "guardrails": "No PR by readiness alone; separate model and exact Engineer grant; random owner PR Task; Gateway prepare -> durable owner PR staging -> native Rust VP + OPA + Gitea POST -> independently attested GET; no secrets returned",
+  "constraints": {
+    "paid_inference": false,
+    "github_pr_38_merge": false,
+    "main_modification": false,
+    "legacy_adapter": false
+  },
+  "validation": "New native R370 workflow and Fast CI must be green on identical SHA; no claiming success before run"
+}

@@ -1,5 +1,7 @@
 import {randomBytes} from 'node:crypto';
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs';
+import {runTrustedAuthorityOnlyOperationalWorkflow}
+ from './trusted-authority-only-operational-launcher.mjs';
 import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
 /** Owner-assembled permission-only Planning -> authenticated Engineer review
  * -> independent native root -> dynamic Coordinator. No public root issuer.
@@ -587,6 +589,21 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     /** R353.2: ADK may propose a PR Task only after original Test evidence.
      * Root/epoch/Child and exact tested SHA stay with the original owner.
      * Admission is not permission to issue a provider POST. */
+    /** R370: one canonical, host-bound operational launch.
+     * The caller supplies private owner transports but can never replace
+     * the original Coordinator, Gateway, Child issuer or authority.
+     * This is an in-process method; not an HTTP, MCP or A2A endpoint.
+     * No automatic PR: a separate PR model, signed grant and private
+     * native Rust/Gateway transport are explicitly required.
+     */
+    async runCanonicalOperationalWorkflow(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        !fields(input,['sdk','adaptive','draftPullRequest']))
+      deny('canonical launch requires original activated and live Engineer owner');
+     return runTrustedAuthorityOnlyOperationalWorkflow({
+      execution:executionHandle,...input
+     });
+    },
     /** Original-owner adaptive WORK loop. PR readiness is not PR execution.
      * The only external callback provisions fresh Child metadata; it grants no scope. */
     async runAdaptiveWorkLoop(input){
