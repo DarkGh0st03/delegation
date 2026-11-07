@@ -478,6 +478,54 @@ test("R380.0 hierarchical preliminary Root issues three read grants for >128 fil
     .every(e=>e.pinned_revision===SHA));
 });
 
+test("R380.1 ADK Planner observes two source files from one verified read_files VP",async()=>{
+  class CompositeScriptedPlanner extends BaseLlm {
+    requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-r3801-gateway-composite"});}
+    override async *generateContentAsync(request:LlmRequest):
+      AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1){
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"read-files",name:"read_files",
+          args:{branch:"main",paths:[FILE,SECOND_FILE]}
+        }}]}};
+      }else{
+        yield {content:{role:"model",parts:[{
+          text:JSON.stringify(proposal)
+        }]}};
+      }
+    }
+    override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+      return Promise.reject(Error("Gemini prohibited in R380 offline test"));
+    }
+  }
+  const f=fixture({hierarchicalPlanning:true});
+  await f.start();
+  const model=new CompositeScriptedPlanner();
+  const expandedSnapshot={...snapshot,hierarchical_preliminary_read:true,
+    files:[...snapshot.files,...Array.from({length:150},(_,i)=>
+      `src/billing/extra-${i}.ts`)]};
+  const draft=await new TrustedAdkReadOnlyPlanner({
+    model,snapshot:expandedSnapshot,
+    requirement:"Sort invoices and calculate tax",
+    planId:"r3801-composite-planning",workBranch:"feature/invoice-sort",
+    agents,readPort:f.makePort()
+  }).propose();
+  assert.equal(draft.status,"unapproved_proposal");
+  assert.equal(draft.verified_source_reads,2);
+  assert.equal(f.observed.adapter,1);
+  assert.equal(f.observed.verification,1);
+  assert.equal(f.observed.policy,2);
+  assert.equal(f.observed.execute,1);
+  assert.equal(f.observed.prepare,1);
+  const modelVisible=JSON.stringify(model.requests);
+  assert.ok(modelVisible.includes("read_files"));
+  for(const secret of [rootId,"trusted-orchestrator-token","fixture-signed-vp",
+    "signed_vp","credential_id","signed-vp"])
+    assert.ok(!modelVisible.includes(secret),secret);
+});
+
 test("R380.1 original Planning Root signs one multipermission VP for two verified Gitea reads",async()=>{
   const f=fixture({hierarchicalPlanning:true});
   await f.start();
