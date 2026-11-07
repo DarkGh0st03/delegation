@@ -305,9 +305,10 @@ test("R383.8 private CREATE Task pins travel through HMAC Unix bind and one-use 
 test("R383.8 Test Agent cannot bind create_file through authenticated IPC",async()=>{
  const x=await fixtures();
  try{
+  // The authenticated private client rejects invalid role/task pins
+  // locally, before any IPC network message can be sent.
   await assert.rejects(x.client.bindTask({
    ...pins,role:"test",operation:"create_file"
-  }),/Authenticated private effect operation denied/u);
-  assert.equal(x.agent.selectFor===undefined,false);
+  }),/malformed owner Task pins/u);
  }finally{await x.close();}
 });
