@@ -5,6 +5,8 @@ import { GiteaReadOnlyExecutor } from "../src/gitea-read-executor.ts";
 import { TrustedPlanningRevisions } from "../src/planning-revisions.ts";
 import { InMemoryRequestStore, InMemoryAuditSink, prepareAuthorization } from "../src/prepare.ts";
 import { executeAuthorization } from "../src/execute.ts";
+import {DirectCoreRustVerifier}
+  from "../src/direct-core-verifier.ts";
 import { GatewayError } from "../src/errors.ts";
 import type {PolicyPort,VerifierPort} from "../src/types.ts";
 
@@ -213,4 +215,77 @@ test("session end during VP/OPA checks denies before provider I/O",async()=>{
   release({allow:true,policy_version:"opa"});
   await assert.rejects(promise,/Planning revision not active/);
   assert.equal(f.providerCalls,0);
+});
+
+test("R380.3 native ancestor proof covers only original pinned read-only Planning, never default Gateway",async()=>{
+  const f=fixture();
+  await f.revisions.begin(taskId,600_000);
+  const parent={
+    resource:"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories/apps/backend",
+    operation:"read_file" as const
+  };
+  const native={
+    verify_verifiable_presentation(context:string){
+      const scope=JSON.parse(context) as {
+        presenter_id:string;required_permission:{resource:string;operation:string}
+      };
+      assert.equal(scope.required_permission.operation,"read_file");
+      return JSON.stringify({
+        presenter_id:scope.presenter_id,
+        credential_id:"urn:root:planning",issuer_id:"did:thesis:engineer",
+        permissions:[parent],hierarchy_depth:0,
+        expiration:"999999999999999999999"
+      });
+    }
+  };
+  const identities={
+    orchestrator:"did:thesis:orchestrator",
+    backend:"did:thesis:backend",
+    frontend:"did:thesis:frontend",
+    test:"did:thesis:test"
+  };
+  const scoped=new DirectCoreRustVerifier(native,identities,{
+    allowGiteaScopeCoverage:true
+  });
+  const closed=new DirectCoreRustVerifier(native,identities);
+  const build=()=>f.prepare("read_file",{
+    branch:"main",path:"apps/backend/user.ts"
+  });
+  const execute=(request_id:string,verifier:DirectCoreRustVerifier,
+    usePlanning=true)=>executeAuthorization({
+      request_id,signed_vp:"offline-signed-native-presentation"
+    },{
+      store:f.store,audit:f.audit,verifier,
+      policy:{async evaluate(input){
+        assert.equal(input.pinned_revision,A);
+        return {allow:true,policy_version:"offline-r3803-planning-scope"};
+      }},
+      repository:repo,
+      executor:new GiteaReadOnlyExecutor(f.client),
+      ...(usePlanning?{planningRevisions:f.revisions}:{}),
+      nowMs:()=>1_800_000_000_000
+    });
+  const normal=build();
+  const result=await execute(normal.request_id,scoped);
+  assert.equal(result.execution.tool,"read_file");
+  assert.equal((result.execution as {content:string}).content,"const pinned = 'a';");
+  const noOpt=build();
+  await assert.rejects(execute(noOpt.request_id,closed));
+  const noPlanning=build();
+  await assert.rejects(execute(noPlanning.request_id,scoped,false),
+    "scoped Root cannot bypass the bound original Planning registry");
+  const invalid=build();
+  const other=new DirectCoreRustVerifier({
+    verify_verifiable_presentation(context:string){
+      const v=JSON.parse(context) as {presenter_id:string};
+      return JSON.stringify({
+        presenter_id:v.presenter_id,
+        credential_id:"urn:root:planning",issuer_id:"did:thesis:engineer",
+        permissions:[{...parent,resource:parent.resource.replace(
+          "/branches/main/","/branches/feature%2Fother/")}],
+        hierarchy_depth:0,expiration:"999999999999999999999"
+      });
+    }
+  },identities,{allowGiteaScopeCoverage:true});
+  await assert.rejects(execute(invalid.request_id,other));
 });
