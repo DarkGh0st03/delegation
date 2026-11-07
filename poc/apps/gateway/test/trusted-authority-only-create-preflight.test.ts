@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {mkdtemp,chmod,readdir,readFile,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,chmod,readdir,readFile,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -14,6 +14,11 @@ import {DurableAuthorityOnlyGiteaCreateIntentJournal as Journal}
 import type {PreparedRequestRecord} from "../src/types.ts";
 import {executeAuthorization} from "../src/execute.ts";
 import {InMemoryRequestStore} from "../src/prepare.ts";
+import {TrustedAuthorityOnlyGiteaCreateExecutor as CreateExecutor}
+ from "../src/trusted-authority-only-create-executor.ts";
+import {AuthenticatedGiteaCreateCompletionObserver as CreateObserver,
+ TrustedGatewayGiteaCreateEvidencePublisher as CreatePublisher}
+ from "../src/trusted-authority-only-gitea-create-evidence.ts";
 
 const HEAD="a".repeat(40),NEXT="b".repeat(40);
 const branch="feature/account-suspension";
@@ -393,4 +398,137 @@ test("R383.5 Gateway never falls through to legacy create_file even after VP and
  assert.equal(opaCalls,1);
  assert.equal(providerCalls,0);
  assert.equal(request.consumed,true,"original Prepare remains single-use");
+});
+
+/**
+ * R383.6 protected executor composition (OFFLINE: simulated Rust/OPA and
+ * transport). The separate receipt tests run the actual Gitea independent
+ * read-only verifier. No native EVM/OPA/Docker success is claimed here.
+ */
+async function createPipeline(t:import("node:test").TestContext,failWriter=false){
+ const f=await fixture(t);
+ const preflight=f.mkPreflight();
+ const {intent}=await preflight.stageCreate(f.record,HEAD);
+ const receiptDirectory=join(f.dir,"receipts");
+ await mkdir(receiptDirectory,{mode:0o700});
+ let writerCalls=0,readerCalls=0;
+ const verified={presenter_id:bound.agent_did,
+  credential_id:bound.credential_id,
+  root_credential_id:bound.root_credential_id,
+  hierarchy_depth:1,
+  permissions:[{operation:"create_file",resource:"gitea://thesis/created"}]};
+ const policy={allow:true,policy_version:"r3836-policy"};
+ Object.assign(f.admissions,{
+  assertTrustedCreateNativeAdmissionBinding(
+   actual:PreparedRequestRecord,actualVerified:typeof verified){
+   assert.equal(actual,f.record);
+   assert.equal(actualVerified,verified);
+   return bound;
+  }
+ });
+ const makeReader=(token:string)=>{
+  const client=new GiteaClient({
+   baseUrl:"http://gitea.local:3000",token,owner:"thesis",
+   repository:"iam-console-poc",fetchFn:async()=>{throw Error("GET stub");}
+  });
+  Object.assign(client,{async verifyCreatedFileHeadCas(x:{
+   branch:string;path:string;expectedHeadSha:string;
+   createdCommitSha:string;createdBlobSha:string;
+   expectedContentSha256:string;expectedContentBytes:number
+  }){
+   readerCalls++;
+   assert.equal(x.expectedHeadSha,HEAD);
+   assert.equal(x.createdCommitSha,NEXT);
+   assert.equal(x.createdBlobSha,"a".repeat(40));
+   assert.equal(x.expectedContentSha256,intent.next_content_sha256);
+   assert.equal(x.expectedContentBytes,Buffer.byteLength(content));
+   return {
+    status:"gitea_create_head_cas_read_only_verified",
+    branch,path,previous_head_sha:HEAD,commit_sha:NEXT,
+    blob_sha:"a".repeat(40),
+    content_sha256:intent.next_content_sha256,
+    provider_write_authorized:false
+   };
+  }});
+  return client;
+ };
+ const key=Buffer.alloc(32,41);
+ const publisher=new CreatePublisher({
+  directory:receiptDirectory,key,repository,branch,
+  independentGiteaClient:makeReader("publisher-only")});
+ const observer=new CreateObserver({
+  directory:receiptDirectory,key,repository,branch,
+  independentGiteaClient:makeReader("observer-only")});
+ Object.assign(f.giteaClient,{async createFileWithHeadCas(x:{
+  expectedHeadSha:string;branch:string;path:string;content:string;
+ }){
+  writerCalls++;
+  assert.equal(x.expectedHeadSha,HEAD);
+  assert.equal(x.branch,branch);
+  assert.equal(x.path,path);
+  assert.equal(x.content,content);
+  if(failWriter)throw Error("Gitea CAS reply ambiguous");
+  return {
+   branch,path,revision:NEXT,commit_sha:NEXT,blob_sha:"a".repeat(40),
+   previous_head_sha:HEAD,staging_branch:"feature/r3832-create-s",
+   next_content_sha256:intent.next_content_sha256,
+   old_path_absent_at_pinned_head:true
+  };
+ }});
+ const executor=new CreateExecutor({
+  admissions:f.admissions,preflight,journal:f.journal,
+  giteaClient:f.giteaClient,publisher,observer,repository,branch
+ });
+ f.record.consumed=true;
+ return {...f,intent,preflight,executor,verified,policy,receiptDirectory,
+  stats2:()=>({writerCalls,readerCalls})};
+}
+test("R383.6 real create pipeline stages one attempt and two independent MAC observations",async t=>{
+ const f=await createPipeline(t);
+ assert.equal(f.executor.isForAdmissions(f.admissions),true);
+ const result=await f.executor.executeAfterVerifiedRustOpa(
+  f.record,f.verified as never,f.policy as never);
+ assert.equal(result.tool,"create_file");
+ assert.equal(result.provider,"gitea");
+ assert.equal(result.commit_sha,NEXT);
+ assert.deepEqual(f.stats2(),{writerCalls:1,readerCalls:2});
+ assert.equal(f.stats().writes,0,"legacy provider is never called");
+ const names=await readdir(f.dir);
+ const stem=createHash("sha256").update(bound.session_id+"\n"+bound.task_id)
+  .digest("hex");
+ assert.ok(names.includes(stem+".create-intent.json"));
+ assert.ok(names.includes(stem+".create-attempt.json"));
+ assert.ok(names.includes(stem+".create-completed.json"));
+ const receipt=await readdir(f.receiptDirectory);
+ assert.equal(receipt.length,1);
+ assert.match(receipt[0],/\.create\.json$/u);
+ await assert.rejects(f.executor.executeAfterVerifiedRustOpa(
+  f.record,f.verified as never,f.policy as never),/EEXIST/u);
+ assert.equal(f.stats2().writerCalls,1);
+});
+test("R383.6 ambiguous create CAS is terminal after a durable one-shot marker",async t=>{
+ const f=await createPipeline(t,true);
+ await assert.rejects(f.executor.executeAfterVerifiedRustOpa(
+  f.record,f.verified as never,f.policy as never),/CAS reply ambiguous/u);
+ assert.equal(f.stats2().writerCalls,1);
+ assert.equal(f.stats2().readerCalls,0);
+ const files=await readdir(f.dir);
+ assert.ok(files.some(x=>x.endsWith(".create-attempt.json")));
+ assert.equal(files.some(x=>x.endsWith(".create-completed.json")),false);
+ await assert.rejects(f.executor.executeAfterVerifiedRustOpa(
+  f.record,f.verified as never,f.policy as never),/EEXIST/u);
+ assert.equal(f.stats2().writerCalls,1);
+ assert.equal(f.stats().writes,0);
+});
+test("R383.6 cannot create after OPA denies or without consumed native Prepare",async t=>{
+ const f=await createPipeline(t);
+ await assert.rejects(f.executor.executeAfterVerifiedRustOpa(
+  f.record,f.verified as never,{allow:false,policy_version:"opa"} as never),
+  /native VP, OPA/u);
+ f.record.consumed=false;
+ await assert.rejects(f.executor.executeAfterVerifiedRustOpa(
+  f.record,f.verified as never,f.policy as never),/native VP, OPA/u);
+ assert.equal(f.stats2().writerCalls,0);
+ assert.equal((await readdir(f.dir)).some(x=>
+  x.endsWith(".create-attempt.json")),false);
 });
