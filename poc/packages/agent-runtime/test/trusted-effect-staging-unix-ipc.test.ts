@@ -274,3 +274,40 @@ test("R377.8 role-authenticated no-change uses the original read and closes stag
   assert.deepEqual(calls,["stage:read-r3778","attest:read-r3778","no_change:read-r3778"]);
  }finally{await x.close();}
 });
+
+test("R383.8 private CREATE Task pins travel through HMAC Unix bind and one-use owner stage",async()=>{
+ const x=await fixtures("backend");
+ try{
+  const createPins={...pins,operation:"create_file" as const};
+  const calls:string[]=[];
+  x.owner.bindTask(runtime,{
+   stagedTool:"create_file",
+   async stage(id:string){
+    calls.push(id);return {provider_write_authorized:false};
+   }
+  },"backend");
+  await x.client.bindTask(createPins);
+  const createTask:AgentTaskContext={...task(),
+   subtask:{...task().subtask,
+    approved_file_permissions:[{path,operation:"create_file"}]}
+  };
+  const privatePort=x.agent.selectFor(createTask);
+  assert.equal(privatePort.stagedTool,"create_file");
+  assert.deepEqual(await privatePort.stage("r3838-create-1"),
+   {provider_write_authorized:false});
+  assert.deepEqual(calls,["r3838-create-1"]);
+  await assert.rejects(privatePort.stage("r3838-create-2"),/consumed or retired/u);
+  await assert.rejects(x.remote.stage(runtime,"r3838-create-3"),
+   /Authenticated private effect operation denied/u);
+  assert.deepEqual(calls,["r3838-create-1"]);
+ }finally{await x.close();}
+});
+test("R383.8 Test Agent cannot bind create_file through authenticated IPC",async()=>{
+ const x=await fixtures();
+ try{
+  await assert.rejects(x.client.bindTask({
+   ...pins,role:"test",operation:"create_file"
+  }),/Authenticated private effect operation denied/u);
+  assert.equal(x.agent.selectFor===undefined,false);
+ }finally{await x.close();}
+});
