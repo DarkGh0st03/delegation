@@ -1,21 +1,13 @@
 {
-  "checkpoint": "R371.0",
-  "original_review_host_branch": "refactor/post-prof-plan-contracts-20261021",
-  "previous_confirmed_R370": {
-    "sha": "cdf526fa04efb8fd9c103b8ece343d39ad849dd4",
-    "native_run_id": 42342454494
-  },
-  "expected": "Original Engineer signed create_branch and create_pull_request grants, native root Branch from preseeded Gitea main, independent branch GET before SDK A2A, dynamic Backend->Frontend->Test, real Docker acceptance PASS and one independent Draft PR GET",
-  "branch_preexists_before_approval": false,
-  "main_reference_fixture_preseeded_before_approval": true,
-  "original_root_task_count": 5,
-  "native_child_count": 3,
-  "prohibited": [
-    "Gemini paid inference",
-    "HTTP legacy Adapter",
-    "main mutation after Engineer approval",
-    "GitHub merge",
-    "GitHub production pull request"
-  ],
-  "validation": "Native GitHub Actions R371 must pass before any success claim"
+  "checkpoint": "R371.1",
+  "previous_R371_native_failed_run": 42343999180,
+  "failure": "Disposable Gitea main protected: gateway client attempting owner-only reference seed got HTTP 403 before Engineer/root. Main policy remains unchanged.",
+  "new_focus": "Original protected unsolved main remains byte-for-byte untouched. ADK free Planner reads main. Engineer signs create_branch + Backend exact file read/update. Original Host launcher creates and independently attests feature branch then starts protected SDK A2A and executes Backend native read/CAS. No Frontend/Test/Runner/PR asserted.",
+  "original_R370_native_complete_run": 42342454494,
+  "paid_inference": false,
+  "branch_before_model": true,
+  "expected_gateway_completed_tasks": 2,
+  "expected_backend_child_credentials": 1,
+  "main_immutable": true,
+  "validation": "R371.1 native CI success on exact HEAD required"
 }

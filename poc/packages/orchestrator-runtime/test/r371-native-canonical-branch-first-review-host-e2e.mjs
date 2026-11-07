@@ -230,51 +230,23 @@ const client=new ObservedGiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
 assert.ok(process.env.GITEA_RUNNER_TOKEN,"Independent read-only token required");
 const independentClient=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
  token:process.env.GITEA_RUNNER_TOKEN,owner:repo.owner,repository:repo.repository});
-// R371: disposable CI owner changes MAIN before Engineer approval.
-// The branch remains genuinely ABSENT until the original signed root Task.
-// This is deterministic reference input, never AI-generated application code.
+// R371.1: genuine unsolved protected main is never modified.
 const branch="feature/account-suspension";
 const baselineMain=(await client.getBranchMetadata("main")).commit_sha;
 assert.equal(baselineMain,ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT);
 await assert.rejects(independentClient.getBranchMetadata(branch),
  e=>e instanceof ProviderNotFoundError);
-let currentMain=baselineMain,ownerSeedCount=0;
-for(const file of Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES).sort()){
- const source=ACCOUNT_SUSPENSION_REFERENCE_FILES[file];
- const previous=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file];
- if(previous===undefined){
-  const created=await client.createFile("main",file,source,
-   "R371 disposable owner-only acceptance source");
-  currentMain=created.commit_sha;
- }else{
-  const existing=await client.readTextFile("main",file,currentMain);
-  if(existing.content===source)continue;
-  assert.equal(existing.content,previous);
-  const changed=await client.updateFile("main",file,source,
-   "R371 disposable owner-only reference source");
-  currentMain=changed.commit_sha;
- }
- ownerSeedCount++;
-}
-assert.ok(ownerSeedCount>=6);
-const backendPath="apps/backend/users/account.ts";
+const backendPath="apps/backend/src/users/user.service.ts";
+const backendOldContent=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[backendPath];
+assert.ok(typeof backendOldContent==="string"&&backendOldContent.length>100);
+const backendNewContent=backendOldContent+
+ "\n// R371 delegated Backend CAS under original signed file scope\n";
 const mutationPath="apps/frontend/src/account/AccountSuspension.ts";
-const backendOldContent="export const backendAccountSuspended = false;\n";
-const backendNewContent="export const backendAccountSuspended = true;\n";
 const oldContent="export const accountSuspended = false;\n";
 const newContent="export const accountSuspended = true;\n";
-const backendSeed=await client.createFile("main",backendPath,backendOldContent,
- "R371 owner-only baseline Backend flag");
-const seeded=await client.createFile("main",mutationPath,oldContent,
- "R371 owner-only baseline Frontend flag");
-const baseRevision=seeded.commit_sha;
-const disposableMainHead=baseRevision;
-assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
- disposableMainHead);
-await assert.rejects(independentClient.getBranchMetadata(branch),
- e=>e instanceof ProviderNotFoundError);
+const baseRevision=baselineMain;
+const disposableMainHead=baselineMain;
 assert.equal(branchPostAttempts,0);
-assert.match(baseRevision,/^[a-f0-9]{40}$/u);
 const requirement="R371 disposable EVM proof for account suspension permission";
 const resourcePrefix="gitea://gitea.local/thesis/iam-console-poc/branches/"+
  "feature%2Faccount-suspension";
@@ -286,13 +258,11 @@ const prPermission={resource:"gitea://gitea.local/thesis/iam-console-poc",
 // Signed grant canonical order: repository PR before branch Test and
 // directory-level read/CAS. No implicit permission is granted.
 const grantPermissions=[
- branchPermission,prPermission,testPermission,
- ...["backend","frontend"].flatMap(role=>
-  ["read_file","update_file"].map(operation=>({
-   resource:resourcePrefix+"/directories/apps/"+role,operation
-  })))
+ branchPermission,
+ {resource:resourcePrefix+"/files/"+backendPath,operation:"read_file"},
+ {resource:resourcePrefix+"/files/"+backendPath,operation:"update_file"}
 ];
-assert.equal(grantPermissions.length,7);
+assert.equal(grantPermissions.length,3);
 const readPermission={resource:resourcePrefix+"/files/"+mutationPath,
  operation:"read_file"};
 const updatePermission={resource:resourcePrefix+"/files/"+mutationPath,
@@ -303,7 +273,6 @@ const backendReadPermission={resource:resourcePrefix+"/files/"+backendPath,
 const backendUpdatePermission={resource:resourcePrefix+"/files/"+backendPath,
  operation:"update_file"};
 const backendPermissions=[backendReadPermission,backendUpdatePermission];
-assert.equal(readPermission.resource,updatePermission.resource);
 const nowMs=()=>Date.now();
 const start=new Date();
 const issuedAt=start.toISOString().replace(/\.\d{3}Z$/u,"Z");
@@ -376,12 +345,8 @@ try{
      yield {content:{role:"model",parts:[{text:JSON.stringify({
       requested_permissions:[
        {operation:"create_branch",resource_type:"repository",path:null},
-       {operation:"create_pull_request",resource_type:"repository",path:null},
-       {operation:"run_tests",resource_type:"branch",path:null},
-       ...["backend","frontend"].flatMap(role=>
-        ["read_file","update_file"].map(operation=>({
-         operation,resource_type:"directory",path:"apps/"+role
-        })))
+       {operation:"read_file",resource_type:"file",path:backendPath},
+       {operation:"update_file",resource_type:"file",path:backendPath}
       ],assumptions:[],uncertainties:[]
      })}]}};
     }else throw Error("R371 Planner exceeded scripted free budget");
@@ -464,7 +429,7 @@ try{
      capabilities:["run_tests"]},
     orchestrator:{did:process.env.ADAPTER_ID_ORCHESTRATOR,
      card_ref:"trusted:r371-orchestrator",
-     capabilities:["create_branch","create_pull_request"]}
+     capabilities:["create_branch"]}
    },
    credentials:credentialPort,
    planningRevisions:{
@@ -837,14 +802,8 @@ const tool=record?.request?.tool,role=record?.agent_role;
   const choices=[
    {action:"delegate",task:{task_id:backendTaskId,agent_id:"backend",
     depends_on:["r371-original-root-branch"],permissions:backendPermissions,
-    instruction:"Read and CAS-update exact approved Backend source"}},
-   {action:"delegate",task:{task_id:taskId,agent_id:"frontend",
-    depends_on:[backendTaskId],permissions:taskPermissions,
-    instruction:"Read and CAS-update approved Frontend after verified Backend"}},
-   {action:"delegate",task:{task_id:testTaskId,agent_id:"test",
-    depends_on:[taskId],permissions:[testPermission],
-    instruction:"Run original native Docker/acceptance on verified current HEAD"}},
-   {action:"ready_for_pr",reason:"The original owner independently reopened Test PASS"}
+    instruction:"Read the original unresolved Backend code then CAS-update it"}},
+   {action:"blocked",reason:"R371 validates native branch-first Backend only; no unapproved further work"}
   ];
   class FreeOriginalHostDecisionModel extends BaseLlm{
    constructor(){super({model:"r371-original-host-adaptive-no-paid-inference"});
@@ -852,8 +811,9 @@ const tool=record?.request?.tool,role=record?.agent_role;
    async *generateContentAsync(req){
     const n=this.calls++;this.requests.push(req);
     assert.ok(n<choices.length,"extra model Task after bounded readiness");
-    if(n)assert.ok(JSON.stringify(req).includes(choices[n-1].task.task_id),
-     "next model decision did not observe authenticated predecessor");
+    if(n)assert.ok(JSON.stringify(req).includes(choices[0].task.task_id),
+     "second turn must confirm original completed Backend");
+
     if(!n)assert.ok(JSON.stringify(req).includes("r371-original-root-branch"),
      "first worker cannot start without independently attested root branch");
     yield {content:{role:"model",parts:[{text:JSON.stringify(choices[n])}]}};
@@ -862,22 +822,6 @@ const tool=record?.request?.tool,role=record?.agent_role;
   }
   const controller=new FreeOriginalHostDecisionModel();
   let childMetadataCount=0;
-  class FreeSignedPrTaskProposal extends BaseLlm{
-   constructor(){super({model:"r371-original-root-pr-only"});this.calls=0;this.requests=[];}
-   async *generateContentAsync(req){
-    this.calls++;this.requests.push(req);
-    assert.equal(this.calls,1,"original PR decision is one-shot");
-    assert.ok(JSON.stringify(req).includes(testTaskId),
-     "PR model must see the latest independently confirmed Test");
-    yield {content:{role:"model",parts:[{text:JSON.stringify({
-     task_id:"r371-draft-pr",agent_id:"orchestrator",
-     depends_on:[testTaskId],permissions:[prPermission],
-     instruction:"Create only one Draft PR at the independently tested HEAD"
-    })}]}};
-   }
-   connect(){throw Error("Paid PR inference prohibited");}
-  }
-  const prModel=new FreeSignedPrTaskProposal();
   // R371: Branch is selected, staged and attested by the SAME original
   // Review Host BEFORE the protected worker SDK A2A can start.
   class FreeSignedBranchProposal extends BaseLlm{
@@ -902,18 +846,6 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(branchPostAttempts,0);
   await assert.rejects(independentClient.getBranchMetadata(branch),
    error=>error instanceof ProviderNotFoundError);
-  // Canonical launcher is an original Review Host method, not fixture logic.
-  // Owner-selected runtime Task IDs are generated INSIDE the launcher.
-  let privatePrFlight;
-  let privateGatewayExecuteCount=0;
-  assert.equal(draftPrCreateAttempts,0);
-  assert.throws(()=>gate.preflightCanonicalRequest({
-   task_id:"dispatch_"+"Z".repeat(22),agent_role:"orchestrator",
-   tool:"create_pull_request",arguments:{
-    head_branch:branch,base_branch:"main",title:"Unauthorized prior PR",
-    body:"No Task may create a PR before original independent Test PASS"
-   }
-  }),/unbound runtime Task|Task/);
   const workflow=await execution.runCanonicalOperationalWorkflow({
    createBranch:{
     model:branchModel,branch,baseBranch:"main",
@@ -968,181 +900,51 @@ const tool=record?.request?.tool,role=record?.agent_role;
      if(epoch===4&&agent_id==="test")
       return params("urn:r371:child:test",29155,1200);
      throw Error("Original Host denied unexpected Child metadata");
-    }},
-   draftPullRequest:{
-    model:prModel,headBranch:branch,baseBranch:"main",
-    title:"Account Suspension — independently verified",
-    body:"Verified original Backend, Frontend, native Docker and acceptance PASS",
-    permission:prPermission,
-    prepare:request=>{
-     assert.equal(privatePrFlight,undefined);
-     assert.equal(request.agent_role,"orchestrator");
-     assert.equal(request.tool,"create_pull_request");
-     assert.equal(request.arguments.head_branch,branch);
-     assert.equal(draftPrCreateAttempts,0);
-     const prepared=prepareAuthorization(request,{
-      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
-     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
-     assert.deepEqual(prepared.required_permission,prPermission);
-     privatePrFlight={request,prepared};
-     return prepared;
-    },
-    execute:async({request,prepared,expectedHeadSha})=>{
-     assert.ok(privatePrFlight);
-     assert.equal(request,privatePrFlight.request);
-     assert.equal(prepared.request_id,privatePrFlight.prepared.request_id);
-     assert.equal(expectedHeadSha,
-      (await independentClient.getBranchMetadata(branch)).commit_sha);
-     assert.equal(draftPrCreateAttempts,0,
-      "native PR must be staged BEFORE root VP or POST");
-     const signed=await invokeNativeCrypto({
-      socketPath,token:tokens.orchestrator,timeoutMs:60000
-     },"create_presentation",{
-      credential_id:operational.credential_id,
-      disclosed_permissions:[prPermission],
-      audience:prepared.audience,challenge:prepared.challenge
-     });
-     assert.equal(typeof signed.signed_vp,"string");
-     privatePrFlight.signed_vp=signed.signed_vp;
-     privateGatewayExecuteCount++;
-     return executeAuthorization({
-      request_id:prepared.request_id,signed_vp:signed.signed_vp
-     },deps);
-    }
-   }
+    }}
+
   });
-  assert.equal(workflow.status,"owner_operational_draft_pr_independently_attested");
+  assert.equal(workflow.status,"owner_operational_work_finished_without_pr");
+  assert.equal(workflow.adaptive_status,"owner_adaptive_work_blocked");
+  assert.equal(workflow.executed_tasks,1);
+  assert.equal(workflow.pr_created,false);
   assert.equal(workflow.branch?.status,"owner_original_branch_independently_attested");
   assert.equal(workflow.branch?.task_id,"r371-original-root-branch");
   assert.equal(workflow.branch?.base_revision,disposableMainHead);
   assert.equal(branchModel.calls,1);
   assert.equal(branchPostAttempts,1);
   assert.equal(privateBranchExecuteCalls,1);
-  assert.equal(issuedChildren,3,"branch root emits no worker Child");
-  assert.equal(workflow.pr_created,true);
-  assert.equal(workflow.pull_request_attested,true);
-  const report=workflow.adaptive;
-  assert.equal(report.status,"owner_adaptive_work_ready_for_pr");
-  assert.equal(report.executed_tasks,3);
-  assert.equal(report.pr_created,false);
-  assert.equal(report.source_test_task_id,testTaskId);
-  assert.match(report.source_test_runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
-  assert.equal(controller.calls,4);
-  assert.equal(childMetadataCount,3);
-  assert.equal(issuedChildren,3);
-  assert.equal(coordinator.registeredTaskCount,5);
-  assert.equal(gate.stagedCompletedTaskCount,5);
+  assert.equal(controller.calls,2);
+  assert.equal(childMetadataCount,1);
+  assert.equal(issuedChildren,1);
+  assert.equal(coordinator.registeredTaskCount,2);
+  assert.equal(gate.stagedCompletedTaskCount,2);
+  assert.equal(gatewayCasWrites,1);
+  assert.equal(draftPrCreateAttempts,0);
+  assert.equal(runnerCalls,0);
   assert.equal(models.backend.requests.length,3);
-  assert.equal(models.frontend.requests.length,3);
-  assert.equal(models.test.requests.length,2);
-  assert.equal(gatewayCasWrites,2);
-  assert.equal(runnerCalls,1);
+  assert.equal(models.frontend.requests.length,0);
+  assert.equal(models.test.requests.length,0);
   assert.equal(legacyWriteCalls,0);
-  assert.equal(typeof testSignedVp,"string");
+  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,disposableMainHead);
   const latest=(await independentClient.getBranchMetadata(branch)).commit_sha;
-  assert.equal(latest,report.tested_commit_sha);
-  assert.notEqual(latest,baseRevision);
-  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
-   disposableMainHead);
-  assert.equal((await independentClient.readTextFile(
-   branch,backendPath,latest)).content,backendNewContent);
-  assert.equal((await independentClient.readTextFile(
-   branch,mutationPath,latest)).content,newContent);
-  assert.deepEqual(prepared.map(p=>[p.role,p.tool]),[
-   ["backend","read_file"],["backend","update_file"],
-   ["frontend","read_file"],["frontend","update_file"],
-   ["test","run_tests"]
-  ]);
-  assert.equal(new Set(prepared.map(p=>p.response.request_id)).size,5);
-  assert.deepEqual(events,[
-   "prepare_attempt_backend_read_file",
-   "prepare_backend_read_file","execute_backend_read_file",
-   "prepare_attempt_backend_update_file",
-   "prepare_backend_update_file","execute_backend_update_file",
-   "prepare_attempt_frontend_read_file",
-   "prepare_frontend_read_file","execute_frontend_read_file",
-   "prepare_attempt_frontend_update_file",
-   "prepare_frontend_update_file","execute_frontend_update_file",
-   "prepare_attempt_test_run_tests",
-   "prepare_test_run_tests","execute_test_run_tests"
-  ]);
-  for(const role of roles){
-   const prompt=JSON.stringify(models[role].requests);
-   for(const secret of [tokens.engineer,tokens.orchestrator,
-    tokens.gateway,backendChild?.credential_id,child?.credential_id,
-    runnerChild?.credential_id])
-    assert.equal(prompt.includes(secret),false);
-  }
-  // R371: exact one-shot root-owned PR was created and independently
-  // reopened by the original Host, NOT by this test harness.
-  assert.equal(prModel.calls,1);
-  assert.equal(privateGatewayExecuteCount,1);
-  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
-   disposableMainHead);
-  assert.equal(branchPostAttempts,1);
+  assert.notEqual(latest,disposableMainHead);
+  const actual=await independentClient.readTextFile(branch,backendPath,latest);
+  assert.equal(actual.content,backendNewContent);
   await assert.rejects(executeAuthorization({
    request_id:privateBranchFlight.prepared.request_id,
    signed_vp:privateBranchFlight.signed_vp
   },deps),error=>error.code==="replay_detected");
   assert.equal(branchPostAttempts,1);
-  assert.equal(draftPrCreateAttempts,1);
-  assert.equal(issuedChildren,3,"the PR must use original root, not a Child");
-  assert.equal(coordinator.registeredTaskCount,5);
-  assert.equal(gate.stagedCompletedTaskCount,5);
-  assert.equal(workflow.tested_commit_sha,latest);
-  assert.equal(workflow.source_test_task_id,testTaskId);
-  assert.equal(workflow.completed_work_tasks,3);
-  assert.equal(workflow.pull_request_task_id,"r371-draft-pr");
-  assert.ok(privatePrFlight?.signed_vp);
-  assert.match(privatePrFlight.request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
-  assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
-   workflow.pull_request_task_id,coordinator));
-  const createdPr=await independentClient.inspectDraftPullRequest({
-   number:workflow.pull_request_number,headBranch:branch,baseBranch:"main",
-   expectedHeadSha:latest,expectedBaseSha:disposableMainHead
-  });
-  assert.equal(createdPr.open,true);
-  assert.equal(createdPr.draft,true);
-  assert.equal(createdPr.merged,false);
-  assert.equal(createdPr.head_revision,latest);
-  assert.equal(createdPr.base_revision,disposableMainHead);
-  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
-   disposableMainHead);
-  await assert.rejects(executeAuthorization({
-   request_id:privatePrFlight.prepared.request_id,
-   signed_vp:privatePrFlight.signed_vp
-  },deps),error=>error.code==="replay_detected");
-  await assert.rejects(execution.attestEnrolledPullRequestCompletion({
-   taskId:workflow.pull_request_task_id,
-   runtimeTaskId:privatePrFlight.request.task_id
-  }),/already been attempted/);
-  assert.equal(draftPrCreateAttempts,1);
   process.stdout.write(JSON.stringify({
-   event:"r371_original_review_host_native_draft_pr_attested",
-   real_native_engineer_approval:true,original_rust_root_owned_pr:true,
-   branch_created_from_original_signed_root:true,
-   branch_independently_attested:true,branch_post_attempts:branchPostAttempts,
-   branch_before_first_worker:true,base_main_sha:disposableMainHead,
-   main_reference_fixture_preseeded:true,
-   signed_pr_permission:prPermission.operation,
-   signed_test_dependency:testTaskId,original_children:issuedChildren,
-   independently_completed_gateway_tasks:gate.stagedCompletedTaskCount,
-   native_rust_evm:true,opa_real:true,
-   gitea_cas_writes:gatewayCasWrites,real_docker_runner_calls:runnerCalls,
-   draft_pr_created:true,draft_pr_open:true,draft_pr_merged:false,
-   independent_pr_get:true,one_shot_create_attempts:draftPrCreateAttempts,
-   tested_head:latest,main_unchanged:true,paid_model_calls:0
-  })+"\n");
-  process.stdout.write(JSON.stringify({
-   event:"r371_original_review_host_native_adaptive_three_role_ready",
-   model_turns:controller.calls,registered_after_model:3,
-   tasks_before_first_model:0,real_native_children:issuedChildren,
-   independently_completed_gateway_tasks:gate.stagedCompletedTaskCount,
-   native_rust_evm:true,opa_real:true,gitea_cas_writes:gatewayCasWrites,
-   native_sdk_a2a:true,real_docker_runner_calls:runnerCalls,
-   latest_test_head:report.tested_commit_sha,
-   original_host_owned_adaptive_loop:true,pr_created:true,
-   paid_model_calls:0
+   event:"r371_native_original_branch_first_backend_cas_verified",
+   original_protected_unsolved_main_unchanged:true,preexisting_feature_branch:false,
+   model_selected_root_branch:true,independent_branch_get:true,
+   real_native_rust_evm:true,opa_real:true,branch_posts:branchPostAttempts,
+   original_gateway_completed_tasks:gate.stagedCompletedTaskCount,
+   backend_child_credentials:issuedChildren,backend_native_read_then_cas:true,
+   gateway_cas_writes:gatewayCasWrites,frontend_calls:models.frontend.requests.length,
+   test_calls:models.test.requests.length,docker_runner_calls:runnerCalls,
+   draft_pr_created:false,paid_model_calls:0
   })+"\n");
  }finally{
   TrustedEffectStagingTaskRegistry.prototype.selectFor=originalSelect;

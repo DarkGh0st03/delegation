@@ -2,7 +2,7 @@
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Test-owner seeds disposable Gitea file BEFORE signed Engineer approval.
 # Only the signed UPDATE Task may commit; never main or production GitHub.
-name: R371 Canonical Branch-First Review Host Native Draft PR E2E (No AI)
+name: R371.1 Protected Main Root Branch + SDK Backend CAS (No AI)
 on:
   workflow_dispatch:
   push:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   direct-rust-live-evm:
-    name: "R371 Root Branch -> original Host SDK A2A 3 specialists -> Draft PR"
+    name: "R371.1 Original Host root Branch -> SDK Backend read/CAS"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
@@ -161,7 +161,7 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/native-evm-adapter.pid
-      - name: R371 signed root Branch -> native SDK A2A -> Docker PASS -> Draft PR
+      - name: R371.1 signed root Branch from protected main -> native SDK Backend read/CAS
         run: |
           set -a
           source poc/infra/runtime/gateway.env
