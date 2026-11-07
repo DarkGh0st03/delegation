@@ -148,6 +148,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let adaptiveLoopAttempted=false,adaptiveLoopFlight;
+ let adaptiveMaxVerifiedFailures=2; // protected original owner's limit, not per-Task input
  // Retain at most two independently authenticated Runner FAILs.
  // Neither is a completed Task or a new grant under the Engineer root.
  const adaptiveVerifiedFailures=[];
@@ -724,6 +725,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           (input.maxSteps!==undefined&&input.maxVerifiedFailures>input.maxSteps))))
       deny('adaptive loop requires original quiescent owner and private Child metadata provisioner');
      adaptiveLoopAttempted=true;
+     adaptiveMaxVerifiedFailures=input.maxVerifiedFailures??2;
      // The root Branch and PR are separate, one-shot authority decisions.
      // Count only adaptive model turns against the caller's bounded maxSteps;
      // an independently completed Branch cannot consume the final ready_for_pr
@@ -753,7 +755,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        .filter(o=>o.revision===head.commit_sha);
       return {
        requirement,branch,rootPermissions:live.root_permissions,
-       maxVerifiedFailures:input.maxVerifiedFailures??2,
+       maxVerifiedFailures:adaptiveMaxVerifiedFailures,
        agents:verifiedProfiles??configuredProfiles,
        previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
        nextEpoch:operationalCoordinator.registeredTaskCount+1,
@@ -1391,7 +1393,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        if(adaptiveLoopAttempted&&input.d1Candidate===undefined&&
           pin.agent_id==='test'&&pin.operation==='run_tests'&&
           nativeEffectBinding?.failureObserver&&
-          adaptiveVerifiedFailures.length<(input.maxVerifiedFailures??2)){
+          adaptiveVerifiedFailures.length<adaptiveMaxVerifiedFailures){
         try{
          const intent=await nativeEffectBinding.runner
           .getAttemptedIntentForOwnerTask(input.runtimeTaskId);
