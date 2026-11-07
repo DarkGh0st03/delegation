@@ -44,7 +44,7 @@ test('create_file in authority-only mode is denied without legacy fallback',asyn
   branch:'feature/account-suspension',path:'new.ts',content:'x'
  }),error=>{
   assert.equal((error as Error).message,
-   'Authority-only create_file is gated pending native owner E2E');
+   'Authority-only CREATE requires original native Child/Task and private MCP');
   return true;
  });
  assert.deepEqual(f.calls,[]);
