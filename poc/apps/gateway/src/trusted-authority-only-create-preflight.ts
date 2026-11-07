@@ -92,6 +92,7 @@ export class TrustedAuthorityOnlyGiteaCreatePreflight {
   task_id:string;request_id:string;provider_write_authorized:false;
  }>>{
   if(!record||record.consumed!==true||
+     record.request.tool!=="create_file"||
      !policy||policy.allow!==true||
      typeof policy.policy_version!=="string"||
      !policy.policy_version.trim())
