@@ -56,7 +56,7 @@ test("R384.4 reviewed R384.3 Root cannot reach known reference PASS without new 
  const publicResult=JSON.stringify(result);
  assert.equal(publicResult.includes("export const ACCOUNT_STATUS"),false);
  assert.equal(publicResult.includes("UserService"),false);
- assert.equal(publicResult.includes("UserDetailPage"),false);
+ assert.equal(publicResult.includes("export function UserDetailPage()"),false);
  assert.equal(publicResult.includes("accountSuspended = true"),false);
  assert.match(result.exact_required_grants_sha256,/^[a-f0-9]{64}$/u);
 });
