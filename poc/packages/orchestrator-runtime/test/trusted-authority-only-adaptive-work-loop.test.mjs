@@ -267,6 +267,31 @@ test('R355.8 untrusted malformed failure history cannot reach a model turn',asyn
  assert.equal(f.retired,true);
  assert.equal(f.done.length,0);
 });
+// R366: no PR readiness from an older/forged Test receipt or a HEAD
+// change while the original owner awaits independent verification.
+for(const mode of ['foreign-test-id','wrong-tested-head','head-moved-during-proof',
+ 'missing-runtime-task-id']){
+ test('R366 adaptive ready proof stays bound to latest Test and current owner: '+mode,async()=>{
+  const f=fixture();
+  const original=f.hooks.confirmReady;
+  f.hooks.confirmReady=async()=>{
+   const proof=await original();
+   if(mode==='foreign-test-id')return {...proof,task_id:'foreign-test'};
+   if(mode==='wrong-tested-head')return {...proof,tested_commit_sha:'f'.repeat(40)};
+   if(mode==='missing-runtime-task-id')return {...proof,runtime_task_id:''};
+   f.move();
+   return proof;
+  };
+  const model=new Decisions([candidate('test',0),
+   {action:'ready_for_pr',reason:'Independent current Test required'}]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks
+  }),/independent current Test proof or original owner context changed/u);
+  assert.equal(f.retired,true);
+  assert.equal(model.calls,2);
+  assert.equal(f.verified.length,1,'valid prior Test stays in the completion ledger');
+ });
+}
 test('R355 retirement failure is reported as unconfirmed',async()=>{
  const f=fixture(),model=new Decisions([{action:'ready_for_pr',reason:'Premature'}]);
  f.hooks.retire=async()=>{throw Error('native unavailable');};

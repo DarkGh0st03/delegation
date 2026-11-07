@@ -33,7 +33,21 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     const proof=await hooks.confirmReady();
     signal?.throwIfAborted();
     if(proof?.status!=='owner_verified_tested_head_not_pr_authorized'||
-       !/^[a-f0-9]{40}$/u.test(proof.tested_commit_sha))deny('independent current Test proof missing');
+       !/^[a-f0-9]{40}$/u.test(proof.tested_commit_sha))
+     deny('independent current Test proof missing');
+    // R366: readiness must refer to the latest independently completed
+    // Test on the exact Gitea HEAD observed before the model decision.
+    // Re-read AFTER asynchronous receipt verification to fence a HEAD,
+    // root, completion-ledger or failure-state race. A model claim or an
+    // older Test PASS never creates PR authority.
+    const latestTest=before.previousTasks.filter(p=>p.agent_id==='test').at(-1);
+    const afterProof=structuredClone(await hooks.readContext());
+    signal?.throwIfAborted();
+    if(!latestTest||proof.task_id!==latestTest.task_id||
+       typeof proof.runtime_task_id!=='string'||!proof.runtime_task_id.trim()||
+       proof.tested_commit_sha!==before.executionProgress?.current_head_sha||
+       JSON.stringify(afterProof)!==JSON.stringify(before))
+     deny('independent current Test proof or original owner context changed');
     return Object.freeze({status:'owner_adaptive_work_ready_for_pr',executed_tasks:executed,
      source_test_task_id:proof.task_id,source_test_runtime_task_id:proof.runtime_task_id,
      tested_commit_sha:proof.tested_commit_sha,pr_created:false});
