@@ -546,6 +546,70 @@ test('R350.2 same Engineer root registers Task, binds Gateway, issues native Chi
  assert.equal(host.phase,'revoked');
  await host.close();
 });
+test('R381.7 canonical Review Host routes its signed Child through native MCP once',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r3817:live-root',2));
+ const deps=executionDeps(f);
+ let direct=0,privateMcp=0;
+ deps.privateChildMcpTransport='native-stdio'; // Original trusted host, not ADK.
+ deps.nativeCryptoPort={kind:'rust-native',
+  async issueChild(){direct++;throw Error('direct fallback must not run');},
+  async issueChildViaPrivateMcp(req){
+   privateMcp++;
+   return {id:req.credential_id,validFrom:req.valid_from,
+    credentialSubject:{sub:fixtureDid('backend'),
+     per:structuredClone(req.permissions)},
+    credentialStatus:structuredClone(req.credential_status)};
+  }
+ };
+ const {gateway,childIssuer,stageTask}=await host.admitOperationalExecution(deps);
+ const live=coordinator.assertTrustedGatewayAuthorityBinding();
+ const staged=await stageTask(stagedBackend(live));
+ assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
+ assert.equal(staged.gateway_execution_authorized,false);
+ assert.equal(staged.agent_id,'backend');
+ assert.equal(privateMcp,1);
+ assert.equal(direct,0);
+ assert.equal(gateway.registeredTaskCount,1);
+ const issued=childIssuer.assertTrustedIssuedChild(staged.task_id,coordinator);
+ assert.equal(issued.root_credential_id,live.root_credential_id);
+ assert.equal(issued.credential_id,staged.credential_id);
+ assert.deepEqual(issued.permissions,live.root_permissions.filter(p=>p.operation==='update_file'));
+ await host.close();
+ assert.equal(host.phase,'revoked');
+ assert.equal(privateMcp,1);
+ assert.equal(direct,0);
+});
+
+test('R381.7 native MCP opt-in fails before provider when original signing port is absent',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ await host.activateOperational(root('urn:r3817:missing-port',2));
+ const deps=executionDeps(f);
+ deps.privateChildMcpTransport='native-stdio';
+ let sign=0;
+ deps.nativeCryptoPort={kind:'rust-native',
+  async issueChild(){sign++;throw Error('signing must not start');}
+ };
+ await assert.rejects(host.admitOperationalExecution(deps),
+  /private Child MCP requires original native Rust signing port/);
+ assert.equal(sign,0);
+ assert.equal(host.phase,'revoked');
+ await host.close();
+});
+
+test('R381.7 rejects ACK-only and model-provided crypto transport modes at admission',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ await host.activateOperational(root('urn:r3817:invalid-mode',2));
+ const deps=executionDeps(f);
+ deps.privateChildMcpTransport='stdio'; // ACK-only broker cannot sign.
+ await assert.rejects(host.admitOperationalExecution(deps),
+  /private Child MCP transport must be explicitly native-stdio/);
+ assert.equal(host.phase,'revoked');
+ await host.close();
+});
 test('R350.2 rejects out-of-root Task before native signing or Gateway provider effects',async t=>{
  const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:invalid-task',2));
