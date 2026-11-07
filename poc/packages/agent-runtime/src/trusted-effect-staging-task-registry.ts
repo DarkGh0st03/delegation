@@ -123,7 +123,14 @@ export class TrustedEffectStagingTaskRegistry {
          !hints.some(row=>row?.operation==="update_file"&&row.path===p.path)||
          !Array.isArray(sub.relevant_paths)||
          sub.relevant_paths.length!==1||sub.relevant_paths[0]!==p.path
-       : p.operation==="update_file"||p.operation==="create_file"||p.operation==="read_file"
+       : p.operation==="create_file"
+       ? hints.length!==1||
+         hints[0]?.operation!=="create_file"||
+         hints[0]?.path!==p.path||
+         sub.approved_run_tests!==false||
+         !Array.isArray(sub.relevant_paths)||
+         sub.relevant_paths.length!==1||sub.relevant_paths[0]!==p.path
+       : p.operation==="update_file"||p.operation==="read_file"
        ? !hints.some(row=>row?.operation===p.operation&&row.path===p.path)||
          !Array.isArray(sub.relevant_paths)||
          !sub.relevant_paths.includes(p.path!)
