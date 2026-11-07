@@ -89,6 +89,7 @@ assert.ok(process.env.GITEA_RUNNER_TOKEN,"Independent read-only token required")
 const independentClient=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
  token:process.env.GITEA_RUNNER_TOKEN,owner:repo.owner,repository:repo.repository});
 // Disposable CI owner provisioning, outside delegated execution.
+const mainBefore=(await client.getBranchMetadata("main")).commit_sha;
 const created=await client.createBranch("main","feature/account-suspension");
 assert.match(created.commit_sha,/^[a-f0-9]{40}$/u);
 const branch="feature/account-suspension";
@@ -109,7 +110,7 @@ const grantPermission={
  resource:resourcePrefix+"/directories/apps/backend",operation:"create_file"
 };
 const taskPermission={
- resource:resourcePrefix+"/files/"+mutationPath,operation:"update_file"
+ resource:resourcePrefix+"/files/"+mutationPath,operation:"create_file"
 };
 assert.notEqual(grantPermission.resource,taskPermission.resource);
 const nowMs=()=>Date.now();
@@ -450,9 +451,7 @@ try{
   ProviderNotFoundError
  );
  assert.notEqual((await client.getBranchMetadata(raceBranch)).commit_sha,raceHead);
- assert.equal((await client.getBranchMetadata("main")).commit_sha,
-  created.commit_sha===baseRevision?created.base_commit_sha??(await client.getBranchMetadata("main")).commit_sha:
-   (await client.getBranchMetadata("main")).commit_sha);
+ assert.equal((await client.getBranchMetadata("main")).commit_sha,mainBefore);
  process.stdout.write(JSON.stringify({
   event:"r384_authority_only_native_evm_atomic_create",
   engineer_directory_scope:true,child_file_scope:true,
