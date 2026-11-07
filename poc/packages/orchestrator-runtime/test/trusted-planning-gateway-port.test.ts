@@ -257,7 +257,8 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
     :snapshot;
   const observed={adapter:0,verification:0,policy:0,provider:0,
     prepare:0,execute:0,issued:0,revoked:0};
-  const signed=new Map<string,{resource:string;operation:string;challenge:string;audience:string}>();
+  const signed=new Map<string,{permissions:{resource:string;operation:string}[];
+    challenge:string;audience:string}>();
   const client={
     async readRepository(revision?:string){
       observed.provider++;
@@ -300,13 +301,29 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
       const permission=signed.get(input.signed_vp);
       if(!permission||permission.audience!==input.audience||
          permission.challenge!==input.challenge||
-         permission.operation!==input.required_permission.operation||
-         permission.resource!==input.required_permission.resource)
+         permission.permissions.length!==1||
+         permission.permissions[0].operation!==input.required_permission.operation||
+         permission.permissions[0].resource!==input.required_permission.resource)
         throw Error("Fixture proof binding rejected");
       return {presenter_id:"did:thesis:orchestrator",
         credential_id:rootId,issuer_id:"did:thesis:engineer",
         hierarchy_depth:1,expiration:"999999999999",
         permissions:[input.required_permission]};
+    },
+    async verifyMultiple(input){
+      observed.verification++;
+      const signedProof=signed.get(input.signed_vp);
+      if(!signedProof||signedProof.audience!==input.audience||
+         signedProof.challenge!==input.challenge||
+         signedProof.permissions.length!==input.required_permissions.length||
+         input.required_permissions.some((p,i)=>
+           p.operation!==signedProof.permissions[i].operation||
+           p.resource!==signedProof.permissions[i].resource))
+        throw Error("Fixture composite proof binding rejected");
+      return {presenter_id:"did:thesis:orchestrator",
+        credential_id:rootId,issuer_id:"did:thesis:engineer",
+        hierarchy_depth:1,expiration:"999999999999",
+        permissions:input.required_permissions};
     }},
     policy:{async evaluate(input){
       observed.policy++;
@@ -377,11 +394,25 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
         "Bearer trusted-orchestrator-token");
       assert.equal(body.credential_id,rootId);
       assert.ok(Array.isArray(body.disclosed_permissions));
-      const permission=(body.disclosed_permissions as Array<{resource:string;operation:string}>)[0];
+      const permissions=body.disclosed_permissions as Array<{
+        resource:string;operation:string}>;
+      assert.ok(permissions.length>=1);
       const token="fixture-signed-vp-"+observed.adapter;
-      signed.set(token,{...permission,challenge:String(body.challenge),
-        audience:String(body.audience)});
+      signed.set(token,{permissions:permissions.map(p=>({...p})),
+        challenge:String(body.challenge),audience:String(body.audience)});
       return response({signed_vp:token},201);
+    }
+    if(path==="http://trusted-gateway/v1/authorization/prepare-read-composite"){
+      observed.prepare++;
+      try{
+        return response(await runtime.prepareReadComposite(body),201);
+      }catch{return response({error:"Gateway composite prepare denied"},403);}
+    }
+    if(path==="http://trusted-gateway/v1/authorization/execute-read-composite"){
+      observed.execute++;
+      try{
+        return response(await runtime.executeReadComposite(body));
+      }catch{return response({error:"Gateway composite execution denied"},403);}
     }
     if(path==="http://trusted-gateway/v1/authorization/execute"){
       observed.execute++;
@@ -441,6 +472,91 @@ test("R380.0 hierarchical preliminary Root issues three read grants for >128 fil
     "a scoped read-only Root is not a model-selected broad provider capability");
   assert.ok(f.audit.events.filter(e=>e.event==="authorization_prepared")
     .every(e=>e.pinned_revision===SHA));
+});
+
+test("R380.1 original Planning Root signs one multipermission VP for two verified Gitea reads",async()=>{
+  const f=fixture({hierarchicalPlanning:true});
+  await f.start();
+  const port=f.makePort();
+  const first={tool:"read_file" as const,arguments:{branch:"main",path:FILE}};
+  const second={tool:"read_file" as const,arguments:{branch:"main",path:SECOND_FILE}};
+  const result=await port.invokeComposite([first,second]) as {
+    decision:string;pinned_revision:string;executions:Record<string,unknown>[]
+  };
+  assert.equal(result.decision,"allow");
+  assert.equal(result.pinned_revision,SHA);
+  assert.deepEqual(result.executions.map(e=>e.path),[FILE,SECOND_FILE]);
+  assert.deepEqual(result.executions.map(e=>e.content),[
+    "export const invoices = [];\n","export const taxRate = 0.22;\n"
+  ]);
+  assert.equal(f.observed.prepare,1);
+  assert.equal(f.observed.adapter,1,"exactly ONE multipermission VP");
+  assert.equal(f.observed.verification,1);
+  assert.equal(f.observed.policy,2,"OPA evaluates every operation BEFORE provider IO");
+  assert.equal(f.observed.execute,1);
+  assert.equal(f.observed.provider,3,"one trusted base revision plus two provider reads");
+  assert.ok(f.audit.events.filter(e=>e.event==="composite_authorization_prepared").length===1);
+  assert.ok(f.audit.events.filter(e=>e.event==="composite_read_executed").length===1);
+});
+
+test("R380.1 composite Planning denies scope, duplicates, branch changes and write without VP",async()=>{
+  const f=fixture({hierarchicalPlanning:true});await f.start();
+  const port=f.makePort();
+  const valid={tool:"read_file" as const,arguments:{branch:"main",path:FILE}};
+  const bad=[
+    [valid,{tool:"read_file",arguments:{branch:"main",path:"src/secrets.ts"}}],
+    [valid,{tool:"read_file",arguments:{branch:"feature/other",path:SECOND_FILE}}],
+    [valid,valid],
+    [valid,{tool:"update_file",arguments:{branch:"main",path:FILE,content:"evil"}}],
+    [valid,{tool:"list_directory",arguments:{branch:"main",path:"src/secret"}}],
+    [valid,{tool:"create_file",arguments:{branch:"main",path:"src/new.ts",content:"evil"}}]
+  ];
+  for(const actions of bad)
+    await assert.rejects(port.invokeComposite(actions as never));
+  assert.equal(f.observed.prepare,0);
+  assert.equal(f.observed.adapter,0);
+  assert.equal(f.observed.execute,0);
+  assert.equal(f.observed.provider,1);
+});
+
+test("R380.1 an untrusted composite permission substitution is rejected before signing",async()=>{
+  const f=fixture({tamperPermission:true,hierarchicalPlanning:true});
+  await f.start();
+  const port=f.makePort();
+  await assert.rejects(port.invokeComposite([
+    {tool:"read_file",arguments:{branch:"main",path:FILE}},
+    {tool:"read_file",arguments:{branch:"main",path:SECOND_FILE}}
+  ]),/composite challenge differs from trusted Planning/u);
+  assert.equal(f.observed.prepare,1);
+  assert.equal(f.observed.adapter,0);
+  assert.equal(f.observed.execute,0);
+  assert.equal(f.observed.provider,1);
+});
+
+test("R380.1 one denied OPA permission prevents all composite Gitea reads",async()=>{
+  const f=fixture({policyAllow:false,hierarchicalPlanning:true});
+  await f.start();
+  await assert.rejects(f.makePort().invokeComposite([
+    {tool:"read_file",arguments:{branch:"main",path:FILE}},
+    {tool:"read_file",arguments:{branch:"main",path:SECOND_FILE}}
+  ]));
+  assert.equal(f.observed.prepare,1);
+  assert.equal(f.observed.adapter,1);
+  assert.equal(f.observed.verification,1);
+  assert.equal(f.observed.policy,1);
+  assert.equal(f.observed.provider,1,"no Gitea read after OPA denial");
+});
+
+test("R380.1 retired Planning session rejects composite read before any VP",async()=>{
+  const f=fixture({hierarchicalPlanning:true});await f.start();
+  const port=f.makePort();
+  f.revisions.end(snapshot.session_id);
+  await assert.rejects(port.invokeComposite([
+    {tool:"read_file",arguments:{branch:"main",path:FILE}},
+    {tool:"read_file",arguments:{branch:"main",path:SECOND_FILE}}
+  ]));
+  assert.equal(f.observed.adapter,0);
+  assert.equal(f.observed.provider,1);
 });
 
 test("trusted coordinator-issued root -> Gateway VP/OPA -> pinned Gitea -> unapproved ADK plan",async()=>{
