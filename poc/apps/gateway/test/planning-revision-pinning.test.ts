@@ -262,7 +262,11 @@ test("R380.3 native ancestor proof covers only original pinned read-only Plannin
       }},
       repository:repo,
       executor:new GiteaReadOnlyExecutor(f.client),
-      ...(usePlanning?{planningRevisions:f.revisions}:{}),
+      ...(usePlanning?{
+        planningRevisions:f.revisions,
+        // Merely configured; not activated or used for this pinned session.
+        approvedPlans:{} as never
+      }:{}),
       nowMs:()=>1_800_000_000_000
     });
   const normal=build();
