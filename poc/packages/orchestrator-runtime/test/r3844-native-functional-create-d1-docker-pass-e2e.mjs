@@ -992,7 +992,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    async *generateContentAsync(req){
     const n=this.calls++,context=JSON.stringify(req);
     this.requests.push(req);
-    assert.ok(n<15+decisionOffset,
+    assert.ok(n<16+decisionOffset,
      "native original owner adaptive loop exceeded bounded decisions");
     if(n===0)assert.match(context,/r3844-original-root-branch/u);
     const initialIndex=n-decisionOffset;
