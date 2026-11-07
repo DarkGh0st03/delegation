@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.4)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.5)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,51 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.4 aggiunge un marker durable single-attempt per `create_file`, oltre alla preflight R383.3 e Gitea CAS R383.2. I passaggi Rust/OPA, executor e receipt autenticata restano NON abilitati; recovery generico e batch multi-file ancora aperti.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.5 prepara il binding post-VP/OPA per `create_file` e conserva il deny sul legacy executor; R383.4 contiene il journal single-attempt. La connessione al Gateway nativo, il vero writer e la receipt MAC restano aperti.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.5 — Bound Create admission post-VP/OPA (NO-WRITE)
+
+Nel registro originale `TrustedAuthorityOnlyGatewayAdmissions` è
+presente `assertTrustedCreateNativeAdmissionBinding(record,verified)`:
+per il solo `create_file` richiede Task Backend/Frontend con una sola
+permission exact-file, original Prepare già consumato, Child nativa
+enrolled e firmata, Root attiva, DID, epoch e flight Task durable
+corrispondenti. Verifica il presenter, credential, Root e profondità
+non-zero della VP native e impone **un'unica permission verificata**
+esattamente uguale a quella del Task, senza estendere lo scope.
+
+Il `TrustedAuthorityOnlyGiteaCreatePreflight` dispone ora di
+`assertNativeCreateAdmissionAfterVerification(record,verified,policy)`,
+che ricontrolla l'intent `0600` già riservato (path, branch,
+content SHA-256/bytes, HEAD, Task/Child, fingerprint) dopo OPA allow
+e produce solo `provider_write_authorized:false`.
+Sono stati aggiunti test offline positivi/negativi con admission
+controllata, tampering dell'intent, deny OPA, stato request consumed
+e un test di `executeAuthorization` che garantisce **zero chiamate al
+legacy Gitea executor** perfino quando i mock VP e OPA consentono
+`create_file`.
+
+**Confine NON superato:** questi metodi non sono ancora invocati
+dal Gateway native execute nel ramo abilitato `create_file`;
+i risultati VP/OPA dei test sono mock, non Rust/EVM/OPA reali.
+La chiamata di esecuzione per `create_file` rimane fail-closed
+anche dopo un VP valido, e nessun Task viene completato.
+Non dichiarare PASS prima di osservare Fast CI sul commit finale
+di questo checkpoint. Nessuna API Gemini a pagamento.
+
+**Prossimo confine R383.6:** integrare un executor owner-private
+con `createFileWithHeadCas` e marker attempt R383.4, solamente
+dopo native Rust VP/OPA + binding R383.5. Prima di abilitarlo,
+progettare una receipt MAC indipendente con prova dell'assenza
+del vecchio file, commit parent, HEAD, blob e byte nuovi; negare
+risposte ambigue senza retry. Poi cablare il Gateway e test
+E2E nativi gratuiti, senza toccare main.
 
 ### R383.4 — Marker durevole di esecuzione single-attempt (NO-WRITE)
 
