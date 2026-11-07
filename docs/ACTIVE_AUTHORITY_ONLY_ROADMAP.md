@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R381.9)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.0)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -341,6 +341,20 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   quindi la lista vuota non certifica l'assenza di run `push`.
   Non viene richiamata automaticamente una nuova lunga suite nativa
   in assenza dell'esito della precedente. Nessuna API AI a pagamento.
+- **R382.0 — cancellazione originale Task → processo MCP stdio**:
+  il trasporto `createOwnerPrivateNativeCryptoMcpSession` ora accetta
+  un `AbortSignal` trusted, impedisce l'avvio se già cancellato e
+  chiude la sessione MCP/client/worker se il Task viene annullato
+  durante il flusso. L'originale `DelegationEvidenceHandler` passa
+  il proprio segnale al subprocess nativo, senza aprire un trasporto
+  alternativo. I test offline coprono cancellazione prima della
+  richiesta Rust e cancellazione dopo che il socket ha visto una
+  richiesta, con VP mai resa al chiamante, una sola richiesta e zero
+  fallback HTTP. **Nota fail-closed:** annullare una richiesta dopo
+  l'invio non è una prova che Rust non abbia già completato l'operazione:
+  il journal/Task non può riutilizzare o ritentare l'effetto ambiguo.
+  Test aggiunti al Fast CI, nessuna suite nativa a pagamento.
+  Il nuovo commit non ha ancora esito Fast CI/E2E verificato.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
