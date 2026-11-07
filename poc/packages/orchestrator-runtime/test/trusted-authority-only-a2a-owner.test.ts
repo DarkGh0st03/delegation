@@ -348,7 +348,7 @@ for(const mode of ["two-updates","foreign-read-with-update",
   } as never);
   const action=request();
   await assert.rejects(f.owner.dispatchIssuedTask(action),
-   /cannot combine unrelated read\/write\/Runner grants|Test run cannot escape approved branch/u);
+   /cannot combine unrelated read\/write\/Runner grants|Task needs one native read, mutation or Runner effect|Test run cannot escape approved branch/u);
   assert.deepEqual(f.calls,[],
    "never bind remote private port or send the signed credential");
  });
