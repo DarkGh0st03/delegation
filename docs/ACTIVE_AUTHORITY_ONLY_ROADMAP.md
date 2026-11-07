@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R379.2)
+## Piano attivo — aggiornato al 7 novembre 2026 (R380.0)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -77,6 +77,31 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   delle *definizioni*; la generalizzazione della visibilità FunctionTools,
   la discovery di ruoli configurabili e il Planning gerarchico sono ancora
   da completare.
+- **R380.0**: modalità **esplicita, originata dal trusted Engineer host**
+  `hierarchical_preliminary_read:true` nello snapshot immutabile. La Root
+  preliminare su `main` contiene solo `read_repository` e due permessi
+  root-directory **distinti** (`list_directory`, `read_file`); sulle feature
+  branch solo i due permessi ricorsivi. Rust `ResourceUri::contains_resource()`
+  e `giteaPermissionCovers()` conservano identità della repository, branch,
+  path component e operazione, senza diritto implicito di scrivere.
+  L'originale `TrustedPlanningGatewayReadPort` richiede ancora i path
+  presenti nello snapshot owner-pinned e verifica la copertura in preflight,
+  senza attribuire ai tool o al modello la possibilità di scegliere uno scope.
+  Il limite di file/directory **nello snapshot** per l'opt-in è 4096 per
+  lista; quello dei **permessi Root** non cresce con il numero di file.
+  L'enumerazione e il limite 128 originali restano la modalità default.
+  [Planner preflight R380.0](https://github.com/DarkGh0st03/delegation/actions/runs/42369299057)
+  PASS con >128 file e controlli negativi su out-of-snapshot, branch e write.
+  **Non** è ancora discovery ricorsiva dinamica di file che non compaiono nello
+  snapshot né una nuova prova Rust/EVM nativa del root subtree.
+- **R380.1 ancora aperto**: il Gateway possiede
+  `prepareReadCompositeAuthorization` e `executeReadCompositeAuthorization`
+  con un'unica VP multipermission e verifiche OPA prima del primo provider IO,
+  ma il `GatewayRuntime` con authority-only admissions rifiuta ancora
+  la route composite. Non sostituire questa prova con un loop di letture
+  singole chiamato "batch"; progettare e testare un'eccezione trusted
+  Planning-only che conservi il pin della Root preliminare e la separazione
+  da Task operativi, oppure mantenere il rifiuto finché non sia possibile.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
