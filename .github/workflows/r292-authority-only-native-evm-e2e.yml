@@ -21,6 +21,7 @@ jobs:
       ENGINEER_CORE_NATIVE_MODE: "1"
       R233_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
+      R3812_NATIVE_MCP_STDIO: "1"
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: r233-engineer-local
       ADAPTER_CALLER_GATEWAY: r233-gateway-local
@@ -58,6 +59,7 @@ jobs:
       - name: Install pinned DID/PoC dependencies; create disposable local env
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix poc/mcp-shared ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
       - name: Boot only disposable Anvil and OPA (no Adapter or Gateway HTTP service)
@@ -100,6 +102,17 @@ jobs:
           echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      - name: Restore cached Rust build outputs (never private runtime data)
+        id: rust-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Build Engineer direct owner + independent public-only Gateway native addons
         run: |
           cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
@@ -109,6 +122,17 @@ jobs:
           cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
           echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/r233-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
+      - name: Save compiled Rust cache independently of EVM assertion
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Assert legacy Adapter executable refuses duplicate issuer in direct mode
         run: |
           # This command must reject BEFORE EVM signing keys or an HTTP server
@@ -126,10 +150,34 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/native-evm-adapter.pid
-      - name: R292 authority-only real Rust Child -> native EVM VP -> OPA -> terminal deny
+      - name: R381.2 original Child -> MCP stdio -> native Rust VP/EVM/OPA deny (No AI)
         run: |
+          set -o pipefail
           node --check poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs
-          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs
+          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs |
+            tee "$RUNNER_TEMP/r3812-native-result.jsonl"
+          node -e '
+          const fs=require("node:fs"),assert=require("node:assert/strict");
+          const rows=fs.readFileSync(process.argv[1],"utf8").split(/\r?\n/).filter(Boolean);
+          const evidence=rows.map(x=>{try{return JSON.parse(x);}catch{return null;}})
+            .filter(x=>x?.event==="r292_authority_only_native_evm_staged");
+          assert.equal(evidence.length,1,"one original Rust/EVM/OPA proof");
+          const e=evidence[0];
+          for(const key of ["native_engineer_roots","native_child_ipc",
+            "native_signed_vp","independent_rust_evm_status",
+            "native_verified_root_provenance","real_opa_allow",
+            "unbound_child_denied","revoked_root_denied",
+            "r3812_native_stdio_mcp_child_and_vp","child_original_root_pinned",
+            "native_root_revoked"])assert.equal(e[key],true,key);
+          assert.equal(e.presentation_broker_count,3);
+          assert.equal(e.native_presentation_count,3);
+          assert.equal(e.provider_calls,0);
+          assert.equal(e.gateway_execution_authorized,false);
+          assert.equal(e.paid_model_calls,0);
+          console.log(JSON.stringify({event:"r3812_native_child_vp_stdio_verified",
+            status:"pass",mcp_stdio_child:true,mcp_stdio_vp_count:3,
+            native_rust_evm_opa:true,provider_effects:0,paid_model_calls:0}));
+          ' "$RUNNER_TEMP/r3812-native-result.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only
