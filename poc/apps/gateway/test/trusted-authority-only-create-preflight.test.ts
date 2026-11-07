@@ -646,8 +646,9 @@ test("R383.7 Gateway native wrapper dispatches CREATE to MAC-verified CAS, never
 for(const mode of ["rust-deny","opa-deny"] as const){
  test("R383.7 "+mode+" stops before any create provider attempt",async t=>{
   const f=await nativeGatewayCreate(t,mode);
-  await assert.rejects(f.invoke(),mode==="rust-deny"?
-   /verification_rejected/u:/policy_denied/u);
+  await assert.rejects(f.invoke(),{
+   code:mode==="rust-deny"?"verification_rejected":"policy_denied"
+  });
   assert.equal(f.record.consumed,true);
   assert.equal(f.counters().rustCalls,1);
   assert.equal(f.counters().opaCalls,mode==="rust-deny"?0:1);
