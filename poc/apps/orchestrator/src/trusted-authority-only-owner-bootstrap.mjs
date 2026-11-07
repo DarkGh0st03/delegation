@@ -26,6 +26,8 @@ import {TrustedPlanIpcClient}
  from "../../gateway/src/trusted-plan-ipc.ts";
 import {createTrustedEngineerCredentialPort}
  from "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
+import {preliminaryReadPermissions}
+ from "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 
 const SHA=/^[0-9a-f]{40}$/u;
 const HEX=/^[0-9a-f]+$/u;
@@ -172,6 +174,9 @@ export async function loadProtectedCanonicalOwnerManifest(
  try{data=JSON.parse(await privateText(configPath));}
  catch{deny();}
  assertManifest(data,expectedSourceSha);
+ // Independently validate real Gitea source pins and the read-only Root
+ // permission ceiling BEFORE any Rust issue or paid Planner invocation.
+ try{preliminaryReadPermissions(data.snapshot);}catch{deny();}
  for(const directory of Object.values(data.directories))
   await dirOwned(directory);
  const [backendPublicKeyPem,engineerPublicKeyPem,salt,scrypt]=
