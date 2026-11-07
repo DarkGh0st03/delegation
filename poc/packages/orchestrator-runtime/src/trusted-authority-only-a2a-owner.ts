@@ -37,6 +37,8 @@ import type {
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+import {isProjectTestRepairGrant}
+ from "../../plan-contracts/src/gitea-permission-containment.mjs";
 const ROLES=["backend","frontend","test"] as const;
 function deny(reason:string):never{
  throw Error("Trusted authority-only A2A owner NO-GO: "+reason);
@@ -174,8 +176,11 @@ export class TrustedAuthorityOnlyA2AOwner {
     filePermissions.some(p=>p.operation==="read_file")&&
     filePermissions.some(p=>p.operation==="update_file")&&
     filePermissions[0]?.path===filePermissions[1]?.path;
+  if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&
+     !isProjectTestRepairGrant(row.permissions))
+   deny("Test update requires an exact project test repair grant");
   if(typedMixed&&
-     (role==="test"||input.effectStager.stagedTool!=="read_then_update"||
+     (input.effectStager.stagedTool!=="read_then_update"||
       typeof input.effectStager.attest!=="function"))
    deny("same-file read/update Task requires owner-controlled mixed staging");
   if(!typedMixed&&input.effectStager.stagedTool==="read_then_update")
@@ -230,7 +235,7 @@ export class TrustedAuthorityOnlyA2AOwner {
      task.artifacts[0].parts[0].content.value,role,{
       expectedBranch:branch,
       // A2A Test FAIL is data for D1, not an independent PASS.
-      requireTestPass:false
+      requireTestPass:false,requireTestNotRun:role==="test"&&typedMixed
      }
     );
     // No A2A status/Artifact can unlock the next dependent Task.
@@ -270,7 +275,8 @@ export class TrustedAuthorityOnlyA2AOwner {
    deny("no matching previous A2A report to corroborate independently");
   // R334: Test FAIL is a D1 candidate, not a successful provider effect.
   // Reject before touching the success observer; D1 needs separate proof.
-  if(reported.role==="test"&&reported.artifact.test_outcome!=="pass")
+  if(reported.role==="test"&&!this.#mixedReports.has(runtimeTaskId)&&
+     reported.artifact.test_outcome!=="pass")
    deny("nonpassing Test report needs independently verified D1 failure gate");
   this.#attestAttempted.add(runtimeTaskId); // before any async I/O
   // Gateway does NOT inspect this report; it observes its own durable

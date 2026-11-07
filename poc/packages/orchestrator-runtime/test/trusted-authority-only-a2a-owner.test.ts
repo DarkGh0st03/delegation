@@ -139,15 +139,17 @@ function fixture(patch?:{
    "http://127.0.0.1:8103":"http://127.0.0.1:8101");
   assert.equal(sent.trusted_gateway_task_id,runtimeTaskId);
   assert.equal(sent.subtask.branch,branch);
-  assert.deepEqual(sent.subtask.relevant_paths,isTest?[]:[file]);
   const isMixed=patch?.row?.permissions.length===2&&
    patch.row.permissions.some(p=>p.operation==="read_file");
-  assert.deepEqual(sent.subtask.approved_file_permissions,isTest?[]:
-   isMixed?[{path:file,operation:"read_file"},
-    {path:file,operation:"update_file"}]:[{
-     path:file,operation:"update_file"
+  const runsTests=isTest&&!isMixed;
+  const target=isTest?"tests/backend/account.test.ts":file;
+  assert.deepEqual(sent.subtask.relevant_paths,runsTests?[]:[target]);
+  assert.deepEqual(sent.subtask.approved_file_permissions,runsTests?[]:
+   isMixed?[{path:target,operation:"read_file"},
+    {path:target,operation:"update_file"}]:[{
+     path:target,operation:"update_file"
     }]);
-  assert.equal(sent.subtask.approved_run_tests,isTest);
+  assert.equal(sent.subtask.approved_run_tests,runsTests);
   assert.equal(sent.delegation_evidence.credential_id,id);
   assert.equal(sent.delegation_evidence.presenter_id,patch?.row?.agent_did??did);
   assert.deepEqual(JSON.parse(sent.delegation_evidence.credential),patch?.signed??signed);
@@ -351,3 +353,39 @@ test("R359.6 a signed mixed A2A report cannot bypass native two-effect finalizat
   /requires owner-controlled mixed staging/u);
  assert.deepEqual(wrong.calls,[]);
 });
+
+for(const mode of ["project-test","application-source","acceptance","claims-pass"]){
+ test("R377.3 Test repair scope and independent completion: "+mode,async()=>{
+  const path=mode==="application-source"?file:
+   mode==="acceptance"?"poc/runner/acceptance/account.test.ts":"tests/backend/account.test.ts";
+  const resource=canonicalFileUri(repo,branch,path);
+  const permissions=[{resource,operation:"read_file"},{resource,operation:"update_file"}];
+  const response=goodResponse();
+  response.task.artifacts[0]!.parts[0]!.content.value={
+   ...artifact,role:"test",files_modified:[path],
+   test_outcome:mode==="claims-pass"?"pass":"not_run"
+  };
+  const f=fixture({
+   root:{...root,root_permissions:permissions},
+   row:{...row,agent_id:"test",permissions},
+   child:{...child,agent_id:"test",permissions},
+   receipt:{...receipt,agent_id:"test"},
+   signed:{...signed,credentialSubject:{sub:did,per:permissions}},
+   response
+  } as never);
+  const mixed={...request(),effectStager:{stagedTool:"read_then_update" as const,
+   async stage(){},async attest(){}}};
+  if(mode==="application-source"||mode==="acceptance"){
+   await assert.rejects(f.owner.dispatchIssuedTask(mixed),/exact project test repair grant/u);
+   assert.deepEqual(f.calls,[]);
+  }else if(mode==="claims-pass"){
+   await assert.rejects(f.owner.dispatchIssuedTask(mixed),/must report not_run/u);
+  }else{
+   const report=await f.owner.dispatchIssuedTask(mixed);
+   assert.equal(report.artifact.test_outcome,"not_run");
+   assert.equal(report.provider_completion_attested,false);
+   await f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId);
+   assert.deepEqual(f.calls,["private_bind","a2a_send","gateway_sequential_completion"]);
+  }
+ });
+}

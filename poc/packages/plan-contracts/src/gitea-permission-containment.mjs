@@ -32,6 +32,19 @@ function scope(resource) {
     v.includes("..")||v.includes("%")))return null;
  return {prefix,kind:p[5],path};
 }
+// Native Test repair is scoped to application test sources. Runner-owned
+// acceptance and execution configuration are outside this project scope.
+export function isProjectTestSource(path) {
+ return typeof path==="string"&&
+  /^tests\/(backend|frontend)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.test\.tsx?$/u.test(path);
+}
+export function isProjectTestRepairGrant(permissions) {
+ const read=permissions.find(p=>p.operation==="read_file");
+ const update=permissions.find(p=>p.operation==="update_file");
+ if(permissions.length!==2||!read||read.resource!==update?.resource)return false;
+ const file=scope(read.resource);
+ return file?.kind==="files"&&isProjectTestSource(file.path.join("/"));
+}
 export function giteaPermissionCovers(parent,required) {
  if(!parent||!required||typeof parent!=="object"||
     typeof required!=="object"||

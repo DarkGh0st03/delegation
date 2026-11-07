@@ -118,7 +118,9 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
   async beforeDecision(){events.push('decision');},
   async executeTask(task){
    events.push('dispatch:'+task.task_id);epoch++;
-   if(task.agent_id===failRole&&done.length>=failAfter&&failedAttempts<failCount){
+   const runsTests=task.permissions.some(g=>g.operation==='run_tests');
+   if(task.agent_id===failRole&&(failRole!=='test'||runsTests)&&
+      done.length>=failAfter&&failedAttempts<failCount){
     failedAttempts++;
     events.push('original-runner-fail');
     if(task.agent_id!=='test'||throwTest)
@@ -126,7 +128,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
     return {status:'owner_verified_native_test_failure_preflight_only'};
    }
    if(task.permissions.some(g=>g.operation==='update_file'))head='b'.repeat(40);
-   done.push({...task,tested:task.agent_id==='test'?head:undefined});
+   done.push({...task,tested:runsTests?head:undefined});
    events.push('gateway_attested:'+task.task_id);
   },
   async observeVerifiedTestFailure({task,context}){
@@ -147,7 +149,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
    return original;
   },
   async confirmReady(){events.push('independent_latest_runner_pass');
-   const test=done.filter(p=>p.agent_id==='test').at(-1);
+   const test=done.filter(p=>p.tested!==undefined).at(-1);
    if(!test||test.tested!==head)throw Error('no verified current Test');
    return {status:'owner_verified_tested_head_not_pr_authorized',
     task_id:test.task_id,runtime_task_id:'dispatch_'+'P'.repeat(22),
@@ -528,4 +530,25 @@ test('R375 original adaptive owner rejects unbounded 17th decision',async()=>{
  }),/invalid original owner loop configuration/u);
  assert.equal(model.calls,0);
  assert.equal(f.verified.length,0);
+});
+
+test('R377.3 verified FAIL can select a separate signed Test repair and then retest',async()=>{
+ const f=verifiedFailureFixture();
+ const resource=repo+'/branches/feature%2Faccount-suspension/files/tests/backend/account.test.ts';
+ const permissions=['read_file','update_file'].map(operation=>({resource,operation}));
+ const read=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await read();
+  ctx.rootPermissions.push(...permissions);
+  ctx.agents.test.capabilities.push('read_file','update_file');
+  return ctx;
+ };
+ const repair=candidate('test',1,permissions);
+ repair.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),repair,candidate('test',2),
+  {action:'ready_for_pr',reason:'The separate retest passed'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+ assert.equal(result.source_test_task_id,'task-2');
+ assert.deepEqual(f.done.map(p=>[p.task_id,p.tested!==undefined]),
+  [['task-1',false],['task-2',true]]);
 });

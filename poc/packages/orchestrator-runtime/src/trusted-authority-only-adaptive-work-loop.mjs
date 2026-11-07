@@ -44,7 +44,8 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     // Re-read AFTER asynchronous receipt verification to fence a HEAD,
     // root, completion-ledger or failure-state race. A model claim or an
     // older Test PASS never creates PR authority.
-    const latestTest=before.previousTasks.filter(p=>p.agent_id==='test').at(-1);
+    const latestTest=before.executionProgress.completed_work
+     .filter(p=>p.agent_id==='test'&&p.operation==='run_tests').at(-1);
     const afterProof=structuredClone(await hooks.readContext());
     signal?.throwIfAborted();
     if(!latestTest||proof.task_id!==latestTest.task_id||

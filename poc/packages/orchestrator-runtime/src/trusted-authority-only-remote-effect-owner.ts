@@ -24,6 +24,8 @@ import type {TrustedOwnerEffectStagingRegistry,
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 type AgentBinder=Awaited<ReturnType<typeof connectTrustedEffectAgentBindingClient>>;
+import {isProjectTestRepairGrant}
+ from "../../plan-contracts/src/gitea-permission-containment.mjs";
 type Role="backend"|"frontend"|"test";
 const ROLES=["backend","frontend","test"] as const;
 function validBinder(b:unknown):b is AgentBinder{
@@ -129,9 +131,11 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   const typedMixed=reads.length===1&&writes.length===1&&
     row.permissions.length===2&&effect.operation==="update_file"&&
     reads[0]?.resource===effect.resource;
+  if(row.agent_id==="test"&&effect.operation==="update_file"&&
+     !isProjectTestRepairGrant(row.permissions))
+   deny("Test update requires an exact project test repair grant");
   if(typedMixed){
-   if(!["backend","frontend"].includes(row.agent_id)||
-      !TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
+   if(!TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
        effectStager,this.#gateway,taskId,runtimeTaskId))
     deny("mixed Task requires original native owner read/update stager");
   }else if(effectStager.stagedTool==="read_then_update"){

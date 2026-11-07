@@ -193,3 +193,24 @@ test("R359.5 mixed A2A cannot reuse a mismatched or enlarged operation grant",()
  assert.throws(()=>reg.selectFor(forged),/differs from trusted owner/u);
  assert.throws(()=>reg.selectFor(context()),/already dispatched/u);
 });
+
+test("R377.3 Test repair binds one project test without Runner authority",()=>{
+ const testPath="tests/frontend/account.test.tsx";
+ const f=pins(),reg=new TrustedEffectStagingTaskRegistry();
+ const binding={...f.binding,role:"test" as const,path:testPath,
+  operation:"read_then_update" as const,
+  effectStager:{stagedTool:"read_then_update" as const,async stage(){},async attest(){}}};
+ assert.throws(()=>reg.bindTask({...binding,path:"poc/runner/acceptance/account.test.ts"}),
+  /exact project test source/u);
+ reg.bindTask(binding);
+ const base=context();
+ const repair:AgentTaskContext={...base,role:"test",subtask:{...base.subtask,
+  relevant_paths:[testPath],approved_run_tests:false,
+  approved_file_permissions:[{path:testPath,operation:"read_file"},
+   {path:testPath,operation:"update_file"}]}};
+ assert.equal(reg.selectFor(repair).stagedTool,"read_then_update");
+ const invalid=new TrustedEffectStagingTaskRegistry();
+ invalid.bindTask(binding);
+ assert.throws(()=>invalid.selectFor({...repair,subtask:{...repair.subtask,approved_run_tests:true}}),
+  /differs from trusted owner/u);
+});

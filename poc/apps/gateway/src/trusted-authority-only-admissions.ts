@@ -1,4 +1,4 @@
-import {giteaPermissionCovers}
+import {giteaPermissionCovers,isProjectTestRepairGrant,isProjectTestSource}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R287 — opt-in, in-process Gateway admission of permission-only Engineer
@@ -923,7 +923,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const reads=permissions?.filter(p=>p.operation==="read_file")??[];
   const writes=permissions?.filter(p=>p.operation==="update_file")??[];
   if(!bound||!child||bound.row.task_id!==taskId||
-     !["backend","frontend"].includes(bound.row.agent_id)||
+     (!["backend","frontend"].includes(bound.row.agent_id)&&
+      !(bound.row.agent_id==="test"&&isProjectTestRepairGrant(bound.row.permissions)))||
      permissions?.length!==2||reads.length!==1||writes.length!==1||
      reads[0]?.resource!==writes[0]?.resource||
      bound.row.root_credential_id!==root.root_credential_id||
@@ -1470,6 +1471,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !this.#rootPermissions!.some(p=>giteaPermissionCovers(p,required)))
    deny("request operation or resource not in exact signed Task grant");
   const typed=this.#sequential.get(bound.row.task_id);
+  if(request.agent_role==="test"&&request.request.tool==="update_file"&&
+     (!typed?.manifest.effect_plan||!isProjectTestSource(request.request.arguments.path)))
+   deny("Test updates require an owner-pinned read/update Task for project test source");
   const readPin=this.#readPins.get(request.task_id);
   const nativeHead=typed?.manifest.effect_plan!==undefined&&
     typed.manifest.runtime_task_id===request.task_id&&

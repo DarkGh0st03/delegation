@@ -1,3 +1,4 @@
+import {isProjectTestSource} from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R320: trusted host-only, per-Task ADK/A2A -> Gateway effect binding.
  *
@@ -73,6 +74,10 @@ export class TrustedEffectStagingTaskRegistry {
   }else if(input.role!=="test"||input.path!==undefined){
    deny("run_tests must be an exact Test Task without file path");
   }
+  if(input.role==="test"&&
+     (input.operation==="update_file"||
+      (input.operation==="read_then_update"&&!isProjectTestSource(input.path))))
+   deny("Test updates require an exact project test source read/update binding");
   if(this.#entries.has(input.runtimeTaskId)||
      [...this.#entries.values()].some(b=>
        b.pins.planTaskId===input.planTaskId||
@@ -111,7 +116,7 @@ export class TrustedEffectStagingTaskRegistry {
      context.delegation_evidence?.presenter_id!==p.presenterId||
      !Array.isArray(hints)||
      (p.operation==="read_then_update"
-       ? p.role==="test"||hints.length!==2||
+       ? hints.length!==2||(p.role==="test"&&sub.approved_run_tests!==false)||
          !hints.some(row=>row?.operation==="read_file"&&row.path===p.path)||
          !hints.some(row=>row?.operation==="update_file"&&row.path===p.path)||
          !Array.isArray(sub.relevant_paths)||
