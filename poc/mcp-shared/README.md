@@ -317,6 +317,33 @@ cover three original roles and the strict startup probe, in Fast CI
 and the R3818 preflight. This fixes an observed startup mismatch, not
 proof that the entire native E2E now passes.
 
+## R3818 PASS / R382.4 canonical-only migration gate
+
+The first complete native original Review Host checkpoint is
+[GitHub Actions #42389020763](https://github.com/DarkGh0st03/delegation/actions/runs/42389020763),
+**SUCCESS** at source SHA `a458b4415d2af6190ac603b8a9da013acd47a33b`.
+The original-run JSONL and independent R381.9 proof gate agree:
+14/14 Child DC issued through private MCP, protected VP counts
+Backend 14 / Frontend 10 / Test 2, Rust/EVM/OPA and disposable
+Gitea/Docker FAIL→PASS, original `main` unchanged, one Draft PR
+independently observed unmerged, zero paid AI calls. There were
+16 registered tasks and 15 completed: the genuinely failing Task is
+not marked complete. The provider edits were scripted, so this is
+**not** proof of autonomous Gemini source repair or user-facing GUI.
+
+R382.4 begins canonical launcher convergence: in an explicitly selected
+`DELEGATION_GATEWAY_ARCHITECTURE=authority-only` process, the
+historical `runApprovedGeminiDag` dispatcher **refuses** Signed DAG
+handoff before reading an approval, invoking GitHub/OIDC or making
+a model call. The original Review Host's canonical operational
+workflow now requires the original branch-first path, live native
+MCP Child issuer and `APPROVED_RUNNER_NATIVE_MCP=1` in that
+profile. Historical tests that intentionally use legacy mode remain
+possible, but there is no fallback from canonical to historical
+execution. The complete real Gemini-to-canonical-host wiring remains
+a separate phase C task requiring new free CI and a fresh final
+same-SHA E2E; never reuse R3818's PASS as proof of those new commits.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
