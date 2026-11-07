@@ -47,7 +47,7 @@ export class TrustedAuthorityOnlyChildIssuer {
  readonly #journal:DurableAuthorityOnlyChildJournal;
  readonly #nowMs:()=>number;
  /** Trusted owner selects once, never accepted from ADK/A2A/HTTP Task. */
- readonly #mcpTransport:"in-process"|"stdio";
+ readonly #mcpTransport:"in-process"|"stdio"|"native-stdio";
  readonly #issued=new Map<string,VerifiedStagedChild>();
  /** Owner-private signed DC, never returned by a Gateway Task receipt. */
  readonly #signedForA2A=new Map<string,IssuedDelegationCredential>();
@@ -61,7 +61,7 @@ export class TrustedAuthorityOnlyChildIssuer {
   journal:DurableAuthorityOnlyChildJournal;
   nowMs?:()=>number;
   /** Opt-in original owner only; no public Task-selected transport. */
-  privateMcpTransport?:"in-process"|"stdio";
+  privateMcpTransport?:"in-process"|"stdio"|"native-stdio";
  }){
   if(!opts||
      !(opts.coordinator instanceof TrustedAuthorityOnlyExecutionCoordinator)||
@@ -70,7 +70,10 @@ export class TrustedAuthorityOnlyChildIssuer {
      typeof opts.nativeCryptoPort.issueChild!=="function"||
      (opts.privateMcpTransport!==undefined&&
       opts.privateMcpTransport!=="in-process"&&
-      opts.privateMcpTransport!=="stdio"))
+      opts.privateMcpTransport!=="stdio"&&
+      opts.privateMcpTransport!=="native-stdio")||
+     (opts.privateMcpTransport==="native-stdio"&&
+      typeof opts.nativeCryptoPort.issueChildViaPrivateMcp!=="function"))
    fail("trusted Coordinator, native Rust issuer and private journal required");
   this.#coordinator=opts.coordinator;
   this.#port=opts.nativeCryptoPort;
@@ -207,10 +210,21 @@ export class TrustedAuthorityOnlyChildIssuer {
    };
    // Both MCP paths reserve before the original native Rust call; a
    // failed stdio broker is NOT retried via the in-process implementation.
-   const mcpSession=this.#mcpTransport==="stdio"
-     ?createOwnerPrivateInterprocessMcpSession("child_issue",privateEffect)
-     :createOwnerPrivateChildMcpSession(privateEffect);
-   const signed=await mcpSession.invokeOnce();
+   // native-stdio causes the private MCP PROCESS to invoke the same Rust
+   // socket. The trusted owner still rechecks the root immediately before
+   // dispatch; it never retries an ambiguous signing request.
+   const signed=this.#mcpTransport==="native-stdio"
+     ?await (async()=>{
+       const current=this.#coordinator.assertTrustedGatewayAuthorityBinding();
+       if(current.root_credential_id!==root.root_credential_id||
+          current.authority_digest!==root.authority_digest||
+          current.session_id!==root.session_id||this.#nowMs()>=end)
+        fail("Engineer root changed after Child reservation");
+       return this.#port.issueChildViaPrivateMcp!(request);
+      })()
+     :await (this.#mcpTransport==="stdio"
+       ?createOwnerPrivateInterprocessMcpSession("child_issue",privateEffect)
+       :createOwnerPrivateChildMcpSession(privateEffect)).invokeOnce();
    // A successful Rust IPC response is NOT yet an EVM/status verification.
    if(!signed||signed.id!==request.credential_id||
       signed.credentialSubject?.sub!==task.agent_did||
