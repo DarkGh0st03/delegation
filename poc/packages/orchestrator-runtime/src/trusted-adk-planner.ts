@@ -22,6 +22,8 @@ import {createSpecializedAgentCard}
   from "../../agent-runtime/src/cards.ts";
 import {preliminaryReadPermissions,trustedPlanningSourceBranch,
  type TrustedPlanningSnapshot} from "./trusted-engineer-authority.ts";
+import {TrustedPlanningDiscoveryLedger}
+  from "./trusted-planning-discovery-ledger.ts";
 
 type Role="backend"|"frontend"|"test";
 type ReadTool="read_repository"|"list_directory"|"read_file";
@@ -652,7 +654,10 @@ export class TrustedAdkReadOnlyPlanner {
     const model=new BudgetedModel(cfg.model,cfg.maxModelTurns??96,
       cfg.maxModelCallMs??120000,planningDeadline,cfg.onObservation);
     const sourceBranch=trustedPlanningSourceBranch(sp);
+    const discovery=new TrustedPlanningDiscoveryLedger(sp);
     const files=new Set(sp.files),directories=new Set(sp.directories);
+    // Files/dirs observed later are derived exclusively from verified,
+    // revision-pinned Gitea listings, not from model-proposed paths.
     let calls=0,bytes=0,readCount=0,denied=false;
     let cardReadCount=0;
     const read=async(tool:ReadTool,args:Record<string,unknown>)=>{
@@ -703,6 +708,12 @@ export class TrustedAdkReadOnlyPlanner {
               throw Error("unexpected directory entry");
             return {path:e.path,type:e.type};
           });
+          // Check the full listing (including canonical direct-child paths)
+          // before extending the private resource catalog. A partial or
+          // forged listing must never authorize a new model read.
+          discovery.observeListings([{path:args.path as string,entries}]);
+          for(const file of discovery.files())files.add(file);
+          for(const directory of discovery.directories())directories.add(directory);
           verified(args.path as string);
           return {ok:true,revision:result.revision,entries};
         }
@@ -819,18 +830,22 @@ export class TrustedAdkReadOnlyPlanner {
           path:z.string()}).strict(),
         execute:async(args)=>read("list_directory",args)
       }),
-      ...(sp.files.length?[new FunctionTool({
+      ...(sp.files.length||discovery.enabled?[new FunctionTool({
         name:"read_file",
-        description:"Read an explicitly authorized snapshot file at the trusted SHA.",
+        description:discovery.enabled
+          ?"Read an exact file listed by the trusted SHA-pinned directory discovery or already enumerated in the Engineer snapshot. The original Root and Gateway remain authoritative."
+          :"Read an explicitly authorized snapshot file at the trusted SHA.",
         parameters:z.object({branch:z.enum([sourceBranch]),
-          path:z.enum(sp.files as [string,...string[]])}).strict(),
+          path:discovery.enabled?z.string().min(1).max(240):
+            z.enum(sp.files as [string,...string[]])}).strict(),
         execute:async(args)=>read("read_file",args)
       })]:[]),
-      ...(sp.files.length>=2&&cfg.readPort.invokeComposite?[new FunctionTool({
+      ...((sp.files.length>=2||discovery.enabled)&&cfg.readPort.invokeComposite?[new FunctionTool({
         name:"read_files",
-        description:"Read 2-12 different trusted snapshot files in one verified read-only Gateway transaction and multipermission VP. No writes.",
+        description:"Read 2-12 distinct files from the verified Planning catalog with one multipermission Gateway VP; no write permission.",
         parameters:z.object({branch:z.enum([sourceBranch]),
-          paths:z.array(z.enum(sp.files as [string,...string[]])).min(2).max(12)}).strict(),
+          paths:z.array(discovery.enabled?z.string().min(1).max(240):
+            z.enum(sp.files as [string,...string[]])).min(2).max(12)}).strict(),
         execute:async(args)=>readBatch(args.paths,args.branch)
       })]:[])
     ];
@@ -861,8 +876,8 @@ export class TrustedAdkReadOnlyPlanner {
         "Before assigning specialist work, inspect the trusted read_agent_card skill descriptions. Cards describe capabilities, not permissions; never infer a grant or DID from a Card.",
         ...TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,
         ...(cfg.pilotFullDag?TRUSTED_BOUNDED_PILOT_GUIDANCE:[]),
-        "Use existing files from the supplied list for read/update.",
-        "Create files only in the supplied directories; no other operations.",
+        "Use only source files supplied by the trusted owner, or newly observed in a SHA-pinned list_directory result under an explicitly approved discovery subtree.",
+        "Create files only in supplied or verified discovered directories; no other operations.",
         "The first Task creates a branch; every later Task depends on it.",
         "When naming a feature branch in the create_branch or create_pull_request Task title/description, use ONLY the exact work_branch string given in the trusted user input. A different feature branch name in those Tasks makes the plan invalid even if permissions look correct.",
         "Do not return any DIDs, authority claims, URLs, signatures or approvals.",
@@ -879,7 +894,8 @@ export class TrustedAdkReadOnlyPlanner {
       requirement:cfg.requirement,repository:sp.repository,
       base_revision:sp.base_revision,work_branch:cfg.workBranch,
       roles:["backend","frontend","test"],
-      directories:sp.directories,files:sp.files
+      directories:sp.directories,files:sp.files,
+      ...(discovery.enabled?{dynamic_discovery_roots:sp.dynamic_discovery_roots}:{})
     })}]};
     const maxRevisions=cfg.maxProposalRevisions??0;
     let revisions=0;
@@ -937,9 +953,15 @@ export class TrustedAdkReadOnlyPlanner {
         }
         fail("model output was not strict JSON");
       }
+      // This enlarged snapshot is model-inaccessible and only carries paths
+      // independently grounded in this exact SHA's verified Gitea listings.
+      // It does not replace the Engineer's original Root or grant anything.
+      const checkedCfg=discovery.enabled
+        ?{...cfg,snapshot:{...sp,files:discovery.files(),
+          directories:discovery.directories()}}:cfg;
       if(authorityOnly){
         let proposal:UnapprovedAuthorityProposal;
-        try{proposal=compileAuthorityOnlyPlanningProposal(proposed,cfg);}
+        try{proposal=compileAuthorityOnlyPlanningProposal(proposed,checkedCfg);}
         catch(error){
           const rejection={stage:"contract" as const,reason:"invalid_permissions" as const};
           cfg.onObservation?.(Object.freeze({kind:"plan_rejection",...rejection}));
@@ -958,7 +980,7 @@ export class TrustedAdkReadOnlyPlanner {
       let result:UnapprovedPlanProposal;
       let executionValidationStarted=false;
       try{
-        result=compilePlanningProposal(proposed,cfg);
+        result=compilePlanningProposal(proposed,checkedCfg);
         executionValidationStarted=true;
         // No approval exists yet. This is a pure structural cross-check
         // supplied by the trusted host, never the model or a tool response.
