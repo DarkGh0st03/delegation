@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R381.1)
+## Piano attivo — aggiornato al 7 novembre 2026 (R381.2)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,7 +16,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.1: Child issuer stdio opt-in provato offline, native E2E aperto)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.2: Child+VP MCP stdio attestati con Rust/EVM/OPA nativi; processo signer separato ancora aperto)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -203,6 +203,37 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   B e C restano aperte. Prossimo passaggio: test R381.2 nativo
   Rust/EVM di Child con questo opt-in, poi confine privato per VP
   senza seconda autorità né endpoint modello.
+- **R381.2 — vera Chain nativa Child+VP attraverso broker MCP stdio,
+  SUCCESS**: l'E2E esistente R292 è stato esteso senza nuovo workflow,
+  attivato UNA SOLA volta con checkpoint esplicito
+  `.github/ci-checkpoints/r292-native-evm-request.json`. Il
+  `TrustedAuthorityOnlyChildIssuer` originale prende l'opt-in
+  `privateMcpTransport:"stdio"`, dopo journal reserve e firma
+  Engineer della Root; la Child DC viene emessa dal medesimo Rust
+  `CryptoRuntime`. Il Backend attraversa tre ulteriori sessioni
+  MCP stdio *distinte*, monouso, prima di tre VP firmate attraverso
+  il medesimo socket Rust: una VP corretta, una relativa a Child
+  non associata al Task e una predisposta per la prova di revoca.
+  Gateway/Core Rust/EVM verificano DID, provenienza Root, permessi
+  e stato; OPA consente il permesso intrinseco, ma l'esecuzione
+  Gateway senza abilitazione operativa resta negata. Un Child
+  non associato è rifiutato e una VP già pronta viene rifiutata
+  dopo revoca EVM della Root. Zero effetti del provider e zero
+  API AI. [R381.2 native E2E #42378351480](https://github.com/DarkGh0st03/delegation/actions/runs/42378351480)
+  **SUCCESS** su `71eebebd`; [Fast CI #42378351487](https://github.com/DarkGh0st03/delegation/actions/runs/42378351487)
+  **SUCCESS 2/2 sulla stessa SHA**. Eventi strutturati:
+  `r3812_native_child_vp_stdio_verified`, 1 Child broker,
+  3 VP broker, 3 VP native, Root revoked, provider=0, paid=0.
+  **Limite essenziale**: il broker MCP è un servizio interprocesso
+  reale di *attestazione della richiesta*, ma il processo MCP NON
+  contiene il signer Rust. L'effettiva chiamata a Rust segue
+  l'ACK all'interno dell'Owner originale. È la prova di migrazione
+  del **trasporto opzionale** per Child+VP, non del servizio MCP
+  crittografico definitivo né dell'Executor AI. Il launcher
+  canonico continua a usare il default in-process. R381.3 dovrà
+  far transitare la richiesta crittografica e la sua risposta
+  attraverso un server MCP privato realmente autorizzato,
+  senza secondo signer o credenziali nel modello.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
