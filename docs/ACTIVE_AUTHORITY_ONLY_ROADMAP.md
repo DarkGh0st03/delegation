@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R384.3 increment 1)
+## Piano attivo — aggiornato al 7 novembre 2026 (R384.4 root coverage preflight)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,60 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R384.2 native A2A/ADK/MCP → Rust/EVM/OPA → Gitea CREATE CAS + MAC + Task completion PASS SHA `fcfcc676`, run #42417275100 e Fast CI #42417275078. R384.3 increment 1: CREATE inclusa nella selezione adattiva e nel D1 dopo FAIL Runner indipendente, sotto originale grant Engineer; nuovo E2E multi-Task FAIL→D1→retest ancora aperto. Nessun Gemini a pagamento.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R384.3 native Backend→Frontend→Docker FAIL→Backend CREATE D1→Docker FAIL SUCCESS SHA `8edd5afe`, native run #42421634065 + Fast CI #42421634061. Recovery sicuro multi-Task provato, PASS funzionale NON provato. R384.4: audit test-owner-only dei file richiesti dal percorso di riferimento, senza ampliare la Root o avviare Gemini.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.2 E2E composito nativo e Fast CI entrambi SUCCESS su `fcfcc676` (runs #42417275100 / #42417275078). R384.3 nuove regressioni decisione adattiva/D1 in Fast CI su SHA corrente da confermare; validazione recovery multi-Task da eseguire.** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.3 nativo e Fast CI 2/2 SUCCESS sulla stessa SHA `8edd5afe` (runs #42421634065 / #42421634061); sono PASS architetturali con due FAIL di accettazione verificati. R384.4 Fast CI audit permessi funzionali sulla SHA corrente da confermare; resta l'E2E nativo FAIL→PASS.** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R384.4 — Copertura minima della Root per un PASS funzionale (audit offline, NON autorizzante)
+
+**Evidenza di partenza:** R384.3 native E2E
+https://github.com/DarkGh0st03/delegation/actions/runs/42421634065
+e Fast CI
+https://github.com/DarkGh0st03/delegation/actions/runs/42421634061
+sono entrambi SUCCESS sulla SHA `8edd5afec4a25b783f5692397454403fedfa0e5a`.
+Cinque Child Rust/MCP, due CAS UPDATE, una CREATE D1,
+due FAIL Runner autenticati, zero legacy e `main` invariato.
+La seconda failure è attesa: **non esiste ancora un PASS di accettazione
+per quel percorso di recovery**.
+
+`scripts/r3844-functional-recovery-coverage.mjs` è un audit di
+**proprietà del Test Runner e non accessibile al modello**: confronta
+soltanto nel test-owner la baseline Account Suspension con la reference
+già validata, e restituisce SOLO i nomi dei file e le coppie permission
+mancanti; **mai** contenuti di riferimento o credenziali.
+`tests/e2e/account-suspension.spec.ts` è escluso esplicitamente
+perché appartiene ai controlli researcher/Runner e non deve essere
+scritto da un agente. Il controllo richiede per ogni file esistente
+cambiato le coppie `read_file` e `update_file`, e per un nuovo
+file approvato la sola `create_file`, usando la stessa semantica
+conservativa di containment dei contratti Gitea.
+
+La Root concreta dell'E2E R384.3 autorizza solo due file
+Backend/Frontend in UPDATE, più una CREATE su un file distinto:
+**non copre** le altre modifiche richieste dal percorso
+funzionale di riferimento R375. Il recupero non deve
+inferire automaticamente un'estensione di scope dopo il FAIL.
+Una nuova Root Engineer autonoma **e separatamente firmata**,
+come nel test R375, può coprire le altre operazioni,
+ma nessuna prova positiva del solo audit autorizza scritture,
+sostituisce Rust/OPA o attesta un PASS.
+Le regressioni gratuite testano insufficienza della Root R384.3,
+copertura completa della Root reference R375, branch/ruoli errati
+e isolamento dell'accettazione researcher.
+Fast CI sulla SHA definitiva da verificare.
+
+**Passo successivo:** test nativo disposable R384.4 con una **nuova**
+Root Engineer firmata per gli esatti file necessari,
+Task/Child distinti per ogni modifica, recovery dopo
+FAIL autentico, nuovo Runner su HEAD corrente
+con researcher acceptance **PASS**, e infine solo Draft PR
+verificata indipendentemente. Non confondere questo
+scripted reference test con generazione autonoma Gemini:
+il pilot a pagamento richiede consenso esplicito.
 
 ### R384.3 — Incremento 1: CREATE come Task adattivo e candidato D1 (preflight only)
 
