@@ -8,6 +8,9 @@
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import { deriveRequiredPermission } from "./canonical.ts";
+import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
+import {giteaPermissionCovers}
+ from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import { GatewayError, VerificationRejectedError, VerificationUnavailableError } from "./errors.ts";
 import { buildPolicyInput } from "./policy-input.ts";
 import { validatePrepareAuthorizationRequest } from "./validation.ts";
@@ -228,8 +231,18 @@ async function verifyCompositeInternal(
       required_permissions:requirements,
       signed_vp
     });
-    if (!requirements.every((p)=>verified.permissions.some((q)=>samePermission(p,q)))) {
-      // Adapter/Core result inconsistency must not be interpreted as allow.
+    const nativePlanningHierarchy=readExecution&&
+      record.read_execution?.guard==="planning"&&
+      deps.planningRevisions!==undefined&&
+      deps.approvedPlans===undefined&&
+      record.agent_role==="orchestrator"&&
+      deps.verifier instanceof DirectCoreRustVerifier&&
+      deps.verifier.allowsGiteaScopeCoverage;
+    if (!requirements.every((p)=>verified.permissions.some((q)=>
+      samePermission(p,q)||
+      (nativePlanningHierarchy&&giteaPermissionCovers(q,p))))) {
+      // An authenticated ancestor is legal only for this precise original
+      // preliminary read transaction, NEVER generic operational bundles.
       throw new VerificationUnavailableError("Verifier returned an incomplete permission set");
     }
   } catch(error) {
