@@ -47,6 +47,25 @@ export function agentDid(role: SpecializedAgentRole): string {
   return ROLE_CONFIG[role].did;
 }
 
+/**
+ * R382.3: in the original authority-only native Rust profile, the Card
+ * asserts the SAME already-provisioned role DID used by the Rust signer,
+ * not the historical static demonstration DID. This is private host
+ * configuration, not a model/Task-selected identity or authorization grant.
+ */
+export function trustedSignerAgentDid(role: SpecializedAgentRole):string {
+ if(process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only")
+  return agentDid(role);
+ const configured=process.env["ADAPTER_ID_"+role.toUpperCase()];
+ if(typeof configured!=="string"||
+    !/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/u.test(configured)||
+    (process.env.ADAPTER_TRUST_PROFILE==="evm"&&
+     !configured.startsWith("did:ethr:")))
+  throw Error("Trusted native A2A Agent Card signer DID mismatch");
+ return configured;
+}
+
 export function createSpecializedAgentCard(
   role: SpecializedAgentRole,
   baseUrl: string,
@@ -64,16 +83,11 @@ export function createSpecializedAgentCard(
   // actual signing identity, and only in the verified authority-only host.
   // The owner Review Host will independently compare this public assertion
   // with the DID in its immutable trusted registry and signed Child.
-  const configured=process.env["ADAPTER_ID_"+role.toUpperCase()];
   const nativeDid=options.nativeSignerDid;
   if(nativeDid!==undefined&&(
       process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
       process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
-      !/^[a-z0-9]+:[A-Za-z0-9._:%-]+$/u.test(nativeDid.slice(4))||
-      !nativeDid.startsWith("did:")||
-      nativeDid!==configured||
-      (process.env.ADAPTER_TRUST_PROFILE==="evm"&&
-       !nativeDid.startsWith("did:ethr:"))))
+      nativeDid!==trustedSignerAgentDid(role)))
    throw Error("Trusted native A2A Agent Card signer DID mismatch");
   const signerDid=nativeDid??config.did;
   // General role capabilities are the default for all new A2A discovery.
