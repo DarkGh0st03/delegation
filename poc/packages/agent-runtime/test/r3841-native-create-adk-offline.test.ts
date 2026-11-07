@@ -223,8 +223,10 @@ test("R384.1 repeated ADK CREATE attempts cannot consume owner effect twice",asy
  const f=fixture({repeat:true});
  await assert.rejects(f.handler(context()),
   /ADK controlled task failed/u);
- const stages=f.calls.filter(x=>x==="owner_stage");
- assert.equal(stages.length,2);
+ // The A2A signed registry itself rejects the second stage BEFORE
+ // reaching the original owner: only the first private flight exists.
+ assert.equal(f.calls.filter(x=>x==="gateway_prepare").length,2);
+ assert.equal(f.calls.filter(x=>x==="owner_stage").length,1);
  assert.equal(f.calls.filter(x=>x==="gateway_execute").length,1);
  assert.equal(f.nativeMcp.completedCryptoProofs,1);
 });
