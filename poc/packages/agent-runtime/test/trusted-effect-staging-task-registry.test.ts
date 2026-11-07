@@ -246,3 +246,29 @@ test("R383.8 signed CREATE Task requires exact file/role and one owner-private s
   ...binding,effectStager:{async stage(){}}
  }),/one-shot effect port required/u);
 });
+
+test("R383.8 A2A CREATE extra grants, extra paths and Runner claim are not authority",()=>{
+ const f=pins();
+ const binding={...f.binding,operation:"create_file" as const,
+  effectStager:{stagedTool:"create_file" as const,async stage(id:string){
+   f.calls.push(id);return {provider_write_authorized:false};
+  }}};
+ const good:AgentTaskContext={...context(),
+  subtask:{...context().subtask,
+   approved_file_permissions:[{path,operation:"create_file"}]}};
+ const forged=[
+  {...good,subtask:{...good.subtask,approved_file_permissions:[
+   {path,operation:"create_file"}, {path:"apps/backend/extra.ts",operation:"create_file"}]}},
+  {...good,subtask:{...good.subtask,
+   relevant_paths:[path,"apps/backend/extra.ts"]}},
+  {...good,subtask:{...good.subtask,approved_run_tests:true}}
+ ];
+ for(const ctx of forged){
+  const registry=new TrustedEffectStagingTaskRegistry();
+  registry.bindTask(binding);
+  assert.throws(()=>registry.selectFor(ctx as AgentTaskContext),
+   /differs from trusted owner Task/u);
+  assert.throws(()=>registry.selectFor(good),/already dispatched/u);
+ }
+ assert.deepEqual(f.calls,[]);
+});
