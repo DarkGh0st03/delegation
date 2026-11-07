@@ -23,6 +23,8 @@ import {TrustedGatewayGiteaReadEvidencePublisher}
  from "./trusted-authority-only-gitea-publisher.ts";
 import type {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
+import {TrustedAuthorityOnlyGiteaCreateExecutor}
+ from "./trusted-authority-only-create-executor.ts";
 import type {TrustedAuthorityOnlyRunnerExecutor}
  from "./trusted-authority-only-runner-executor.ts";
 import {TrustedAuthorityOnlyPullRequestExecutor}
@@ -66,6 +68,9 @@ export interface GatewayRuntimeDependencies {
   /** Canonical runtime only: owner-prestaged HEAD-CAS, never legacy PUT. */
   authorityOnlyMutationEnabled?: boolean;
   authorityOnlyMutationExecutor?: TrustedAuthorityOnlyGiteaMutationExecutor;
+  /** Explicit owner-only CREATE_FILE HEAD-CAS; absent means deny. */
+  authorityOnlyCreateEnabled?:boolean;
+  authorityOnlyCreateExecutor?:TrustedAuthorityOnlyGiteaCreateExecutor;
   /** Canonical runtime only: owner-prestaged native Docker Test. */
   authorityOnlyRunnerEnabled?: boolean;
   authorityOnlyRunnerExecutor?: TrustedAuthorityOnlyRunnerExecutor;
@@ -123,6 +128,8 @@ export class GatewayRuntime {
   readonly #authorityOnlyReadEnabled:boolean;
   readonly #authorityOnlyReceiptWriter?:TrustedGatewayGiteaReadEvidencePublisher;
   readonly #authorityOnlyMutationExecutor?: TrustedAuthorityOnlyGiteaMutationExecutor;
+  readonly #authorityOnlyCreateExecutor?:TrustedAuthorityOnlyGiteaCreateExecutor;
+  readonly #authorityOnlyCreateEnabled:boolean;
   readonly #authorityOnlyRunnerExecutor?: TrustedAuthorityOnlyRunnerExecutor;
   readonly #authorityOnlyMutationEnabled:boolean;
   readonly #authorityOnlyRunnerEnabled:boolean;
@@ -135,6 +142,7 @@ export class GatewayRuntime {
     const gate=dependencies.authorityOnlyAdmissions;
     const readWriter=dependencies.authorityOnlyReceiptWriter;
     const mutation=dependencies.authorityOnlyMutationExecutor;
+    const create=dependencies.authorityOnlyCreateExecutor;
     const runner=dependencies.authorityOnlyRunnerExecutor;
     const pr=dependencies.authorityOnlyPullRequestExecutor;
     const branch=dependencies.authorityOnlyBranchExecutor;
@@ -144,11 +152,12 @@ export class GatewayRuntime {
       throw Error("Authority-only Gateway requires distinct trusted runtime without legacy gates");
     if((dependencies.authorityOnlyReadEnabled===true)!==Boolean(readWriter)||
        (dependencies.authorityOnlyMutationEnabled===true)!==Boolean(mutation)||
+       (dependencies.authorityOnlyCreateEnabled===true)!==Boolean(create)||
        (dependencies.authorityOnlyRunnerEnabled===true)!==Boolean(runner)||
        (dependencies.authorityOnlyPullRequestEnabled===true)!==Boolean(pr)||
        (dependencies.authorityOnlyBranchEnabled===true)!==Boolean(branch))
       throw Error("Authority-only Gateway effects require matching explicit enablement and owner executor");
-    if((readWriter||mutation||runner||pr||branch)&&!gate)
+    if((readWriter||mutation||create||runner||pr||branch)&&!gate)
       throw Error("Authority-only Gateway effects require enrolled native authority");
     if(gate&&(config.provider_mode!=="gitea"||config.verifier_mode!=="core-rust"))
       throw Error("Authority-only Gateway requires mutable Gitea and explicit independent Core Rust verification");
@@ -166,6 +175,9 @@ export class GatewayRuntime {
       throw Error("Authority-only read publisher differs from enrolled owner");
     if(mutation&&(!mutation.isForAdmissions||!mutation.isForAdmissions(gate!)))
       throw Error("Authority-only Gateway CAS executor differs from enrolled owner");
+    if(create&&(!(create instanceof TrustedAuthorityOnlyGiteaCreateExecutor)||
+       !TrustedAuthorityOnlyGiteaCreateExecutor.prototype.isForAdmissions.call(create,gate!)))
+      throw Error("Authority-only create executor differs from enrolled native owner");
     if(runner&&(!runner.isForAdmissions||!runner.isForAdmissions(gate!)))
       throw Error("Authority-only Gateway Runner executor differs from enrolled owner");
     if(pr&&!TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(pr,gate!))
@@ -184,6 +196,8 @@ export class GatewayRuntime {
     this.#authorityOnlyReceiptWriter=readWriter;
     this.#authorityOnlyMutationEnabled=dependencies.authorityOnlyMutationEnabled===true;
     this.#authorityOnlyMutationExecutor=mutation;
+    this.#authorityOnlyCreateEnabled=dependencies.authorityOnlyCreateEnabled===true;
+    this.#authorityOnlyCreateExecutor=create;
     this.#authorityOnlyRunnerEnabled=dependencies.authorityOnlyRunnerEnabled===true;
     this.#authorityOnlyRunnerExecutor=runner;
     this.#store = dependencies.store ?? new InMemoryRequestStore();
@@ -310,6 +324,10 @@ export class GatewayRuntime {
       ...(this.#authorityOnlyMutationEnabled ? {
         authorityOnlyMutationEnabled:true,
         authorityOnlyMutationExecutor:this.#authorityOnlyMutationExecutor
+      } : {}),
+      ...(this.#authorityOnlyCreateEnabled ? {
+        authorityOnlyCreateEnabled:true,
+        authorityOnlyCreateExecutor:this.#authorityOnlyCreateExecutor
       } : {}),
       ...(this.#authorityOnlyRunnerEnabled ? {
         authorityOnlyRunnerEnabled:true,
