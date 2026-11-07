@@ -661,7 +661,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       model:input.model,maxSteps:input.maxSteps,signal:input.signal,
       hooks:{readContext,
        beforeDecision:async()=>{
-        if(decisionFlight||++decisionCalls>8)deny('adaptive loop exceeds original owner decision budget');
+        if(decisionFlight||++decisionCalls>Math.min(input.maxSteps??8,16))
+         deny('adaptive loop exceeds original owner decision budget');
        },
        runDecision:async decide=>{
         decisionFlight=decide();

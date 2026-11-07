@@ -200,24 +200,30 @@ async function freeRolePort(){
  return value.port;
 }
 class ScriptedNativeDockerTest extends BaseLlm {
- constructor(branch){
-  super({model:"r375-local-adk-docker-test-no-paid-inference"});
+ constructor(branch,readAndRepairStages){
+  super({model:"r375-free-native-tests-and-signed-project-tests"});
   this.branch=branch;this.requests=[];
+  this.writer=new ScriptedScopedReferenceWriter(branch,"test",readAndRepairStages);
  }
  async *generateContentAsync(req){
   this.requests.push(req);
-  if(this.requests.length===1||this.requests.length===3){
+  const turn=this.requests.length;
+  // Genuine initial Test FAIL. Three baseline project tests now assert
+  // positive lifecycle behavior; latest Docker Test is called only afterward.
+  if(turn===1||turn===12){
    yield {content:{role:"model",parts:[{functionCall:{
-    id:"r375-docker-test",name:"run_tests",
+    id:"r375-docker-"+turn,name:"run_tests",
     args:{branch:this.branch,profile:"poc-default"}
    }}]}};
-  }else if(this.requests.length===2||this.requests.length===4){
+  }else if(turn===2||turn===13){
    yield {content:{role:"model",parts:[{
-    text:"Completed one native Test against owner-pinned Gitea HEAD"
+    text:"Authenticated original native Docker result received by Test Agent"
    }]}};
-  }else throw Error("R375 Docker Test model generated extra tool turns");
+  }else if(turn>=3&&turn<=11){
+   yield* this.writer.generateContentAsync(req);
+  }else throw Error("R375 Test exceeded signed read/CAS and Runner call budget");
  }
- connect(){return Promise.reject(Error("Paid model connections prohibited"));}
+ connect(){throw Error("Paid AI calls forbidden in R375");}
 }
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
@@ -264,13 +270,18 @@ const backendFiles=[backendPath,
 const frontendFiles=[mutationPath,
  "apps/frontend/src/pages/UserDetailPage.tsx",
  "apps/frontend/src/styles.css"];
+const testFiles=[
+ "tests/backend/user.service.test.ts",
+ "tests/backend/user.routes.test.ts",
+ "tests/frontend/UserDetailPage.test.tsx"
+];
 const backendOldContent=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[backendPath];
 const oldContent=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[mutationPath];
 const backendNewContent=backendOldContent+
  "\n// R375 scripted incomplete Backend D0: acceptance must FAIL before full repair\n";
 const newContent=oldContent+
  "\n// R375 scripted incomplete Frontend D0: acceptance must FAIL before full repair\n";
-for(const file of [sharedPath,...backendFiles,...frontendFiles]){
+for(const file of [sharedPath,...backendFiles,...frontendFiles,...testFiles]){
  assert.ok(typeof ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file]==="string",
   "R375 real protected-main file absent: "+file);
  assert.ok(typeof ACCOUNT_SUSPENSION_REFERENCE_FILES[file]==="string",
@@ -293,7 +304,7 @@ const pair=(file,operation)=>({
  resource:resourcePrefix+"/files/"+file,operation
 });
 const permissionsFor=file=>[pair(file,"read_file"),pair(file,"update_file")];
-const approvedFiles=[sharedPath,...backendFiles,...frontendFiles];
+const approvedFiles=[sharedPath,...backendFiles,...frontendFiles,...testFiles];
 const backendPermissions=permissionsFor(backendPath);
 const taskPermissions=permissionsFor(mutationPath);
 const sharedPermissions=permissionsFor(sharedPath);
@@ -304,7 +315,7 @@ const grantPermissions=[
  branchPermission,prPermission,testPermission,
  ...[...approvedFiles].sort().flatMap(permissionsFor)
 ];
-assert.equal(grantPermissions.length,17);
+assert.equal(grantPermissions.length,23);
 const nowMs=()=>Date.now();
 const start=new Date();
 const issuedAt=start.toISOString().replace(/\.\d{3}Z$/u,"Z");
@@ -352,8 +363,9 @@ try{
    base_revision:baseRevision,
    directories:["","apps","apps/backend","apps/backend/src","apps/backend/src/users",
     "apps/frontend","apps/frontend/src","apps/frontend/src/api",
-    "apps/frontend/src/pages","packages","packages/shared","packages/shared/src"],
-   files:[sharedPath,...backendFiles,...frontendFiles]};
+    "apps/frontend/src/pages","packages","packages/shared","packages/shared/src",
+    "tests","tests/backend","tests/frontend"],
+   files:[sharedPath,...backendFiles,...frontendFiles,...testFiles]};
   const status=index=>({type:"BitstringStatusListEntry",
    statusPurpose:"revocation",statusListIndex:String(index),
    statusListCredential:"https://status.example/r375"});
@@ -476,7 +488,7 @@ try{
     frontend:{did:frontendDid,card_ref:"trusted:r375-frontend",
      capabilities:["read_file","update_file"]},
     test:{did:testDid,card_ref:"trusted:r375-test",
-     capabilities:["run_tests"]},
+     capabilities:["read_file","update_file","run_tests"]},
     orchestrator:{did:process.env.ADAPTER_ID_ORCHESTRATOR,
      card_ref:"trusted:r375-orchestrator",
      capabilities:["create_branch","create_pull_request"]}
@@ -546,10 +558,11 @@ try{
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
  const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
   file,task_id:"r375-functional-file-"+(index+1),
-  agent_id:file.startsWith("apps/frontend/")?"frontend":"backend",
+  agent_id:file.startsWith("tests/")?"test":
+    file.startsWith("apps/frontend/")?"frontend":"backend",
   permissions:permissionsFor(file)
  }));
- assert.equal(sourceTasks.length,7);
+ assert.equal(sourceTasks.length,10);
  const retestTaskId="r375-functional-retest";
  const requirementSha=createHash("sha256").update(requirement).digest("hex");
  assert.ok(socketPath.startsWith("/"));
@@ -711,7 +724,10 @@ try{
    {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
    ...frontendReferenceFiles.map(file=>({files:[file]}))
   ]),
-  test:new ScriptedNativeDockerTest(branch)
+  test:new ScriptedNativeDockerTest(branch,testFiles.map(file=>({
+   files:[{path:file,previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
+    replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]}]
+  })))
  };
  // R375.7 diagnostic: observe internal phase ACKs without changing the
  // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
@@ -911,14 +927,14 @@ const tool=record?.request?.tool,role=record?.agent_role;
    async *generateContentAsync(req){
     const n=this.calls++,context=JSON.stringify(req);
     this.requests.push(req);
-    assert.ok(n<12,"native original owner adaptive loop exceeded bounded decisions");
+    assert.ok(n<15,"native original owner adaptive loop exceeded bounded decisions");
     if(n===0)assert.match(context,/r375-original-root-branch/u);
     if(n===1||n===2)
      assert.ok(context.includes(firstChoices[n-1].task.task_id),
       "ADK next Task requires previous original independent completion");
     let choice;
     if(n<3)choice=firstChoices[n];
-    else if(n>=3&&n<=9){
+    else if(n>=3&&n<=12){
      const j=n-3,entry=sourceTasks[j];
      if(j===0){
       assert.match(context,/independent_runner_failure/u);
@@ -943,7 +959,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
       instruction:"Read real Gitea "+entry.file+
        " then submit one authorized full-file CAS for Account Suspension"
      }};
-    }else if(n===10){
+    }else if(n===13){
      assert.ok(context.includes(sourceTasks.at(-1).task_id));
      assert.match(context,/independent_runner_failure/u);
      choice={action:"delegate",task:{
@@ -1061,7 +1077,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    },
    sdk:{stageChannels,agentBindingChannels,agentBaseUrls:urls,
     a2aPolling:{deadlineMs:960000,initialIntervalMs:40,maxIntervalMs:1000}},
-   adaptive:{model:controller,maxSteps:12,
+   adaptive:{model:controller,maxSteps:15,
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
      if(epoch===2&&agent_id==="backend")
@@ -1070,15 +1086,15 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r375:child:frontend-d0",29154,600);
      if(epoch===4&&agent_id==="test")
       return freshChildParams("urn:r375:child:test-failed",29155,1200);
-     if(epoch>=5&&epoch<=11){
+     if(epoch>=5&&epoch<=14){
       const entry=sourceTasks[epoch-5];
       if(!entry||entry.agent_id!==agent_id)
        throw Error("R375 signed repair epoch/agent differs from original proposal");
       return freshChildParams("urn:r375:child:functional-"+(epoch-4),
        29156+(epoch-5),900);
      }
-     if(epoch===12&&agent_id==="test")
-      return freshChildParams("urn:r375:child:retest-pass",29163,1200);
+     if(epoch===15&&agent_id==="test")
+      return freshChildParams("urn:r375:child:retest-pass",29166,1200);
      throw Error("Original Host rejected unexpected model-selected Child");
     }},
    draftPullRequest:{
@@ -1131,21 +1147,21 @@ const tool=record?.request?.tool,role=record?.agent_role;
   const report=workflow.adaptive;
   assert.equal(report.status,"owner_adaptive_work_ready_for_pr");
   assert.equal(report.pr_created,false);
-  assert.equal(report.executed_tasks,10);
+  assert.equal(report.executed_tasks,13);
   assert.equal(report.source_test_task_id,retestTaskId);
   assert.match(report.source_test_runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
   assert.equal(branchModel.calls,1);
   assert.equal(branchPostAttempts,1);
   assert.equal(privateBranchExecuteCalls,1);
-  assert.equal(controller.calls,12);
+  assert.equal(controller.calls,15);
   assert.equal(controller.verifiedFailBeforeRepair,true);
-  assert.equal(childMetadataCount,11);
-  assert.equal(issuedChildren,11,"original root PR must never create an agent Child");
-  assert.equal(coordinator.registeredTaskCount,13);
-  assert.equal(gate.stagedCompletedTaskCount,12,
+  assert.equal(childMetadataCount,14);
+  assert.equal(issuedChildren,14,"original root PR must never create an agent Child");
+  assert.equal(coordinator.registeredTaskCount,16);
+  assert.equal(gate.stagedCompletedTaskCount,14,
    "original failed Test remains incomplete despite successful later retest and PR");
-  assert.equal(gatewayCasWrites,9);
-  assert.equal(privateCasStagingBranchPosts,9);
+  assert.equal(gatewayCasWrites,12);
+  assert.equal(privateCasStagingBranchPosts,12);
   assert.equal(runnerCalls,2);
   assert.equal((await readdir(path("runner-fail-receipts")))
    .filter(name=>name.endsWith(".runner-fail.json")).length,1);
@@ -1155,7 +1171,8 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(models.frontend.stageIndex,4);
   assert.equal(models.backend.requests.length,15);
   assert.equal(models.frontend.requests.length,12);
-  assert.equal(models.test.requests.length,4);
+  assert.equal(models.test.requests.length,13);
+  assert.equal(models.test.writer.stageIndex,3);
   assert.equal(legacyWriteCalls,0);
   const latest=(await independentClient.getBranchMetadata(branch)).commit_sha;
   assert.equal(latest,report.tested_commit_sha);
@@ -1166,7 +1183,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   // Production source is NOT planted into disposable main by test owner.
   // All seven changed files are present exclusively at the latest branch HEAD
   // after independent original Gateway CAS of model-visible source bytes.
-  for(const file of [sharedPath,...backendFiles,...frontendFiles]){
+  for(const file of [sharedPath,...backendFiles,...frontendFiles,...testFiles]){
    const final=await independentClient.readTextFile(branch,file,latest);
    const main=await independentClient.readTextFile("main",file,disposableMainHead);
    assert.equal(final.content,ACCOUNT_SUSPENSION_REFERENCE_FILES[file],
@@ -1179,7 +1196,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(draftPrCreateAttempts,1);
   assert.equal(workflow.source_test_task_id,retestTaskId);
   assert.equal(workflow.pull_request_task_id,"r375-gitea-draft-pr");
-  assert.equal(workflow.completed_work_tasks,10);
+  assert.equal(workflow.completed_work_tasks,13);
   assert.match(privatePrFlight?.request?.task_id??"",/^dispatch_[A-Za-z0-9_-]{22}$/u);
   assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
    workflow.pull_request_task_id,coordinator));
@@ -1216,7 +1233,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    first_docker_status:"fail",first_failure_independent:true,
    recovery_source_code_authored_by_scripted_fixture:true,
    source_code_generated_autonomously_by_model:false,
-   functional_source_files_updated:7,
+   functional_source_files_updated:7,updated_project_test_files:3,
    cas_writes:gatewayCasWrites,
    second_docker_status:"pass",researcher_acceptance_pass:true,
    authenticated_runner_fail_receipts:1,authenticated_runner_pass_receipts:1,

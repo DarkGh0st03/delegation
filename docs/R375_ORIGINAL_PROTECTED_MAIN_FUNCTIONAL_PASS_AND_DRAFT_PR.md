@@ -77,3 +77,52 @@ Native [#42350354622](https://github.com/DarkGh0st03/delegation/actions/runs/423
 ## R375.3 — canonical Engineer permission order
 
 Native [#42350793761](https://github.com/DarkGh0st03/delegation/actions/runs/42350793761) completed read-only Planning, then stopped at the test harness's `assert.deepEqual(liveRoot.root_permissions,grantPermissions)`. The original Engineer root normalization canonically sorts file URI paths; the scripted fixture instead compared to its own intended source-change Task order (shared first). R375.3 sorts the **unchanged exact same 17 permission pairs** before signing/expectation, keeping operational Task ordering separate from immutable authority. All original verifier/Coordinator constraints are unchanged. No functional native Docker PASS claim until next validation.
+
+## R375.4 — retain owner decision ceiling; fix project tests, never bypass acceptance
+
+R375.3 [native run #42351158220](https://github.com/DarkGh0st03/delegation/actions/runs/42351158220)
+succeeded in creating the original branch, obtaining two authentic read/CAS
+writes, executing real Docker with `project_status=pass` and
+`acceptance_status=fail`, independently admitting the authenticated FAIL,
+and applying four subsequent individual source repairs. It then failed
+**closed** on the original Review Host's still-hardcoded eight-decision
+limit. The generic launcher and adaptive loop had already been raised
+to 16, but this independent in-host check had not been updated.
+
+The Review Host now checks **the exact configured maxSteps, capped at
+16** (and defaults to eight when unset). This changes no Engineer
+signature, native Rust verification, OPA, Gateway completion criteria or
+one-shot read/CAS semantics.
+
+A further correctness gap was found proactively: the unresolved protected
+`main` includes three *baseline unit tests* that specifically assert
+account suspension is absent. Functional Account Suspension can never
+make these outdated assertions PASS. R375.4 extends the original Engineer
+permission-only grant from 17 to **23 exact signed pairs** to cover three
+existing test files. The real **Test** specialist itself reads and
+independently CAS-updates these tests to the existing stronger positive
+reference tests that exercise profile invariance, suspend/reactivate,
+duplicate transition rejection and user-interface behavior. These are
+not deleted, skipped, stubbed, or replaced with permissive no-op tests.
+
+The **disposable Gitea main remains unresolved and untouched**; the
+unmodified independent researcher acceptance lives outside the source
+checkout. All ten authorized file changes (seven application source
+files and three project test files) must be independently present on
+the same final feature-branch HEAD.
+
+The 15 bounded model decisions are D0 Backend, D0 Frontend, genuine
+Docker FAIL, ten separate signed read/CAS source-or-test Tasks, genuine
+Docker retest, and readiness. One root Branch Task and one root
+permission-only PR Task remain separate. Expected native accounting:
+16 Task registrations, 14 independent Gateway completions (failed Test
+excluded), 14 native Rust Child credentials, 12 CAS writes,
+two authentic Docker executions (one FAIL, one PASS), one private
+authenticated FAIL and one private authenticated PASS receipt,
+and only then a one-shot original-root Draft PR.
+
+**Limitations**: all coding and Task choice models remain deterministic,
+offline and free. The source and test content are pre-existing audited
+functional reference fixtures, not Gemini-generated patches. Success
+remains unproven until the R375 native and Fast CI both complete SUCCESS
+on an identical commit. No real paid AI calls or merge are authorized.

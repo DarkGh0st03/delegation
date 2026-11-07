@@ -298,19 +298,19 @@ test('R355 retirement failure is reported as unconfirmed',async()=>{
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),/retirement unconfirmed/);
 });
 
-test('R375 owner can complete 12 separately verified decisions without widening any Task',async()=>{
+test('R375 owner can complete 15 separately verified decisions without widening any Task',async()=>{
  const f=fixture();
  const sequence=[
-  ...Array.from({length:10},(_,i)=>candidate('backend',i)),
-  candidate('test',10),
+  ...Array.from({length:13},(_,i)=>candidate('backend',i)),
+  candidate('test',13),
   {action:'ready_for_pr',reason:'The latest real Test proof is independent'}
  ];
  const model=new Decisions(sequence);
- const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:12});
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:15});
  assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
- assert.equal(result.executed_tasks,11);
- assert.equal(model.calls,12);
- assert.equal(f.verified.length,11);
+ assert.equal(result.executed_tasks,14);
+ assert.equal(model.calls,15);
+ assert.equal(f.verified.length,14);
  assert.equal(f.retired,false);
  assert.equal(result.pr_created,false);
 });

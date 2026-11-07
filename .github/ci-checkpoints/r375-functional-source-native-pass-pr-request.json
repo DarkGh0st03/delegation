@@ -1,10 +1,35 @@
 {
-  "checkpoint": "R375.3",
-  "previous_sha": "f11186627b44628930bc10113dd686c55aac1eca",
-  "preceding_native_run": 42350793761,
-  "issue": "Original read-only Planning successfully grounded 17 exact capability pairs. Native Engineered grant correctly canonicalizes file pair order lexicographically. Fixture's post-approval equality test expected a model-specific sequence (shared file first) and failed before any operational issuance.",
-  "fix": "Construct approved root grantPermissions in canonical file-path order before signed review. Model-selected sequential Task order remains independent of Engineer permission ceiling. No mutation to Rust/OPA/host or approved permission pairs.",
-  "expected": "One original root from protected main, genuine D0 Docker FAIL, 7 separately signed read-CAS updates, retest Docker PASS, independent Gitea Draft PR GET",
-  "status": "pending native CI",
-  "paid_calls": 0
+  "checkpoint": "R375.4",
+  "predecessor": {
+    "sha": "22d0b697331631d3d417334781d4e540e9d6d96e",
+    "native_run": 42351158220,
+    "native_result": "FAIL after authentic initial Docker acceptance FAIL and four independently attested repair CAS writes",
+    "fast_ci": 42351158228,
+    "fast_result": "SUCCESS"
+  },
+  "changes": {
+    "original_host_budget": "Review Host independent pre-decision guard now bounds explicit owner maxSteps <=16; omitted value still 8",
+    "engineer_grant": "Exactly 23 canonical permission pairs, no incremental signed-root enlargement",
+    "specialists": "Test Agent gets only explicit signed read_file and update_file for three existing project test files plus run_tests; every write is one read + one separately attested CAS",
+    "project_tests": "Update obsolete baseline negative assertions to existing stronger positive lifecycle tests by real Test specialist, not by harness pre-seeding",
+    "model_budget": "15 bounded decisions, all offline scripted; no new DAG or paid inference"
+  },
+  "expected": {
+    "initial_branch_absent": true,
+    "original_main_immutable": true,
+    "native_registered_tasks": 16,
+    "gateway_completed_tasks": 14,
+    "native_child_credentials": 14,
+    "native_file_cas": 12,
+    "docker_calls": 2,
+    "runner_fail_receipts": 1,
+    "runner_pass_receipts": 1,
+    "project_tests": "pass",
+    "researcher_acceptance": "pass",
+    "original_root_pr_posts": 1,
+    "independent_pr_get": true,
+    "paid_model_calls": 0
+  },
+  "safety": "Do not allow PR on a failed/stale Test, do not skip or fake tests, do not touch GitHub PR #38 or main. Scripted source is not autonomous coding.",
+  "status": "native and Fast CI pending"
 }
