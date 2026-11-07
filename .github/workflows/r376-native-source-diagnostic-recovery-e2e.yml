@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   direct-rust-live-evm:
-    name: "Original Host -> signed source READ -> authentic FAIL -> recovery -> PASS -> Draft PR"
+    name: "Original Host -> signed source READ -> authentic FAIL -> signed Test repair -> PASS -> Draft PR"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
@@ -164,7 +164,7 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/native-evm-adapter.pid
-      - name: R376 authenticated source diagnostic -> bounded adaptive recovery -> Draft PR
+      - name: Authenticated source read, Test repair, Docker retest and Draft PR
         run: |
           set -a
           source poc/infra/runtime/gateway.env

@@ -1,23 +1,7 @@
 {
-  "checkpoint": "R376.5",
-  "source_sha": "1de4ac8e5280efbde7c26f644be660f3515c5069",
-  "previous_native_run": {
-    "id": 42357707166,
-    "conclusion": "FAIL",
-    "first_docker_acceptance": "FAIL_AUTHENTIC",
-    "read_tool": "tool_unavailable",
-    "safe_stop": true
-  },
-  "root_cause": "single-effect read-only Gateway Prepare had no owner-pinned Gitea revision; read-only stager refused before executing authorized provider read",
-  "security_preserving_fix": "new original-owner only Gateway read pin for exact signed Backend/Frontend read Task/Child/HEAD before Prepare, checked at staged flight and source evidence. Historical read-only preflight behavior unchanged; R376 source projection requires matching pin",
-  "CI": {
-    "fast_run": 42358622803,
-    "status": "SUCCESS"
-  },
-  "expected": "signed single-file source read -> authenticated provider receipt -> independent MAC/HEAD/bytes -> next ADK model turn -> original source CAS corrections -> Docker project/acceptance PASS -> signed Draft PR",
-  "paid_inference_calls": 0,
+  "checkpoint": "R377.6",
+  "expected": "native signed source read before first write, authenticated Docker FAIL, separate signed Test Agent read/CAS on a project test, fresh Docker and researcher acceptance PASS, independently verified Draft PR",
   "models": "scripted deterministic",
-  "github_main_unchanged": true,
-  "github_pr38": "draft_unmerged",
+  "paid_inference_calls": 0,
   "status": "PENDING_NATIVE_E2E"
 }

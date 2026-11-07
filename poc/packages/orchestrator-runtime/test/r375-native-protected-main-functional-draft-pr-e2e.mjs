@@ -206,13 +206,18 @@ async function freeRolePort(){
  return value.port;
 }
 class ScriptedNativeDockerTest extends BaseLlm {
- constructor(branch){
-  super({model:"r375-free-native-test-only-no-paid-inference"});
-  this.branch=branch;this.requests=[];
+ constructor(branch,repairWriter){
+  super({model:"r375-free-native-test-no-paid-inference"});
+  this.branch=branch;this.requests=[];this.repairWriter=repairWriter;
  }
  async *generateContentAsync(req){
   this.requests.push(req);
-  const turn=this.requests.length;
+  const requestIndex=this.requests.length;
+  if(this.repairWriter&&requestIndex>=3&&requestIndex<=5){
+   yield* this.repairWriter.generateContentAsync(req);
+   return;
+  }
+  const turn=requestIndex-(this.repairWriter&&requestIndex>5?3:0);
   if(turn===1||turn===3){
    yield {content:{role:"model",parts:[{functionCall:{
     id:"r375-docker-"+turn,name:"run_tests",
@@ -489,7 +494,7 @@ try{
     frontend:{did:frontendDid,card_ref:"trusted:r375-frontend",
      capabilities:["read_file","update_file"]},
     test:{did:testDid,card_ref:"trusted:r375-test",
-     capabilities:["run_tests"]},
+     capabilities:diagnosticMode?["read_file","update_file","run_tests"]:["run_tests"]},
     orchestrator:{did:process.env.ADAPTER_ID_ORCHESTRATOR,
      card_ref:"trusted:r375-orchestrator",
      capabilities:["create_branch","create_pull_request"]}
@@ -566,10 +571,11 @@ try{
  const diagnosticTaskId="r376-authenticated-source-read";
  const diagnosticPermissions=[pair(sharedPath,"read_file")];
  const decisionOffset=diagnosticMode?1:0;
+ const testRepairPath=diagnosticMode?testFiles.at(-1):undefined;
  const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
   file,task_id:"r375-functional-file-"+(index+1),
-  agent_id:file.startsWith("apps/frontend/")||
-    file.startsWith("tests/frontend/")?"frontend":"backend",
+  agent_id:file===testRepairPath?"test":
+   file.startsWith("apps/frontend/")||file.startsWith("tests/frontend/")?"frontend":"backend",
   permissions:permissionsFor(file)
  }));
  assert.equal(sourceTasks.length,10);
@@ -733,6 +739,10 @@ try{
    path:file,previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
    replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
   }));
+ const testRepairWriter=testRepairPath?new ScriptedScopedReferenceWriter(branch,"test",[
+  {files:frontendTestReferenceFiles.filter(file=>file.path===testRepairPath)}
+ ]):undefined;
+ if(testRepairWriter)assert.equal(testRepairWriter.stages[0].files.length,1);
  const models={
   backend:new ScriptedScopedReferenceWriter(branch,"backend",[
    ...(diagnosticMode?[{readOnly:true,files:[{path:sharedPath,
@@ -747,9 +757,9 @@ try{
   frontend:new ScriptedScopedReferenceWriter(branch,"frontend",[
    {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
    ...frontendReferenceFiles.map(file=>({files:[file]})),
-   ...frontendTestReferenceFiles.map(file=>({files:[file]}))
+   ...frontendTestReferenceFiles.filter(file=>file.path!==testRepairPath).map(file=>({files:[file]}))
   ]),
-  test:new ScriptedNativeDockerTest(branch)
+  test:new ScriptedNativeDockerTest(branch,testRepairWriter)
  };
  // R375.7 diagnostic: observe internal phase ACKs without changing the
  // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
@@ -1223,10 +1233,15 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal((await readdir(path("runner-receipts")))
    .filter(name=>name.endsWith(".runner.json")).length,1);
   assert.equal(models.backend.stageIndex,7+decisionOffset);
-  assert.equal(models.frontend.stageIndex,5);
+  assert.equal(models.frontend.stageIndex,5-decisionOffset);
   assert.equal(models.backend.requests.length,21+2*decisionOffset);
-  assert.equal(models.frontend.requests.length,15);
-  assert.equal(models.test.requests.length,4);
+  assert.equal(models.frontend.requests.length,15-3*decisionOffset);
+  assert.equal(models.test.requests.length,4+3*decisionOffset);
+  assert.deepEqual(events.filter(event=>event.startsWith("execute_test_")),
+   diagnosticMode?["execute_test_run_tests","execute_test_read_file",
+    "execute_test_update_file","execute_test_run_tests"]:
+    ["execute_test_run_tests","execute_test_run_tests"]);
+  if(testRepairWriter)assert.equal(testRepairWriter.stageIndex,1);
   assert.equal(legacyWriteCalls,0);
   const latest=(await independentClient.getBranchMetadata(branch)).commit_sha;
   assert.equal(latest,report.tested_commit_sha);
@@ -1285,6 +1300,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    authenticated_diagnostic_source_seen_by_decider:diagnosticMode,
    authenticated_source_seen_before_first_write:diagnosticMode,
    signed_read_only_diagnostic_tasks:decisionOffset,
+   attested_test_agent_project_test_repairs:decisionOffset,
    status:"pass",
    original_main_immutable:true,
    feature_branch_created_from_original_root:true,
