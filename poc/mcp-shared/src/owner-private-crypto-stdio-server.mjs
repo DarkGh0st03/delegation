@@ -15,15 +15,11 @@ import {StdioServerTransport}
  from "@modelcontextprotocol/sdk/server/stdio.js";
 import {z} from "zod";
 
-const TOOLS=Object.freeze({
-  child_issue:"delegation_issue_child_owner_private",
-  root_issue:"delegation_issue_root_owner_private",
-  root_revoke:"delegation_revoke_root_owner_private",
-  presentation_create:"delegation_create_presentation_owner_private"
-});
+import {OWNER_PRIVATE_CRYPTO_OPERATIONS as TOOLS}
+ from "./owner-private-crypto-catalog.mjs";
 const operation=process.env.OWNER_PRIVATE_MCP_OPERATION;
 const requestRef=process.env.OWNER_PRIVATE_MCP_REF;
-const tool=Object.hasOwn(TOOLS,operation??"")?TOOLS[operation]:undefined;
+const tool=Object.hasOwn(TOOLS,operation??"")?TOOLS[operation].tool:undefined;
 if(!tool||typeof requestRef!=="string"||
    !/^owner_crypto_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(requestRef))
   process.exitCode=1;
