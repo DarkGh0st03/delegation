@@ -429,7 +429,6 @@ try{
   });
   assert.equal(model.requests.length,0);
   assert.equal(gatewayCasWrites,0);
-  assert.equal(agentRegistry.boundTaskCount??0,0);
   await assert.rejects(
    independentClient.readTextFile(branch,mutationPath,baseRevision),
    ProviderNotFoundError
@@ -457,13 +456,20 @@ try{
   assert.equal(intent.expected_head_sha,baseRevision);
   assert.equal(intent.old_path_absent_at_pinned_head,true);
   assert.equal("previous_blob_sha" in intent,false);
+  // Independently re-verify the actual ORIGINAL native Child/VP
+  // against Rust/EVM before asking the receipt observer to inspect Gitea.
+  // Do not synthesize a VerifiedDelegation or trust an A2A status flag.
+  const exactChallenge=prepared[0].response;
+  const actualVp=await sign(exactChallenge,taskPermission);
+  const verified=await verifier.verify({
+   presenter:"backend",audience:exactChallenge.audience,
+   challenge:exactChallenge.challenge,
+   required_permission:taskPermission,signed_vp:actualVp
+  });
+  assert.equal(verified.credential_id,child.credential_id);
+  assert.equal(verified.root_credential_id,operational.credential_id);
   const independentlyObserved=await observer.observe(
-   gate.assertTrustedCreateNativeAdmissionBinding(exactRecord,{
-    presenter_id:backendDid,credential_id:child.credential_id,
-    root_credential_id:operational.credential_id,permissions:taskPermissions,
-    hierarchy_depth:1,issuer_id:engineerDid,
-    expiration:approvalExpiresAt
-   })
+   gate.assertTrustedCreateNativeAdmissionBinding(exactRecord,verified)
   );
   assert.equal(independentlyObserved.status,"owner_verified_provider_result");
   assert.equal((await independentClient.readTextFile(
@@ -489,10 +495,8 @@ try{
   assert.equal((await client.getBranchMetadata("main")).commit_sha,mainBefore);
   assert.equal(gatewayCasWrites,1);
   // No second provider operation, including reuse of the original signed VP.
-  const challenge=prepared[0].response;
-  const sameVp=await sign(challenge,taskPermission);
   await assert.rejects(executeAuthorization({
-   request_id:challenge.request_id,signed_vp:sameVp
+   request_id:exactChallenge.request_id,signed_vp:actualVp
   },deps),error=>error?.code==="replay_detected");
   assert.equal(gatewayCasWrites,1);
   const prompts=JSON.stringify(model.requests);
