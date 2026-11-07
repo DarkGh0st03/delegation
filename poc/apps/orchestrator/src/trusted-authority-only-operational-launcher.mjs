@@ -39,11 +39,16 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
  if(!exact(input,["execution","sdk","adaptive","draftPullRequest","createBranch"])||
     !input?.execution||!exact(input.sdk,
      ["agentBaseUrls","stageChannels","agentBindingChannels","a2aPolling"])||
-    !exact(input.adaptive,["model","nextChildParameters","maxSteps","signal"])||
+    !exact(input.adaptive,["model","nextChildParameters","maxSteps","maxVerifiedFailures","signal"])||
     typeof input.adaptive.nextChildParameters!=="function"||
     (input.adaptive.maxSteps!==undefined&&
      (!Number.isSafeInteger(input.adaptive.maxSteps)||
-      input.adaptive.maxSteps<1||input.adaptive.maxSteps>16)))
+      input.adaptive.maxSteps<1||input.adaptive.maxSteps>24))||
+    (input.adaptive.maxVerifiedFailures!==undefined&&
+     (!Number.isSafeInteger(input.adaptive.maxVerifiedFailures)||
+      input.adaptive.maxVerifiedFailures<0||input.adaptive.maxVerifiedFailures>4||
+      (input.adaptive.maxSteps!==undefined&&
+       input.adaptive.maxVerifiedFailures>input.adaptive.maxSteps))))
   deny("trusted owner, protected A2A and bounded adaptive model required");
  const owner=input.execution;
  if(typeof owner.startSdkA2AOwner!=="function"||
