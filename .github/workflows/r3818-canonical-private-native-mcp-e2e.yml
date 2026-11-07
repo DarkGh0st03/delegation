@@ -206,6 +206,7 @@ jobs:
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
           node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs | tee "$RUNNER_TEMP/r3818-proof.jsonl"
           grep -Fx '{"event":"canonical_deployment_native_preflight","status":"pass"}' "$RUNNER_TEMP/r3818-proof.jsonl"
+          grep -Fx '{"event":"canonical_signed_handoff_native","status":"pass"}' "$RUNNER_TEMP/r3818-proof.jsonl"
           node poc/scripts/verify-r3818-native-mcp-proof.mjs "$RUNNER_TEMP/r3818-proof.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts

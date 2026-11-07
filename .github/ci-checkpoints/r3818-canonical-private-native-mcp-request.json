@@ -1,8 +1,8 @@
 {
-  "schema": "r3818-canonical-deployment-preflight-v1",
-  "candidate_parent_sha": "58d523d131832f688d23e1779f1b02e4a87be03c",
+  "schema": "r3818-canonical-signed-handoff-v1",
+  "candidate_parent_sha": "bfe16de7748752e5397695e33e6c7c3b680009f3",
   "workflow": "r3818-canonical-private-native-mcp-e2e.yml",
-  "purpose": "Verify the canonical deployment composition with real native verifier and scripted models, then run the existing free native R3818 end-to-end regression.",
+  "purpose": "Run the signed Review Host handoff through native Root, Branch, A2A, Docker recovery and Draft PR with scripted models.",
   "requested": true,
   "attested": false,
   "trigger_once": true,
@@ -25,7 +25,8 @@
     "original main unchanged",
     "Docker FAIL then independently attested PASS",
     "Draft PR independently observed unmerged",
-    "canonical_deployment_native_preflight PASS before provider effects"
+    "canonical_deployment_native_preflight PASS before provider effects",
+    "canonical_signed_handoff_native PASS after full canonical workflow"
   ],
-  "gate_before_native": "Fast CI #42397773453 SUCCESS on deployment baseline"
+  "gate_before_native": "Fast CI #42399124815 and Engineer Approval #42399124802 SUCCESS on the signed Branch fixture"
 }

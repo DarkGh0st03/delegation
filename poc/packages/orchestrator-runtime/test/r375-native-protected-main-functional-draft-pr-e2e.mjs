@@ -503,10 +503,14 @@ try{
   });
   assert.equal(planningModel.calls,2);
   assert.equal(planningExecuteCount,1);
-  const {coordinator}=await host.activateOperational(operational);
-  const liveRoot=coordinator.assertTrustedGatewayAuthorityBinding();
-  assert.deepEqual(liveRoot.root_permissions,grantPermissions);
-  assert.equal(liveRoot.root_credential_id,operational.credential_id);
+  let coordinator,execution,gate,deps;
+  const registeredTaskCount=()=>coordinator?.registeredTaskCount??gate?.registeredTaskCount??0;
+  if(!r3818NativeMcp){
+   ({coordinator}=await host.activateOperational(operational));
+   const liveRoot=coordinator.assertTrustedGatewayAuthorityBinding();
+   assert.deepEqual(liveRoot.root_permissions,grantPermissions);
+   assert.equal(liveRoot.root_credential_id,operational.credential_id);
+  }
   const evidenceKey=Buffer.alloc(32,96);
   const readObserver=new AuthenticatedGiteaReadCompletionObserver({
    directory:path("receipts"),key:evidenceKey,
@@ -542,7 +546,7 @@ try{
     }
    }:{})
   };
-  const execution=await host.admitOperationalExecution({
+  const executionDependencies={
    operationalSessionStore:operationalSessions,
    gatewayTaskJournal:new DurableAuthorityTaskJournal(path("gateway-tasks")),
    issuerChildJournal:new DurableAuthorityOnlyChildJournal(path("child-intents")),
@@ -558,14 +562,12 @@ try{
      (expected.task_id==="r375-test-task"||
       expected.task_id==="r375-functional-retest")?
       runnerObserver.observe(expected):readObserver.observe(expected)
-   }),nativeCryptoPort:nativeChildPort,
-   ...(r3818NativeMcp?{privateChildMcpTransport:"native-stdio"}:{})
-  });
-  const gate=execution.gateway;
-  assert.equal(gate.phase,"active");
-  assert.equal(coordinator.registeredTaskCount,0);
-  assert.equal(issuedChildren,0);
-  assert.equal(gate.stagedCompletedTaskCount,0);
+   }),nativeCryptoPort:nativeChildPort
+  };
+  if(!r3818NativeMcp){
+   execution=await host.admitOperationalExecution(executionDependencies);
+   gate=execution.gateway;
+  }
 
  const taskId="r375-frontend-task";let runtimeTaskId="dispatch_"+"F".repeat(22);
  const backendTaskId="r375-backend-task";let backendRuntimeId="dispatch_"+"B".repeat(22);
@@ -635,21 +637,29 @@ try{
   baseUrl:"http://127.0.0.1:"+address.port,
   gatewayToken:runnerBearer,timeoutMs:900000
  });
- const nativeEffects=assembleTrustedAuthorityOnlyNativeEffects({
-  gateway:gate,store,giteaClient:client,independentGiteaClient:independentClient,
-  runnerClient,runnerPassObserver:runnerObserver,
-  ...(sourceObservationMode?{readObserver}:{}),
-  repository:"thesis/iam-console-poc",branch,evidenceKey,nowMs,
-  directories:{
-   mutationIntent:path("intent"),giteaReceipts:path("receipts"),
-   runnerIntent:path("runner-intent"),runnerFailureReceipts:path("runner-fail-receipts"),
-   runnerPassReceipts:path("runner-receipts")
-  }
- });
- assert.equal(execution.bindNativeGatewayEffects(nativeEffects.binding).status,
+ const prepareNativeEffects=admitted=>{
+  gate=admitted;
+  assert.equal(gate.phase,"active");
+  assert.equal(registeredTaskCount(),0);
+  assert.equal(issuedChildren,0);
+  assert.equal(gate.stagedCompletedTaskCount,0);
+  const nativeEffects=assembleTrustedAuthorityOnlyNativeEffects({
+   gateway:gate,store,giteaClient:client,independentGiteaClient:independentClient,
+   runnerClient,runnerPassObserver:runnerObserver,
+   ...(sourceObservationMode?{readObserver}:{}),
+   repository:"thesis/iam-console-poc",branch,evidenceKey,nowMs,
+   directories:{
+    mutationIntent:path("intent"),giteaReceipts:path("receipts"),
+    runnerIntent:path("runner-intent"),runnerFailureReceipts:path("runner-fail-receipts"),
+    runnerPassReceipts:path("runner-receipts")
+   }
+  });
+  deps={store,audit,verifier,policy,repository:repo,executor,
+   authorityOnlyAdmissions:gate,nowMs,...nativeEffects.authorization};
+  return nativeEffects.binding;
+ };
+ if(execution)assert.equal(execution.bindNativeGatewayEffects(prepareNativeEffects(gate)).status,
   "owner_native_gateway_effects_bound_no_execution");
- const deps={store,audit,verifier,policy,repository:repo,executor,
-  authorityOnlyAdmissions:gate,nowMs,...nativeEffects.authorization};
  // R375: three distinct pairs of role-pinned HMAC IPC channels; separate
  // agent registries and signing keys, but one original native Engineer root.
  const roles=["backend","frontend","test"],events=[],prepared=[];
@@ -899,13 +909,13 @@ const tool=record?.request?.tool,role=record?.agent_role;
   // R375.2 no registered Task nor native Child before this real SDK
   // owner starts. Every subsequent step is selected by ADK and independently
   // completed before another model turn.
-  assert.equal(coordinator.registeredTaskCount,0);
+  assert.equal(registeredTaskCount(),0);
   let backendHead,frontendHead,verifiedRunnerBinding;
   // Original Review Host owns the FULL adaptive state and all effects.
   // No harness hooks may register Tasks or attest Gateway completions.
-  assert.equal(coordinator.registeredTaskCount,0);
+  assert.equal(registeredTaskCount(),0);
   assert.equal(issuedChildren,0);
-  assert.equal(gate.stagedCompletedTaskCount,0);
+  assert.equal(gate?.stagedCompletedTaskCount??0,0);
   // R375: one original signature and exactly one read->CAS per Task.
   // The model does not have a fixed DAG: it selects the next Task only
   // after independent Gateway evidence of every preceding Task, with
@@ -1028,7 +1038,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   const prModel=new FreeSignedPrTaskProposal();
   let privatePrFlight,privatePrExecutorCalls=0;
   assert.equal(draftPrCreateAttempts,0);
-  assert.throws(()=>gate.preflightCanonicalRequest({
+  const assertPrCannotBypassTest=()=>assert.throws(()=>gate.preflightCanonicalRequest({
    task_id:"dispatch_"+"Z".repeat(22),agent_role:"orchestrator",
    tool:"create_pull_request",arguments:{
     head_branch:branch,base_branch:"main",title:"PR without acceptance",
@@ -1076,7 +1086,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    privatePrFlight.signed_vp=vp;
    privatePrExecutorCalls++;
   });
-  const workflow=await execution.runCanonicalOperationalWorkflow({
+  const workflowInput={
    createBranch:{
     model:branchModel,branch,baseBranch:"main",
     permission:branchPermission,
@@ -1086,7 +1096,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
      assert.equal(request.tool,"create_branch");
      assert.deepEqual(request.arguments,{branch,base_branch:"main"});
      assert.equal(branchPostAttempts,0);
-     assert.equal(coordinator.registeredTaskCount,1,
+     assert.equal(registeredTaskCount(),1,
       "Root Branch must be the first and only registered Task");
      assert.equal(issuedChildren,0);
      const prepared=await branchTransport.prepare(request);
@@ -1153,7 +1163,26 @@ const tool=record?.request?.tool,role=record?.agent_role;
      return prTransport.execute({request,prepared});
     }
    }
-  });
+  };
+  let workflow;
+  if(r3818NativeMcp){
+   const handoff=host.createReviewedCanonicalHandoff({provision:async()=>({
+    root:operational,dependencies:executionDependencies,workflow:workflowInput,
+    prepareNativeEffects(admitted){
+     const binding=prepareNativeEffects(admitted);
+     assertPrCannotBypassTest();
+     return binding;
+    }
+   })});
+   const readiness=await handoff.reviewReadiness();
+   assert.equal(readiness.operational_root_issued,false);
+   workflow=await handoff.runApprovedCanonical();
+   assert.throws(()=>handoff.runApprovedCanonical(),/already attempted/u);
+   process.stdout.write(JSON.stringify({event:"canonical_signed_handoff_native",status:"pass"})+"\n");
+  }else{
+   assertPrCannotBypassTest();
+   workflow=await execution.runCanonicalOperationalWorkflow(workflowInput);
+  }
   assert.equal(workflow.status,"owner_operational_draft_pr_independently_attested");
   assert.equal(workflow.pr_created,true);
   assert.equal(workflow.pull_request_attested,true);
@@ -1174,7 +1203,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(childMetadataCount,14+decisionOffset);
   assert.equal(issuedChildren,14+decisionOffset,
    "original root PR must never create an agent Child");
-  assert.equal(coordinator.registeredTaskCount,16+decisionOffset);
+  assert.equal(registeredTaskCount(),16+decisionOffset);
   // The failed Test and any authenticated specialist stop remain incomplete.
   assert.equal(gate.stagedCompletedTaskCount,15+Number(sourceObservationMode),
    "only independently completed Tasks and the root PR count");
@@ -1225,7 +1254,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(workflow.pull_request_task_id,"r375-gitea-draft-pr");
   assert.equal(workflow.completed_work_tasks,13+Number(sourceObservationMode));
   assert.match(privatePrFlight?.request?.task_id??"",/^dispatch_[A-Za-z0-9_-]{22}$/u);
-  assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
+  if(execution)assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
    workflow.pull_request_task_id,coordinator));
   const draft=await independentClient.inspectDraftPullRequest({
    number:workflow.pull_request_number,headBranch:branch,baseBranch:"main",
@@ -1244,7 +1273,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    request_id:privatePrFlight.prepared.request_id,
    signed_vp:privatePrFlight.signed_vp
   },deps),error=>error.code==="replay_detected");
-  await assert.rejects(execution.attestEnrolledPullRequestCompletion({
+  if(execution)await assert.rejects(execution.attestEnrolledPullRequestCompletion({
    taskId:workflow.pull_request_task_id,
    runtimeTaskId:privatePrFlight.request.task_id
   }),/already been attempted/);
@@ -1280,7 +1309,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    second_docker_status:"pass",researcher_acceptance_pass:true,
    authenticated_runner_fail_receipts:1,authenticated_runner_pass_receipts:1,
    completed_gateway_tasks:gate.stagedCompletedTaskCount,
-   registered_tasks:coordinator.registeredTaskCount,
+   registered_tasks:registeredTaskCount(),
    distinct_child_credentials:issuedChildren,original_engineer_approval_count:1,
    ...(r3818NativeMcp?{
     r3818_canonical_private_mcp_native_signing:true,
@@ -1303,8 +1332,8 @@ const tool=record?.request?.tool,role=record?.agent_role;
     gateway_routes:events.filter(x=>typeof x==="string"&&
       /^(?:prepare_attempt_|prepare_|execute_)/u.test(x)).slice(-10),
     prepared_count:prepared.length,
-    gateway_completed:gate.stagedCompletedTaskCount,
-    registered:coordinator.registeredTaskCount
+    gateway_completed:gate?.stagedCompletedTaskCount??0,
+    registered:registeredTaskCount()
    })+"\n");
   }
   TrustedEffectStagingTaskRegistry.prototype.selectFor=originalSelect;
