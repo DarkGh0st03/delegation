@@ -3,6 +3,8 @@ import { GiteaExecutor } from "./gitea-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
 import {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
+import {TrustedAuthorityOnlyGiteaCreateExecutor}
+ from "./trusted-authority-only-create-executor.ts";
 import {TrustedAuthorityOnlyRunnerExecutor}
  from "./trusted-authority-only-runner-executor.ts";
 import {TrustedAuthorityOnlyPullRequestExecutor}
@@ -120,6 +122,9 @@ export interface ExecuteDependencies {
   /** Owner-only, opt-in atomic HEAD-CAS mutation; never the legacy PUT. */
   authorityOnlyMutationExecutor?:TrustedAuthorityOnlyGiteaMutationExecutor;
   authorityOnlyMutationEnabled?:boolean;
+  /** R383.7 explicit original owner create HEAD-CAS; never legacy POST. */
+  authorityOnlyCreateExecutor?:TrustedAuthorityOnlyGiteaCreateExecutor;
+  authorityOnlyCreateEnabled?:boolean;
   /** Opt-in owner-controlled native Test Runner; never the legacy Runner. */
   authorityOnlyRunnerExecutor?:TrustedAuthorityOnlyRunnerExecutor;
   authorityOnlyRunnerEnabled?:boolean;
@@ -152,6 +157,15 @@ export async function executeAuthorization(
        dependencies.authorityOnlyAdmissions)))
     throw new GatewayError(403,"authority_only_binding_denied",
       "Atomic mutation owner differs from trusted Gateway authority");
+  if(dependencies.authorityOnlyCreateExecutor&&
+     (!dependencies.authorityOnlyAdmissions||
+      !(dependencies.authorityOnlyCreateExecutor instanceof
+       TrustedAuthorityOnlyGiteaCreateExecutor)||
+      !TrustedAuthorityOnlyGiteaCreateExecutor.prototype.isForAdmissions.call(
+       dependencies.authorityOnlyCreateExecutor,
+       dependencies.authorityOnlyAdmissions)))
+    throw new GatewayError(403,"authority_only_binding_denied",
+      "Create CAS executor differs from original native Gateway authority");
   if(dependencies.authorityOnlyBranchExecutor&&
      (!dependencies.authorityOnlyAdmissions||
       !TrustedAuthorityOnlyBranchExecutor.isNativeForAdmissions(
@@ -367,6 +381,23 @@ export async function executeAuthorization(
         // legacy signed DAG, or unsupported provider may write here.
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedMutationEvidenceBinding(
           record,verified);
+      }else if(record.request.tool==="create_file"&&
+         ["backend","frontend"].includes(record.agent_role)&&
+         dependencies.authorityOnlyCreateEnabled===true&&
+         dependencies.authorityOnlyCreateExecutor instanceof
+           TrustedAuthorityOnlyGiteaCreateExecutor&&
+         TrustedAuthorityOnlyGiteaCreateExecutor.prototype.isForAdmissions.call(
+           dependencies.authorityOnlyCreateExecutor,
+           dependencies.authorityOnlyAdmissions)&&
+         dependencies.verifier instanceof DirectCoreRustVerifier&&
+         dependencies.policy instanceof OpaPolicyClient&&
+         dependencies.executor instanceof GiteaExecutor&&
+         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+        // The ORIGINAL consumed Prepare, signed single-file Child and
+        // durable Task flight are checked only after actual Rust VP + OPA.
+        // Neither a mock verifier nor a legacy Gitea create can reach CAS.
+        dependencies.authorityOnlyAdmissions.assertTrustedCreateNativeAdmissionBinding(
+          record,verified);
       }else if(record.request.tool==="run_tests"&&
          record.agent_role==="test"&&
          dependencies.authorityOnlyRunnerEnabled===true&&
@@ -474,6 +505,17 @@ export async function executeAuthorization(
           "Signed authority-only mutation executor is not configured");
       execution=await dependencies.authorityOnlyMutationExecutor
         .executeAfterVerifiedRustOpa(record,verified,policyDecision);
+    }else if(record.authority_only_digest&&record.request.tool==="create_file"){
+      if(dependencies.authorityOnlyCreateEnabled!==true||
+         !(dependencies.authorityOnlyCreateExecutor instanceof
+           TrustedAuthorityOnlyGiteaCreateExecutor))
+        throw new ProviderOperationUnavailableError(
+          "Signed native create CAS executor is not configured");
+      // Invoke the original class implementation, not an overridden
+      // public/provider/mocked method on an untrusted injection.
+      execution=await TrustedAuthorityOnlyGiteaCreateExecutor.prototype
+        .executeAfterVerifiedRustOpa.call(dependencies.authorityOnlyCreateExecutor,
+          record,verified,policyDecision);
     }else if(record.authority_only_digest&&record.request.tool==="run_tests"){
       if(dependencies.authorityOnlyRunnerEnabled!==true||
          !dependencies.authorityOnlyRunnerExecutor)
@@ -578,6 +620,17 @@ export async function executeAuthorization(
              !!dependencies.authorityOnlyMutationExecutor&&
              dependencies.authorityOnlyMutationEnabled===true){
       // Already independently attested and fsync'd in mutation executor.
+    }else if(execution.provider==="gitea"&&
+             execution.tool==="create_file"&&
+             dependencies.authorityOnlyCreateEnabled===true&&
+             dependencies.authorityOnlyCreateExecutor instanceof
+               TrustedAuthorityOnlyGiteaCreateExecutor&&
+             dependencies.authorityOnlyAdmissions&&
+             TrustedAuthorityOnlyGiteaCreateExecutor.prototype.isForAdmissions.call(
+               dependencies.authorityOnlyCreateExecutor,
+               dependencies.authorityOnlyAdmissions)){
+      // A one-shot CAS and TWO independent authenticated observations were
+      // already sealed durably inside the private CREATE executor.
     }else if(execution.provider==="runner"&&
              execution.tool==="run_tests"&&execution.status==="pass"&&
              !!dependencies.authorityOnlyRunnerExecutor&&
