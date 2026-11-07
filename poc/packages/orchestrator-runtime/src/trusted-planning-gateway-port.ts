@@ -82,6 +82,10 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
       adapterToken:config.adapterToken,
       rootCredentialId:root.credential_id,
       planningBranch:trustedPlanningSourceBranch(snapshot),
+      ...(this.#hierarchicalGrants.length?{
+        trustedHierarchicalPlanningGrants:this.#hierarchicalGrants.filter(p=>
+          p.operation==="read_file"||p.operation==="list_directory")
+      }:{}),
       ...(config.fetchFn?{fetchFn:config.fetchFn}:{}),
       ...(config.timeoutMs?{timeoutMs:config.timeoutMs}:{})
     });
