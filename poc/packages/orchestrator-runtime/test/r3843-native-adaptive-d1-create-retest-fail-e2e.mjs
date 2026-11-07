@@ -896,8 +896,19 @@ const tool=record?.request?.tool,role=record?.agent_role;
     if(role==="test")testSignedVp=body.signed_vp;
     try{return Response.json(await executeAuthorization(body,deps),{status:200});}
     catch(error){
-     process.stderr.write("R384.3 denied "+role+" "+tool+": "+
-      (error?.constructor?.name??"UnknownError")+"\n");
+     // R384.3: classifier only. Never expose VP, challenge, bearer token,
+     // credential payload or provider source in public CI diagnostics.
+     const lastAudit=audit.events.at(-1);
+     process.stderr.write(JSON.stringify({
+      event:"r3843_native_gateway_denial_class",
+      role,tool,
+      error_class:error?.constructor?.name??"UnknownError",
+      error_code:typeof error?.code==="string"?error.code:null,
+      http_status:Number.isInteger(error?.statusCode)?error.statusCode:null,
+      audit_reason:typeof lastAudit?.reason==="string"?lastAudit.reason:null,
+      audit_provider_result:typeof lastAudit?.provider_result==="string"?
+       lastAudit.provider_result:null
+     })+"\n");
      return Response.json({error:"native_authorization_denied"},{status:403});
     }
    }
