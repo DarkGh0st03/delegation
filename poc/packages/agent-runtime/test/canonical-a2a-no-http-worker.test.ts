@@ -56,3 +56,48 @@ test("R223 running canonical A2A server exposes no private MCP HTTP worker route
   else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=previousSocket;
  }
 });
+
+
+test("R381.6 private native MCP signer cannot start outside owner-authorized ADK Task registry",async()=>{
+ const prior=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ const base={
+  role:"backend" as const,port:0,
+  adk:{
+   model:{model:"no-inference"} as BaseLlm,
+   gatewayBaseUrl:"http://127.0.0.1:1",
+   adapterToken:"PRIVATE_BACKEND",
+   nativePresentationTransport:"mcp-stdio" as const
+  }
+ };
+ try{
+  delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  await assert.rejects(startSpecializedAgentServer(base),
+   /private_native_mcp_requires_owner_bound_task/u);
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="legacy-signed-dag";
+  await assert.rejects(startSpecializedAgentServer(base),
+   /private_native_mcp_requires_owner_bound_task/u);
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  await assert.rejects(startSpecializedAgentServer(base),
+   /private_native_mcp_requires_owner_bound_task/u);
+ }finally{
+  if(prior===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=prior;
+ }
+});
+
+test("R381.6 direct ADK handler cannot bypass original authority-only registries",async()=>{
+ const {createAdkA2ATaskHandler}=await import("../src/adk-a2a-handler.ts");
+ const prior=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ try{
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  assert.throws(()=>createAdkA2ATaskHandler({
+   model:{model:"no-inference"} as BaseLlm,
+   gatewayBaseUrl:"http://127.0.0.1:1",
+   adapterToken:"PRIVATE_BACKEND",
+   nativePresentationTransport:"mcp-stdio"
+  }),/private_native_mcp_requires_owner_bound_task/u);
+ }finally{
+  if(prior===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=prior;
+ }
+});
