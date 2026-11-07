@@ -98,7 +98,11 @@ function fixture(t,opts={}){
      assert.equal(admitted,gateway);
      events.push("prepare-effects");
      return effects;
-    }
+    },
+    ...(opts.installAuthorization?{async installNativeAuthorization(){
+     events.push("install");
+     if(opts.failInstall)throw Error("native authorization install failed");
+    }}:{})
    };
   }
  });
@@ -202,7 +206,20 @@ test("R382.5 refuses legacy/no-native host before reading any signature",t=>{
 });
 
 test("R382.8 native Gateway binding failure prevents Branch and retires the original Host",async t=>{
- const f=fixture(t,{failBinding:true});
+ const f=fixture(t,{failBinding:true,installAuthorization:true});
  await assert.rejects(f.handoff.runApprovedCanonical(),/foreign native Gateway effects/u);
  assert.deepEqual(f.events,["root","admission","prepare-effects","bind","retire"]);
+});
+
+test("native authorization is installed after binding and before the canonical workflow",async t=>{
+ const f=fixture(t,{installAuthorization:true});
+ await f.handoff.runApprovedCanonical();
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","install","canonical"]);
+ await f.handoff.close();
+});
+
+test("native authorization installation failure retires the original Host before Branch",async t=>{
+ const f=fixture(t,{installAuthorization:true,failInstall:true});
+ await assert.rejects(f.handoff.runApprovedCanonical(),/native authorization install failed/u);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","install","retire"]);
 });

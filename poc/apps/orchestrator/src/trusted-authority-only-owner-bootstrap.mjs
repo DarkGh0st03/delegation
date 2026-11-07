@@ -39,6 +39,8 @@ import {DurableAuthorityOnlySequentialEffectJournal}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-sequential-effect-journal.ts";
 import {TrustedAuthorityOnlyCompletionObserver}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
+import {assembleTrustedAuthorityOnlyNativeEffects}
+ from "./trusted-authority-only-native-effects.mjs";
 
 const SHA=/^[0-9a-f]{40}$/u;
 const HEX=/^[0-9a-f]+$/u;
@@ -301,6 +303,36 @@ export async function assembleProtectedCanonicalOwnerAuthority(loaded){
  });
 }
 
+// Only trusted in-process clients and transports can supply this input.
+async function prepareCanonicalNativeEffects(authority,options){
+ const fields=["store","giteaClient","independentGiteaClient","runnerClient",
+  "runnerPassObserver","directories","evidenceKey","installAuthorization"];
+ if(!exact(options,fields)&&!exact(options,[...fields,"readObserver"]))deny();
+ const {installAuthorization,directories,evidenceKey,...clients}=options;
+ const repository=authority.snapshot?.repository;
+ if(typeof installAuthorization!=="function"||
+    typeof repository?.owner!=="string"||typeof repository.repository!=="string"||
+    !Buffer.isBuffer(evidenceKey)||evidenceKey.length!==32||
+    !exact(directories,["mutationIntent","giteaReceipts","runnerIntent",
+     "runnerFailureReceipts","runnerPassReceipts"])||
+    new Set(Object.values(directories)).size!==5)
+  deny();
+ const pins={...directories},key=Buffer.from(evidenceKey);
+ await Promise.all(Object.values(pins).map(dirOwned));
+ return gateway=>{
+  const effects=assembleTrustedAuthorityOnlyNativeEffects({
+   ...clients,gateway,directories:pins,evidenceKey:key,
+   repository:repository.owner+"/"+repository.repository,branch:authority.workBranch
+  });
+  return Object.freeze({
+   binding:effects.binding,
+   install:()=>installAuthorization(Object.freeze({
+    store:effects.binding.store,authorityOnlyAdmissions:gateway,...effects.authorization
+   }))
+  });
+ };
+}
+
 /** Assemble the fixed operational dependencies without reserving or issuing
  * a Root. Provider and A2A capabilities are supplied by the trusted host. */
 export async function createProtectedCanonicalOperationalProvision(
@@ -309,16 +341,20 @@ export async function createProtectedCanonicalOperationalProvision(
  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
     process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
     !exact(operational,["journalDirectory","orchestratorTokenFile",
-    "reserveRoot","completionObserver","workflow","prepareNativeEffects"])||
+    "reserveRoot","completionObserver","workflow",
+    operational?.nativeEffects===undefined?"prepareNativeEffects":"nativeEffects"])||
     typeof operational.reserveRoot!=="function"||
-    typeof operational.prepareNativeEffects!=="function"||
+    (operational.nativeEffects===undefined&&
+     typeof operational.prepareNativeEffects!=="function")||
     !(operational.completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
     !(authority?.operationalSessionStore instanceof TrustedOperationalSessionStore)||
     operational.workflow?.createBranch?.branch!==authority.workBranch||
     operational.workflow?.createBranch?.baseBranch!=="main")
   deny();
  const {journalDirectory,orchestratorTokenFile,reserveRoot,completionObserver,
-  workflow,prepareNativeEffects}=operational;
+  workflow}=operational;
+ const assembleEffects=operational.nativeEffects===undefined?undefined:
+  await prepareCanonicalNativeEffects(authority,operational.nativeEffects);
  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  if(!path(socketPath)||socketPath.length>100)deny();
  await dirOwned(journalDirectory);
@@ -346,6 +382,17 @@ export async function createProtectedCanonicalOperationalProvision(
   if(consumed)deny();
   consumed=true;
   const root=await reserveRoot();
-  return {root,dependencies,workflow,prepareNativeEffects};
+  if(!assembleEffects)return {root,dependencies,workflow,
+   prepareNativeEffects:operational.prepareNativeEffects};
+  let install;
+  return {
+   root,dependencies,workflow,
+   prepareNativeEffects(gateway){
+    const effects=assembleEffects(gateway);
+    install=effects.install;
+    return effects.binding;
+   },
+   installNativeAuthorization(){return install();}
+  };
  };
 }

@@ -113,12 +113,18 @@ MCP Child port. It calls the trusted `reserveRoot` capability once, after
 signature verification. The trusted process still supplies the
 `completionObserver`, `workflow`, and `prepareNativeEffects` capabilities.
 
-For `prepareNativeEffects(gateway)`, reuse
-`assembleTrustedAuthorityOnlyNativeEffects` with the original request store,
-the pinned writer and independent reader, the authenticated Runner client,
-and the protected receipt paths and key. Return its `binding` to the
-Review Host and use its `authorization` with the same request store and
-admissions in the Gateway execution path. R375 uses this same assembly.
+To use the built-in provider assembly, replace `prepareNativeEffects`
+with `nativeEffects`. Supply the original request `store`, the pinned
+`giteaClient` and `independentGiteaClient`, the authenticated
+`runnerClient`, `runnerPassObserver`, optional `readObserver`, and a
+32-byte `evidenceKey`. Provide separate private `directories` for
+`mutationIntent`, `giteaReceipts`, `runnerIntent`,
+`runnerFailureReceipts`, and `runnerPassReceipts`.
+The bootstrap derives repository and branch from the Review Host pins.
+After the Review Host accepts the binding, the trusted
+`installAuthorization` callback receives the authorization dependencies
+with the same request store and Gateway admissions. R375 uses the same
+provider assembly.
 
 **Not yet complete:** the executable owner process needs its
 trusted operational `provision` implementation and a newly validated

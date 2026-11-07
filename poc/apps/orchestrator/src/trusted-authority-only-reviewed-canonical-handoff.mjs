@@ -46,7 +46,10 @@ function validatedProof(proof,sessionId,baseRevision,planDigest,engineerDid){
   proof.dag_executed===false;
 }
 function validatedProvision(result){
- if(!exact(result,["root","dependencies","workflow","prepareNativeEffects"])||
+ const required=["root","dependencies","workflow","prepareNativeEffects"];
+ if((!exact(result,required)&&
+     (!exact(result,[...required,"installNativeAuthorization"])||
+      typeof result.installNativeAuthorization!=="function"))||
     typeof result.prepareNativeEffects!=="function"||
     !exact(result.root,ROOT_KEYS)||
     typeof result.root.credential_id!=="string"||
@@ -165,6 +168,9 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
      if(closed||reviewHost.phase!=="operational"||!liveNative())
       deny("original Executor retired before native effect binding");
      execution.bindNativeGatewayEffects(effects);
+     await owned.installNativeAuthorization?.();
+     if(closed||reviewHost.phase!=="operational"||!liveNative())
+      deny("original Executor retired before canonical execution");
      const result=await execution.runCanonicalOperationalWorkflow(owned.workflow);
      if(closed)deny("original Review Host retired during execution");
      return result;
