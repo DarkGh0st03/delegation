@@ -200,7 +200,8 @@ function validPins(value:unknown):value is PublicPins{
     typeof v.presenterId!=="string"||
     typeof v.branch!=="string"||
     !["backend","frontend","test"].includes(v.role as string)||
-    !["read_file","update_file","run_tests","read_then_update"].includes(v.operation as string))
+    !["read_file","update_file","create_file","run_tests","read_then_update"].includes(v.operation as string)||
+     (v.operation==="create_file"&&v.role==="test"))
   return false;
  return v.operation==="run_tests" ? !("path" in v)
   :typeof v.path==="string";
@@ -402,6 +403,11 @@ export async function createTrustedEffectAgentBindingServer(config:{
          attest:async(requestId:string,tool:"read_file"|"update_file")=>{
           await config.ownerStageClient.attest!(pins.runtimeTaskId,requestId,tool);
          }}:{}),
+      ...(pins.operation==="create_file"?{
+       // The private owner may prebind CREATE, but the controlled ADK
+       // FunctionTool remains denied pending native E2E.
+       stagedTool:"create_file" as const
+      }:{}),
       stage:async requestId=>{
       await config.ownerStageClient.stage(pins.runtimeTaskId,requestId);
       // This private ACK never claims a provider write.
