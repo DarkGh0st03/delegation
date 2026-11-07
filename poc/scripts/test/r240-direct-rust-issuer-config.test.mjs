@@ -16,7 +16,11 @@ test("R240 Engineer root + native Orchestrator VP use no implicit HTTP Adapter c
  assert.match(transport,/adapterBaseUrl\?: string/u);
  assert.match(transport,/Historical Orchestrator HTTP signing requires explicit Adapter URL/u);
  assert.match(transport,/Canonical signed DAG requires native Rust Orchestrator signer socket/u);
- assert.match(transport,/invokeNativeCrypto\(/u);
+ const presentation=read("poc/packages/orchestrator-runtime/src/native-orchestrator-presentation.ts");
+ assert.match(transport,/return await createNativeOrchestratorPresentation\(/u);
+ assert.match(presentation,/createOwnerPrivateCryptographicMcpSession\("presentation_create"/u);
+ assert.match(presentation,/invokeNativeCrypto\(config,"create_presentation",input\)/u);
+ assert.doesNotMatch(presentation,/adapterBaseUrl|fetch\(/u);
 });
 
 test("R240 signed Child and repaired D1 use the same native Rust issuer with no Adapter URL",()=>{
