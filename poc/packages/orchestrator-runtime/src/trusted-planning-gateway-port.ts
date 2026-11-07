@@ -10,6 +10,8 @@
 import {isDeepStrictEqual} from "node:util";
 import {giteaPermissionCovers}
   from "../../plan-contracts/src/gitea-permission-containment.mjs";
+import {TrustedPlanningDiscoveryLedger}
+  from "./trusted-planning-discovery-ledger.ts";
 import {deriveRequiredPermission} from "../../../apps/gateway/src/canonical.ts";
 import {validatePrepareAuthorizationRequest}
   from "../../../apps/gateway/src/validation.ts";
@@ -51,6 +53,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
   readonly #client:OrchestratorPlanningGatewayReadClient;
   readonly #allowed:Set<string>;
   readonly #hierarchicalGrants:readonly {resource:string;operation:string}[];
+  readonly #discovery:TrustedPlanningDiscoveryLedger;
   readonly #credentialId:string;
   constructor(config:TrustedPlanningGatewayPortConfig){
     const snapshot=structuredClone(config.snapshot);
@@ -65,6 +68,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
        allowed.some(p=>!actual.has(key(p))))fail();
     this.#coordinator=config.coordinator;
     this.#snapshot=snapshot;
+    this.#discovery=new TrustedPlanningDiscoveryLedger(snapshot);
     this.#allowed=new Set(allowed.map(key));
     // Read-only ancestor coverage is enabled ONLY by the same original
     // immutable snapshot used to issue and bind the Root. Tool arguments
@@ -126,9 +130,9 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
       if(request.tool!=="read_file"&&request.tool!=="list_directory")fail();
       if(request.arguments.branch!==branch)fail();
       if(request.tool==="read_file"&&
-         !this.#snapshot.files.includes(request.arguments.path))fail();
+         !this.#discovery.hasFile(request.arguments.path))fail();
       if(request.tool==="list_directory"&&
-         !this.#snapshot.directories.includes(request.arguments.path))fail();
+         !this.#discovery.hasDirectory(request.arguments.path))fail();
       const required=deriveRequiredPermission(this.#snapshot.repository,request);
       const keyValue=key(required);
       if(seen.has(keyValue)||
@@ -165,6 +169,14 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
       if(request.tool==="list_directory"&&
          !Array.isArray(observed.entries))fail();
     }
+    // Register new paths only after ALL provider outcomes, signed bindings
+    // and immutable Gitea revisions have been verified. Invalid entries
+    // must not partially change the discovery ledger.
+    this.#discovery.observeListings(value.executions.flatMap((raw,i)=>
+      normalized[i].tool==="list_directory"
+        ?[{path:normalized[i].arguments.path as string,
+           entries:(raw as Record<string,unknown>).entries}]
+        :[]));
     return result;
   }
 
@@ -189,10 +201,10 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     if(tool==="read_repository"&&sourceBranch!=="main")fail();
     if(tool==="read_file" &&
        (request.tool!=="read_file"||request.arguments.branch!==sourceBranch||
-        !this.#snapshot.files.includes(request.arguments.path)))fail();
+        !this.#discovery.hasFile(request.arguments.path)))fail();
     if(tool==="list_directory" &&
        (request.tool!=="list_directory"||request.arguments.branch!==sourceBranch||
-        !this.#snapshot.directories.includes(request.arguments.path)))fail();
+        !this.#discovery.hasDirectory(request.arguments.path)))fail();
     const required=deriveRequiredPermission(
       this.#snapshot.repository as GatewayRepositoryConfig,request);
     if(!this.#allowed.has(key(required))&&
@@ -222,6 +234,12 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
         {tool:"list_directory"|"read_file"}>;
       if(response.branch!==sourceBranch||response.path!==requested.arguments.path)fail();
     }
+    // A newly discovered path becomes visible only from a completed,
+    // authenticated and SHA-pinned Gitea listing; never from model text.
+    if(request.tool==="list_directory")
+      this.#discovery.observeListings([{
+        path:request.arguments.path,entries:response.entries
+      }]);
     // The Planner also enforces file and aggregate byte budgets.
     // No VP, Adapter token or root ID is included in this provider output.
     return execution;
