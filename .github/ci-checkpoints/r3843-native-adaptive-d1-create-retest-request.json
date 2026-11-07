@@ -1,6 +1,6 @@
 {
   "checkpoint": "R384.3",
-  "increment": "full-native-multi-agent-second-attempt",
+  "increment": "full-native-multi-agent-third-attempt",
   "scenario": "account-suspension",
   "objective": "same-original-engineer-root-adaptive-fail-create-d1-retest",
   "sequence": [
@@ -20,6 +20,6 @@
   "changes_main": false,
   "permission_escalation": false,
   "notes": "A second authentic Test FAIL is expected; this proves native D1 continuity and fail-closed, NOT functional repair success.",
-  "revision": 2,
-  "fix": "Match Planning normalized Root permission order: create_file directory before per-file read/update. No permission or authority change."
+  "revision": 3,
+  "fix": "Canonical authority-only needs original native-stdio private Child MCP issueChildViaPrivateMcp; forbid legacy direct issuance. No downgrade or expanded grant."
 }
