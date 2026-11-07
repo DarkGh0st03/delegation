@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.0)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.1)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,45 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.0 apre investigazione read-only per Test su file di test applicativi già autorizzati, con proof Gitea; Task di creazione file / multi-file e recovery generico ancora aperti** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.0 valida lettura read-only del Test Agent (Fast CI e Engineer Approval SUCCESS SHA 10e9c9f); R383.1 delimita sequenze multi-file tramite Task/Child distinti; create_file nativo, recovery generico e batch multi-file ancora aperti** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI e R3818 E2E native PASS sulla stessa SHA `63a4414` (run #42399581378 e #42399581386); necessarie nuove regressioni dopo R383.0 e post-cleanup** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI ed Engineer Approval PASS sulla SHA R383.0 `10e9c9f` (run #42401873279/#42401873276), E2E native precedente PASS su `63a4414`; nuove regressioni R383.1 e post-cleanup da attestare** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.1 — modello multi-file attraverso Child/Task distinti, fail-closed
+
+La suite ADK gratuita simula tre modifiche a tre file diversi in
+sequenza: due Backend, una Frontend, poi una Test run indipendente
+sull'ultima SHA. Ogni file richiede un Task separato e un Child DC
+entro il medesimo grant firmato, con completamento Gateway distinto.
+Questo non equivale a un Task *atomico* che modifica più file.
+
+La proposta adattiva non può più aggiungere grant inutilizzati:
+ammette solo un `read_file` di investigazione già autorizzato,
+un `update_file`, un `run_tests` del Test Agent, oppure
+`read_file + update_file` **dello stesso file** nella modalità
+native read→CAS già esistente. Task con due scritture, letture
+di file estranei al mutation target, Runner combinato con
+una scrittura, o `create_file` vengono respinti prima che
+il Coordinator provi a registrarli. Lo stesso controllo
+indipendente viene imposto all'Owner A2A, prima di trasferire
+la vera Child DC via canale privato: non ci sono permessi
+aggiuntivi da infilare nel subtask degli agenti.
+
+**Limite esplicito:** `create_file` è ancora solo presente nel
+catalogo/tool Legacy, non è cablato al nuovo stager native,
+alla prenotazione di HEAD/assenza del blob e alla prova
+Gitea post-CAS. Non è stato abilitato artificialmente.
+Il lavoro successivo deve prima stabilire un owner-only
+create intent con assenza del file attestata, branch HEAD
+immutabile, CAS atomico, firma/OPA e verifica separata;
+poi il FunctionTool dell'agente e infine prove reali E2E.
+Multi-file atomico e recovery di errori applicativi
+diversi dal Test FAIL restano aperti. Nessun Gemini a
+pagamento o Full CI lanciato per questo incremento.
 
 ### R383.0 — lettura diagnostica del Test Agent, senza nuova autorità
 
@@ -37,7 +69,7 @@ Draft PR non mergiata. I log attestano
 `source_code_generated_autonomously_by_model=false` e
 `paid_model_calls=0`; **non** prova il pilot generativo.
 
-**Nuova estensione A (da validare nella CI R383.0):** il Task
+**Estensione A (validata dalla Fast CI e Engineer Approval R383.0):** il Task
 read-only del Test Agent diventa una decisione possibile dell'ADK
 adaptive work loop, *solo* per file sorgente in
 `tests/backend/**/*.test.ts[x]` o
