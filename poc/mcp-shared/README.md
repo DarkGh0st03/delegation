@@ -130,6 +130,29 @@ closure remain distinct gates. Do not enable this transport for untrusted
 clients; the role-scoped native bearer is a privileged secret inside the
 isolated MCP process, and must never enter a model prompt or diagnostic log.
 
+## R381.4 — original ADK/A2A Agent presentation port
+
+The trusted A2A host can now opt in to the private native Rust MCP signing
+service for Gateway-bound presentations (Backend, Frontend and Test):
+`DELEGATION_PRIVATE_NATIVE_MCP_SIGNING=1` is accepted ONLY in
+`authority-only` architecture with ADK and a private original Rust socket.
+The default remains unchanged. The selector belongs to the authenticated
+host, not an A2A Task, model prompt, FunctionTool or Agent Card.
+`DelegationEvidenceHandler` uses the prebound Child credential ID,
+Gateway challenge and exact required permission, creates a new owner-private
+stdio MCP session, and receives the signed VP from the **same original Rust
+CryptoRuntime**. It never retries through direct IPC or legacy Adapter HTTP
+if MCP fails or returns malformed results. The task-local in-process MCP
+bridge can continue consuming the same handler via its original private
+Task registry. No second signer or public cryptographic MCP listener exists.
+
+Free tests in `native-crypto-ipc.test.ts` and `mcp-tool-flags.test.ts`
+cover the actual Agent presenter socket request, VP result, no HTTP fallback,
+sanitized failure, invalid mode/legacy launch rejection, and missing native
+socket. The A2A production host remains opt-out by default, and these
+unit tests do **not** certify full native A2A/Gitea/Docker execution or
+autonomous Gemini coding. The combined same-SHA CI gate remains mandatory.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
