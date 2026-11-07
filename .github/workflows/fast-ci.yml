@@ -102,6 +102,8 @@ jobs:
       - name: ADK, A2A and task-local cryptographic MCP
         run: |
           node --test poc/packages/agent-runtime/test/signed-task-diagnostic-ref.test.mjs
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-native-create-tool-client.test.ts
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/r3841-native-create-adk-offline.test.ts
           node --experimental-strip-types --test poc/packages/agent-runtime/test/gateway-tool-client.test.ts poc/packages/agent-runtime/test/private-mcp-task-registry.test.ts poc/packages/agent-runtime/test/adk-specialized-agents.test.ts poc/packages/agent-runtime/test/n2-signed-context-sufficiency.test.ts
           npm --prefix poc/mcp-shared test
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-child-issuer-stdio.test.ts
