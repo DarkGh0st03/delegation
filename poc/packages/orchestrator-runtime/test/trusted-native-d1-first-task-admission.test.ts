@@ -348,3 +348,70 @@ test("R384.3 CREATE D1 cannot register from a forged Runner FAIL or an unsigned 
   },options as never);
  }
 });
+
+test("R384.3 original CREATE D1 Child proceeds from signed FAIL through Gateway enrollment, without provider effect",async()=>{
+ const create={
+  resource:canonicalFileUri(repo,branch,
+   "apps/backend/src/users/account-suspension-created.ts"),
+  operation:"create_file" as const
+ };
+ const grantedRoot={...root,root_permissions:[
+  ...approved,{resource:branchUri+"/directories/apps/backend",
+   operation:"create_file" as const}
+ ]};
+ await fixture(async f=>{
+  const admitted=await admitFirstNativeD1RepairTask(f.input);
+  const effects:string[]=[];
+  Object.assign(f.input.gateway,{
+   async bindTrustedTask(taskId:string,runtimeTaskId:string,role:string){
+    effects.push("gateway_bind");
+    assert.equal(taskId,admitted.task_id);
+    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{22}$/u);
+    assert.equal(role,"backend");
+    return {status:"gateway_task_bound_preflight_only",
+     task_id:taskId,runtime_task_id:runtimeTaskId,
+     authority_digest:grantedRoot.authority_digest,
+     gateway_execution_authorized:false};
+   },
+   async enrollTrustedIssuedChild(taskId:string,runtimeTaskId:string){
+    effects.push("gateway_enroll");
+    assert.equal(taskId,admitted.task_id);
+    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{22}$/u);
+    return {status:"gateway_child_enrolled_preflight_only",
+     task_id:taskId,runtime_task_id:runtimeTaskId,
+     credential_id:"child-r3843-create",gateway_execution_authorized:false};
+   }
+  });
+  Object.assign(f.input.childIssuer,{
+   async issueForRegisteredTask(taskId:string,
+    parameters:Record<string,unknown>){
+    effects.push("rust_issue");
+    assert.equal(taskId,admitted.task_id);
+    assert.equal((parameters.credential_status as any).statusListIndex,"29500");
+    return {status:"native_child_response_verified_staged",
+     task_id:taskId,epoch:admitted.epoch,session_id:grantedRoot.session_id,
+     root_credential_id:grantedRoot.root_credential_id,
+     authority_digest:grantedRoot.authority_digest,
+     agent_id:"backend",agent_did:"did:thesis:backend",
+     permissions:[create],credential_id:"child-r3843-create",
+     gateway_execution_authorized:false};
+   }
+  });
+  const result=await enrollFirstNativeD1ChildAtGateway({
+   ...f.input,admission:admitted,
+   freshStatusEntry:{statusListCredential:"https://status.example/r3843-create",
+    statusListIndex:"29500"}
+  });
+  assert.equal(result.status,"native_d1_child_enrolled_no_provider_effect");
+  assert.equal(result.epoch,intent.epoch+1);
+  assert.equal(result.original_root_credential_id,intent.root_credential_id);
+  assert.equal(result.new_child_credential_id,"child-r3843-create");
+  assert.equal(result.native_child_issued,true);
+  assert.equal(result.gateway_child_enrolled,true);
+  assert.equal(result.provider_executed,false);
+  assert.equal(result.recovery_completed,false);
+  assert.equal(result.gateway_execution_authorized,false);
+  assert.deepEqual((f.registered as {permissions:unknown[]}).permissions,[create]);
+  assert.deepEqual(effects,["gateway_bind","rust_issue","gateway_enroll"]);
+ },{root:grantedRoot,candidate:{role:"backend",permissions:[create]}} as never);
+});
