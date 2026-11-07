@@ -121,7 +121,10 @@ export async function startProtectedGeminiOwnerSession({
   // R382.6: never start the obsolete Signed DAG Coordinator when the
   // original authority-only architecture is selected. No automatic
   // conversion, provider billing or permission downgrade is possible.
-  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only")deny();
+  // Legacy Planning is available ONLY by explicitly selecting its
+  // historical architecture. Unset/unknown mode is not an implicit
+  // fallback and cannot silently incur Gemini API charges.
+  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="legacy-signed-dag")deny();
   if(process.env.GITHUB_ACTIONS==="true"||
      !SOURCE_SHA.test(expectedSourceSha??"")||
      chargeAuthorization!==CONFIRMATION)deny();
