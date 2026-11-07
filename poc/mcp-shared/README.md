@@ -292,6 +292,31 @@ and
 verified **SUCCESS**. A new single free native checkpoint must be
 observed on its own SHA before closing the architecture gate.
 
+## R382.3 — original native Rust signer DID in the A2A Agent Card
+
+[The R382.2 native integration run](https://github.com/DarkGh0st03/delegation/actions/runs/42387283759)
+passed the mock-only preflight and all native EVM/Rust/Gitea startup gates,
+but failed closed before A2A Task dispatch: the native Rust credential
+signer uses the provisioned role DID `ADAPTER_ID_<ROLE>` while the old
+Agent Card exposed a synthetic `did:thesis:<role>-agent`. The original
+Engineer Review Host rejected this mismatch, as required.
+
+R382.3 introduces `nativeSignerDid` only for the original ADK Task
+owner-bound A2A host. It must match the provisioned Rust role DID in
+authority-only native mode; on local EVM, it must be a `did:ethr:`
+identity. The Card generator and the original owner-side startup
+probe share a trusted native DID resolver, so the SDK send recheck and
+the Review Host independently verify the SAME identity. There is no
+new key, credential issuer, proxy, or authority conveyed by the Card;
+the model/Task cannot override the DID or sign a Child.
+
+A non-native legacy/deterministic Card continues to use its historical
+demonstration DID. A native MCP A2A host with no signer DID, or a
+forged/swapped one, is denied before opening the listener. Tests
+cover three original roles and the strict startup probe, in Fast CI
+and the R3818 preflight. This fixes an observed startup mismatch, not
+proof that the entire native E2E now passes.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
