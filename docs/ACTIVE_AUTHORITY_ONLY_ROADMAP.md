@@ -277,6 +277,16 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   CI sulla SHA, di Gitea/Docker né dell'autonomia generativa.
   Prima di chiudere B serve ancora evidenza nativa integrata e un
   launcher definitivo. `main` e approvazioni non vengono modificati.
+- **R381.6 — gate owner-bound A2A/ADK per VP MCP stdio**:
+  l'A2A server rifiuta `nativePresentationTransport:"mcp-stdio"`
+  se non è avviato nel trusted host authority-only con
+  `mcpTaskSigning`. Il factory ADK rifiuta anche l'invocazione
+  programmatica diretta senza entrambi i registri originali:
+  `trustedEffectTaskRegistry` e `mcpTaskRegistry`.
+  Sono stati aggiunti test gratuiti di rifiuto prima del listener
+  per host legacy, host non configurato e Task registry assente.
+  Questo restringe l'opt-in introdotto in R381.4; non costituisce
+  una prova nativa end-to-end né autorizza il launcher a pagamento.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
