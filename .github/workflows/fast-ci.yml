@@ -90,6 +90,7 @@ jobs:
           node --test poc/packages/agent-runtime/test/signed-task-diagnostic-ref.test.mjs
           node --experimental-strip-types --test poc/packages/agent-runtime/test/gateway-tool-client.test.ts poc/packages/agent-runtime/test/private-mcp-task-registry.test.ts poc/packages/agent-runtime/test/adk-specialized-agents.test.ts poc/packages/agent-runtime/test/n2-signed-context-sufficiency.test.ts
           npm --prefix poc/mcp-shared test
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-child-issuer-stdio.test.ts
           node --test poc/mcp-shared/test/legacy-isolation.test.mjs
           # R264: no remote MCP HTTP listener or private worker remains.
           # Retain canonical A2A no-route and local crypto VP regression coverage.
