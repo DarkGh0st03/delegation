@@ -77,8 +77,8 @@ export function createOwnerPrivateNativeCryptoMcpSession(
    // A cancelled signed Task must close its private MCP child process.
    // Only the trusted owner may supply this signal; never a model tool.
    const onAbort=()=>{void close();};
-   config.signal?.addEventListener("abort",onAbort,{once:true});
    try{
+    config.signal?.addEventListener("abort",onAbort,{once:true});
     if(config.signal?.aborted)throw Error(mode.error);
     // No bearer, signed credential, source, API key or inherited secret
     // appears in the child environment or command line.
@@ -97,8 +97,11 @@ export function createOwnerPrivateNativeCryptoMcpSession(
     await client.connect(transport);
     if(closed)throw Error(mode.error);
     const catalog=await client.listTools();
-    if(catalog.tools.length!==1||catalog.tools[0]?.name!==mode.tool)
+    if(catalog.tools.length!==1||catalog.tools[0]?.name!==mode.tool||
+       closed||config.signal?.aborted)
      throw Error(mode.error);
+    // A Task cancelled during MCP discovery must never dispatch a
+    // cryptographic native Rust call afterwards.
     const response=await client.callTool({
      name:mode.tool,
      arguments:{
