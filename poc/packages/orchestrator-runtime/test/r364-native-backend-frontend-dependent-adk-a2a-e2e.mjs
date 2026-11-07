@@ -544,10 +544,39 @@ try{
     effectStager:backendStager
    });
   }catch(error){
-   // Authority-bearing data, signed credentials and file contents NEVER
-   // enter logs; expose only phase counters and safe tool identifiers.
+   // R364.6: after terminal A2A failure, independently probe the SAME
+   // private Rust signer with the original Gateway challenge, WITHOUT
+   // executing any provider call. Discard signed bytes. Return only enums.
+   const firstRead=prepared.find(p=>p.role==="backend"&&
+    p.tool==="read_file")?.response;
+   let privateSignerProbe="not_prepared";
+   if(firstRead){
+    try{
+     const signed=await invokeNativeCrypto({
+      socketPath,token:tokens.backend,timeoutMs:60000
+     },"create_presentation",{
+      credential_id:backendChild.credential_id,
+      disclosed_permissions:[firstRead.required_permission],
+      audience:firstRead.audience,challenge:firstRead.challenge
+     });
+     privateSignerProbe=typeof signed?.signed_vp==="string"?
+      "signed_without_provider_io":"malformed_native_result";
+    }catch(signError){
+     const message=String(signError?.message??"");
+     privateSignerProbe=message.includes("authorization denied")?
+      "native_authorization_denied":message.includes("transport unavailable")?
+      "native_transport_unavailable":"native_sign_error";
+    }
+   }
+   // No challenge, VP, credential ID, signer key or source contents in logs.
    process.stderr.write(JSON.stringify({
     event:"r364_backend_failure_stage_diagnostic",
+    private_signer_probe:privateSignerProbe,
+    prepared_exact_permission:!!firstRead&&
+     JSON.stringify(firstRead.required_permission)===
+     JSON.stringify(backendReadPermission),
+    prepared_expires_in_future:!!firstRead&&
+     Date.parse(firstRead.expires_at)>Date.now(),
     gateway_routes:events.slice(0,8),
     prepared_tools:prepared.map(p=>p.role+"."+p.tool),
     backend_model_turns:models.backend.requests.length,

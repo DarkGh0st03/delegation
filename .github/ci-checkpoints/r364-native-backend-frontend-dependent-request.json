@@ -1,5 +1,5 @@
 {
-  "checkpoint": "R364.5",
+  "checkpoint": "R364.6",
   "baseline_native_sha": "1a7c2d20d8aaf8fb15eeb324a1402789f470179d",
   "scenario": "account-suspension",
   "roles": [
@@ -10,11 +10,12 @@
   "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
   "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
   "excluded": "no Test/Docker or PR claim",
-  "status": "requested; native end-to-end outcome unverified",
-  "previous_sha": "c6135399ca06935d63663c41b1b2818f6bf5e215",
+  "status": "one native run requested; PASS unverified",
+  "previous_sha": "ccc1bc3b7edcacb0b94ca5d24a535598a375bcd7",
   "fix": "Defer dependent Frontend native Child issuance and Gateway enrollment until after independent Backend final receipt",
-  "previous_failure_run": 42316656633,
-  "previous_failure": "Backend owner staging succeeded; native VP issuance or presentation binding fails before Gateway Execute",
+  "previous_failure_run": 42317869298,
+  "previous_failure": "Backend stage succeeded; native VP or MCP crypto unavailable before Gateway Execute",
   "instrumentation": "safe phase counters and backend Gateway Prepare rejection classification, no credentials or source bytes",
-  "diagnostic": "Test-only original native stager stage call with boolean exact Task/HEAD/TTL flags, strict allowlisted error reason; safe no signed VP or source"
+  "diagnostic": "Test-only original native stager stage call with boolean exact Task/HEAD/TTL flags, strict allowlisted error reason; safe no signed VP or source",
+  "change": "Fail-only direct probe of same Rust signer with original Gateway challenge, no provider execution, no sensitive output"
 }
