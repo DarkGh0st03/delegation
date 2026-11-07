@@ -24,6 +24,6 @@
   "provider": "local-disposable-gitea",
   "paid_ai": false,
   "main_unchanged": true,
-  "run": 3,
-  "repair": "A2A status does not advance Gateway Task; native MAC is independently observed by original owner before completion"
+  "run": 4,
+  "repair": "Native CREATE stores pinned HEAD and absence in O_EXCL intent, not UPDATE Prepare pinned_revision; first 3rd run proved MAC before later assertion"
 }
