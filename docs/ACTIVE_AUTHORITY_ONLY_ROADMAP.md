@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R377.0)
+## Piano attivo — aggiornato al 7 novembre 2026 (R378.0)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,8 +15,8 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **In corso (R377)** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **Da completare** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R378.0)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -44,6 +44,17 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   Fast CI [42360929830](https://github.com/DarkGh0st03/delegation/actions/runs/42360929830)
   e Engineer UI CI [42360929846](https://github.com/DarkGh0st03/delegation/actions/runs/42360929846)
   SUCCESS su `25926712`. Questo **non** è ancora un nuovo E2E nativo R377.
+
+- **R377.10–R377.11**: prove native gratuite di recovery dopo arresto
+  autenticato prima della scrittura, con nuovo Task Backend o Frontend.
+  Il Test Agent corregge un test applicativo con un Task separato. Retest
+  Docker e acceptance PASS, Draft PR attestata. [Backend](https://github.com/DarkGh0st03/delegation/actions/runs/42364984157) ·
+  [Frontend](https://github.com/DarkGh0st03/delegation/actions/runs/42365581148).
+- **R378.0**: l'issuer Child DC authority-only usa una sessione MCP privata
+  in-process a uso singolo per invocare il signer Rust nativo. MCP trasporta
+  un riferimento opaco. Restano da verificare l'integrazione nativa sulla
+  nuova SHA e il percorso definitivo delle VP. Il catalogo Task della Fase A
+  ha ancora aperti `create_file` e gli effetti ordinati su più file.
 
 **Vincolo di evidenza:** tutti i flussi gratuiti R375–R377 utilizzano
 decisioni e correzioni di riferimento scripted. Nessuna prova afferma che

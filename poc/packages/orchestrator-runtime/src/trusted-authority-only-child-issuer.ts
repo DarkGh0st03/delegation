@@ -9,6 +9,8 @@ import {giteaPermissionCovers}
  * An issued credential does not activate Gateway execution.
  */
 import {createHash} from "node:crypto";
+import {createOwnerPrivateChildMcpSession}
+ from "../../../mcp-shared/src/owner-private-child-mcp.ts";
 import {isDeepStrictEqual} from "node:util";
 import type {IssuedDelegationCredential} from "./authority-client.ts";
 import type {RootParameters} from "./trusted-engineer-authority.ts";
@@ -182,13 +184,17 @@ export class TrustedAuthorityOnlyChildIssuer {
     status_list_index:status.statusListIndex
    });
    this.#attempted.add(taskId);
-   // Native signing is executed only after a fresh trusted-root check.
-   const current=this.#coordinator.assertTrustedGatewayAuthorityBinding();
-   if(current.root_credential_id!==root.root_credential_id||
-      current.authority_digest!==root.authority_digest||
-      current.session_id!==root.session_id)
-    fail("Engineer root changed after Child reservation");
-   const signed=await this.#port.issueChild(request);
+   // The private MCP session transports an opaque one-use reference.
+   // Recheck the root inside the callback, immediately before native signing.
+   const signed=await createOwnerPrivateChildMcpSession(async()=>{
+    const current=this.#coordinator.assertTrustedGatewayAuthorityBinding();
+    if(current.root_credential_id!==root.root_credential_id||
+       current.authority_digest!==root.authority_digest||
+       current.session_id!==root.session_id||
+       this.#nowMs()>=end)
+     fail("Engineer root changed after Child reservation");
+    return this.#port.issueChild(request);
+   }).invokeOnce();
    // A successful Rust IPC response is NOT yet an EVM/status verification.
    if(!signed||signed.id!==request.credential_id||
       signed.credentialSubject?.sub!==task.agent_did||
