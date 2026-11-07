@@ -113,6 +113,19 @@ jobs:
           echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      # Reuse the existing verified native build cache. Cache ONLY compiled
+      # Rust artifacts/dependencies; never cache keys, Gitea, status or env.
+      - name: Restore shared native Rust cache
+        id: rust-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Build trusted Engineer Node-API and public-only Gateway verifier
         run: |
           cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
@@ -123,6 +136,17 @@ jobs:
           cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
           echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/f1-one-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
+      - name: Save verified shared native build cache
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Prove no competing Adapter HTTP can start
         run: |
           test "$ENGINEER_CORE_NATIVE_MODE" = 1
