@@ -111,7 +111,7 @@ async function fixture(action:(f:{
    assert.equal(raw.epoch,4);
    assert.equal(raw.agent_id,"backend");
    assert.deepEqual(raw.depends_on,["frontend-r341"]);
-   assert.deepEqual(raw.permissions,[writePerm]);
+   assert.deepEqual(raw.permissions,opts?.candidate?.permissions??[writePerm]);
    newRow={
     status:"task_registered_preflight_only",
     task_id:raw.task_id,epoch:raw.epoch,agent_id:raw.agent_id,
@@ -286,4 +286,65 @@ test("R342 forged R341 admission or reused status cannot reach native Rust",asyn
   }),/NO-GO/);
   assert.equal(called,false);
  });
+});
+
+test("R384.3 native signed CREATE D1 registers exactly one new Task only after original Runner FAIL",async()=>{
+ const permission={
+  resource:canonicalFileUri(repo,branch,
+   "apps/backend/src/users/account-suspension-created.ts"),
+  operation:"create_file" as const
+ };
+ const extendedRoot={...root,root_permissions:[
+  ...approved,{resource:branchUri+"/directories/apps/backend",
+   operation:"create_file" as const}
+ ]};
+ await fixture(async f=>{
+  const result=await admitFirstNativeD1RepairTask(f.input);
+  assert.equal(result.status,"native_d1_task_registered_without_gateway_or_child");
+  assert.equal(result.epoch,intent.epoch+1);
+  assert.equal(result.failed_test_task_id,intent.task_id);
+  assert.equal(result.original_root_credential_id,intent.root_credential_id);
+  assert.equal(result.task_registered,true);
+  assert.equal(result.gateway_registered,false);
+  assert.equal(result.child_credential_issued,false);
+  assert.equal(result.recovery_execution_authorized,false);
+  assert.equal(f.calls,1);
+  assert.deepEqual((f.registered as {permissions:unknown[]}).permissions,[permission]);
+  const [name]=await readdir(f.directory);
+  assert.ok(name?.endsWith(".d1-first-task.json"));
+  const stored=JSON.parse(await readFile(join(f.directory,name),"utf8"));
+  assert.equal(stored.original_root_credential_id,intent.root_credential_id);
+  assert.equal(stored.failed_test_task_id,intent.task_id);
+  assert.equal(stored.recovery_task_id,result.task_id);
+  assert.equal(stored.verified_fail_evidence_sha256,observed.evidence_sha256);
+  await assert.rejects(admitFirstNativeD1RepairTask(f.input),/NO-GO/u);
+  assert.equal(f.calls,1);
+ },{root:extendedRoot,candidate:{role:"backend",permissions:[permission]}} as never);
+});
+test("R384.3 CREATE D1 cannot register from a forged Runner FAIL or an unsigned scope",async()=>{
+ const permission={
+  resource:canonicalFileUri(repo,branch,"apps/backend/src/users/new.ts"),
+  operation:"create_file" as const
+ };
+ const extendedRoot={...root,root_permissions:[
+  ...approved,{resource:branchUri+"/directories/apps/backend",
+   operation:"create_file" as const}
+ ]};
+ for(const options of [
+  {candidate:{role:"backend",permissions:[permission]},root},
+  {candidate:{role:"backend",permissions:[permission]},
+   root:extendedRoot,failure:{...observed,repair_candidate:false}},
+  {candidate:{role:"backend",permissions:[permission]},
+   root:extendedRoot,failure:{...observed,tested_commit_sha:"f".repeat(40)}},
+  {candidate:{role:"backend",permissions:[permission,{
+   resource:canonicalFileUri(repo,branch,"apps/backend/src/users/another.ts"),
+   operation:"create_file"
+  }]},root:extendedRoot}
+ ]){
+  await fixture(async f=>{
+   await assert.rejects(admitFirstNativeD1RepairTask(f.input),/NO-GO/u);
+   assert.equal(f.calls,0);
+   assert.deepEqual(await readdir(f.directory),[]);
+  },options as never);
+ }
 });
