@@ -1168,8 +1168,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(childMetadataCount,14);
   assert.equal(issuedChildren,14,"original root PR must never create an agent Child");
   assert.equal(coordinator.registeredTaskCount,16);
-  assert.equal(gate.stagedCompletedTaskCount,14,
-   "original failed Test remains incomplete despite successful later retest and PR");
+  // The immutable original failed Test never completes. Of 16 registered
+  // Tasks, its one missing completion leaves 15 attested: the original Branch,
+  // 13 successful adaptive work Tasks, and the separately verified root PR.
+  assert.equal(gate.stagedCompletedTaskCount,15,
+   "only original failed Test remains incomplete; the root PR is completed");
   assert.equal(gatewayCasWrites,12);
   assert.equal(privateCasStagingBranchPosts,12);
   assert.equal(runnerCalls,2);
