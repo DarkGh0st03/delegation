@@ -176,3 +176,62 @@ test("R383.3 preflight refuses foreign repository client and unknown original Pr
  assert.throws(()=>foreign.mkPreflight(),/original Gateway, Gitea repository/u);
  assert.equal(foreign.stats().gets,0);
 });
+
+test("R383.4 create attempt is durable, exactly once and never a provider write",async t=>{
+ const f=await fixture(t);
+ const {intent}=await f.mkPreflight().stageCreate(f.record,HEAD);
+ await f.journal.reserveAttempt(intent);
+ const stem=createHash("sha256").update(bound.session_id+"\\n"+bound.task_id)
+  .digest("hex");
+ assert.deepEqual((await readdir(f.dir)).sort(),[
+  stem+".create-attempt.json",stem+".create-intent.json"
+ ].sort());
+ const attempt=JSON.parse(await readFile(join(f.dir,
+  stem+".create-attempt.json"),"utf8"));
+ assert.equal(attempt.schema,"authority-only-gitea-create-attempt-v1");
+ assert.equal(attempt.provider_write_authorized,false);
+ assert.equal(attempt.root_credential_id,intent.root_credential_id);
+ assert.equal(attempt.credential_id,intent.credential_id);
+ assert.equal(attempt.request_fingerprint,intent.request_fingerprint);
+ assert.equal(attempt.expected_head_sha,HEAD);
+ assert.equal(attempt.next_content_sha256,intent.next_content_sha256);
+ await assert.rejects(f.journal.reserveAttempt(intent),/EEXIST/u);
+ // A process restart must not convert an ambiguous request into a retry.
+ await assert.rejects(new Journal(f.dir).reserveAttempt(intent),/EEXIST/u);
+ await assert.rejects(f.journal.reserveAttempt({
+  ...intent,credential_id:"urn:foreign:child"
+ } as never),/differs/u);
+ assert.equal(f.stats().writes,0);
+ assert.equal(f.stats().gets,3);
+});
+
+test("R383.4 simultaneous attempt reservations cannot issue two writes",async t=>{
+ const f=await fixture(t);
+ const {intent}=await f.mkPreflight().stageCreate(f.record,HEAD);
+ const independent=new Journal(f.dir);
+ const results=await Promise.allSettled([
+  f.journal.reserveAttempt(intent),independent.reserveAttempt(intent)
+ ]);
+ assert.equal(results.filter(x=>x.status==="fulfilled").length,1);
+ assert.equal(results.filter(x=>x.status==="rejected").length,1);
+ assert.equal((await readdir(f.dir)).filter(x=>
+  x.endsWith(".create-attempt.json")).length,1);
+ assert.equal(f.stats().writes,0);
+});
+
+test("R383.4 failed preflight cannot reserve a create attempt",async t=>{
+ const f=await fixture(t,{status:503});
+ await assert.rejects(f.mkPreflight().stageCreate(f.record,HEAD));
+ const forged={...bound,
+  schema:"authority-only-gitea-create-intent-v1",
+  kind:"create_file_preflight_only",
+  repository,branch,path,expected_head_sha:HEAD,
+  old_path_absent_at_pinned_head:true,
+  next_content_sha256:createHash("sha256").update(content).digest("hex"),
+  next_content_bytes:Buffer.byteLength(content),prepared_at_ms:Date.now(),
+  provider_write_authorized:false
+ };
+ await assert.rejects(f.journal.reserveAttempt(forged as never));
+ assert.deepEqual(await readdir(f.dir),[]);
+ assert.equal(f.stats().writes,0);
+});
