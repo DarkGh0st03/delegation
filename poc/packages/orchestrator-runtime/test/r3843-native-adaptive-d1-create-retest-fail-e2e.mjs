@@ -258,7 +258,7 @@ assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
 let gatewayCasWrites=0,gatewayCreateCalls=0,draftPrCreateAttempts=0,
  branchPostAttempts=0;
-let privateCasStagingBranchPosts=0;
+let privateCasStagingBranchPosts=0,privateCreateStagingBranchPosts=0;
 class ObservedGiteaClient extends GiteaClient{
  async updateFileWithHeadCas(input){gatewayCasWrites++;return super.updateFileWithHeadCas(input);}
  async createFileWithHeadCas(input){gatewayCreateCalls++;return super.createFileWithHeadCas(input);}
@@ -278,7 +278,14 @@ const client=new ObservedGiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
    else if(typeof request.new_branch_name==="string"&&
            /^feature\/r302-internal-[a-f0-9]{28}$/u.test(request.new_branch_name))
     privateCasStagingBranchPosts++;
-   else throw Error("Unexpected Gitea branch POST outside original protected Task");
+   else if(typeof request.new_branch_name==="string"&&
+           /^feature\/r3832-create-[a-f0-9]{28}$/u.test(request.new_branch_name)){
+    // The native CREATE CAS executor owns its *separate*, deterministic
+    // private staging ref; no agent can choose or request this branch.
+    // Do not permit any other Gitea branch POST on the disposable owner.
+    privateCasStagingBranchPosts++;
+    privateCreateStagingBranchPosts++;
+   }else throw Error("Unexpected Gitea branch POST outside original protected Task");
   }
   return fetch(url,init);
  }});
@@ -1166,6 +1173,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(gatewayCasWrites,2);
   assert.equal(gatewayCreateCalls,1);
   assert.equal(privateCasStagingBranchPosts,3);
+  assert.equal(privateCreateStagingBranchPosts,1);
   assert.equal(draftPrCreateAttempts,0);
   assert.equal(runnerCalls,2);
   assert.equal((await readdir(path("runner-receipts")))
@@ -1212,6 +1220,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    model_selected_root_branch:true,independent_branch_get:true,
    real_native_rust_evm:true,opa_real:true,branch_posts:branchPostAttempts,
    private_cas_staging_branch_posts:privateCasStagingBranchPosts,
+   private_create_staging_branch_posts:privateCreateStagingBranchPosts,
    original_gateway_completed_tasks:gate.stagedCompletedTaskCount,
    native_worker_children:issuedChildren,
    native_private_mcp_child_issuances:nativeMcpChildCalls,
