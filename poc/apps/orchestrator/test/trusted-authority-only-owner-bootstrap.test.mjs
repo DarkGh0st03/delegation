@@ -286,3 +286,22 @@ test("operational bootstrap reuses the original session store and reserves the R
  assert.equal((await readdir(reservationDirectory)).length,1);
 
 });
+
+test("canonical deployment rejects extra configuration and missing billing consent before native startup",async t=>{
+ const f=await fixture(t);
+ const {prepareOperational}=await import("../src/canonical-owner-deployment.mjs");
+ const deployment=f.at("deployment.json");
+ await writeFile(deployment,JSON.stringify({unexpected:true}),{mode:0o600});
+ for(const [name,value] of Object.entries({
+  DELEGATION_ENGINEER_SERVICE_CONFIG:f.configPath,
+  DELEGATION_CANONICAL_DEPLOYMENT_CONFIG:deployment
+ })){
+  const previous=process.env[name];
+  t.after(()=>{if(previous===undefined)delete process.env[name];else process.env[name]=previous;});
+  process.env[name]=value;
+ }
+ await assert.rejects(prepareOperational({expectedSourceSha:SHA}),/configuration denied/u);
+ await assert.rejects(prepareOperational({
+  expectedSourceSha:SHA,chargeAuthorization:"I AUTHORIZE GEMINI API CHARGES"
+ }),/configuration denied/u);
+});

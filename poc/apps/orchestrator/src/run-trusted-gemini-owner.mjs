@@ -285,7 +285,7 @@ async function loadCanonicalCliOperational({modulePath,expectedSourceSha,chargeA
   deny();
  const {prepareOperational}=await import(pathToFileURL(absolute).href);
  if(typeof prepareOperational!=="function")deny();
- return prepareOperational();
+ return prepareOperational({expectedSourceSha,chargeAuthorization});
 }
 
 if(process.argv[1]&&import.meta.url===

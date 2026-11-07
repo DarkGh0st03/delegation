@@ -166,6 +166,27 @@ loading that module. After Planning, sign the Engineer review through
 the loopback Review Host and enter `execute` in the owner terminal.
 Entering `quit`, closing input, or interrupting retires the session.
 
-The deployment composition module for a real environment still needs to be
-provided and exercised through the free native E2E. R381.8 was a scripted
-proof on an earlier SHA. No paid Gemini workflow is authorized here.
+Use the repository's composition module at
+`poc/apps/orchestrator/src/canonical-owner-deployment.mjs`. Set
+`DELEGATION_CANONICAL_DEPLOYMENT_CONFIG` to a private JSON file with
+exactly these fields:
+
+- `directory`, an existing private directory containing `journals`
+  (with the five journal subdirectories above), `status-reservations`,
+  `mutationIntent`, `giteaReceipts`, `runnerIntent`,
+  `runnerFailureReceipts` and `runnerPassReceipts`.
+- `giteaUrl`, `runnerUrl`, `opaUrl` and private file paths
+  `giteaWriterFile`, `giteaReaderFile`, `runnerTokenFile`,
+  `orchestratorTokenFile`, and `evidenceKeyFile`. The evidence key is
+  32 bytes encoded as 64 lowercase hex digits. Writer and reader
+  credentials must differ.
+- `workerTokens` and `workerPorts` keyed by `backend`, `frontend` and
+  `test`. Tokens are private file paths and ports are distinct integers.
+- `rootIndex` and `childIndices` as distinct preallocated decimal strings
+  for the same Status List, excluding the preliminary Root index.
+- `draftTitle` and `draftBody` for the signed Draft PR operation.
+
+The module composes the provider and agent dependencies in-process. The
+deployment must already provide Rust, authenticated Gateway planning IPC,
+OPA, Gitea and Runner. The full deployment still requires a free native
+validation on the same source SHA before a paid pilot.

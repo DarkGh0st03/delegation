@@ -103,6 +103,7 @@ async function dirOwned(value){
     (typeof process.getuid==="function"&&st.uid!==process.getuid())||
     await realpath(value)!==value)deny();
 }
+export {privateText as readProtectedCanonicalOwnerFile};
 async function privateText(file,maxBytes=32768){
  if(!path(file))deny();
  await dirOwned(dirname(file));
