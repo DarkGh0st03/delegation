@@ -39,6 +39,11 @@ const roleOps:Record<Role|"orchestrator",Set<Op>>={
 export interface PlanningReadPort {
   invoke(tool:ReadTool,args:Record<string,unknown>,
     signal?:AbortSignal):Promise<unknown>;
+  /** Opt-in original-root composite reader, not a model authority port.
+   * No fallback to multiple unverified provider effects. */
+  invokeComposite?(actions:readonly {
+    tool:"read_file"|"list_directory";arguments:Record<string,unknown>
+  }[],signal?:AbortSignal):Promise<unknown>;
 }
 /** Evidence metadata only. No model prompts, tool contents or credentials. */
 export type PlanningObservation =
@@ -712,6 +717,60 @@ export class TrustedAdkReadOnlyPlanner {
         return refuse("trusted_planning_read_failed");
       }
     };
+    // A batch has one signed multipermission Gateway VP; never emulate it
+    // using separate reads or expose a partial result after a late failure.
+    const readBatch=async(paths:readonly string[],branch:string)=>{
+      const refused=(reason:string)=>{
+        denied=true;
+        cfg.onObservation?.(Object.freeze({
+          kind:"read",status:"denied",tool:"read_file",reason
+        }));
+        return {ok:false,error:reason};
+      };
+      if(planningDeadline.aborted)return refused("planning_deadline");
+      if(!cfg.readPort.invokeComposite)return refused("composite_unavailable");
+      if(!Array.isArray(paths)||paths.length<2||paths.length>12||
+         branch!==sourceBranch||
+         new Set(paths).size!==paths.length||
+         paths.some(path=>typeof path!=="string"||!files.has(path)))
+        return refused("outside_planning_scope");
+      if(calls+paths.length>64)return refused("read_budget");
+      calls+=paths.length;
+      try{
+        const actions=paths.map(path=>({
+          tool:"read_file" as const,arguments:{branch,path}
+        }));
+        const raw=obj(await cfg.readPort.invokeComposite(actions,planningDeadline));
+        if(planningDeadline.aborted||raw.decision!=="allow"||
+           raw.pinned_revision!==sp.base_revision||
+           !Array.isArray(raw.executions)||
+           raw.executions.length!==paths.length)
+          throw Error("Composite read result differs from pinned trusted source");
+        const results:{path:string;content:string}[]=[];
+        let readBytes=0;
+        for(let i=0;i<paths.length;i++){
+          const file=obj(raw.executions[i]);
+          if(file.provider!=="gitea"||file.performed!==true||
+             file.tool!=="read_file"||file.branch!==sourceBranch||
+             file.path!==paths[i]||file.revision!==sp.base_revision||
+             file.encoding!=="utf-8"||typeof file.content!=="string")
+            throw Error("Composite read evidence mismatched");
+          const size=Buffer.byteLength(file.content,"utf8");
+          if(size>24000)throw Error("Composite file content too large");
+          readBytes+=size;
+          results.push({path:paths[i],content:file.content});
+        }
+        if(bytes+readBytes>524288)throw Error("Composite cumulative read exceeded");
+        bytes+=readBytes;
+        readCount+=results.length;
+        for(const path of paths)cfg.onObservation?.(Object.freeze({
+          kind:"read",status:"verified",tool:"read_file",path
+        }));
+        return {ok:true,revision:sp.base_revision,files:results};
+      }catch{
+        return refused("trusted_planning_read_failed");
+      }
+    };
     const tools=[
       // The same approved-plan Card factory as A2A; host-only skill lookup.
       // The trusted registry pins DID/card_ref; no model-controlled URL.
@@ -766,6 +825,13 @@ export class TrustedAdkReadOnlyPlanner {
         parameters:z.object({branch:z.enum([sourceBranch]),
           path:z.enum(sp.files as [string,...string[]])}).strict(),
         execute:async(args)=>read("read_file",args)
+      })]:[]),
+      ...(sp.files.length>=2&&cfg.readPort.invokeComposite?[new FunctionTool({
+        name:"read_files",
+        description:"Read 2-12 different trusted snapshot files in one verified read-only Gateway transaction and multipermission VP. No writes.",
+        parameters:z.object({branch:z.enum([sourceBranch]),
+          paths:z.array(z.enum(sp.files as [string,...string[]])).min(2).max(12)}).strict(),
+        execute:async(args)=>readBatch(args.paths,args.branch)
       })]:[])
     ];
     const agent=new LlmAgent({
