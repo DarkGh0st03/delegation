@@ -88,7 +88,8 @@ jobs:
           # workflow or the later full-stack R3818 native execution step.
           env -u ADAPTER_ENGINEER_NATIVE_SOCKET APPROVED_RUNNER_NATIVE_MCP=0 \
             R3818_CANONICAL_NATIVE_MCP=0 \
-            node --experimental-strip-types --test --test-name-pattern="R381.7" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
+            node --experimental-strip-types --test --test-name-pattern="R381.7|R382.4" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
+          node --test poc/apps/orchestrator/test/trusted-gemini-owner-dispatch.test.mjs
       - name: Boot only disposable Anvil and OPA (no Adapter or Gateway HTTP service)
         run: |
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa gitea
