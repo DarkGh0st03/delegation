@@ -105,7 +105,10 @@ export class DeterministicA2AOrchestrator {
   readonly #initialIntervalMs: number;
   readonly #maxIntervalMs: number;
 
-  constructor(options: A2APollingOptions = {}) {
+  readonly #verifyCard?: (baseUrl:string,card:AgentCard)=>void;
+
+  constructor(options: A2APollingOptions = {}, verifyCard?: (baseUrl:string,card:AgentCard)=>void) {
+    this.#verifyCard=verifyCard;
     this.#deadlineMs = positiveSafe(options.deadlineMs ?? 12 * 60_000, "A2A deadline");
     this.#initialIntervalMs = positiveSafe(options.initialIntervalMs ?? 500, "A2A poll interval");
     this.#maxIntervalMs = positiveSafe(options.maxIntervalMs ?? 3000, "A2A max poll interval");
@@ -125,6 +128,7 @@ export class DeterministicA2AOrchestrator {
     const client = await this.#factory.createFromUrl(request.agent_base_url);
     const card = await client.getAgentCard();
     assertDelegatedAuthorizationSupport(card);
+    this.#verifyCard?.(request.agent_base_url,card);
 
     if(request.trusted_gateway_task_id!==undefined&&
        !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(request.trusted_gateway_task_id)){

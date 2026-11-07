@@ -101,6 +101,10 @@ test("R5 role card profile and advertised private transport cannot be downgraded
     (v:any)=>{v.supportedInterfaces[0].url="http://localhost:9000/a2a/rest";},
     (v:any)=>{v.capabilities.extensions[0].params.agentDid="did:attacker";},
     (v:any)=>{v.skills[0].id="unsupported-tool";},
+    (v:any)=>{v.capabilities.extensions[0].params.taskCapabilities=["run_tests"];},
+    (v:any)=>{v.capabilities.extensions[0].params.taskCapabilities=["read_file","read_file"];},
+    (v:any)=>{delete v.capabilities.extensions[0].params.taskCapabilities;},
+    (v:any)=>{v.supportedInterfaces[0].protocolVersion="0.0";},
     (v:any)=>{v.supportedInterfaces[0].protocolBinding="gRPC";}
   ];
   for(const mutate of cases){
@@ -117,4 +121,21 @@ test("R5 role card profile and advertised private transport cannot be downgraded
       endpoints,fetchFn:fakeFetch as typeof fetch
     }),/pinned localhost role-card verification denied/);
   }
+});
+
+test("R379 verified Agent Card capability subset stays scoped to the declared role",async()=>{
+ const endpoints={
+  backend:"http://127.0.0.1:60001",frontend:"http://127.0.0.1:60002",
+  test:"http://127.0.0.1:60003"
+ };
+ const profiles=await assertTrustedApprovedA2AStartup({endpoints,fetchFn:async url=>{
+  const role=ROLES.find(role=>String(url)===endpoints[role]+"/.well-known/agent-card.json")!;
+  const card=createSpecializedAgentCard(role,endpoints[role]);
+  if(role==="backend")card.capabilities.extensions[0]!.params.taskCapabilities=["read_file"];
+  return Response.json(card);
+ }});
+ assert.deepEqual(profiles.backend,{did:"did:thesis:backend-agent",capabilities:["read_file"]});
+ assert.equal(profiles.frontend.capabilities.includes("run_tests"),false);
+ assert.equal(profiles.test.capabilities.includes("run_tests"),true);
+ assert.equal(Object.isFrozen(profiles.backend.capabilities),true);
 });

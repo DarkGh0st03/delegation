@@ -105,6 +105,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   approvals,journal:options.activationJournal,authenticatedEngineerDid:approval.engineerDid});
  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({sessionId:snapshot.session_id,
   engineer:session,approvals,journal:options.taskJournal,trustedAgentRegistry:options.trustedAgentRegistry});
+ const configuredAgents=structuredClone(options.trustedAgentRegistry);
+ const configuredProfiles=Object.fromEntries(Object.entries(configuredAgents)
+  .map(([id,p])=>[id,{capabilities:p.capabilities}]));
+ let verifiedProfiles;
  const agents=Object.fromEntries(['backend','frontend','test'].map(role=>{
   const pin=options.trustedAgentRegistry?.[role];
   if(!pin)deny('three trusted agent card pins required');
@@ -321,9 +325,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
        model:input.model,requirement,branch:before.branch,
        rootPermissions:before.root_permissions,
-       agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry).map(
-        ([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}]
-       )),
+       agents:verifiedProfiles??configuredProfiles,
        previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({
         task_id:p.task_id,agent_id:p.agent_id
        })),
@@ -464,7 +466,19 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        await owner.close();
        deny('Engineer root retired during A2A Owner startup');
       }
-      operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      try{
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       const profiles=structuredClone(configuredProfiles);
+       for(const [role,card] of Object.entries(owner.verifiedAgentProfiles)){
+        const pin=configuredAgents[role];
+        if(!pin||pin.did!==card.did)
+         deny('verified Agent Card differs from trusted specialist DID');
+        const capabilities=pin.capabilities.filter(operation=>card.capabilities.includes(operation));
+        if(!capabilities.length)deny('verified specialist has no configured capability');
+        profiles[role]={capabilities};
+       }
+       verifiedProfiles=profiles;
+      }catch(error){await owner.close();throw error;}
       a2aOwner=owner;
       // SDK Owner is private to the verified R349 Engineer session.
       // Only guarded dispatch and attestation on this handle can use it.
@@ -659,8 +673,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        .filter(o=>o.revision===head.commit_sha);
       return {
        requirement,branch,rootPermissions:live.root_permissions,
-       agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
-        .map(([id,p])=>[id,{capabilities:p.capabilities}])),
+       agents:verifiedProfiles??configuredProfiles,
        previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
        nextEpoch:operationalCoordinator.registeredTaskCount+1,
        executionProgress:{current_head_sha:head.commit_sha,

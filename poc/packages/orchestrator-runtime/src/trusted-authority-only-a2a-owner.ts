@@ -11,7 +11,7 @@
 import {TaskState} from "@a2a-js/sdk";
 import {DeterministicA2AOrchestrator,
  type A2APollingOptions} from "../../agent-runtime/src/orchestrator.ts";
-import {assertTrustedApprovedA2AStartup}
+import {assertTrustedApprovedA2AStartup,verifyTrustedApprovedAgentCard,type VerifiedA2AProfiles}
  from "./trusted-a2a-startup-probe.ts";
 import {isDeepStrictEqual} from "node:util";
 import {canonicalBranchUri,canonicalFileUri}
@@ -74,6 +74,7 @@ export class TrustedAuthorityOnlyA2AOwner {
  readonly #bootstrap:TrustedAuthorityOnlyRemoteEffectBootstrap;
  readonly #transport:ProtectedA2AClientPort;
  readonly #urls:AgentUrls;
+ readonly verifiedAgentProfiles?:VerifiedA2AProfiles;
  readonly #attempted=new Set<string>();
  /** Actual owner dispatch reports, never A2A supplied evidence. */
  readonly #reported=new Map<string,OwnerA2AReport>();
@@ -88,6 +89,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   bootstrap:TrustedAuthorityOnlyRemoteEffectBootstrap;
   a2a:ProtectedA2AClientPort;
   agentBaseUrls:AgentUrls;
+  verifiedAgentProfiles?:VerifiedA2AProfiles;
  }){
   if(!(opts?.coordinator instanceof TrustedAuthorityOnlyExecutionCoordinator)||
      !(opts.childIssuer instanceof TrustedAuthorityOnlyChildIssuer)||
@@ -105,6 +107,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   this.#coordinator=opts.coordinator;this.#issuer=opts.childIssuer;
   this.#gateway=opts.gateway;this.#bootstrap=opts.bootstrap;
   this.#transport=opts.a2a;this.#urls=Object.freeze(urls);
+  this.verifiedAgentProfiles=opts.verifiedAgentProfiles;
  }
  /**
   * Actual owner-side Task handoff. The instruction is descriptive data
@@ -143,6 +146,10 @@ export class TrustedAuthorityOnlyA2AOwner {
      !ROLES.includes(row.agent_id as SpecializedAgentRole))
     deny("Engineer root, Task, native Child and Gateway differ");
   const role=row.agent_id as SpecializedAgentRole;
+  const card=this.verifiedAgentProfiles?.[role];
+  if(card&&(card.did!==row.agent_did||
+     row.permissions.some(p=>!card.capabilities.includes(p.operation))))
+   deny("Task differs from verified specialist Agent Card");
   const branch=root.branch,branchUri=canonicalBranchUri(root.repository,branch);
   const filePermissions:NonNullable<DeterministicSubtask["approved_file_permissions"]>=[];
   let effects=0;
@@ -317,7 +324,7 @@ export class TrustedAuthorityOnlyA2AOwner {
  */
 export async function startTrustedAuthorityOnlyA2AOwner(
  config:TrustedAuthorityOnlyRemoteEffectBootstrapOptions & {
-  a2a:ProtectedA2AClientPort;agentBaseUrls:AgentUrls
+  a2a:ProtectedA2AClientPort;agentBaseUrls:AgentUrls;verifiedAgentProfiles?:VerifiedA2AProfiles
  }):Promise<TrustedAuthorityOnlyA2AOwner>{
  const bootstrap=await TrustedAuthorityOnlyRemoteEffectBootstrap.start(config);
  try{
@@ -358,9 +365,17 @@ export async function startTrustedAuthorityOnlySdkA2AOwner(
   deny("canonical SDK A2A startup requires distinct loopback role hosts");
  // Card probes use GET with no credential, then the protected SDK client
  // performs the one-shot A2A HTTP send only after R324 private Task bind.
- await assertTrustedApprovedA2AStartup({endpoints:urls});
- const client=new DeterministicA2AOrchestrator(config.a2aPolling);
+ const verifiedAgentProfiles=await assertTrustedApprovedA2AStartup({endpoints:urls});
+ const client=new DeterministicA2AOrchestrator(config.a2aPolling,(url,card)=>{
+  const role=ROLES.find(candidate=>urls[candidate]===url);
+  if(!role)deny("SDK send has no verified specialist endpoint");
+  const live=verifyTrustedApprovedAgentCard(role,url,card);
+  const pinned=verifiedAgentProfiles[role];
+  if(live.capabilities.length!==pinned.capabilities.length||
+     live.capabilities.some(operation=>!pinned.capabilities.includes(operation)))
+   deny("specialist Agent Card capabilities changed after startup");
+ });
  return startTrustedAuthorityOnlyA2AOwner({
-  ...config,agentBaseUrls:urls,a2a:client
+  ...config,agentBaseUrls:urls,a2a:client,verifiedAgentProfiles
  });
 }

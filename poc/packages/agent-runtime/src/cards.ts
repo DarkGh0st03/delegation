@@ -12,6 +12,8 @@ import {
  LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_TAGS
 } from "./fixtures/account-suspension-agent-cards.ts";
 
+import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "./approved-specialized-profiles.ts";
+
 const ROLE_CONFIG = {
   backend:{name:"Backend Development Agent",did:"did:thesis:backend-agent"},
   frontend:{name:"Frontend Development Agent",did:"did:thesis:frontend-agent"},
@@ -90,6 +92,7 @@ export function createSpecializedAgentCard(
               required: true,
               params: {
                 agentDid: config.did,
+                ...(approved?{taskCapabilities:[...APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools]}:{}),
                 evidenceLocation: "message.metadata.delegation_evidence"
               }
             }
