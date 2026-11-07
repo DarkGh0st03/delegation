@@ -82,6 +82,9 @@ export async function startSpecializedAgentServer(
        process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
        !options.mcpTaskSigning))
     throw Error("private_native_mcp_requires_owner_bound_task");
+  if(options.adk?.nativePresentationTransport==="mcp-stdio"&&
+     !options.nativeSignerDid)
+    throw Error("private_native_mcp_requires_signer_did");
 
   // R194 reject retired repository/Runner MCP options for EVERY profile,
   // including direct JS library callers rather than only production launchers.
