@@ -10,6 +10,11 @@ const PROBE_PREFIX="[r3803-planning-probe] ";
 const DENIALS=new Set(["none","trusted_planning_read_failed",
  "outside_planning_scope","read_budget","planning_deadline",
  "composite_unavailable","other"]);
+const GATEWAY_REASONS=new Set([
+ "none","verification_rejected","verifier_unavailable","policy_denied",
+ "provider_unavailable","trusted_binding_denied",
+ "verified_only_no_provider","provider_mismatch","other"
+]);
 function boundedR3803Probe(stderr){
  const raw=Buffer.isBuffer(stderr)?stderr.toString("utf8"):
    typeof stderr==="string"?stderr:"";
@@ -21,19 +26,28 @@ function boundedR3803Probe(stderr){
       item.event!=="r3803_planning_failure_probe_v1"||
       Object.keys(item).sort().join("|")!==[
        "event","model_turns","verified_lists","verified_files",
-       "denied_reads","last_denial","rejected_proposals"
+       "denied_reads","first_denial","last_denial","rejected_proposals",
+       "gateway_prepares","gateway_executions","gitea_reads",
+       "gateway_last_reason"
       ].sort().join("|")||
-      !DENIALS.has(item.last_denial)||
+      !DENIALS.has(item.first_denial)||!DENIALS.has(item.last_denial)||
+      !GATEWAY_REASONS.has(item.gateway_last_reason)||
       ["model_turns","verified_lists","verified_files","denied_reads",
-       "rejected_proposals"].some(k=>!Number.isSafeInteger(item[k])||
+       "rejected_proposals","gateway_prepares","gateway_executions",
+       "gitea_reads"].some(k=>!Number.isSafeInteger(item[k])||
         item[k]<0||item[k]>100))continue;
    return Object.freeze({
      model_turns:item.model_turns,
      verified_lists:item.verified_lists,
      verified_files:item.verified_files,
      denied_reads:item.denied_reads,
+     first_denial:item.first_denial,
      last_denial:item.last_denial,
-     rejected_proposals:item.rejected_proposals
+     rejected_proposals:item.rejected_proposals,
+     gateway_prepares:item.gateway_prepares,
+     gateway_executions:item.gateway_executions,
+     gitea_reads:item.gitea_reads,
+     gateway_last_reason:item.gateway_last_reason
    });
  }
  return null;
