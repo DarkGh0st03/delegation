@@ -1,0 +1,8 @@
+{
+  "checkpoint": "R365.1",
+  "baseline_native_sha": "65274c4a987d45e89e2fcdc61db0955bb11e7598",
+  "objective": "Extend exact signed immutable root DAG to Test Agent Task at epoch 3, guarantee no Test Child issued/enrolled until after independently completed native Frontend, future Docker execution deliberately excluded from this first native checkpoint",
+  "scope": "account-suspension",
+  "paid_model_calls_allowed": false,
+  "status": "requested, no Test Docker PASS claimed"
+}
