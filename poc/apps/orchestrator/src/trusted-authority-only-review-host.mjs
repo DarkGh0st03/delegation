@@ -1148,8 +1148,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const sequential=pin?.operation==='update_file'&&
        TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
         input.effectStager,gateway,input.taskId,input.runtimeTaskId);
+      // R376: only the adaptive loop AFTER an independently authenticated
+      // Runner FAIL may dispatch a signed one-effect diagnostic read Child.
+      // The private independent receipt reader must already be installed.
+      const diagnosticRead=pin?.operation==='read_file'&&
+       adaptiveLoopAttempted&&adaptiveVerifiedFailures.length>0&&
+       ['backend','frontend'].includes(pin.agent_id)&&
+       nativeEffectBinding?.readObserver instanceof AuthenticatedGiteaReadCompletionObserver;
       if(!pin||pin.task_id!==input.taskId||
-         !['update_file','run_tests'].includes(pin.operation)||
+         (!['update_file','run_tests'].includes(pin.operation)&&!diagnosticRead)||
          issuedEffectStagers.get(input.runtimeTaskId)!==input.effectStager||
          !(ordinary||sequential))
        deny('protected A2A dispatch requires an original owner-bound effect stager');
