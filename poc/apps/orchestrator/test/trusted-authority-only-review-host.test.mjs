@@ -3060,3 +3060,74 @@ test('Root effect transport rejects changed challenges and consumes a failed nat
  assert.equal(prepares,1);
  assert.equal(executes,0);
 });
+
+test('R382.7 protected bootstrap reaches the native Branch boundary through the signed Review Host handoff',async t=>{
+ const f=await fixture(t,{includeBranchPermission:true}),host=await f.start();
+ const saved=new Map(['DELEGATION_GATEWAY_ARCHITECTURE','APPROVED_RUNNER_NATIVE_MCP',
+  'ADAPTER_ENGINEER_NATIVE_SOCKET'].map(key=>[key,process.env[key]]));
+ try{
+  const {createProtectedCanonicalOperationalProvision}=await import(
+   '../src/trusted-authority-only-owner-bootstrap.mjs');
+  const directory=await mkdtemp(join(tmpdir(),'owner-bootstrap-branch-'));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const at=name=>join(directory,name);
+  const directories=Object.fromEntries([
+   'mutationIntent','giteaReceipts','runnerIntent','runnerFailureReceipts','runnerPassReceipts'
+  ].map(name=>[name,at(name)]));
+  await Promise.all([...Object.values(directories),at('reservations'),
+   ...['gateway-tasks','issuer-children','gateway-children','effect-fences','sequences'].map(at)
+  ].map(dir=>mkdir(dir,{mode:0o700})));
+  await writeFile(at('role.token'),'private-orchestrator-test-token',{mode:0o600});
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE='authority-only';
+  process.env.APPROVED_RUNNER_NATIVE_MCP='1';
+  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=at('absent-rust.sock');
+  const {owner,repository}=snapshot.repository;
+  let gets=0,installs=0;
+  const client=token=>new GiteaClient({baseUrl:'http://offline.invalid',token,owner,repository,
+   fetchFn:async(url,init)=>{
+    assert.equal(init?.method??'GET','GET');
+    assert.ok(String(url).endsWith('/branches/main'));
+    gets++;
+    return Response.json({name:'main',commit:{id:snapshot.base_revision}});
+   }});
+  const writer=client('writer'),reader=client('reader');
+  const key=Buffer.alloc(32,23),store=new InMemoryRequestStore();
+  const permission={operation:'create_branch',resource:'gitea://gitea.local/'+owner+'/'+repository};
+  const model=new R351ScriptedDecision({task_id:'bootstrap-branch',agent_id:'orchestrator',
+   depends_on:[],permissions:[permission],instruction:'Create the approved Branch'});
+  const provision=await createProtectedCanonicalOperationalProvision(f.options,{
+   journalDirectory:directory,orchestratorTokenFile:at('role.token'),
+   rootReservation:{directory:at('reservations'),index:'61',validitySeconds:600},
+   completionObserver:new TrustedAuthorityOnlyCompletionObserver({
+    readVerifiedCompletion:async()=>{throw Error('unexpected completion');}
+   }),
+   nativeEffects:{store,giteaClient:writer,independentGiteaClient:reader,
+    runnerClient:new RunnerClient({baseUrl:'http://offline.invalid',gatewayToken:'runner'}),
+    runnerPassObserver:new AuthenticatedRunnerCompletionObserver({
+     directory:directories.runnerPassReceipts,key,repository:owner+'/'+repository,branch,
+     giteaClient:reader
+    }),directories,evidenceKey:key,
+    installAuthorization(deps){assert.equal(deps.store,store);installs++;}
+   },
+   rootGateway:{audit:new InMemoryAuditSink(),verifier:{},policy:{},executor:{}},
+   workflow:{sdk:{},adaptive:{nextChildParameters(){throw Error('unexpected Child');}},
+    createBranch:{model,branch,baseBranch:'main',permission}}
+  });
+  const handoff=host.createReviewedCanonicalHandoff({provision});
+  await assert.rejects(handoff.runApprovedCanonical(),/approval|receipt/u);
+  assert.deepEqual(await readdir(at('reservations')),[]);
+  await f.approve(['permission-1','permission-2','permission-3']);
+  await assert.rejects(handoff.runApprovedCanonical(),/Native Rust Orchestrator presentation denied/u);
+  assert.equal(installs,1);
+  assert.equal(model.calls,1);
+  assert.equal(gets,1);
+  assert.equal(store.size(),1);
+  assert.equal((await readdir(at('reservations'))).length,1);
+  assert.equal(host.phase,'revoked');
+ }finally{
+  for(const [key,value] of saved){
+   if(value===undefined)delete process.env[key];else process.env[key]=value;
+  }
+  await host.close();
+ }
+});
