@@ -15,6 +15,10 @@ import {dirname,isAbsolute,normalize,resolve} from "node:path";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {prepareConfiguredOwnerEngineerBootstrap}
   from "./trusted-engineer-service.mjs";
+import {createGeminiAdkModel}
+  from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
+import {bindProtectedCanonicalGeminiOwner}
+  from "./trusted-authority-only-gemini-owner-binding.mjs";
 import {createProtectedGeminiOwnerDispatch}
   from "./trusted-gemini-owner-dispatch.mjs";
 import {assertR5AuthenticSignedReviewReady}
@@ -114,6 +118,10 @@ export async function loadProtectedGeminiOwnerInput(inputFile,{chargeAuthorizati
 export async function startProtectedGeminiOwnerSession({
   configPath,expectedSourceSha,inputFile,chargeAuthorization
 }={}){
+  // R382.6: never start the obsolete Signed DAG Coordinator when the
+  // original authority-only architecture is selected. No automatic
+  // conversion, provider billing or permission downgrade is possible.
+  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only")deny();
   if(process.env.GITHUB_ACTIONS==="true"||
      !SOURCE_SHA.test(expectedSourceSha??"")||
      chargeAuthorization!==CONFIRMATION)deny();
@@ -148,6 +156,68 @@ export async function startProtectedGeminiOwnerSession({
     runApprovedGeminiDag:dispatch.runApprovedGeminiDag,
     close:dispatch.close
   });
+}
+
+/**
+ * R382.6 — explicit, potentially BILLABLE owner-only Gemini Planning
+ * entrypoint using the ORIGINAL authority-only Review Host.
+ *
+ * The privileged operator must separately pass: (1) a clean GitHub SHA
+ * pinned to the checked-out source, (2) the unchanged 0600 JSON/key
+ * files and the exact billing consent, (3) original in-process Review
+ * Host stores/native Rust ports, and (4) private operational provision
+ * callback. No CLI/env/HTTP/ADK/A2A/MCP data may construct authority.
+ *
+ * Planning starts inside startTrustedAuthorityOnlyReviewHost() only
+ * AFTER all non-billable preconditions pass. The returned methods never
+ * bypass the ORIGINAL Ed25519 Engineer review; the owner chooses when
+ * to invoke one-shot runApprovedCanonical(). No paid model used until
+ * an operator calls this function with explicit confirmation.
+ */
+export async function startProtectedCanonicalGeminiOwnerSession({
+ authority,expectedSourceSha,inputFile,chargeAuthorization,provision
+}={}){
+ if(process.env.GITHUB_ACTIONS==="true"||
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+    process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+    !SOURCE_SHA.test(expectedSourceSha??"")||
+    chargeAuthorization!==CONFIRMATION||
+    typeof provision!=="function"||
+    !authority||typeof authority!=="object"||Array.isArray(authority))
+  deny();
+ // This source pin must be verified BEFORE reading model keys or
+ // constructing the potentially billable ADK Planner.
+ checkLocalSourceSha(expectedSourceSha);
+ const input=await loadProtectedGeminiOwnerInput(inputFile,{
+  chargeAuthorization
+ });
+ const model=createGeminiAdkModel({
+  apiKey:input.geminiApiKey,model:input.modelName
+ }); // constructor only; no provider request at assembly
+ const options=bindProtectedCanonicalGeminiOwner({
+  authority,input,model
+ });
+ const {startTrustedAuthorityOnlyReviewHost}=await import(
+  "./trusted-authority-only-review-host.mjs");
+ const host=await startTrustedAuthorityOnlyReviewHost(options);
+ try{
+  const handoff=host.createReviewedCanonicalHandoff({provision});
+  return Object.freeze({
+   engineerUrl:host.engineerUrl,
+   status:"canonical_gemini_planning_awaiting_independent_engineer_review",
+   get phase(){return host.phase;},
+   reviewReadiness:()=>handoff.reviewReadiness(),
+   runApprovedCanonical:()=>handoff.runApprovedCanonical(),
+   close:()=>handoff.close()
+  });
+ }catch(error){
+  // A failed post-Planning bind must retire the original preliminary
+  // Root; never return a loose listener or a legacy Executor.
+  try{await host.close();}catch{
+   deny(); // retirement unconfirmed: never report a successful bind
+  }
+  throw error;
+ }
 }
 
 if(process.argv[1]&&import.meta.url===
