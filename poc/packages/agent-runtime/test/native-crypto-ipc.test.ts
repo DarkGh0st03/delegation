@@ -235,3 +235,40 @@ test("R381.4 non-native signed Agent may not choose private MCP signer",()=>{
    presenter_id:"did:thesis:backend"}
  }),/Private MCP native presenter requires trusted Rust socket/u);
 });
+
+test("R382.0 aborted original A2A Task cannot obtain a native MCP VP after Rust request",async t=>{
+ const abort=new AbortController();
+ const rust=await fixture(t,()=>{
+  // This is deliberately in the trusted test Rust socket callback:
+  // cancellation happens AFTER native IPC was sent but BEFORE a reply.
+  abort.abort();
+  return {ok:true,result:{signed_vp:"PRIVATE_CANCELLED_VP_NEVER_EXPOSE"}};
+ });
+ let fallback=0;
+ const handler=new DelegationEvidenceHandler({
+  adapterToken:"PRIVATE_CANCELLED_BACKEND",
+  nativeSocketPath:rust.path,
+  nativePresentationTransport:"mcp-stdio",
+  signal:abort.signal,
+  evidence:{credential:"opaque-native-child",
+   credential_id:"urn:r3820:child",presenter_id:"did:thesis:backend"},
+  fetchFn:(async()=>{
+   fallback++;throw Error("Legacy Adapter must not be called");
+  }) as typeof fetch
+ });
+ const prepared={
+  request_id:"r3820-real-task-cancel",
+  audience:"cloud-access-gateway",
+  challenge:"private-gateway-challenge",
+  expires_at:new Date(Date.now()+60000).toISOString(),
+  required_permission:{resource:"gitea://trusted/files/backend.ts",
+   operation:"read_file"}
+ };
+ await assert.rejects(handler.createPresentation(prepared),e=>{
+  assert.doesNotMatch(String(e),/PRIVATE_CANCELLED_VP_NEVER_EXPOSE/u);
+  return true;
+ });
+ assert.equal(abort.signal.aborted,true);
+ assert.equal(rust.calls.length,1);
+ assert.equal(fallback,0);
+});
