@@ -2,7 +2,7 @@
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Test-owner seeds disposable Gitea file BEFORE signed Engineer approval.
 # Only the signed UPDATE Task may commit; never main or production GitHub.
-name: R365 Signed Backend Frontend Test Native Proof (No AI)
+name: R365 Three-Role Native A2A ADK Docker E2E (No AI)
 on:
   workflow_dispatch:
   push:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   direct-rust-live-evm:
-    name: "R365 Signed Backend Frontend Test native DAG"
+    name: "R365 Backend Frontend Test full native signed DAG and Docker"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
@@ -155,7 +155,7 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/native-evm-adapter.pid
-      - name: R365 authority-only native Rust/EVM + OPA -> one-shot Gitea atomic update
+      - name: R365 native signed Backend-Frontend-Test A2A ADK -> Docker PASS
         run: |
           set -a
           source poc/infra/runtime/gateway.env

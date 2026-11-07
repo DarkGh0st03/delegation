@@ -924,6 +924,16 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(enrolledTest.credential_id,runnerChild.credential_id);
   assert.equal(gate.assertTrustedOwnerRemoteEffectBinding(
    testTaskId,testRuntimeId).agent_id,"test");
+  assert.equal(runnerCalls,0,"Test Runner cannot start before Frontend attestation");
+  // Original Child Test scope covers ONLY run_tests on this feature branch.
+  assert.throws(()=>gate.preflightCanonicalRequest({
+   task_id:testRuntimeId,agent_role:"test",tool:"read_file",
+   arguments:{branch,path:backendPath}
+  }));
+  assert.throws(()=>gate.preflightCanonicalRequest({
+   task_id:testRuntimeId,agent_role:"backend",tool:"run_tests",
+   arguments:{branch,profile:"poc-default"}
+  }));
   // A2A Test completion is NOT native authorization. The original
   // owner-only stager first reserves one immutable Runner intent at the
   // independently verified Frontend CAS HEAD, before Rust VP/OPA/Docker.
@@ -1042,7 +1052,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
  },deps),error=>error?.code==="verification_rejected");
  assert.equal(gatewayCasWrites,2);
  process.stdout.write(JSON.stringify({
-  event:"r365_native_dependent_backend_frontend_sdk_a2a_adk",
+  event:"r365_native_three_role_dag_with_independent_docker_pass",
   engineer_directory_scopes:5,task_leaf_permissions:5,
   native_engineer_root:true,native_child_ipc:true,
   independently_verified_rust_evm:true,real_opa:true,
