@@ -26,6 +26,7 @@ export interface TrustedEffectStagingPort {
   stagedTool?:"read_file"|"update_file"|"run_tests"|"read_then_update";
   /** Owner-only independent native evidence confirmation, never model data. */
   attest?(requestId:string,tool:"read_file"|"update_file"):Promise<void>;
+  reportNoChange?(requestId:string):Promise<void>;
 }
 
 export interface GatewayControlledToolClientConfig {

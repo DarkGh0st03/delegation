@@ -32,7 +32,7 @@ const task=():AgentTaskContext=>({
  delegation_evidence:{credential:"PRIVATE_CHILD_DC",
   credential_id:pins.childCredentialId,presenter_id:pins.presenterId}
 });
-async function fixtures(){
+async function fixtures(expectedRole?:"backend"){
  const dir=await mkdtemp(join(tmpdir(),"r322-"));
  const bindSecret=join(dir,"bind.hex"),stageSecret=join(dir,"stage.hex"),
   foreignSecret=join(dir,"foreign.hex");
@@ -43,7 +43,7 @@ async function fixtures(){
  const agent=new TrustedEffectStagingTaskRegistry(),calls:string[]=[];
  const stageSocket=join(dir,"stage.sock"),bindSocket=join(dir,"bind.sock");
  const ownerServer=await createTrustedOwnerEffectStagingServer({
-  socketPath:stageSocket,secretFile:stageSecret,registry:owner
+  socketPath:stageSocket,secretFile:stageSecret,registry:owner,expectedRole
  });
  await ownerServer.start();
  const remote=await connectTrustedOwnerEffectStagingClient({
@@ -246,5 +246,31 @@ test("R359.5 two authenticated Unix IPC stages require separate independent evid
    "stage:r359-update","attest:update_file:r359-update"]);
   await assert.rejects(x.remote.attest(runtime,"r359-update","update_file"),
    /Authenticated private effect operation denied/u);
+ }finally{await x.close();}
+});
+
+test("R377.8 role-authenticated no-change uses the original read and closes staging",async()=>{
+ const x=await fixtures("backend");
+ try{
+  const calls:string[]=[];
+  x.owner.bindTask(runtime,{stagedTool:"read_then_update",
+   async stage(id){calls.push("stage:"+id);},
+   async attest(id){calls.push("attest:"+id);},
+   async reportNoChange(id){calls.push("no_change:"+id);}
+  },"backend");
+  await x.client.bindTask({...pins,operation:"read_then_update"});
+  const ctx=task();
+  ctx.subtask.approved_file_permissions=[
+   {path,operation:"read_file"},{path,operation:"update_file"}];
+  const port=x.agent.selectFor(ctx);
+  await assert.rejects(port.reportNoChange!(),/original attested read/u);
+  await port.stage("read-r3778");
+  await port.attest!("read-r3778","read_file");
+  await assert.rejects(x.owner.reportNoChange(runtime,"read-r3778","frontend"),/role-authenticated/u);
+  await assert.rejects(x.remote.reportNoChange(runtime,"foreign-read"),/operation denied/u);
+  await port.reportNoChange!();
+  await assert.rejects(x.remote.stage(runtime,"late-update"),/operation denied/u);
+  await assert.rejects(x.remote.reportNoChange(runtime,"read-r3778"),/operation denied/u);
+  assert.deepEqual(calls,["stage:read-r3778","attest:read-r3778","no_change:read-r3778"]);
  }finally{await x.close();}
 });

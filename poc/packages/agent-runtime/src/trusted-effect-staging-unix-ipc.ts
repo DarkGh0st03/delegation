@@ -265,6 +265,15 @@ export class TrustedOwnerEffectStagingRegistry{
   await e.port.attest(requestId,tool);
   e.mixedPhase=phase==="read_pending"?"read_attested":"finished";
  }
+ async reportNoChange(runtimeTaskId:string,requestId:string,expectedRole?:Role):Promise<void>{
+  const e=this.#entries.get(runtimeTaskId);
+  if(this.#retired||!e||!expectedRole||expectedRole==="test"||e.role!==expectedRole||
+     e.port.stagedTool!=="read_then_update"||e.mixedPhase!=="read_attested"||
+     e.mixedRequest!==requestId||typeof e.port.reportNoChange!=="function")
+   deny("no-change report requires the role-authenticated original attested read");
+  e.mixedPhase="failed";
+  await e.port.reportNoChange(requestId);
+ }
  retireFor(runtimeTaskId:string):void{
   const e=this.#entries.get(runtimeTaskId);
   if(!e)deny("unknown owner Task");
@@ -308,6 +317,10 @@ export async function createTrustedOwnerEffectStagingServer(config:{
      config.expectedRole);
     return {ok:true,status:"owner_native_effect_independently_attested"};
    }
+   if(exactKeys(v,"action,request_id,runtime_task_id")&&v.action==="report_no_change"){
+    await config.registry.reportNoChange(v.runtime_task_id,v.request_id,config.expectedRole);
+    return {ok:true,status:"owner_no_change_report_fenced"};
+   }
    deny("invalid private owner action or attestation operation");
   }
  });
@@ -326,6 +339,14 @@ export async function connectTrustedOwnerEffectStagingClient(
    if(!exactKeys(v,"ok,status")||
       v.status!=="owner_intent_reserved_not_executed")
     deny("missing authenticated owner reservation acknowledgement");
+  },
+  async reportNoChange(runtimeTaskId:string,requestId:string):Promise<void>{
+   if(!DISPATCH.test(runtimeTaskId)||!REQUEST.test(requestId))
+    deny("malformed agent no-change report");
+   const v=await channel.send({action:"report_no_change",runtime_task_id:runtimeTaskId,
+    request_id:requestId});
+   if(!exactKeys(v,"ok,status")||v.status!=="owner_no_change_report_fenced")
+    deny("missing authenticated no-change acknowledgement");
   },
   async attest(runtimeTaskId:string,requestId:string,
    tool:"read_file"|"update_file"):Promise<void>{
@@ -346,7 +367,7 @@ export async function createTrustedEffectAgentBindingServer(config:{
  socketPath:string;secretFile:string;
  registry:TrustedEffectStagingTaskRegistry;
  ownerStageClient:Pick<Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>,"stage"> &
-  Partial<Pick<Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>,"attest">>;
+  Partial<Pick<Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>,"attest"|"reportNoChange">>;
  /** Production agents pin their own role before accepting owner Task binds. */
  expectedRole?:"backend"|"frontend"|"test";
 }){
@@ -374,6 +395,10 @@ export async function createTrustedEffectAgentBindingServer(config:{
      effectStager:{
       ...(pins.operation==="read_then_update"
        ?{stagedTool:"read_then_update" as const,
+         ...(pins.role!=="test"&&config.ownerStageClient.reportNoChange?{
+          reportNoChange:(requestId:string)=>
+           config.ownerStageClient.reportNoChange!(pins.runtimeTaskId,requestId)
+         }:{}),
          attest:async(requestId:string,tool:"read_file"|"update_file")=>{
           await config.ownerStageClient.attest!(pins.runtimeTaskId,requestId,tool);
          }}:{}),

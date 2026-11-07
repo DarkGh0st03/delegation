@@ -554,6 +554,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         ...progress.snapshot()
       }) + "\n");
     }
+    if(ownerEffect?.stagedTool==="read_then_update"&&ownerEffect.reportNoChange&&
+       errors.length===0&&events.length===1&&readEvidenceCount===1&&
+       events[0]?.name==="read_file"&&!signal?.aborted){
+      await ownerEffect.reportNoChange();
+      throw new Error("ADK specialist ended after read without producing an update");
+    }
     if (errors.length > 0) throw new Error("ADK controlled task failed: " + [...new Set(errors)].join(", "));
     if (revision === null) throw new Error("ADK task produced no confirmed repository revision");
 

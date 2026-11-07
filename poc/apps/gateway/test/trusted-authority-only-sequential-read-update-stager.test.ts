@@ -129,3 +129,16 @@ test("R377.7 an in-flight write cannot be classified as a pre-write stop",async(
  assert.throws(()=>f.stager.fenceBeforeWrite(),/no update attempt/u);
  assert.deepEqual(f.calls,["begin","stage_read","attest_read","cas_preflight","stage_update"]);
 });
+
+test("R377.8 no-change signal binds the exact read request to the Gateway fence",async()=>{
+ const f=await fixture();
+ await f.stager.stage("read");
+ await f.stager.attestRead("read");
+ await assert.rejects(f.stager.reportNoChange("other"),/original read request/u);
+ assert.equal(f.stager.getReportedNoChange(),undefined);
+ await f.stager.reportNoChange("read");
+ assert.equal(f.stager.getReportedNoChange()?.recovery_authorized,false);
+ assert.equal(f.stager.getReportedNoChange()?.read_revision,head);
+ await assert.rejects(f.stager.stage("update"),/terminated owner effect/u);
+ assert.deepEqual(f.calls,["begin","stage_read","attest_read","fence"]);
+});

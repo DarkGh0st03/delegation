@@ -32,6 +32,7 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
  #readRequestId?:string;
  #updateRequestId?:string;
  #path?:string;
+ #noChange?:ReturnType<TrustedAuthorityOnlyGatewayAdmissions["fenceTrustedSequentialTaskBeforeWrite"]>;
  private constructor(opts:{
   store:InMemoryRequestStore;
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
@@ -87,6 +88,12 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   return this.#admissions.fenceTrustedSequentialTaskBeforeWrite(
    this.#planTaskId,this.#runtimeTaskId);
  }
+ async reportNoChange(requestId:string):Promise<void>{
+  if(requestId!==this.#readRequestId)
+   deny("no-change report must match the original read request");
+  this.#noChange=this.fenceBeforeWrite();
+ }
+ getReportedNoChange(){return this.#noChange;}
  /** Native IPC acknowledgement is independently verified, not a PASS flag. */
  async attest(requestId:string,tool:"read_file"|"update_file"):Promise<void>{
   if(tool==="read_file")return this.attestRead(requestId);

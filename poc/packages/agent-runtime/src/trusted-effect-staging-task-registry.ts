@@ -97,7 +97,7 @@ export class TrustedEffectStagingTaskRegistry {
  }
 
  /** Fail closed for EVERY A2A Task on a host configured with this registry. */
- selectFor(context:AgentTaskContext):TrustedEffectStagingPort{
+ selectFor(context:AgentTaskContext):Omit<TrustedEffectStagingPort,"reportNoChange">&{reportNoChange?():Promise<void>}{
   if(this.#retired)deny("registry is retired");
   const id=context?.trusted_gateway_task_id;
   if(typeof id!=="string")deny("missing exact prebound Gateway Task");
@@ -151,6 +151,15 @@ export class TrustedEffectStagingTaskRegistry {
      deny("malformed Gateway request ID");
     return b.stager.stage(requestId);
    },
+   ...(b.stager.reportNoChange&&p.role!=="test"?{
+    reportNoChange:async()=>{
+     if(this.#retired||b.state!=="selected"||p.operation!=="read_then_update"||
+        b.mixedPhase!=="read_attested"||!b.mixedRequest)
+      deny("no-change report requires the original attested read");
+     b.mixedPhase="failed";
+     await b.stager.reportNoChange!(b.mixedRequest);
+    }
+   }:{}),
    attest:async(requestId:string,tool:"read_file"|"update_file"):Promise<void>=>{
     if(this.#retired||b.state!=="selected"||
        p.operation!=="read_then_update"||
