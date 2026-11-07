@@ -1,29 +1,13 @@
 {
-  "checkpoint": "R373.0",
-  "branch": "refactor/post-prof-plan-contracts-20261021",
-  "antecedent_R372": {
-    "sha": "4d24d8897f022819153a03e63e94f97f145826a4",
-    "fast_ci_run": 42346172262,
-    "native_run": 42346172331
+  "checkpoint": "R373.1",
+  "first_attempt": {
+    "run": 42347031113,
+    "sha": "166cd857baadd089737ae130b4c87dda8293d03f",
+    "result": "FAIL before model-selected Test; original Runner constructor denied mismatched Gateway Gitea client identity"
   },
-  "objective": "Original Engineer authority-only root creates branch on protected unsolved main, dynamically delegates Backend then Frontend, then native Test on current HEAD. Real Runner FAIL must be authenticated and observed by original Owner and ADK without marking failed Test completed.",
-  "signed_permissions": "repository create_branch; exact Backend/Frontend file read+update; branch run_tests; explicitly NO create_pull_request",
-  "expected": {
-    "original_root_branch_posts": 1,
-    "private_cas_staging_branches": 2,
-    "gateway_completed_tasks": 3,
-    "registered_tasks": 4,
-    "native_child_credentials": 3,
-    "native_gitea_cas": 2,
-    "docker_runner_posts": 1,
-    "authenticated_runner_fail_receipts": 1,
-    "runner_pass_receipts": 0,
-    "adaptive_successful_tasks": 2,
-    "model_decisions": 4,
-    "backend_and_frontend_code_generation": "nonfunctional scripted comments only",
-    "pr_post_count": 0,
-    "paid_model_calls": 0
-  },
-  "guardrails": "No main mutation, no silent retry, no paid inference, no fake Runner PASS. Failure diagnosis is sanitized MAC-authenticated evidence; next model chooses explicit blocked. No recovery attempted until future separate checkpoint.",
-  "validation": "One native workflow and Fast CI must end SUCCESS on identical SHA"
+  "root_cause": "TrustedGatewayRunnerFailEvidencePublisher.isForGitea(original RunnerExecutor GiteaClient) requires exact same pinned client identity. Original R331 native Test FAIL proof already uses this required binding.",
+  "fix": "Use original Gateway's same pinned client for private FAIL publisher; retain MAC-authenticated failure observer, independent Task and HEAD checks. No contract weakening or fake Docker outcome.",
+  "previous_free_ci": "Fast CI #42347031640 SUCCESS",
+  "desired": "Native branch from protected main, two CAS, real Docker FAIL, one signed private fail receipt, fourth model turn blocked, Test permanently incomplete and root retired, no paid calls or PR",
+  "native_verification": "pending R373.1 native CI"
 }

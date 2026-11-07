@@ -597,7 +597,10 @@ try{
  });
  const failPublisher=new TrustedGatewayRunnerFailEvidencePublisher({
   directory:path("runner-fail-receipts"),key:evidenceKey,
-  runnerClient,independentGiteaClient:independentClient,
+  // The original RunnerExecutor requires the exact SAME Gateway Gitea port
+  // for its one-shot flight; the independent MAC failure observer then
+  // reopens the attested source HEAD through that original bound identity.
+  runnerClient,independentGiteaClient:client,
   journal:runnerJournal,repository:"thesis/iam-console-poc",branch,nowMs
  });
  const runnerExecutor=new TrustedAuthorityOnlyRunnerExecutor({

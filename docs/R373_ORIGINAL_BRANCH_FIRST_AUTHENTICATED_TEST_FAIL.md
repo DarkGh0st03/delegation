@@ -55,3 +55,7 @@ Fast CI and the native R373 workflow must be green **on the same SHA**.
 R370's separate scripted prepared-reference E2E demonstrates full
 Docker PASS and Draft PR; R373 does not claim to reproduce that PASS
 on unresolved source. GitHub PR #38 remains Draft and unmerged.
+
+## R373.1 — Original Gateway client pin correction
+
+The first native R373 attempt [#42347031113](https://github.com/DarkGh0st03/delegation/actions/runs/42347031113) failed **before** worker execution, at the RunnerExecutor constructor's expected same-owner Gitea identity guard. The FAIL Publisher must reference the exact original Gateway-owned `GiteaClient` instance. The fixture now binds it to that instance (as proven in the older R356 native Runner FAIL harness), leaving `isForGitea`, original one-shot flight checks, MAC evidence signatures, independent observation and fail-closed behavior intact. This does not count as a Docker FAIL or native R373 success; the new native run is required.
