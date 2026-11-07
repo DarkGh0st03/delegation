@@ -183,6 +183,17 @@ export class TrustedAuthorityOnlyA2AOwner {
     filePermissions.some(p=>p.operation==="read_file")&&
     filePermissions.some(p=>p.operation==="update_file")&&
     filePermissions[0]?.path===filePermissions[1]?.path;
+  const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
+  // R383.1: the native Task/Child must map to precisely one provider
+  // operation, or the existing two-step read -> CAS of ONE exact file.
+  // A spare grant in the signed Task must not be leaked as another
+  // approved file permission to an A2A specialist. Multi-file changes
+  // are separate, serial, individually observed Child Tasks.
+  if((hasRunner&&(row.permissions.length!==1||
+      filePermissions.length!==0))||
+     (!hasRunner&&!typedMixed&&
+      (row.permissions.length!==1||filePermissions.length!==1)))
+   deny("native A2A Task cannot combine unrelated read/write/Runner grants");
   if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&
      !isProjectTestRepairGrant(row.permissions))
    deny("Test update requires an exact project test repair grant");
@@ -192,7 +203,6 @@ export class TrustedAuthorityOnlyA2AOwner {
    deny("same-file read/update Task requires owner-controlled mixed staging");
   if(!typedMixed&&input.effectStager.stagedTool==="read_then_update")
    deny("mixed staging cannot replace an ordinary Task grant");
-  const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
   const paths=[...new Set(filePermissions.map(x=>x.path))];
   const subtask:DeterministicSubtask=Object.freeze({
    subtask_id:input.taskId,branch,
