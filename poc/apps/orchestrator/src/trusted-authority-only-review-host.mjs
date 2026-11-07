@@ -716,8 +716,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         taskStageFailed||dispatchFailed||completionFailed||adaptiveLoopAttempted||
         adaptiveLoopFlight||taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
         pullRequestAdmissionAttempted||!nativeEffectBinding||
-        !fields(input,['model','nextChildParameters','maxSteps','signal'])||
-        typeof input.nextChildParameters!=='function')
+        !fields(input,['model','nextChildParameters','maxSteps','maxVerifiedFailures','signal'])||
+        typeof input.nextChildParameters!=='function'||
+        (input.maxVerifiedFailures!==undefined&&
+         (!Number.isSafeInteger(input.maxVerifiedFailures)||
+          input.maxVerifiedFailures<0||input.maxVerifiedFailures>4||
+          (input.maxSteps!==undefined&&input.maxVerifiedFailures>input.maxSteps))))
       deny('adaptive loop requires original quiescent owner and private Child metadata provisioner');
      adaptiveLoopAttempted=true;
      // The root Branch and PR are separate, one-shot authority decisions.
@@ -749,6 +753,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        .filter(o=>o.revision===head.commit_sha);
       return {
        requirement,branch,rootPermissions:live.root_permissions,
+       maxVerifiedFailures:input.maxVerifiedFailures??2,
        agents:verifiedProfiles??configuredProfiles,
        previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
        nextEpoch:operationalCoordinator.registeredTaskCount+1,
@@ -779,7 +784,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       model:input.model,maxSteps:input.maxSteps,signal:input.signal,
       hooks:{readContext,
        beforeDecision:async()=>{
-        if(decisionFlight||++adaptiveDecisionCalls>Math.min(input.maxSteps??8,16))
+        if(decisionFlight||++adaptiveDecisionCalls>Math.min(input.maxSteps??8,24))
          deny('adaptive loop exceeds original owner decision budget');
        },
        runDecision:async decide=>{
@@ -1385,7 +1390,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        let failure=error;
        if(adaptiveLoopAttempted&&input.d1Candidate===undefined&&
           pin.agent_id==='test'&&pin.operation==='run_tests'&&
-          nativeEffectBinding?.failureObserver&&adaptiveVerifiedFailures.length<2){
+          nativeEffectBinding?.failureObserver&&
+          adaptiveVerifiedFailures.length<(input.maxVerifiedFailures??2)){
         try{
          const intent=await nativeEffectBinding.runner
           .getAttemptedIntentForOwnerTask(input.runtimeTaskId);
