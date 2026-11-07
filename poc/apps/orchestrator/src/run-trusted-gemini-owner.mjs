@@ -10,8 +10,9 @@
  */
 import {constants} from "node:fs";
 import {execFileSync} from "node:child_process";
-import {open,lstat} from "node:fs/promises";
+import {open,lstat,realpath} from "node:fs/promises";
 import {dirname,isAbsolute,normalize,resolve} from "node:path";
+import {createInterface} from "node:readline";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {prepareConfiguredOwnerEngineerBootstrap}
   from "./trusted-engineer-service.mjs";
@@ -262,13 +263,40 @@ export async function startProtectedCanonicalGeminiOwnerFromPrivateConfig({
  });
 }
 
+// A deployment composition module is reviewed source, separate from JSON
+// and secrets. Load it only from the exact checkout pinned by the owner.
+async function loadCanonicalCliOperational({modulePath,expectedSourceSha,chargeAuthorization}){
+ if(process.env.GITHUB_ACTIONS==="true"||
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+    process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+    process.env.ENGINEER_CORE_NATIVE_MODE!=="1"||
+    !SOURCE_SHA.test(expectedSourceSha??"")||chargeAuthorization!==CONFIRMATION||
+    typeof modulePath!=="string"||
+    !/^poc\/[a-zA-Z0-9_/-]+(?:[.][a-zA-Z0-9_-]+)*[.]mjs$/u.test(modulePath))
+  deny();
+ checkLocalSourceSha(expectedSourceSha);
+ const absolute=resolve(SOURCE_ROOT,modulePath);
+ if(await realpath(absolute)!==absolute)deny();
+ const entry=execFileSync("git",["ls-tree",expectedSourceSha,"--",modulePath],{
+  cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000
+ });
+ if(!/^100(?:644|755) blob [a-f0-9]{40}\t/u.test(entry)||
+    entry.trimEnd().split("\t")[1]!==modulePath)
+  deny();
+ const {prepareOperational}=await import(pathToFileURL(absolute).href);
+ if(typeof prepareOperational!=="function")deny();
+ return prepareOperational();
+}
+
 if(process.argv[1]&&import.meta.url===
     pathToFileURL(resolve(process.argv[1])).href){
-  let active,startPromise,stopPromise,interrupted=false;
+  let active,startPromise,stopPromise,terminal,interrupted=false;
+  const canonical=process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only";
   async function stop(){
     if(stopPromise)return stopPromise;
     stopPromise=(async()=>{
       interrupted=true;
+      terminal?.close();
       try{await startPromise;}catch{}
       if(active)await active.close();
     })();
@@ -283,21 +311,56 @@ if(process.argv[1]&&import.meta.url===
       });
     });
   }
-  startPromise=startProtectedGeminiOwnerSession({
+  const input={
     configPath:process.env.DELEGATION_ENGINEER_SERVICE_CONFIG,
     expectedSourceSha:process.env.DELEGATION_GEMINI_EXPECTED_SOURCE_SHA,
     inputFile:process.env.DELEGATION_GEMINI_OWNER_INPUT_FILE,
     chargeAuthorization:process.env.DELEGATION_GEMINI_CHARGE_CONFIRMATION
-  });
+  };
+  startPromise=(async()=>{
+    if(!canonical)return startProtectedGeminiOwnerSession(input);
+    if(!process.stdin.isTTY)deny();
+    const operational=await loadCanonicalCliOperational({
+      ...input,modulePath:process.env.DELEGATION_CANONICAL_OPERATIONAL_MODULE
+    });
+    if(interrupted)deny();
+    return startProtectedCanonicalGeminiOwnerFromPrivateConfig({...input,operational});
+  })();
   try{
     active=await startPromise;
     if(interrupted)await stop();
-    else process.stdout.write(
-      "Gemini Planning completed: awaiting REAL Engineer review at "+
-      active.engineerUrl+"; no operational DC or Execution admitted\n");
+    else{
+      process.stdout.write(
+        "Gemini Planning completed: awaiting REAL Engineer review at "+
+        active.engineerUrl+"; no operational DC or Execution admitted\n");
+      if(canonical){
+        terminal=createInterface({input:process.stdin,output:process.stdout});
+        process.stdout.write("After signed Engineer approval, enter execute or quit.\n");
+        for await(const command of terminal){
+          if(command==="quit"||interrupted)break;
+          if(command!=="execute")continue;
+          try{await active.reviewReadiness();}
+          catch{
+            process.stderr.write("Signed Engineer approval is unavailable or invalid.\n");
+            continue;
+          }
+          if(interrupted)break;
+          const result=await active.runApprovedCanonical();
+          process.stdout.write(JSON.stringify({
+            status:result.status,pr_created:result.pr_created===true
+          })+"\n");
+          break;
+        }
+        await stop();
+      }
+    }
   }catch{
+    try{await stop();}catch{
+      process.stderr.write("Gemini Owner credential retirement unconfirmed; manual reconciliation required\n");
+    }
     process.stderr.write(
-      "Gemini owner startup denied; reconcile Gateway/Adapter state before retry\n");
+      (active?"Gemini owner execution denied":"Gemini owner startup denied")+
+      "; reconcile Gateway/Adapter state before retry\n");
     process.exitCode=1;
   }
 }

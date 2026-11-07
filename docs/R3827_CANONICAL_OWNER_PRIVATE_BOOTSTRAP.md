@@ -150,8 +150,22 @@ in this mode. After Gateway binding, the owner starts the role-pinned
 workers and hands their private channel pins to the existing SDK launcher.
 The handoff closes the local listeners on completion or failure.
 
-**Not yet complete:** the executable owner process needs its
-trusted operational `provision` implementation and a newly validated
-same-SHA full native E2E after the CLI/bootstrap migration. R381.8
-SUCCESS was a scripted proof on an earlier SHA, not a live Gemini pilot.
-No paid Gemini workflow is authorized by R382.7.
+## Canonical executable
+
+Run `poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs` with Node's
+TypeScript stripping enabled in a local terminal. In addition to the native
+mode pins above, set `DELEGATION_ENGINEER_SERVICE_CONFIG`,
+`DELEGATION_GEMINI_EXPECTED_SOURCE_SHA`,
+`DELEGATION_GEMINI_OWNER_INPUT_FILE`, and
+`DELEGATION_GEMINI_CHARGE_CONFIRMATION`. Set
+`DELEGATION_CANONICAL_OPERATIONAL_MODULE` to a tracked `poc/…/*.mjs`
+deployment module in the pinned checkout. Its `prepareOperational()`
+export supplies the trusted `operational` object described above.
+The executable checks the source pin and billing confirmation before
+loading that module. After Planning, sign the Engineer review through
+the loopback Review Host and enter `execute` in the owner terminal.
+Entering `quit`, closing input, or interrupting retires the session.
+
+The deployment composition module for a real environment still needs to be
+provided and exercised through the free native E2E. R381.8 was a scripted
+proof on an earlier SHA. No paid Gemini workflow is authorized here.

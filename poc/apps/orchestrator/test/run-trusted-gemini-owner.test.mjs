@@ -246,3 +246,18 @@ test("R382.7 protected canonical native entrypoint fails before any paid model, 
    else process.env[k]=v;
  }
 });
+
+test("R382.7 canonical executable rejects noninteractive input before loading deployment code",()=>{
+ const result=spawnSync(process.execPath,["--experimental-strip-types",
+  new URL("../src/run-trusted-gemini-owner.mjs",import.meta.url).pathname],{
+  env:{...process.env,GITHUB_ACTIONS:"false",DELEGATION_GATEWAY_ARCHITECTURE:"authority-only",
+   APPROVED_RUNNER_NATIVE_MCP:"1",ENGINEER_CORE_NATIVE_MODE:"1",
+   DELEGATION_GEMINI_CHARGE_CONFIRMATION:CONFIRMATION,
+   DELEGATION_CANONICAL_OPERATIONAL_MODULE:"poc/missing-deployment.mjs"},
+  input:"execute\n",encoding:"utf8",timeout:10000
+ });
+ assert.equal(result.error,undefined);
+ assert.equal(result.status,1);
+ assert.equal(result.stdout,"");
+ assert.match(result.stderr,/Gemini owner startup denied/u);
+});
