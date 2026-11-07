@@ -33,7 +33,12 @@ for(const name of [
   if(name==="gemini-paid-shared-mcp-final.yml"){
    assert.match(workflow,/workflow_dispatch:/u);
    assert.doesNotMatch(workflow,/^  push:/mu);
-   assert.match(workflow,/inputs\.authorization == 'I AUTHORIZE GEMINI API CHARGES'/u);
+   // R384.6: historical billing has been retired, not merely consent-gated.
+   for(const job of ["account-suspension","f1-real-gitea-planning"]){
+    const at=workflow.indexOf("  "+job+":\n");
+    assert.ok(at>=0,"historical job absent: "+job);
+    assert.match(workflow.slice(at,at+300),/^    if: \$\{\{ false \}\}$/mu);
+   }
   }
  });
 }
