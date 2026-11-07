@@ -342,7 +342,7 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
            p.operation===q.operation&&
            (p.resource===q.resource||
             ((options.hierarchicalPlanning||options.dynamicDiscovery)&&
-             giteaPermissionCovers(q,p)))))
+             giteaPermissionCovers(q,p))))))
         throw Error("Fixture composite proof binding rejected");
       return {presenter_id:"did:thesis:orchestrator",
         credential_id:rootId,issuer_id:"did:thesis:engineer",
