@@ -1,5 +1,5 @@
 /**
- * R370 — original trusted Engineer owner OPERATIONAL launcher.
+ * R371 — original trusted Engineer owner OPERATIONAL branch-first launcher.
  *
  * This is an in-process composition helper, NOT an HTTP/ADK/MCP capability,
  * service entrypoint, credential issuer, provider bypass or auto-approval.
@@ -36,7 +36,7 @@ function nonempty(value,max){
  * draftPullRequest is OPTIONAL by design: readiness never auto-posts.
  */
 export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
- if(!exact(input,["execution","sdk","adaptive","draftPullRequest"])||
+ if(!exact(input,["execution","sdk","adaptive","draftPullRequest","createBranch"])||
     !input?.execution||!exact(input.sdk,
      ["agentBaseUrls","stageChannels","agentBindingChannels","a2aPolling"])||
     !exact(input.adaptive,["model","nextChildParameters","maxSteps","signal"])||
@@ -53,6 +53,19 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
     typeof owner.attestEnrolledPullRequestCompletion!=="function"||
     !owner.gateway||typeof owner.gateway.stagedCompletedTaskCount!=="number")
   deny("original Review Host operational execution handle required");
+ const branch=input.createBranch;
+ if(branch!==undefined&&(!exact(branch,["model","branch","baseBranch",
+      "permission","prepare","execute"])||
+     !branch.model||typeof branch.prepare!=="function"||
+     typeof branch.execute!=="function"||
+     !nonempty(branch.branch,190)||
+     !/^feature\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(branch.branch)||
+     branch.branch.includes("..")||branch.branch.includes("//")||
+     branch.baseBranch!=="main"||
+     !exact(branch.permission,["resource","operation"])||
+     branch.permission.operation!=="create_branch"||
+     !nonempty(branch.permission.resource,1024)))
+  deny("branch requires exact original Engineer grant and private native transport");
  const pr=input.draftPullRequest;
  if(pr!==undefined&&(!exact(pr,["model","headBranch","baseBranch","title","body",
      "permission","prepare","execute"])||
@@ -65,6 +78,72 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
     pr.permission.operation!=="create_pull_request"||
     !nonempty(pr.permission.resource,1024)))
   deny("PR requires an original exact Engineer grant and private native transport");
+ // Branch-first mode is deliberately opt-in. It never creates from
+ // an unapproved source or skips the original independent Gateway GET.
+ // The original Review Host must have a real pinned BranchExecutor
+ // bound before attempting any model-selected worker Task.
+ let branchProof;
+ if(branch!==undefined){
+  for(const action of ["proposeAndStageBranchTask","stageEnrolledBranch",
+   "attestEnrolledBranchCompletion"])
+   if(typeof owner[action]!=="function")
+    deny("original root branch owner method missing");
+  const runtimeTaskId="dispatch_"+randomBytes(16).toString("base64url");
+  const task=await owner.proposeAndStageBranchTask({
+   model:branch.model,runtimeTaskId
+  });
+  if(task.status!=="owner_branch_root_task_bound_no_provider_execution"||
+     task.runtime_task_id!==runtimeTaskId||
+     task.provider_executed!==false||
+     task.gateway_execution_authorized!==false||
+     !/^[a-f0-9]{40}$/u.test(task.base_revision))
+   deny("original root branch Task was not pinned to reviewed main");
+  const request=Object.freeze({
+   task_id:runtimeTaskId,agent_role:"orchestrator",
+   tool:"create_branch",
+   arguments:Object.freeze({branch:branch.branch,base_branch:"main"})
+  });
+  const prepared=await branch.prepare(request);
+  if(!prepared||typeof prepared!=="object"||
+     !nonempty(prepared.request_id,128)||
+     !nonempty(prepared.audience,256)||
+     !nonempty(prepared.challenge,2048)||
+     !exact(prepared.required_permission,["resource","operation"])||
+     prepared.required_permission.resource!==branch.permission.resource||
+     prepared.required_permission.operation!=="create_branch")
+   deny("original Gateway Branch Prepare differs from signed permission");
+  const staged=await owner.stageEnrolledBranch({
+   taskId:task.task_id,runtimeTaskId,requestId:prepared.request_id
+  });
+  if(staged.status!=="owner_branch_flight_reserved_no_provider_execution"||
+     staged.base_revision!==task.base_revision||
+     staged.provider_executed!==false)
+   deny("branch root Task was not durably staged before Rust VP");
+  // Private native Rust VP + original Gateway Rust/OPA/Gitea are invoked
+  // only AFTER the one-shot root Branch flight has been reserved.
+  const executed=await branch.execute(Object.freeze({
+   request,prepared:Object.freeze({...prepared,
+    required_permission:Object.freeze({...prepared.required_permission})}),
+   expectedMainSha:task.base_revision
+  }));
+  if(executed?.decision!=="allow"||
+     executed.execution?.provider!=="gitea"||
+     executed.execution?.performed!==true||
+     executed.execution?.tool!=="create_branch"||
+     executed.execution?.revision!==task.base_revision)
+   deny("native original Gateway did not confirm exact approved main branch source");
+  const attested=await owner.attestEnrolledBranchCompletion({
+   taskId:task.task_id,runtimeTaskId
+  });
+  if(attested.status!=="owner_branch_completion_independently_observed"||
+     attested.task_id!==task.task_id||
+     attested.runtime_task_id!==runtimeTaskId)
+   deny("branch not independently attested by original Gateway");
+  branchProof=Object.freeze({
+   task_id:task.task_id,base_revision:task.base_revision,
+   status:"owner_original_branch_independently_attested"
+  });
+ }
  // No host can make a provider claim merely because protected SDK A2A started.
  const boot=await owner.startSdkA2AOwner(input.sdk);
  if(boot.status!=="owner_protected_a2a_started_no_provider_execution"||
@@ -76,7 +155,7 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
   return Object.freeze({
    status:"owner_operational_work_finished_without_pr",
    adaptive_status:adaptive.status,executed_tasks:adaptive.executed_tasks,
-   pr_created:false
+   ...(branchProof?{branch:branchProof}:{}),pr_created:false
   });
  }
  if(adaptive.pr_created!==false||
@@ -89,7 +168,8 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
   source_test_task_id:adaptive.source_test_task_id,
   source_test_runtime_task_id:adaptive.source_test_runtime_task_id,
   tested_commit_sha:adaptive.tested_commit_sha,
-  executed_tasks:adaptive.executed_tasks,pr_created:false
+  executed_tasks:adaptive.executed_tasks,
+  ...(branchProof?{branch:branchProof}:{}),pr_created:false
  });
  // No model, HTTP request or caller can supply the one-shot PR runtime ID.
  const runtimeTaskId="dispatch_"+randomBytes(16).toString("base64url");
@@ -157,6 +237,7 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
  // Return no private VP, challenge, credential, prepared object or model data.
  return Object.freeze({
   status:"owner_operational_draft_pr_independently_attested",
+  ...(branchProof?{branch:branchProof}:{}),
   adaptive:Object.freeze({
    status:adaptive.status,executed_tasks:adaptive.executed_tasks,
    pr_created:false,source_test_task_id:adaptive.source_test_task_id,

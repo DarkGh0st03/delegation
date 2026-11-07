@@ -129,3 +129,91 @@ test('R370 one-shot private root PR follows Gateway Prepare, durable stage, nati
  assert.equal('request_id' in outcome,false);
  assert.equal('credential_id' in outcome,false);
 });
+
+const branchCfg=()=>({
+ model:{},branch:'feature/account-suspension',baseBranch:'main',
+ permission:{resource:'gitea://gitea.local/thesis/iam-console-poc',
+  operation:'create_branch'},
+ prepare:()=>{throw Error('unreachable branch Prepare');},
+ execute:()=>{throw Error('unreachable native branch execute');}
+});
+test('R371 original root Branch is independently attested before protected SDK A2A',async()=>{
+ const {owner,events}=fakeOwner();
+ owner.proposeAndStageBranchTask=async input=>{events.push('branch-proposal');return {
+  status:'owner_branch_root_task_bound_no_provider_execution',
+  task_id:'root-branch-task',runtime_task_id:input.runtimeTaskId,
+  base_revision:SHA,provider_executed:false,gateway_execution_authorized:false
+ };};
+ owner.stageEnrolledBranch=async()=>{events.push('branch-stage');return {
+  status:'owner_branch_flight_reserved_no_provider_execution',
+  base_revision:SHA,provider_executed:false
+ };};
+ owner.attestEnrolledBranchCompletion=async input=>{
+  events.push('branch-attested');return {
+   status:'owner_branch_completion_independently_observed',
+   task_id:input.taskId,runtime_task_id:input.runtimeTaskId
+  };
+ };
+ const branch=branchCfg();
+ branch.prepare=async request=>{events.push('branch-prepare');return {
+  request_id:'prepared-branch-371',audience:'cloud-access-gateway',
+  challenge:'native-owner-opaque-challenge',
+  required_permission:{...branch.permission}
+ };};
+ branch.execute=async ({expectedMainSha})=>{
+  events.push('branch-native-rust-opa-gitea');
+  assert.equal(expectedMainSha,SHA);
+  return {decision:'allow',execution:{
+   provider:'gitea',performed:true,tool:'create_branch',revision:SHA
+  }};
+ };
+ const result=await launch({...canonicalConfig(owner),createBranch:branch});
+ assert.equal(result.status,'owner_operational_ready_for_review_not_pr_authorized');
+ assert.equal(result.branch.status,'owner_original_branch_independently_attested');
+ assert.equal(result.branch.base_revision,SHA);
+ assert.deepEqual(events,['branch-proposal','branch-prepare','branch-stage',
+  'branch-native-rust-opa-gitea','branch-attested','a2a','adaptive']);
+});
+test('R371 cannot launch SDK or workers when original Branch GET has not attested',async()=>{
+ const {owner,events}=fakeOwner();
+ owner.proposeAndStageBranchTask=async input=>{
+  events.push('branch-proposal');return {
+   status:'owner_branch_root_task_bound_no_provider_execution',
+   task_id:'root-branch-task',runtime_task_id:input.runtimeTaskId,
+   base_revision:SHA,provider_executed:false,gateway_execution_authorized:false
+  };
+ };
+ owner.stageEnrolledBranch=async()=>({
+  status:'owner_branch_flight_reserved_no_provider_execution',
+  base_revision:SHA,provider_executed:false
+ });
+ owner.attestEnrolledBranchCompletion=async()=>({
+  status:'owner_branch_completion_UNVERIFIED'
+ });
+ const branch=branchCfg();
+ branch.prepare=async()=>({
+  request_id:'371-p',audience:'cloud-access-gateway',challenge:'371-challenge',
+  required_permission:branch.permission
+ });
+ branch.execute=async()=>({decision:'allow',execution:{
+  provider:'gitea',performed:true,tool:'create_branch',revision:SHA
+ }});
+ await assert.rejects(launch({...canonicalConfig(owner),createBranch:branch}),
+  /branch not independently attested/);
+ assert.deepEqual(events,['branch-proposal']);
+});
+test('R371 deny wrong Branch permission or alternate base before private model',async()=>{
+ for(const mutate of [
+  b=>{b.baseBranch='development';},
+  b=>{b.permission.operation='create_pull_request';},
+  b=>{b.branch='feature/../main';},
+  b=>{b.prepare=null;},
+  b=>{b.model=null;},
+  b=>{b.legacyAdapter='forbidden';}
+ ]){
+  const {owner,events}=fakeOwner(),branch=branchCfg();mutate(branch);
+  await assert.rejects(launch({...canonicalConfig(owner),createBranch:branch}),
+   /branch requires exact original Engineer grant and private native transport/);
+  assert.deepEqual(events,[]);
+ }
+});

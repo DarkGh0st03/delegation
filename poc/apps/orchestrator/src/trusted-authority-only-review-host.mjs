@@ -598,7 +598,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      */
     async runCanonicalOperationalWorkflow(input){
      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
-        !fields(input,['sdk','adaptive','draftPullRequest']))
+        !fields(input,['sdk','adaptive','draftPullRequest','createBranch']))
       deny('canonical launch requires original activated and live Engineer owner');
      return runTrustedAuthorityOnlyOperationalWorkflow({
       execution:executionHandle,...input
