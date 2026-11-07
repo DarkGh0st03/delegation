@@ -557,14 +557,16 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
   if(pair(allowed.required_permission)!==pair(record.required_permission))
    deny("Task flight request differs from canonical signed grant");
-  if(record.request.tool==="read_file"){
-   const pin=this.#readPins.get(record.task_id);
-   if(!pin||pin.task_id!==bound.row.task_id||
-      pin.credential_id!==child.credential_id||
-      pin.epoch!==bound.row.epoch||
-      pin.resource!==record.required_permission.resource||
-      record.pinned_revision!==pin.expectedHeadSha||
-      allowed.pinned_revision!==pin.expectedHeadSha)
+  // Historical ordinary read preflights remain read-only; R376 source
+  // projection is available ONLY to the new explicitly owner-pinned flow.
+  const singleReadPin=this.#readPins.get(record.task_id);
+  if(record.request.tool==="read_file"&&singleReadPin){
+   if(singleReadPin.task_id!==bound.row.task_id||
+      singleReadPin.credential_id!==child.credential_id||
+      singleReadPin.epoch!==bound.row.epoch||
+      singleReadPin.resource!==record.required_permission.resource||
+      record.pinned_revision!==singleReadPin.expectedHeadSha||
+      allowed.pinned_revision!==singleReadPin.expectedHeadSha)
     deny("read flight differs from original owner-pinned signed HEAD");
   }
   const flight:TrustedTaskFlight=Object.freeze({
@@ -1480,9 +1482,6 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      readPin.resource===required.resource&&
      readPin.credential_id===this.#enrolledChildren.get(request.task_id)?.credential_id
       ?readPin.expectedHeadSha:undefined;
-  if(tool==="read_file"&&typed?.manifest.effect_plan===undefined&&
-     !nativeHead&&bound.row.permissions.length===1)
-   deny("single-file source read requires original owner-pinned HEAD");
   if(typed?.manifest.effect_plan!==undefined&&
      (tool==="read_file"||tool==="update_file")&&
      !SHA40.test(nativeHead??""))
