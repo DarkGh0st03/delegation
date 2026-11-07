@@ -333,7 +333,12 @@ const legacyPlanSketch={
 };
 const planSketch=positiveDag?
   makeOfflineReviewableDag({
-    snapshot,edits:roleFiles,newTestFile,
+    // Fixture construction knows the complete trusted synthetic reference
+    // inventory, even when the ACTUAL signed Planning snapshot deliberately
+    // withholds one file until a real Gitea observation. This offline sketch
+    // does not sign permissions or bypass the runtime proposal compiler.
+    snapshot:r3803NativeDiscovery?{...snapshot,files:existingFiles}:snapshot,
+    edits:roleFiles,newTestFile,
     taskInstructions:scenario.planning_intent.taskInstructions,
     ...(testRepairFile?{testRepairFile}:{}),
     ...(generatedBackendTestFile?{generatedBackendTestFile}:{}),
