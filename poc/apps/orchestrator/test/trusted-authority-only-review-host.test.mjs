@@ -18,6 +18,7 @@ import {Readable} from 'node:stream';
 import {createServer} from 'node:net';
 import {generateKeyPairSync,randomBytes,scryptSync,createHash} from 'node:crypto';
 import {createTrustedAuthorityOnlyReviewHost as createHost,
+ startTrustedAuthorityOnlyReviewHost,
  reconcileTrustedAuthorityOnlyReviewRoots} from '../src/trusted-authority-only-review-host.mjs';
 import {TrustedOperationalRecoveryStore}
  from '../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts';
@@ -546,6 +547,42 @@ test('R350.2 same Engineer root registers Task, binds Gateway, issues native Chi
  assert.equal(host.phase,'revoked');
  await host.close();
 });
+test('R382.6 loopback original Engineer Host wrapper exposes same owner-only signed canonical handoff',async t=>{
+ const f=await fixture(t);
+ const original=new Map([
+  ['DELEGATION_GATEWAY_ARCHITECTURE',process.env.DELEGATION_GATEWAY_ARCHITECTURE],
+  ['APPROVED_RUNNER_NATIVE_MCP',process.env.APPROVED_RUNNER_NATIVE_MCP]
+ ]);
+ let host;
+ try{
+  // Native signer is deliberately absent during the scripted Planning
+  // fixture; authority-only is enabled only for the owner-private handoff.
+  process.env.APPROVED_RUNNER_NATIVE_MCP='0';
+  host=await startTrustedAuthorityOnlyReviewHost({
+   ...f.options,approvalPort:0
+  });
+  assert.equal(host.phase,'planning');
+  assert.match(host.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/u);
+  assert.equal(typeof host.createReviewedCanonicalHandoff,'function');
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE='authority-only';
+  process.env.APPROVED_RUNNER_NATIVE_MCP='1';
+  let provisioned=0;
+  const handoff=host.createReviewedCanonicalHandoff({
+   provision:async()=>{provisioned++;throw Error('Must not provision before signature');}
+  });
+  await assert.rejects(handoff.reviewReadiness(),
+   /verified review not ready|approval|receipt/u);
+  assert.equal(provisioned,0);
+  await handoff.close();
+  assert.equal(host.phase,'revoked');
+ }finally{
+  if(host)await host.close();
+  for(const [k,v] of original)
+   if(v===undefined)delete process.env[k];
+   else process.env[k]=v;
+ }
+});
+
 test('R382.5 original Review Host independently re-reads signed Engineer approval for canonical handoff',async t=>{
  const f=await fixture(t),host=await f.start();
  const prevArch=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
