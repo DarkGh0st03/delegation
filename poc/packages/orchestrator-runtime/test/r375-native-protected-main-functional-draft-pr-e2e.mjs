@@ -146,8 +146,12 @@ const sessionId="r375-original-review-host-e2e";
 // Opt-in native R376 shares the existing disposable Account Suspension proof.
 const diagnosticMode=process.env.R376_NATIVE_DIAGNOSIS==="1";
 assert.ok(process.env.R376_NATIVE_DIAGNOSIS===undefined||diagnosticMode);
-const specialistStop=process.env.R377_NATIVE_SPECIALIST_STOP==="1";
-assert.ok(!specialistStop||diagnosticMode);
+const specialistStopRole=process.env.R377_NATIVE_SPECIALIST_STOP_ROLE??
+ (process.env.R377_NATIVE_SPECIALIST_STOP==="1"?"backend":undefined);
+assert.ok(specialistStopRole===undefined||
+ (diagnosticMode&&["backend","frontend"].includes(specialistStopRole)));
+const specialistStop=specialistStopRole!==undefined;
+const diagnosticRole=specialistStopRole??"backend";
 const sourceObservationMode=diagnosticMode&&!specialistStop;
 /**
  * SCRIPTED fixture, NOT a generative coding LLM. One Task holds only one
@@ -571,8 +575,9 @@ try{
  const taskId="r375-frontend-task";let runtimeTaskId="dispatch_"+"F".repeat(22);
  const backendTaskId="r375-backend-task";let backendRuntimeId="dispatch_"+"B".repeat(22);
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
- const diagnosticTaskId=specialistStop?"r377-backend-no-change":"r376-authenticated-source-read";
- const diagnosticPermissions=specialistStop?permissionsFor(sharedPath):[pair(sharedPath,"read_file")];
+ const diagnosticTaskId=specialistStop?"r377-"+diagnosticRole+"-no-change":"r376-authenticated-source-read";
+ const diagnosticPath=diagnosticRole==="frontend"?mutationPath:sharedPath;
+ const diagnosticPermissions=specialistStop?permissionsFor(diagnosticPath):[pair(diagnosticPath,"read_file")];
  const decisionOffset=diagnosticMode?1:0;
  const testRepairPath=diagnosticMode?testFiles.at(-1):undefined;
  const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
@@ -746,10 +751,13 @@ try{
   {files:frontendTestReferenceFiles.filter(file=>file.path===testRepairPath)}
  ]):undefined;
  if(testRepairWriter)assert.equal(testRepairWriter.stages[0].files.length,1);
+ const diagnosticStage={readOnly:true,files:[{path:diagnosticPath,
+  previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[diagnosticPath]}]};
+ const backendDiagnostic=Number(diagnosticMode&&diagnosticRole==="backend");
+ const frontendDiagnostic=Number(diagnosticMode&&diagnosticRole==="frontend");
  const models={
   backend:new ScriptedScopedReferenceWriter(branch,"backend",[
-   ...(diagnosticMode?[{readOnly:true,files:[{path:sharedPath,
-    previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath]}]}]:[]),
+   ...(backendDiagnostic?[diagnosticStage]:[]),
    {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
    {files:[{path:sharedPath,
      previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
@@ -758,6 +766,7 @@ try{
    ...backendTestReferenceFiles.map(file=>({files:[file]}))
   ]),
   frontend:new ScriptedScopedReferenceWriter(branch,"frontend",[
+   ...(frontendDiagnostic?[diagnosticStage]:[]),
    {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
    ...frontendReferenceFiles.map(file=>({files:[file]})),
    ...frontendTestReferenceFiles.filter(file=>file.path!==testRepairPath).map(file=>({files:[file]}))
@@ -976,9 +985,9 @@ const tool=record?.request?.tool,role=record?.agent_role;
     if(diagnosticMode&&n===0){
      assert.doesNotMatch(context,/independent_runner_failure/u);
      choice={action:"delegate",task:{
-      task_id:diagnosticTaskId,agent_id:"backend",
+      task_id:diagnosticTaskId,agent_id:diagnosticRole,
       depends_on:["r375-original-root-branch"],permissions:diagnosticPermissions,
-      instruction:"Inspect the original shared account-status source before the first edit"
+      instruction:"Inspect "+diagnosticPath+" before the first edit"
      }};
     }else if(initialIndex<3){
      if(diagnosticMode&&initialIndex===0){
@@ -1148,7 +1157,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    adaptive:{model:controller,maxSteps:15+decisionOffset,
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
-     if(diagnosticMode&&epoch===2&&agent_id==="backend")
+     if(diagnosticMode&&epoch===2&&agent_id===diagnosticRole)
       return freshChildParams("urn:r376:child:diagnostic-read",29167,900);
      if(epoch===2+decisionOffset&&agent_id==="backend")
       return freshChildParams("urn:r375:child:backend-d0",29153,600);
@@ -1232,10 +1241,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
   // The failed Test and any authenticated specialist stop remain incomplete.
   assert.equal(gate.stagedCompletedTaskCount,15+Number(sourceObservationMode),
    "only independently completed Tasks and the root PR count");
-  if(specialistStop)assert.deepEqual(
-   events.filter(event=>event.startsWith("execute_backend_")).slice(0,3),
-   ["execute_backend_read_file","execute_backend_read_file","execute_backend_update_file"]
-  );
+  if(specialistStop){
+   const prefix="execute_"+diagnosticRole+"_";
+   assert.deepEqual(events.filter(event=>event.startsWith(prefix)).slice(0,3),
+    [prefix+"read_file",prefix+"read_file",prefix+"update_file"]);
+  }
   assert.equal(gatewayCasWrites,12);
   assert.equal(privateCasStagingBranchPosts,12);
   assert.equal(runnerCalls,2);
@@ -1243,10 +1253,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
    .filter(name=>name.endsWith(".runner-fail.json")).length,1);
   assert.equal((await readdir(path("runner-receipts")))
    .filter(name=>name.endsWith(".runner.json")).length,1);
-  assert.equal(models.backend.stageIndex,7+decisionOffset);
-  assert.equal(models.frontend.stageIndex,5-decisionOffset);
-  assert.equal(models.backend.requests.length,21+2*decisionOffset);
-  assert.equal(models.frontend.requests.length,15-3*decisionOffset);
+  assert.equal(models.backend.stageIndex,7+backendDiagnostic);
+  assert.equal(models.frontend.stageIndex,5-decisionOffset+frontendDiagnostic);
+  assert.equal(models.backend.requests.length,21+2*backendDiagnostic);
+  assert.equal(models.frontend.requests.length,15-3*decisionOffset+2*frontendDiagnostic);
   assert.equal(models.test.requests.length,4+3*decisionOffset);
   assert.deepEqual(events.filter(event=>event.startsWith("execute_test_")),
    diagnosticMode?["execute_test_run_tests","execute_test_read_file",
@@ -1312,6 +1322,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    authenticated_source_seen_before_first_write:sourceObservationMode,
    signed_read_only_diagnostic_tasks:Number(sourceObservationMode),
    authenticated_specialist_no_change_recoveries:Number(specialistStop),
+   ...(specialistStop?{authenticated_specialist_no_change_role:diagnosticRole}:{}),
    attested_test_agent_project_test_repairs:decisionOffset,
    status:"pass",
    original_main_immutable:true,

@@ -1,6 +1,6 @@
 {
-  "checkpoint": "R377.10",
-  "expected": "authenticated Backend stop after attested read and before write, fresh Backend Task, independently authenticated Docker FAIL, separate signed Test Agent read/CAS, fresh Docker and researcher acceptance PASS, independently verified Draft PR",
+  "checkpoint": "R377.11",
+  "expected": "authenticated Frontend stop after attested read and before write, fresh Frontend Task, independently authenticated Docker FAIL, separate signed Test Agent read/CAS, fresh Docker and researcher acceptance PASS, independently verified Draft PR",
   "models": "scripted deterministic",
   "paid_inference_calls": 0,
   "status": "PENDING_NATIVE_E2E"

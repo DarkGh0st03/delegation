@@ -2,7 +2,7 @@
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Unsigned initial branch is absent; protected unsolved main is unchanged.
 # Protected-main Account Suspension with an authenticated specialist stop
-# before the first write, followed by a replacement Backend Task.
+# before the first write, followed by a replacement specialist Task.
 # One genuinely failed Test remains incomplete; PR permitted only on independently attested Docker PASS.
 name: Native Authenticated Specialist Stop and Docker Recovery (No AI)
 on:
@@ -26,7 +26,7 @@ jobs:
       R233_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       R376_NATIVE_DIAGNOSIS: "1"
-      R377_NATIVE_SPECIALIST_STOP: "1"
+      R377_NATIVE_SPECIALIST_STOP_ROLE: "frontend"
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: r233-engineer-local
       ADAPTER_CALLER_GATEWAY: r233-gateway-local
