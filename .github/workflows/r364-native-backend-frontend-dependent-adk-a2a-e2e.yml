@@ -112,11 +112,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          services/delegation-engineer-node/target
-          services/delegation-core-node/target
-          services/delegation-adapter/target
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
           key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Build Engineer direct owner + independent public-only Gateway native addons
         run: |
@@ -132,11 +132,11 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          services/delegation-engineer-node/target
-          services/delegation-core-node/target
-          services/delegation-adapter/target
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
           key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Assert legacy Adapter executable refuses duplicate issuer in direct mode
         run: |

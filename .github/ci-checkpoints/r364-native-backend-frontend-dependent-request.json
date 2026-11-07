@@ -1,5 +1,5 @@
 {
-  "checkpoint": "R364.9",
+  "checkpoint": "R364.9a",
   "baseline_native_sha": "1a7c2d20d8aaf8fb15eeb324a1402789f470179d",
   "scenario": "account-suspension",
   "roles": [
@@ -10,8 +10,8 @@
   "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
   "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
   "excluded": "no Test/Docker or PR claim",
-  "status": "new native run requested; success not yet confirmed",
-  "previous_sha": "99353d8d19461d10a5fd14841ccd9607c7c2ef23",
+  "status": "native rerun requested; outcome not yet known",
+  "previous_sha": "43e6ce6567b2d641f0eec4c10f47a5bb9d3b9c7d",
   "fix": "Use original prepare envelope agent_role for exact Backend/Frontend role validation; no permission or Rust/MCP/OPA relaxations",
   "previous_failure_run": 42319919084,
   "previous_failure": "Backend stage succeeded; native VP or MCP crypto unavailable before Gateway Execute",
@@ -21,5 +21,7 @@
   "confirmed": "Original Gateway challenge signed directly by native Rust; failure lies in Agent/IPC/MCP integration after owner stage success",
   "prior_phase_trace": "proof_taken, no Gateway Execute; VP signed successfully",
   "found": "Gateway prepare.ts PreparedRequestRecord stores agent_role on record.agent_role, not record.request.agent_role",
-  "failure_explanation": "All prior R364 native executes blocked in test-only transport before verifier; mistaken record role is undefined"
+  "failure_explanation": "All prior R364 native executes blocked in test-only transport before verifier; mistaken record role is undefined",
+  "previous_workflow_run": 42323761409,
+  "workflow_fix": "Indent two actions/cache path block scalar contents so workflow parses; keep top-level PreparedRequestRecord.agent_role fix"
 }
