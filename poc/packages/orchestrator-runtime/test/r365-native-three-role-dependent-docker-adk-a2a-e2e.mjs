@@ -1,8 +1,9 @@
 /** R365.1 — signed THREE-Task Account Suspension plan. Backend and Frontend
  * remain real native ADK/A2A read-CAS; Test is registered from initial approval,
  * but may not receive an issued Child before independent Frontend completion.
- * Follow-up R365.2 attaches a real native one-shot Docker Test Runner.
- * Local ADK scripted models; no paid API or production repository access.
+ * R365.2 attaches one real native Docker Test Runner with independently
+ * MAC-authenticated receipt, one-shot Test VP/OPA, and pinned Gitea HEAD.
+ * ADK scripted models; no paid API or production repository access.
  */
 import assert from "node:assert/strict";
 import {generateKeyPairSync,createHash,randomBytes} from "node:crypto";
@@ -923,8 +924,72 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(enrolledTest.credential_id,runnerChild.credential_id);
   assert.equal(gate.assertTrustedOwnerRemoteEffectBinding(
    testTaskId,testRuntimeId).agent_id,"test");
-  // No Runner provider effect has been staged or invoked in R365.1.
-  assert.equal(gate.stagedCompletedTaskCount,2);
+  // A2A Test completion is NOT native authorization. The original
+  // owner-only stager first reserves one immutable Runner intent at the
+  // independently verified Frontend CAS HEAD, before Rust VP/OPA/Docker.
+  assert.equal(models.test.requests.length,0);
+  const nativeTestStager=new TrustedAuthorityOnlyEffectStager({
+   store,admissions:gate,mutation:preflight,runner:runnerPreflight,
+   runtimeTaskId:testRuntimeId,tool:"run_tests",expectedHeadSha:frontendHead
+  });
+  let testStaged;
+  const testReport=await owner.dispatchIssuedTask({
+   taskId:testTaskId,runtimeTaskId:testRuntimeId,
+   instruction:"Run exact approved Docker suite against completed Frontend HEAD",
+   effectStager:{stage:async requestId=>{
+    testStaged=await nativeTestStager.stage(requestId);
+    return testStaged;
+   }}
+  });
+  assert.equal(testReport.status,"a2a_report_not_gateway_completed");
+  assert.equal(testReport.provider_completion_attested,false);
+  assert.equal(testReport.role,"test");
+  assert.equal(testReport.artifact.test_outcome,"pass");
+  assert.equal(testReport.artifact.commit_sha,frontendHead);
+  assert.equal(testReport.artifact.tested_commit_sha,undefined);
+  assert.equal(models.test.requests.length,2);
+  assert.equal(testStaged.status,"test_runner_commit_reserved_staged");
+  assert.equal(testStaged.intent.expected_head_sha,frontendHead);
+  assert.equal(testStaged.intent.credential_id,runnerChild.credential_id);
+  assert.equal(runnerCalls,1);
+  assert.equal(gatewayCasWrites,2);
+  assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,frontendHead);
+  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,disposableMainHead);
+  assert.deepEqual(prepared.map(p=>[p.role,p.tool]),[
+   ["backend","read_file"],["backend","update_file"],
+   ["frontend","read_file"],["frontend","update_file"],
+   ["test","run_tests"]
+  ]);
+  assert.equal(new Set(prepared.map(p=>p.response.request_id)).size,5);
+  assert.deepEqual(events.slice(-3),[
+   "prepare_attempt_test_run_tests",
+   "prepare_test_run_tests","execute_test_run_tests"
+  ]);
+  const testPrepare=prepared[4].response;
+  const testRecord=store.get(testPrepare.request_id);
+  assert.equal(testRecord?.consumed,true);
+  assert.equal(typeof testSignedVp,"string");
+  const verifiedTest=await verifier.verify({
+   presenter:"test",audience:testPrepare.audience,
+   challenge:testPrepare.challenge,
+   required_permission:testPermission,signed_vp:testSignedVp
+  });
+  assert.equal(verifiedTest.credential_id,runnerChild.credential_id);
+  assert.equal(verifiedTest.root_credential_id,operational.credential_id);
+  const runnerWitness=await runnerObserver.observe(
+   gate.assertTrustedCompletedRunnerEvidenceBinding(testRecord,verifiedTest));
+  assert.equal(runnerWitness.status,"owner_verified_provider_result");
+  const completedTest=await owner.attestIndependentGatewayCompletion(
+   testTaskId,testRuntimeId
+  );
+  assert.equal(completedTest.status,"owner_gateway_completion_independently_observed");
+  assert.equal(gate.stagedCompletedTaskCount,3);
+  await assert.rejects(owner.attestIndependentGatewayCompletion(
+   testTaskId,testRuntimeId),/closed or repeated independent completion/u);
+  await assert.rejects(executeAuthorization({
+   request_id:testPrepare.request_id,signed_vp:testSignedVp
+  },deps),err=>err?.code==="replay_detected");
+  assert.equal(runnerCalls,1);
   await assert.rejects(owner.attestIndependentGatewayCompletion(
    taskId,runtimeTaskId),/closed or repeated independent completion/u);
   for(const [index,role,permission] of [
@@ -943,10 +1008,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
    },deps),err=>err?.code==="replay_detected");
   }
   assert.equal(gatewayCasWrites,2);
-  for(const role of ["backend","frontend"]){
+  for(const role of ["backend","frontend","test"]){
    const prompts=JSON.stringify(models[role].requests);
    for(const forbidden of [tokens[role],backendChild.credential_id,
-    child.credential_id,operational.credential_id,
+    child.credential_id,runnerChild.credential_id,operational.credential_id,
     process.env["ADAPTER_EVM_PRIVATE_KEY_"+role.toUpperCase()]
    ].filter(Boolean))assert.equal(prompts.includes(forbidden),false);
   }
@@ -959,7 +1024,9 @@ const tool=record?.request?.tool,role=record?.agent_role;
   LocalCryptoMcpBridge.prototype.createSignedPresentation=originalMcpBridge;
   const results=await Promise.allSettled([
    owner?.close(),...bindingServers.reverse().map(b=>b.close()),
-   ...roleServers.reverse().map(s=>s.close())
+   ...roleServers.reverse().map(s=>s.close()),
+   new Promise((resolve,reject)=>
+    runnerServer.close(err=>err?reject(err):resolve()))
   ]);
   for(const result of results)
    if(result.status==="rejected")throw result.reason;
@@ -989,7 +1056,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
   backend_to_frontend_head_rollover:true,
   three_native_children_one_engineer_root:true,
   test_child_post_frontend_completion:true,
-  test_docker_provider_executed:false,
+  test_docker_provider_executed:true,
+  docker_runner_posts:runnerCalls,
+  docker_pass_independently_attested:true,
+  final_test_gitea_head_pinned:true,
   gateway_atomic_update_calls:gatewayCasWrites,
   legacy_writes:legacyWriteCalls,paid_model_calls:0
  })+"\n");
