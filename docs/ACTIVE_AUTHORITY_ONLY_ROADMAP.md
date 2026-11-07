@@ -5,7 +5,79 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Ordine del lavoro
+## Piano attivo — aggiornato al 7 novembre 2026 (R377.0)
+
+Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
+a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
+sequenza concordata è **A → B → C → D → E → F → G**.
+Per decidere se una fase è conclusa, controllare il codice *collegato*
+all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
+
+| Fase | Priorità e gate verificabile | Stato |
+| --- | --- | --- |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **In corso (R377)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **Da completare** |
+| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
+| **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
+| **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### Risultati attuali e limiti di prova
+
+- **R375.8, E2E native [42354591410](https://github.com/DarkGh0st03/delegation/actions/runs/42354591410) SUCCESS**:
+  branch dalla baseline applicativa non risolta; vera failure Docker;
+  modifiche Backend/Frontend e a test applicativi; retest e researcher
+  acceptance PASS; Draft PR creata e indipendentemente osservata, non mergiata.
+- **R376.5, E2E native [42358777600](https://github.com/DarkGh0st03/delegation/actions/runs/42358777600) SUCCESS su `3c971d2e`**:
+  aggiunge un read-only Task con Child nativa distinto, MAC e lettura Gitea
+  HEAD/byte verificati, source observation privata nel turno ADK successivo,
+  senza riuso dopo HEAD diversa. 17 Task registrati / 16 completati;
+  il primo Test FAIL non è mai dichiarato completato.
+- **R376.6**: Fast CI [42359406417](https://github.com/DarkGh0st03/delegation/actions/runs/42359406417)
+  SUCCESS su `f3af2827`. Non dichiarare il precedente E2E come stessa-SHA.
+- **R377.0**: il proposer ora accetta una lettura separata prima del primo
+  fallimento, ma **soltanto** Backend/Frontend, singolo `read_file`,
+  signed Engineer grant e capability del ruolo. I test offline dimostrano
+  il contesto sorgente per la decisione successiva, lo scarto su HEAD diversa
+  e il rifiuto se la root non copre la lettura o il ruolo è Test.
+  Fast CI [42360929830](https://github.com/DarkGh0st03/delegation/actions/runs/42360929830)
+  e Engineer UI CI [42360929846](https://github.com/DarkGh0st03/delegation/actions/runs/42360929846)
+  SUCCESS su `25926712`. Questo **non** è ancora un nuovo E2E nativo R377.
+
+**Vincolo di evidenza:** tutti i flussi gratuiti R375–R377 utilizzano
+decisioni e correzioni di riferimento scripted. Nessuna prova afferma che
+Gemini abbia autonomamente generato il codice o concluso il recovery. Non
+avviare workflow Gemini pagati senza consenso esplicito. Non introdurre
+merge automatico o alterare il branch GitHub `main`.
+
+### Attività immediata nella Fase A
+
+1. Espandere il catalogo del loop senza aggirare un Task native Child:
+   indagine, editing e verifiche restano Task verificabili del Coordinator;
+   `create_file` e più effetti ordinati richiedono prima un journal sicuro.
+2. Trattare come recuperabili solo i **fallimenti applicativi corroborati
+   indipendentemente**, includendo test di codice Backend/Frontend e Test
+   applicativo. Errori di credenziali, revoca, trasporto ambiguo o OPA sono
+   terminali, non recovery D1 rinominati.
+3. Portare informazioni diagnostiche sanificate ai turni ADK, con limite di
+   byte, Task originale e HEAD; verificare ripetute correzioni e blocco senza
+   scope, prima della nuova full CI.
+4. Non allargare indiscriminatamente il limite di 16 turni per compensare
+   una progettazione ancora troppo granulare: scegliere solo dove un Task
+   multi-file sia sicuro con un journal ordinato e prove di replay.
+
+### Strategia CI e pulizia
+
+Durante A–C: test offline mirati e Fast CI; l'E2E nativo esteso soltanto ai
+checkpoint significativi. Durante E: inventario delle dipendenze **prima** di
+cancellare, mantenimento delle prove negative Rust/Gateway, rimozione per
+famiglie dopo switch degli entrypoint e regressioni gratuite dopo cleanup.
+Il pilot a pagamento F si sblocca **solo** dopo E e consenso esplicito.
+
+---
+
+## Archivio: ordine del lavoro precedente (R353–R357)
 
 1. **Operazioni proprie dell'Orchestrator.** Root operativa e VP per branch/PR;
    Child DC soltanto per Backend, Frontend e Test. Nessuna modifica al Core Rust
@@ -27,7 +99,7 @@ un comportamento autonomo del sistema.
 6. **Pilot Gemini**, soltanto con consenso esplicito ai costi e gate CI concordati.
    GUI locale finale successiva. Merge sempre separato e umano.
 
-## Evidenze correnti
+## Evidenze storiche (R353–R357; non rappresentano lo stato attuale)
 
 - **PR nativa confermata:** R353.9, checkpoint `06a7f7246b0641d9b8c757082111d3ebff3eaecd`,
   [run 42255261326](https://github.com/DarkGh0st03/delegation/actions/runs/42255261326)
