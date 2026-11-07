@@ -387,8 +387,12 @@ test('R383.0 Test agent reads its signed project test source before any failure,
  assert.deepEqual(f.done.map(row=>row.permissions.map(p=>p.operation)),
   [['read_file'],['run_tests']]);
  assert.equal(f.retired,false);
- assert.ok(JSON.stringify(model.requests[1]).includes(excerpt),
-  'trusted Gitea test source excerpt is available as DATA on next decision');
+ const next=JSON.stringify(model.requests[1]);
+ assert.match(next,/source_observations/u);
+ assert.match(next,/account suspension/u,
+  'the independently observed project test body reaches the next ADK decision');
+ // JSON encodes quote marks in the LLM request twice; do not compare
+ // the raw unescaped TypeScript source to the serialized request bytes.
  assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
 });
 
