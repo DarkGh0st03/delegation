@@ -98,5 +98,10 @@ test("R178 protected Gitea provisioner stays separate from canonical signed DAG 
   assert.doesNotMatch(run,/simulatedPositiveMerge|positiveMergeFixture/u);
  }
  assert.match(paid,/workflow_dispatch:/u);
- assert.match(paid,/inputs\.authorization == 'I AUTHORIZE GEMINI API CHARGES'/u);
+ // R384.6: a retired workflow must be non-billable regardless of consent.
+ for(const job of ["account-suspension","f1-real-gitea-planning"]){
+  const at=paid.indexOf("  "+job+":\n");
+  assert.ok(at>=0,"historical job absent: "+job);
+  assert.match(paid.slice(at,at+300),/^    if: \$\{\{ false \}\}$/mu);
+ }
 });
