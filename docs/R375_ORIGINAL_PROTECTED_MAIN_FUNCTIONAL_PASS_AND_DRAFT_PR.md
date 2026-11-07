@@ -69,3 +69,7 @@ the checkpoint must fail closed rather than claim a PASS.
 ## R375.1 — Workflow source path correction
 
 R375.0 workflow [#42350171857](https://github.com/DarkGh0st03/delegation/actions/runs/42350171857) failed at preflight: the newly copied workflow referenced a nonexistent old R374-style test pathname. R375.1 points both syntax and actual native invocations to the new R375 test file and updates the checkpoint. No source authority, Rust, policy, read/CAS or acceptance behavior changes. No end-to-end PASS can be claimed before the new run completes.
+
+## R375.2 — exact read-only Planner root scope
+
+Native [#42350354622](https://github.com/DarkGh0st03/delegation/actions/runs/42350354622) correctly refused the Planning read before execution (`no verified read-only grounded proposal`). The enlarged read-only snapshot now lists shared account status before Backend, whereas the original fixture used `.find(operation===read_file)` for its private preliminary Gateway Prepare and Rust VP verifier. The prepared scope was therefore *not* for `apps/backend/src/users/user.service.ts`. R375.2 selects exactly the requested file permission in both operations. No Rust, Gateway, OPA or Planner guard is relaxed; no provider effect or Child had been attempted at the failed checkpoint. Native success still pending.

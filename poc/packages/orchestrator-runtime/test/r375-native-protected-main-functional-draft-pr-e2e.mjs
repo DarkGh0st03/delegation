@@ -426,14 +426,16 @@ try{
     assert.deepEqual(body.arguments,{branch:"main",path:backendPath});
     return Response.json({request_id:"r375-planning-request",
      audience:"cloud-access-gateway",challenge:"r375-planning-source-challenge",
-     required_permission:preliminaryReadPermissions(snapshot).find(p=>p.operation==="read_file")},{status:201});
+     required_permission:preliminaryReadPermissions(snapshot).find(p=>
+      p.operation==="read_file"&&p.resource.endsWith("/files/"+backendPath))},{status:201});
    }
    if(String(url).endsWith("/v1/authorization/execute")){
     assert.equal(body.request_id,"r375-planning-request");
     const observed=await nativePlanningVerifier.verify({
      presenter:"orchestrator",audience:"cloud-access-gateway",
      challenge:"r375-planning-source-challenge",
-     required_permission:preliminaryReadPermissions(snapshot).find(p=>p.operation==="read_file"),signed_vp:body.signed_vp
+     required_permission:preliminaryReadPermissions(snapshot).find(p=>
+      p.operation==="read_file"&&p.resource.endsWith("/files/"+backendPath)),signed_vp:body.signed_vp
     });
     assert.equal(observed.credential_id,preliminary.credential_id);
     const actual=await independentClient.readTextFile(

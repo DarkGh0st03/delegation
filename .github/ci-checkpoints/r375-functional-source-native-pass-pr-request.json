@@ -1,9 +1,9 @@
 {
-  "checkpoint": "R375.1",
-  "from_sha": "a5b3f016e05a1bad09dfc03a1c1d2097f430d54f",
-  "first_run": 42350171857,
-  "configuration_fix": "Use exact newly committed r375-native-protected-main-functional-draft-pr-e2e.mjs in node --check and native step; old R374-derived path did not exist.",
-  "security": "No runtime or original Engineer root/OPA changes; success still pending",
-  "no_paid_inference": true,
-  "expected": "native Runner FAIL then seven actual scoped file CAS and Docker PASS and independently observed Draft PR"
+  "checkpoint": "R375.2",
+  "previous_sha": "0325e3957e57229ded2d0c2b771f73244fe297b2",
+  "failed_native_run": 42350354622,
+  "diagnosis": "Read-only Planner rejected incorrect preparatory signed read scope: fixture selected first of 7 preliminary read_file permissions, now shared AccountStatus file, while tool requested Backend user.service.ts. Original owner failed closed before any worker Task.",
+  "fix": "Choose preliminary read_file permission by exact canonical Backend source path in BOTH prepare and native verifier. Original read-only Planner, Rust verification and immutable root remain unchanged.",
+  "expected": "Grounded approved 17-pair Engineer grant, 12 owner model decisions, 9 same-file CAS writes, genuine Docker FAIL then PASS, independent Draft PR GET, no paid inference.",
+  "status": "not proved until R375 native CI SUCCESS"
 }
