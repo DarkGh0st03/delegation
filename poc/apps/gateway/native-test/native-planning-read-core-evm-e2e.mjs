@@ -617,7 +617,9 @@ let pilotPlanningRejectionHistory=[];
 // R380.3 failed CI diagnostics expose only fixed-vocabulary tool phase and
 // integer counters. Neither Gitea paths, model text, VP nor keys can escape.
 const r3803Probe={model_turns:0,verified_lists:0,verified_files:0,
-  denied_reads:0,last_denial:"none",rejected_proposals:0};
+  denied_reads:0,first_denial:"none",last_denial:"none",
+  rejected_proposals:0,gateway_prepares:0,gateway_executions:0,
+  gitea_reads:0,gateway_last_reason:"none"};
 globalThis.__nativeDagBootstrapStage="root_issuance";
 try{
   const started=await coordinator.beginPlanning(root);
@@ -699,11 +701,14 @@ try{
           }
           if(observation?.kind==="read"&&
              observation.status==="denied"){
-            r3803Probe.denied_reads++;
-            r3803Probe.last_denial=[
+            const allowedReason=[
               "trusted_planning_read_failed","outside_planning_scope",
               "read_budget","planning_deadline","composite_unavailable"
             ].includes(observation.reason)?observation.reason:"other";
+            r3803Probe.denied_reads++;
+            if(r3803Probe.first_denial==="none")
+              r3803Probe.first_denial=allowedReason;
+            r3803Probe.last_denial=allowedReason;
           }
           if(observation?.kind==="plan_rejection")
             r3803Probe.rejected_proposals++;
@@ -2079,10 +2084,25 @@ try{
   }));
 }catch(error){
   if(error!==PLANNING_ONLY_COMPLETED){
-  if(r3803NativeDiscovery)process.stderr.write(
-    "[r3803-planning-probe] "+JSON.stringify({
+  if(r3803NativeDiscovery){
+    r3803Probe.gateway_prepares=log.prepares;
+    r3803Probe.gateway_executions=log.executions;
+    r3803Probe.gitea_reads=log.giteaReads;
+    const lastDenied=audit.events.filter(e=>
+      (e.event==="authorization_executed"||
+        e.event==="composite_read_executed"||
+        e.event==="composite_authorization_verified")&&
+      e.decision==="deny").at(-1);
+    const reason=lastDenied?.reason;
+    r3803Probe.gateway_last_reason=[
+      "verification_rejected","verifier_unavailable","policy_denied",
+      "provider_unavailable","trusted_binding_denied",
+      "verified_only_no_provider","provider_mismatch","none"
+    ].includes(reason)?reason:lastDenied?"other":"none";
+    process.stderr.write("[r3803-planning-probe] "+JSON.stringify({
       event:"r3803_planning_failure_probe_v1",...r3803Probe
     })+"\n");
+  }
   if(!geminiPilot){
     globalThis.__nativeDagPhaseReported=true;
     process.stderr.write(NATIVE_DAG_FAILURE_PREFIX+
