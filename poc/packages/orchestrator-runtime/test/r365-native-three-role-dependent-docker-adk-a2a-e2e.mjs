@@ -174,6 +174,26 @@ async function freeRolePort(){
  await new Promise((ok,bad)=>server.close(err=>err?bad(err):ok()));
  return value.port;
 }
+class ScriptedNativeDockerTest extends BaseLlm {
+ constructor(branch){
+  super({model:"r365-local-adk-docker-test-no-paid-inference"});
+  this.branch=branch;this.requests=[];
+ }
+ async *generateContentAsync(req){
+  this.requests.push(req);
+  if(this.requests.length===1){
+   yield {content:{role:"model",parts:[{functionCall:{
+    id:"r365-docker-test",name:"run_tests",
+    args:{branch:this.branch,profile:"poc-default"}
+   }}]}};
+  }else if(this.requests.length===2){
+   yield {content:{role:"model",parts:[{
+    text:"Completed one native Test against owner-pinned Gitea HEAD"
+   }]}};
+  }else throw Error("R365 Docker Test model generated extra tool turns");
+ }
+ connect(){return Promise.reject(Error("Paid model connections prohibited"));}
+}
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
@@ -562,7 +582,8 @@ try{
  const models={
   backend:new ScriptedReadThenCas(branch,backendPath,
    backendOldContent,backendNewContent),
-  frontend:new ScriptedReadThenCas(branch,mutationPath,oldContent,newContent)
+  frontend:new ScriptedReadThenCas(branch,mutationPath,oldContent,newContent),
+  test:new ScriptedNativeDockerTest(branch)
  };
  // R365.7 diagnostic: observe internal phase ACKs without changing the
  // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
@@ -655,6 +676,7 @@ try{
    });
    bindingServers.push(binder);await binder.start();
   }
+  let testSignedVp=null;
   const gatewayTransport=async(url,init)=>{
    // Same original Gateway implementation. Observe the transport entry
    // BEFORE parsing or touching a signed VP; classify only the route.
@@ -668,7 +690,8 @@ try{
     let response;
     try{
      response=prepareAuthorization(body,{
-      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
+      audience:"cloud-access-gateway",request_ttl_ms:body.agent_role==="test"?1_200_000:120000,
+      repository:repo
      },{store,audit,authorityOnlyAdmissions:gate,nowMs});
     }catch(error){
      process.stderr.write(JSON.stringify({
@@ -689,10 +712,11 @@ try{
 // Reading record.request.agent_role incorrectly treats every native execute
 // as unknown, masking successful owner IPC and VP as tool_unavailable.
 const tool=record?.request?.tool,role=record?.agent_role;
-    if(!["read_file","update_file"].includes(tool)||
-       !["backend","frontend"].includes(role))
+    if(!["read_file","update_file","run_tests"].includes(tool)||
+       !["backend","frontend","test"].includes(role))
      throw Error("unrecognized role or native Gateway effect");
     events.push("execute_"+role+"_"+tool);
+    if(role==="test")testSignedVp=body.signed_vp;
     try{return Response.json(await executeAuthorization(body,deps),{status:200});}
     catch(error){
      process.stderr.write("R365 denied "+role+" "+tool+": "+
@@ -705,7 +729,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   for(const role of roles){
    const opts={role,host:"127.0.0.1",port:await freeRolePort(),
     capabilityProfile:"approved-plan",delegatedAuthorization:true};
-   if(role!=="test"){
+   if(["backend","frontend","test"].includes(role)){
     const keys=generateKeyPairSync("ed25519");
     opts.mcpTaskSigning={
      signingPrivateKeyPem:keys.privateKey.export({
@@ -716,7 +740,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
     opts.adk={
      model:models[role],gatewayBaseUrl:"http://gateway.fixture.invalid",
      adapterToken:tokens[role],maxModelTurns:4,maxModelCallMs:15000,
-     gatewayTimeoutMs:60000,scopeModelPaths:true,
+     gatewayTimeoutMs:role==="test"?900000:60000,scopeModelPaths:true,
      trustedEffectTaskRegistry:registries[role],fetchFn:gatewayTransport
     };
    }
@@ -726,7 +750,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   owner=await startTrustedAuthorityOnlySdkA2AOwner({
    coordinator,childIssuer:issuer,gateway:gate,
    stageChannels,agentBindingChannels,agentBaseUrls:urls,
-   a2aPolling:{deadlineMs:120000,initialIntervalMs:40,maxIntervalMs:250}
+   a2aPolling:{deadlineMs:960000,initialIntervalMs:40,maxIntervalMs:1000}
   });
   assert.equal(models.backend.requests.length,0);
   assert.equal(models.frontend.requests.length,0);
