@@ -68,6 +68,10 @@ import {TrustedAuthorityOnlySequentialReadUpdateStager}
 
 import {TrustedEffectStagingTaskRegistry}
  from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
+import {PrivateMcpTaskRegistry}
+ from "../../agent-runtime/src/private-mcp-task-registry.ts";
+import {DelegationEvidenceHandler}
+ from "../../agent-runtime/src/delegation-evidence-handler.ts";
 import {connectTrustedOwnerEffectStagingClient,
  createTrustedEffectAgentBindingServer}
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
@@ -439,6 +443,61 @@ try{
    backendOldContent,backendNewContent),
   frontend:new ScriptedReadThenCas(branch,mutationPath,oldContent,newContent)
  };
+ // R364.7 diagnostic: observe internal phase ACKs without changing the
+ // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
+ // All hooks delegate to the original implementations and are restored.
+ const cryptoTrace=[];
+ const recordPhase=(phase)=>{if(cryptoTrace.length<24)cryptoTrace.push(phase);};
+ const originalSelect=TrustedEffectStagingTaskRegistry.prototype.selectFor;
+ const originalChallenge=PrivateMcpTaskRegistry.prototype.stageGatewayChallenge;
+ const originalCryptoInvoke=PrivateMcpTaskRegistry.prototype.invokeCrypto;
+ const originalProofTake=PrivateMcpTaskRegistry.prototype.takeSignedPresentation;
+ const originalCreate=DelegationEvidenceHandler.prototype.createPresentation;
+ TrustedEffectStagingTaskRegistry.prototype.selectFor=function(context){
+  const port=originalSelect.call(this,context);
+  if(context?.role!=="backend")return port;
+  recordPhase("agent_port_selected");
+  return Object.freeze({...port,
+   stage:async requestId=>{
+    recordPhase("agent_stage_entered");
+    try{
+     const result=await port.stage(requestId);
+     recordPhase("agent_stage_ack_ok");return result;
+    }catch(error){recordPhase("agent_stage_ack_rejected");throw error;}
+   },
+   ...(typeof port.attest==="function"?{
+    attest:async(requestId,tool)=>port.attest(requestId,tool)
+   }:{})
+  });
+ };
+ PrivateMcpTaskRegistry.prototype.stageGatewayChallenge=function(taskId,prepared){
+  recordPhase("crypto_challenge_entered");
+  try{
+   const result=originalChallenge.call(this,taskId,prepared);
+   recordPhase("crypto_challenge_registered");return result;
+  }catch(error){recordPhase("crypto_challenge_rejected");throw error;}
+ };
+ PrivateMcpTaskRegistry.prototype.invokeCrypto=async function(...args){
+  recordPhase("mcp_crypto_invoke_entered");
+  try{
+   const result=await originalCryptoInvoke.apply(this,args);
+   recordPhase("mcp_crypto_invoke_ok");return result;
+  }catch(error){recordPhase("mcp_crypto_invoke_rejected");throw error;}
+ };
+ PrivateMcpTaskRegistry.prototype.takeSignedPresentation=function(...args){
+  recordPhase("crypto_proof_take_entered");
+  try{
+   const result=originalProofTake.apply(this,args);
+   recordPhase("crypto_proof_taken");return result;
+  }catch(error){recordPhase("crypto_proof_take_rejected");throw error;}
+ };
+ DelegationEvidenceHandler.prototype.createPresentation=async function(prepared){
+  recordPhase("private_rust_presentation_entered");
+  try{
+   const result=await originalCreate.call(this,prepared);
+   recordPhase("private_rust_presentation_signed");return result;
+  }catch(error){recordPhase("private_rust_presentation_denied");throw error;}
+ };
  let owner;
  try{
   for(const role of roles){
@@ -583,6 +642,7 @@ try{
     gateway_completed_tasks:gate.stagedCompletedTaskCount,
     gateway_sequential_tasks:gate.stagedSequentialTaskCount,
     backend_stage_events:backendStageEvents,
+    private_crypto_phase_trace:cryptoTrace,
     error_class:error?.constructor?.name??"unknown"
    })+"\n");
    throw error;
@@ -702,6 +762,11 @@ try{
    ].filter(Boolean))assert.equal(prompts.includes(forbidden),false);
   }
  }finally{
+  TrustedEffectStagingTaskRegistry.prototype.selectFor=originalSelect;
+  PrivateMcpTaskRegistry.prototype.stageGatewayChallenge=originalChallenge;
+  PrivateMcpTaskRegistry.prototype.invokeCrypto=originalCryptoInvoke;
+  PrivateMcpTaskRegistry.prototype.takeSignedPresentation=originalProofTake;
+  DelegationEvidenceHandler.prototype.createPresentation=originalCreate;
   const results=await Promise.allSettled([
    owner?.close(),...bindingServers.reverse().map(b=>b.close()),
    ...roleServers.reverse().map(s=>s.close())
