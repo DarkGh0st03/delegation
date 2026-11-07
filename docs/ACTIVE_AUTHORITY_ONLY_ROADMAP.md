@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.1)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.2)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,53 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.0 valida lettura read-only del Test Agent (Fast CI e Engineer Approval SUCCESS SHA 10e9c9f); R383.1 delimita sequenze multi-file tramite Task/Child distinti; create_file nativo, recovery generico e batch multi-file ancora aperti** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.1 supporta sequenze multi-file con Task/Child distinti (Fast CI SUCCESS `f4011a2`); R383.2 aggiunge trasporto Gitea create_file HEAD-CAS e osservazione read-only, ma l'autorizzazione nativa create_file, recovery generico e multi-file atomico restano aperti** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI ed Engineer Approval PASS sulla SHA R383.0 `10e9c9f` (run #42401873279/#42401873276), E2E native precedente PASS su `63a4414`; nuove regressioni R383.1 e post-cleanup da attestare** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.2 — `create_file` con HEAD-CAS Gitea, ancora senza admission
+
+L'operazione Gitea storica `createFile(branch,path,content)` può creare
+un file con una semplice POST, **senza** atomicità sul puntatore della
+Branch. R383.2 introduce in `GiteaClient` due metodi separati:
+
+- `createFileWithHeadCas`: verifica prima che la HEAD coincida con la
+  sorgente approvata e che il file **non esista in quel commit**; rifiuta
+  gli errori del provider diversi da un vero HTTP 404. Crea una Branch
+  di staging owner-private `feature/r3832-create-<digest>` dalla SHA
+  originale, controlla ancora l'assenza, crea il file **solo nello staging**,
+  verifica l'unico parent Git, HEAD staging, blob, contenuto UTF-8 e SHA
+  della Branch iniziale. Effettua poi **una sola** PUT
+  `old_commit_id → new_commit_id, force:false` sulla Branch di lavoro,
+  seguita dalla lettura del vero commit e dei byte. La staging ref resta
+  disponibile per riconciliazione in caso di risposta ambigua: nessun
+  retry automatico.
+- `verifyCreatedFileHeadCas`: porta **solo di osservazione**; quando
+  il trusted Gateway le fornirà un client Gitea indipendente, rileggerà
+  la HEAD, il parent del commit, l'assenza sul commit precedente e il
+  contenuto/blob/digest esatti sulla nuova SHA. Il suo risultato
+  contiene esplicitamente `provider_write_authorized:false`.
+
+Nuovi test offline Gitea con client writer e observer **distinti**
+coprono create positivo, file già esistente, errore HTTP 503 non
+scambiato per assenza, ref staging contraffatta, parent errato,
+contenuto alterato, HEAD concorrente, acknowledgment ambiguo,
+sorgente e branch non canonici, prove indipendenti su blob, vecchio
+file e digest. Aggiunti alla Fast CI, da confermare sulla SHA pubblicata.
+
+**Importante:** questi due metodi **non** sono un nuovo FunctionTool,
+una autorizzazione e nemmeno una completion Gateway autenticata.
+L'Executor ADK e l'Owner A2A continuano a rifiutare
+`create_file` finché non saranno cablati: prenotazione durable
+owner-only dell'intent/assenza, Task e Child DC nativi,
+Rust/OPA post-Prepare, writer a tentativo unico, receipt MAC
+indipendente e test E2E prima di registrare il Task completato.
+Non dichiarare ancora conclusa l'estensione `create_file` nella
+fase A. Nessuna chiamata Gemini a pagamento, nessuna modifica a main.
 
 ### R383.1 — modello multi-file attraverso Child/Task distinti, fail-closed
 
