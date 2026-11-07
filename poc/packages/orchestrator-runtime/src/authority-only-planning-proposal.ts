@@ -23,7 +23,7 @@ export const AUTHORITY_ONLY_PLANNING_INSTRUCTIONS=[
  'Each requested permission has exactly operation, resource_type, path.',
  'resource_type is repository, branch, directory or file. Repository and branch use path:null.',
  'Use repository for read_repository/create_branch/create_pull_request; branch for run_tests; directory for list_directory or recursive read_file/update_file/create_file; file for exact read_file/update_file/create_file.',
- 'Use only supplied existing files/directories; new files need an existing supplied parent directory. Never invent a broader directory.',
+ 'Use existing files and directories only when provided by the trusted owner snapshot, or independently verified through an authorized pinned-SHA Gitea directory listing in an explicitly selected discovery root. New files need a supplied or verified parent directory. Never invent a broader directory.',
  'Request minimal scope. The Engineer may remove permission pairs. This output grants nothing.',
  'No fixed Task order is required. Future execution and recovery are separate from this proposal.',
  'Stop exploration before exhausting the model budget and reserve a final turn for JSON.'
