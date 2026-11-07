@@ -1,0 +1,28 @@
+{
+  "checkpoint": "R384.4",
+  "proof": "native-disposable-functional-create-d1-docker-pass",
+  "paid_model_calls": 0,
+  "mode": "scripted-offline-ADK-not-generative",
+  "scenario": "account-suspension",
+  "main_unchanged": true,
+  "engineer_root": "new_disposable_signed_root_exact_source_files",
+  "path": [
+    "Engineer Root original signed",
+    "A2A Backend/Frontend D0 incomplete CAS",
+    "Test real Docker acceptance FAIL",
+    "one signed Backend create_file D1",
+    "ten separate exact-file read-and-CAS functional reference Tasks",
+    "new real Docker acceptance PASS on latest HEAD",
+    "independently attested Draft PR",
+    "no merge, original main unchanged"
+  ],
+  "expect": {
+    "signed_create_cas_writes": 1,
+    "mutation_cas_writes": 12,
+    "runner_calls": 2,
+    "authenticated_fail_receipts": 1,
+    "authenticated_pass_receipts": 1,
+    "pr_draft": true,
+    "autonomous_code_generation": false
+  }
+}
