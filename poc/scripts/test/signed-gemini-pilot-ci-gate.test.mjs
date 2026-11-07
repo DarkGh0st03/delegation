@@ -155,10 +155,15 @@ test("R168 green legacy MCP must never substitute actual signed D1 recovery",()=
   .independent_workflows_verified,4);
 });
 
-test("R267 paid workflow is manual only and cannot start legacy Adapter HTTP",()=>{
+test("R384.6 archived manual Gemini workflow is disabled and cannot start legacy Adapter HTTP",()=>{
  const paid=readFileSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url),"utf8");
  const triggers=/^on:\s*\n([\s\S]*?)^permissions:/mu.exec(paid);
  assert.ok(triggers&&triggers[1].includes("workflow_dispatch:"));
+ for(const job of ["account-suspension","f1-real-gitea-planning"]){
+  const offset=paid.indexOf("  "+job+":\n");
+  assert.ok(offset>=0,"retired job must be accounted for: "+job);
+  assert.match(paid.slice(offset,offset+300),/^    if: \$\{\{ false \}\}$/mu);
+ }
  assert.doesNotMatch(triggers[1],/^  (push|schedule|pull_request):/mu);
  assert.equal((paid.match(/ENGINEER_CORE_NATIVE_MODE: "1"/gu)??[]).length,2);
  assert.equal((paid.match(/APPROVED_RUNNER_NATIVE_MCP: "1"/gu)??[]).length,2);
@@ -183,7 +188,7 @@ test("R267 historical HTTP Adapter CI cannot masquerade as native proof",()=>{
   ],sha),/NO-GO/u);
 });
 
-test("R280 both manual billed jobs use the native owner DID script paths proven by free F1",()=>{
+test("R384.6 retired D0/F1 jobs preserve original Rust DID references for audit only",()=>{
  const paid=readFileSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url),"utf8");
  const free=readFileSync(new URL("../../../.github/workflows/f1-real-gitea-planning-parity.yml",import.meta.url),"utf8");
  const signed=readFileSync(new URL("../../../.github/workflows/engineer-embedded-signed-dag-e2e.yml",import.meta.url),"utf8");
