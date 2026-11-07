@@ -27,6 +27,8 @@ export class TrustedAuthorityOnlyCreateEffectStager implements TrustedEffectStag
  readonly #preflight:TrustedAuthorityOnlyGiteaCreatePreflight;
  readonly #runtimeTaskId:string;
  readonly #planTaskId:string;
+ readonly #repository:string;
+ readonly #branch:string;
  readonly #head:string;
  #attempted=false;
  constructor(opts:{
@@ -59,16 +61,20 @@ export class TrustedAuthorityOnlyCreateEffectStager implements TrustedEffectStag
   this.#preflight=opts.preflight;
   this.#runtimeTaskId=opts.runtimeTaskId;
   this.#planTaskId=opts.planTaskId;
+  this.#repository=opts.repository;
+  this.#branch=opts.branch;
   this.#head=opts.expectedHeadSha;
  }
  static isNativeForOwner(value:unknown,
   admissions:TrustedAuthorityOnlyGatewayAdmissions,
-  planTaskId:string,runtimeTaskId:string):
+  planTaskId:string,runtimeTaskId:string,
+  repository:string,branch:string):
   value is TrustedAuthorityOnlyCreateEffectStager{
   return value instanceof TrustedAuthorityOnlyCreateEffectStager&&
    #admissions in value&&value.#admissions===admissions&&
    value.#planTaskId===planTaskId&&
    value.#runtimeTaskId===runtimeTaskId&&
+   value.#repository===repository&&value.#branch===branch&&
    value.stagedTool==="create_file";
  }
  async stage(requestId:string):Promise<Readonly<{
