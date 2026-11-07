@@ -738,6 +738,48 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
  }
+ /** R376: re-open only a previously Gateway-completed single-file READ
+  * through the same original Task, native Child, signed permission and
+  * authenticated completion digest. The returned pins cannot stage effects.
+  * Never use A2A text or a caller-provided path to construct this witness. */
+ assertTrustedCompletedReadObservationBinding(taskId:string,runtimeTaskId:string){
+  const root=this.#live();
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const flight=this.#flights.get(taskId);
+  const evidence=this.#completionEvidence.get(taskId);
+  if(!bound||!child||!flight||!evidence||
+     bound.row.task_id!==taskId||
+     !["backend","frontend"].includes(bound.row.agent_id)||
+     bound.row.permissions.length!==1||
+     bound.row.permissions[0]?.operation!=="read_file"||
+     bound.row.session_id!==root.session_id||
+     bound.row.authority_digest!==root.authority_digest||
+     bound.row.root_credential_id!==root.root_credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     flight.task_id!==taskId||flight.runtime_task_id!==runtimeTaskId||
+     flight.session_id!==root.session_id||
+     flight.root_credential_id!==root.root_credential_id||
+     flight.authority_digest!==root.authority_digest||
+     flight.epoch!==bound.row.epoch||
+     flight.credential_id!==child.credential_id||
+     !this.#completed.has(taskId)||
+     this.#sequential.has(taskId)||
+     this.#completionInFlight||this.#flightInFlight||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("source observation requires original completed read-only native Child flight");
+  return Object.freeze({
+   status:"gateway_completed_read_observation_binding_only" as const,
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   permission_resource:bound.row.permissions[0].resource,
+   evidence_sha256:evidence,
+   expectation:Object.freeze({...structuredClone(flight),
+    agent_did:bound.row.agent_did})
+  });
+ }
  /**
   * R301: only an owner-controlled process can FIX the number of effects
   * before executing any of them. This is NOT an agent-proposed success
