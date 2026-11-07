@@ -535,7 +535,11 @@ const config={bind_host:"127.0.0.1",bind_port:0,
 const runtime=new GatewayRuntime(config,{
   planningRevisions:revisions,audit,
   ...(approvedPlans?{approvedPlans}:{}),
-  verifier:loadDirectCoreRustVerifier(),
+  // Only the opt-in original preliminary READ hierarchy; signed-DAG
+  // operational rights and the default Rust verifier remain exact-match.
+  verifier:loadDirectCoreRustVerifier({
+    allowGiteaScopeCoverage:r3803NativeDiscovery
+  }),
   policy:new OpaPolicyClient({baseUrl:opaUrl,timeoutMs:15000}),
   // This read-only Gitea provider remains intentionally INCAPABLE of writes
   // even after genuine operational authority is issued by Rust.
