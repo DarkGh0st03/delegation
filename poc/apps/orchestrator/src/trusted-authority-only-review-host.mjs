@@ -1,3 +1,4 @@
+import {ProtectedA2ATaskFailedError} from '../../../packages/agent-runtime/src/orchestrator.ts';
 import {randomBytes} from 'node:crypto';
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs';
 import {runTrustedAuthorityOnlyOperationalWorkflow}
@@ -136,6 +137,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  // Retain at most two independently authenticated Runner FAILs.
  // Neither is a completed Task or a new grant under the Engineer root.
  const adaptiveVerifiedFailures=[];
+ let adaptiveSpecialistNoChange;
  // Set only after the adaptive controller re-opens an independent latest
  // Runner PASS on the current Gitea HEAD. Never trust A2A readiness text.
  let adaptiveReadyProof;
@@ -645,11 +647,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          live.authority_digest!==original.authority_digest||
          (()=>{const pending=[...stagedTaskIds.values()].filter(p=>
            !gatewayAttestedTaskIds.has(p.task_id));
-          return pending.length!==adaptiveVerifiedFailures.length||
-           pending.some(p=>!adaptiveVerifiedFailures.some(f=>
-            f.failed_task_id===p.task_id));
+          const unresolved=[...adaptiveVerifiedFailures.map(f=>f.failed_task_id),
+           ...(adaptiveSpecialistNoChange?[adaptiveSpecialistNoChange.task_id]:[])];
+          return pending.length!==unresolved.length||
+           pending.some(p=>!unresolved.includes(p.task_id));
          })())
-       deny('adaptive next decision requires independent completion or an authenticated Test FAIL');
+       deny('adaptive next decision requires independent completion or an authenticated failure');
       const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       const sourceObservations=[...adaptiveSourceObservations.values()]
@@ -666,6 +669,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          .map(p=>({task_id:p.task_id,agent_id:p.agent_id,
           operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)})),
         ...(sourceObservations.length?{source_observations:sourceObservations}:{})},
+       ...(adaptiveSpecialistNoChange?{specialistNoChange:adaptiveSpecialistNoChange}:{}),
        ...(adaptiveVerifiedFailures.length?{verifiedFailure:{
         failed_phase:adaptiveVerifiedFailures.at(-1).failed_phase,
         source_evidence_sha256:adaptiveVerifiedFailures.at(-1).source_evidence_sha256,
@@ -724,6 +728,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          // can be mistaken for a verified Runner FAIL by the adaptive loop.
          return dispatched;
         }
+        if(dispatched.status==='owner_verified_specialist_no_change')
+         return dispatched;
         input.signal?.throwIfAborted();
         await executionHandle.attestEnrolledTaskCompletion({taskId:staged.task_id,runtimeTaskId});
         if(choice.permissions.length===1&&choice.permissions[0]?.operation==='read_file'){
@@ -897,10 +903,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      const adaptiveReady=!!adaptiveReadyProof&&adaptiveLoopAttempted&&
       input.sourceTestTaskId===adaptiveReadyProof.source_test_task_id&&
       input.sourceTestRuntimeTaskId===adaptiveReadyProof.source_test_runtime_task_id&&
-      adaptiveVerifiedFailures.length>0&&
-      pending.length===adaptiveVerifiedFailures.length&&
-      pending.every(p=>adaptiveVerifiedFailures.some(f=>
-       p.task_id===f.failed_task_id&&f.gateway_task_completed===false));
+      pending.length===adaptiveVerifiedFailures.length+Number(!!adaptiveSpecialistNoChange)&&
+      pending.every(p=>p.task_id===adaptiveSpecialistNoChange?.task_id||
+       adaptiveVerifiedFailures.some(f=>
+        p.task_id===f.failed_task_id&&f.gateway_task_completed===false));
      if(pending.length&&!(d1RetestPassed&&pending.length===1&&
         pending[0].task_id===d1VerifiedFailure?.proof?.failed_task_id)&&
         !adaptiveReady)
@@ -1304,11 +1310,30 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           .fenceBeforeWrite.call(input.effectStager);
          if(fence.status==='sequential_task_fenced_before_write'&&
             fence.task_id===input.taskId&&fence.runtime_task_id===input.runtimeTaskId&&
-            fence.gateway_task_completed===false&&fence.recovery_authorized===false)
+            fence.gateway_task_completed===false&&fence.recovery_authorized===false){
+          // The SDK's explicit FAILED result survives dispatch only after the
+          // bootstrap has acknowledged fencing the private remote Task port.
+          if(reported&&error instanceof ProtectedA2ATaskFailedError&&adaptiveLoopFlight&&
+             !adaptiveSpecialistNoChange&&session.phase==='operational'&&gateway.phase==='active'){
+           const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+           const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
+           const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+           if(head.commit_sha===reported.read_revision&&isDeepStrictEqual(live,before)&&
+              !closed&&session.phase==='operational'&&gateway.phase==='active'){
+            adaptiveSpecialistNoChange=Object.freeze({
+             task_id:pin.task_id,agent_id:pin.agent_id,read_revision:reported.read_revision,
+             read_evidence_sha256:reported.read_evidence_sha256
+            });
+            return Object.freeze({status:'owner_verified_specialist_no_change',
+             observation:adaptiveSpecialistNoChange,gateway_task_completed:false,
+             recovery_authorized:false});
+           }
+          }
           failure=Error(reported?
            'Authenticated specialist stopped after an attested read without an update':
            'Specialist dispatch failed after an attested read and before write staging',
            {cause:failure});
+         }
         }catch{
          // Preserve the original error if the provider boundary cannot be proven.
         }

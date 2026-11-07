@@ -33,7 +33,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      reason:decision.reason,pr_created:false});
    }
    if(decision.action==='ready_for_pr'){
-    if(retestRequired)deny('verified Test FAIL requires a new independently completed Test');
+    if(retestRequired)deny(retestRequired);
     const proof=await hooks.confirmReady();
     signal?.throwIfAborted();
     if(proof?.status!=='owner_verified_tested_head_not_pr_authorized'||
@@ -58,9 +58,32 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      tested_commit_sha:proof.tested_commit_sha,pr_created:false});
    }
    // A thrown A2A/provider error is *always* terminal. Recovery is
-   // possible only through the original owner's explicit authenticated
-   // Runner-FAIL result; never "catch error" and attempt to reclassify it.
+   // possible only through an explicit outcome authenticated by the owner.
    const effect=await hooks.executeTask(decision.task,before);
+   if(effect?.status==='owner_verified_specialist_no_change'){
+    const observed=effect.observation;
+    if(before.specialistNoChange||!observed||
+       !['backend','frontend'].includes(decision.task.agent_id)||
+       decision.task.permissions.length!==2||
+       !decision.task.permissions.some(p=>p.operation==='read_file')||
+       !decision.task.permissions.some(p=>p.operation==='update_file')||
+       decision.task.permissions[0].resource!==decision.task.permissions[1].resource||
+       observed.agent_id!==decision.task.agent_id||observed.task_id!==decision.task.task_id||
+       observed.read_revision!==before.executionProgress.current_head_sha||
+       !/^[a-f0-9]{64}$/u.test(observed.read_evidence_sha256)||
+       effect.gateway_task_completed!==false||effect.recovery_authorized!==false)
+     deny('specialist no-change is not bound to the original attested read');
+    signal?.throwIfAborted();
+    const progress=await hooks.readContext();
+    const {nextEpoch,specialistNoChange,...unchanged}=progress;
+    const {nextEpoch:priorEpoch,...prior}=before;
+    if(nextEpoch!==priorEpoch+1||
+       JSON.stringify(specialistNoChange)!==JSON.stringify(observed)||
+       JSON.stringify(unchanged)!==JSON.stringify(prior))
+     deny('specialist no-change did not preserve the original authority and success ledger');
+    retestRequired='verified specialist no-change requires a new independently completed Test';
+    continue;
+   }
    if(effect?.status==='owner_verified_native_test_failure_preflight_only'){
     if(!hooks.observeVerifiedTestFailure||decision.task.agent_id!=='test'||
        decision.task.permissions.filter(p=>p.operation==='run_tests').length!==1)
@@ -98,6 +121,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
        progress.executionProgress?.current_head_sha!==observed.tested_commit_sha||
        JSON.stringify(progress.executionProgress?.completed_work)!==
         JSON.stringify(before.executionProgress?.completed_work)||
+       JSON.stringify(progress.specialistNoChange)!==JSON.stringify(before.specialistNoChange)||
        JSON.stringify(progress.verifiedFailure)!==JSON.stringify({
         failed_phase:observed.failed_phase,
         source_evidence_sha256:observed.source_evidence_sha256,
@@ -109,7 +133,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      deny('verified Test FAIL did not preserve the original authority and success ledger');
     // The failed Task is registered (epoch advances), but NOT completed.
     // Its evidence is diagnostic input for the next model decision only.
-    retestRequired=true;
+    retestRequired='verified Test FAIL requires a new independently completed Test';
     continue;
    }
    signal?.throwIfAborted();
@@ -119,7 +143,8 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
       !progress.previousTasks.some(p=>p.task_id===decision.task.task_id&&p.agent_id===decision.task.agent_id))
     deny('Task did not yield independently attested owner progress');
    if(JSON.stringify(progress.verifiedFailureHistory)!==JSON.stringify(before.verifiedFailureHistory)||
-      JSON.stringify(progress.verifiedFailure)!==JSON.stringify(before.verifiedFailure))
+      JSON.stringify(progress.verifiedFailure)!==JSON.stringify(before.verifiedFailure)||
+      JSON.stringify(progress.specialistNoChange)!==JSON.stringify(before.specialistNoChange))
     deny('completed Task changed the authenticated failure history');
    if(decision.task.agent_id==='test'&&decision.task.permissions.some(p=>p.operation==='run_tests'))
     retestRequired=false;

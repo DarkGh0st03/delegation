@@ -75,6 +75,9 @@ export interface A2APollingOptions {
   initialIntervalMs?: number;
   maxIntervalMs?: number;
 }
+export class ProtectedA2ATaskFailedError extends Error {
+  constructor() { super("Protected A2A task ended without completion"); }
+}
 const FINISHED = new Set<TaskState>([
   TaskState.TASK_STATE_COMPLETED,
   TaskState.TASK_STATE_FAILED,
@@ -201,6 +204,8 @@ export class DeterministicA2AOrchestrator {
       const state = task.status?.state;
       if (state !== undefined && FINISHED.has(state)) {
         safeA2AMetric("terminal", performance.now() - start, polls, submitMs, pollingHttpMs);
+        if (state === TaskState.TASK_STATE_FAILED && task.id === result.id)
+          throw new ProtectedA2ATaskFailedError();
         if (state !== TaskState.TASK_STATE_COMPLETED) {
           throw new Error("Protected A2A task ended without completion");
         }

@@ -605,3 +605,49 @@ for(const authorized of [true,false]){
   }
  });
 }
+
+for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete','premature-pr']){
+ test('R377.9 adaptive specialist no-change '+mode,async()=>{
+  const f=fixture();
+  const update=grant('backend'),read={...update,operation:'read_file'};
+  const task=candidate('backend',0,[read,update]);
+  const repair=candidate('backend',1,[read,update]);
+  repair.task.depends_on=[];
+  const ready={action:'ready_for_pr',reason:'Request verified PR readiness'};
+  const originalRead=f.hooks.readContext,originalExecute=f.hooks.executeTask;
+  let stop;
+  f.hooks.readContext=async()=>{
+   const context=await originalRead();
+   context.rootPermissions.push(read);
+   context.agents.backend.capabilities.push('read_file');
+   if(stop){
+    context.nextEpoch++;
+    context.specialistNoChange=stop;
+   }
+   return context;
+  };
+  f.hooks.executeTask=async(choice,before)=>{
+   if(stop)return originalExecute(choice);
+   stop={task_id:choice.task_id,agent_id:choice.agent_id,
+    read_revision:before.executionProgress.current_head_sha,
+    read_evidence_sha256:'e'.repeat(64)};
+   if(mode==='changed-head')f.move();
+   return {status:'owner_verified_specialist_no_change',observation:stop,
+    gateway_task_completed:false,recovery_authorized:false};
+  };
+  if(mode==='reuse-task')repair.task.task_id='task-0';
+  if(mode==='depend-on-incomplete')repair.task.depends_on=['task-0'];
+  const model=new Decisions([task,mode==='premature-pr'?ready:repair,candidate('test',2),ready]);
+  const result=runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+  if(mode==='recover'){
+   assert.equal((await result).source_test_task_id,'task-2');
+   assert.deepEqual(f.verified.map(p=>p.task_id),['task-1','task-2']);
+   assert.match(JSON.stringify(model.requests[1]),/independently_verified_specialist_no_change/u);
+  }else{
+   await assert.rejects(result,mode==='changed-head'?/did not preserve/:
+    mode==='premature-pr'?/new independently completed Test/:/Task choice denied/);
+   assert.equal(f.retired,true);
+   assert.equal(f.verified.length,0);
+  }
+ });
+}

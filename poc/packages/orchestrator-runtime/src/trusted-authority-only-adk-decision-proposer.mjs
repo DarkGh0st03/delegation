@@ -31,7 +31,7 @@ class SingleDecisionModel extends BaseLlm{
 }
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
- constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,verifiedFailureHistory,nextEpoch,decisionKind='agent',executionProgress}){
+ constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,verifiedFailureHistory,specialistNoChange,nextEpoch,decisionKind='agent',executionProgress}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
@@ -118,6 +118,17 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    }
    this.executionProgress=Object.freeze(structuredClone(executionProgress));
   }else if(executionProgress!==undefined)fail();
+  if(specialistNoChange!==undefined){
+   if(decisionKind!=='adaptive'||
+      !exact(specialistNoChange,['task_id','agent_id','read_revision','read_evidence_sha256'])||
+      !ID.test(specialistNoChange.task_id)||
+      !['backend','frontend'].includes(specialistNoChange.agent_id)||
+      !Object.hasOwn(pins,specialistNoChange.agent_id)||
+      prior.some(p=>p.task_id===specialistNoChange.task_id)||
+      !/^[a-f0-9]{40}$/u.test(specialistNoChange.read_revision)||
+      !/^[a-f0-9]{64}$/u.test(specialistNoChange.read_evidence_sha256))fail();
+   this.specialistNoChange=Object.freeze({...specialistNoChange});
+  }
   if(verifiedFailureHistory!==undefined){
    const phases=new Set(['typecheck','backend_tests','frontend_tests',
     'build','playwright_e2e','researcher_acceptance']);
@@ -222,6 +233,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    })),
    root_permission_ceiling:this.roots,
    independently_gateway_completed_tasks:this.previous,
+   ...(this.specialistNoChange?{independently_verified_specialist_no_change:this.specialistNoChange}:{}),
    next_epoch:this.nextEpoch,
    ...(this.executionProgress?{verified_execution_progress:this.executionProgress}:{}),
    ...(this.verifiedFailureHistory?{
@@ -275,6 +287,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    fail();
   const known=new Set(this.previous.map(p=>p.task_id));
   if(known.has(raw.task_id)||raw.depends_on.some(x=>!known.has(x))||
+     this.specialistNoChange?.task_id===raw.task_id||
      this.verifiedFailureHistory?.some(p=>p.failed_task_id===raw.task_id))fail();
   const seen=new Set(),selected=[];
   for(const p of raw.permissions){
