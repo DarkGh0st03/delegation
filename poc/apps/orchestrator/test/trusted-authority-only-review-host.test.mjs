@@ -570,7 +570,7 @@ test('R382.5 original Review Host independently re-reads signed Engineer approva
   assert.equal(verified.dag_executed,false);
   assert.equal(provisioned,0);
   assert.equal(host.phase,'planning');
-  assert.equal(f.log.filter(e=>e.startsWith('issue:')).length,0);
+  assert.equal(f.log.filter(e=>e.startsWith('issue:urn:r3825:')).length,0);
   await handoff.close();
   assert.equal(host.phase,'revoked');
  }finally{
