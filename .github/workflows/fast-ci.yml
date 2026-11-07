@@ -145,6 +145,7 @@ jobs:
           node --check poc/packages/orchestrator-runtime/test/r363-native-frontend-a2a-adk-mixed-read-update-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r365-native-three-role-dependent-docker-adk-a2a-e2e.mjs
+          node --test poc/apps/test-runner-controller/test/r3844-functional-recovery-coverage.test.mjs
           node --experimental-strip-types --test poc/apps/test-runner-controller/test/stage-disposable-account-suspension-reference.test.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
