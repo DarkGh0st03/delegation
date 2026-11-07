@@ -1,4 +1,5 @@
 import {randomUUID} from "node:crypto";
+import {resolveTrustedAuthorityOnlyExecutionBudgets} from "./trusted-authority-only-execution-budgets.mjs";
 import {join} from "node:path";
 import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {persistStatusIndexReservation} from "../../../packages/orchestrator-runtime/src/trusted-status-index-reservation.ts";
@@ -64,14 +65,18 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  // No implicit CREATE enablement from an environment variable or agent payload:
  // only the already protected 0600 owner deployment manifest may opt in.
  const nativeCreateEnabled=c?.enableNativeCreateFile===true;
- if(!(nativeCreateEnabled
-   ?exact(c,[...standardKeys,"enableNativeCreateFile"])
-   :exact(c,standardKeys))||
+ const optionalKeys=[...(nativeCreateEnabled?["enableNativeCreateFile"]:[]),
+  ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[])];
+ if(!exact(c,[...standardKeys,...optionalKeys])||
     typeof c.directory!=="string"||!c.directory.startsWith("/")||
     !exact(c.workerTokens,roles)||!exact(c.workerPorts,roles)||
-    !Array.isArray(c.childIndices)||c.childIndices.length<1||c.childIndices.length>16||
+    !Array.isArray(c.childIndices)||c.childIndices.length<1||c.childIndices.length>24||
     typeof c.draftTitle!=="string"||typeof c.draftBody!=="string")
   deny();
+ // Only the protected 0600 owner manifest may select these bounded budgets.
+ const executionBudget=resolveTrustedAuthorityOnlyExecutionBudgets({
+  childCount:c.childIndices.length,ownerBudget:c.executionBudget
+ });
  const indices=[c.rootIndex,...c.childIndices];
  if(indices.some(i=>typeof i!=="string"||!/^(0|[1-9][0-9]{0,7})$/u.test(i)||
     Number(i)===Number(pins.preliminaryRoot.credential_status.statusListIndex))||
@@ -164,7 +169,8 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   ]))},
   workflow:{
    createBranch:{model:model(),branch,baseBranch:"main",permission:{resource,operation:"create_branch"}},
-   adaptive:{model:model(),maxSteps:c.childIndices.length,async nextChildParameters(){
+   adaptive:{model:model(),maxSteps:executionBudget.maxDecisions,
+    maxVerifiedFailures:executionBudget.maxVerifiedFailures,async nextChildParameters(){
     const index=c.childIndices[nextIndex++];
     if(index===undefined)deny();
     const credential_id="urn:operational-child:"+randomUUID();
