@@ -905,5 +905,5 @@ for(const mode of [
   assert.equal(f.verified.length,0);
   assert.equal(f.retired,true);
   assert.deepEqual(f.events.filter(x=>x.startsWith('dispatch:')),[]);
- }
-});
+ });
+}
