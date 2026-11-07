@@ -405,7 +405,11 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
     if(path==="http://trusted-gateway/v1/authorization/prepare-read-composite"){
       observed.prepare++;
       try{
-        return response(await runtime.prepareReadComposite(body),201);
+        const prepared=await runtime.prepareReadComposite(body);
+        return response(options.tamperPermission?{
+          ...prepared,required_permissions:prepared.required_permissions.map((p,i)=>
+            i===1?{...p,resource:"gitea://attacker.invalid/other"}:p)
+        }:prepared,201);
       }catch{return response({error:"Gateway composite prepare denied"},403);}
     }
     if(path==="http://trusted-gateway/v1/authorization/execute-read-composite"){
