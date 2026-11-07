@@ -10,6 +10,7 @@ import {OpaPolicyClient} from '../../gateway/src/policy-client.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BaseLlm} from '@google/adk';
+import {agentDid} from '../../../packages/agent-runtime/src/cards.ts';
 import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -90,6 +91,7 @@ test('R367 reject mutation observer prototype forgery',()=>{
 });
 const snapshot={session_id:'same-root-review',repository:{authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'},base_revision:'a'.repeat(40),directories:['','apps'],files:['apps/user.ts']};
 const requirement='Suspend accounts',branch='feature/account-suspension',did='did:thesis:engineer';
+const fixtureDid=role=>role==='orchestrator'?'did:thesis:orchestrator':agentDid(role);
 const draft={requested_permissions:[{operation:'update_file',resource_type:'file',path:'apps/user.ts'},{operation:'read_file',resource_type:'file',path:'apps/user.ts'}],assumptions:[],uncertainties:[]};
 const pem=(k,type)=>k.export({format:'pem',type}).toString();
 class R3504ScriptedBackend extends BaseLlm{
@@ -178,7 +180,7 @@ async function fixture(t,flags={}){
   planner:{model,planId:'owner-authority-review',maxModelTurns:3,maxProposalRevisions:0},
   trustedAgentRegistry:Object.fromEntries(['backend','frontend','test',
    ...(flags.includePullRequestPermission||flags.includeBranchPermission?['orchestrator']:[])].map(role=>[role,{
-    did:'did:thesis:'+role,card_ref:'trusted:'+role,
+    did:fixtureDid(role),card_ref:'trusted:'+role,
     capabilities:role==='orchestrator'?[...(flags.includeBranchPermission?['create_branch']:[]),...(flags.includePullRequestPermission?['create_pull_request']:[])]:[role==='test'?'run_tests':'update_file']} ])),
   credentials:{async issueScopedOrchestratorRoot(req){
    log.push('issue:'+req.credential_id);await flags.onIssue?.(req);
@@ -346,7 +348,7 @@ test('R351.0 ADK chooses a dynamic Task and Engineer owner stages original nativ
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   signed.push(req);
   return {id:req.credential_id,validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialSubject:{sub:fixtureDid('backend'),per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status)};
  }};
  const execution=await host.admitOperationalExecution(deps);
@@ -408,7 +410,7 @@ test('R351.1 unverified registered Task never unlocks another model decision',as
   async issueChild(req){
    childCalls++;
    return {id:req.credential_id,validFrom:req.valid_from,
-    credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+    credentialSubject:{sub:fixtureDid('backend'),per:structuredClone(req.permissions)},
     credentialStatus:structuredClone(req.credential_status)};
   }
  };
@@ -523,7 +525,7 @@ test('R350.2 same Engineer root registers Task, binds Gateway, issues native Chi
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   signed.push(req);
   return {id:req.credential_id,validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialSubject:{sub:fixtureDid('backend'),per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status)};
  }};
  const {gateway,childIssuer,stageTask}=await host.admitOperationalExecution(deps);
@@ -566,7 +568,7 @@ test('R350.2 treats a mismatched native Child signature response as terminal',as
  const deps=executionDeps(f);
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   return {id:'urn:foreign:child',validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:backend',per:req.permissions},
+   credentialSubject:{sub:fixtureDid('backend'),per:req.permissions},
    credentialStatus:req.credential_status};
  }};
  const {gateway,stageTask}=await host.admitOperationalExecution(deps);
@@ -594,7 +596,7 @@ test('R367.1 same-session Owner starts pinned SDK A2A before first Task/Child',a
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   issuedChildren++;
   return {id:req.credential_id,validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialSubject:{sub:fixtureDid('backend'),per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status)};
  }};
  const execution=await host.admitOperationalExecution(deps);
@@ -919,7 +921,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
    type:['VerifiableCredential','DelegationCredential'],
    id:req.credential_id,issuer:'did:thesis:rust',
    validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:'+req.delegatee,per:structuredClone(req.permissions)},
+   credentialSubject:{sub:fixtureDid(req.delegatee),per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status),
    proof:{type:'Ed25519Signature2020',proofValue:'OFFLINE_R3504_FIXTURE'}};
  }};
@@ -2069,7 +2071,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
            permissions:[permission],hierarchy_depth:mode==='pr-execute-child-depth'?1:0,expiration:'1900000000000000000'});
          }
         },Object.fromEntries(['orchestrator','backend','frontend','test']
-         .map(role=>[role,'did:thesis:'+role])));
+         .map(role=>[role,fixtureDid(role)])));
         const policy=new OpaPolicyClient({baseUrl:'http://offline-opa.invalid',
          fetchFn:async()=>{events.push('pr_opa_fixture');return Response.json({result:{
           allow:mode!=='pr-execute-opa-denied',policy_version:'offline-pr-policy'}});}});
@@ -2193,7 +2195,7 @@ test('R352.0 original owner refuses Test D1 failure claims without an original A
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   signed++;
   return {id:req.credential_id,validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:test',per:structuredClone(req.permissions)},
+   credentialSubject:{sub:fixtureDid('test'),per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status)};
  }};
  const execution=await host.admitOperationalExecution(deps);
@@ -2256,7 +2258,7 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   nativeCalls.push('native_child_fixture');
   return {id:req.credential_id,validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialSubject:{sub:fixtureDid('backend'),per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status)};
  }};
  const execution=await host.admitOperationalExecution(deps);
@@ -2282,7 +2284,7 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  assert.equal(store.size(),1);
  const record=store.get(prepared.request_id);
  assert.equal(record.authority_only_plan_task_id,task.task.task_id);
- assert.equal(record.authority_only_agent_did,'did:thesis:backend');
+ assert.equal(record.authority_only_agent_did,fixtureDid('backend'));
  const {mutation:nativeMutation,runner:nativeRunner,gitea}=
   nativeOfflinePreflights(gateway,f.dirs,nativeCalls);
  assert.equal(execution.bindNativeGatewayEffects({
@@ -2764,7 +2766,7 @@ for(const mode of ['pass','invalid-model','forged-pin','reader-moved']){
   const verifier=new DirectCoreRustVerifier({verify_verifiable_presentation:async()=>JSON.stringify({
    presenter_id:'did:thesis:orchestrator',issuer_id:did,credential_id:original.root_credential_id,
    root_credential_id:original.root_credential_id,permissions:[permission],hierarchy_depth:0,
-   expiration:'1900000000000000000'})},Object.fromEntries(['orchestrator','backend','frontend','test'].map(r=>[r,'did:thesis:'+r])));
+   expiration:'1900000000000000000'})},Object.fromEntries(['orchestrator','backend','frontend','test'].map(r=>[r,fixtureDid(r)])));
   const policy=new OpaPolicyClient({baseUrl:'http://offline-opa.invalid',fetchFn:async()=>
    Response.json({result:{allow:true,policy_version:'offline-branch'}})});
   await executeAuthorization({request_id:prepared.request_id,signed_vp:'offline-root-vp'},
