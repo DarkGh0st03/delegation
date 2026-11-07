@@ -36,3 +36,37 @@ test("R275 missing, malformed and forged child diagnostics remain unclassified",
    assert.doesNotMatch(JSON.stringify(result),/PRIVATE_GITEA|ROOT_KEY/u);
  }
 });
+
+test("R380.3 F1 publishes only fixed-category native Planning probe counters",()=>{
+ const probe={event:"r3803_planning_failure_probe_v1",
+  model_turns:3,verified_lists:1,verified_files:0,denied_reads:1,
+  last_denial:"trusted_planning_read_failed",rejected_proposals:1};
+ const stderr="secret "+secret+"\n[r3803-planning-probe] "+
+   JSON.stringify(probe)+"\n"+PREFIX+JSON.stringify(
+     safeNativePhaseFailure(new Error(secret),"planning_scope"))+"\n";
+ const observed=safe(stderr);
+ assert.deepEqual(observed.r3803_probe,{
+   model_turns:3,verified_lists:1,verified_files:0,denied_reads:1,
+   last_denial:"trusted_planning_read_failed",rejected_proposals:1
+ });
+ assert.equal(observed.first_failed_phase,"planning_scope");
+ assert.ok(Object.isFrozen(observed.r3803_probe));
+ assert.doesNotMatch(JSON.stringify(observed),/PRIVATE_GITEA|ROOT_KEY|Bearer|secret/u);
+});
+test("R380.3 denies forged/oversized probe records without echoing source",()=>{
+ const prefix="[r3803-planning-probe] ";
+ const good={event:"r3803_planning_failure_probe_v1",
+  model_turns:2,verified_lists:0,verified_files:0,denied_reads:1,
+  last_denial:"outside_planning_scope",rejected_proposals:0};
+ for(const forged of [
+   {...good,last_denial:secret},{...good,verified_files:-1},
+   {...good,model_turns:100000},{...good,source:secret},
+   {...good,last_denial:{message:secret}},
+   {...good,event:"other"},
+   null,[],{"__proto__":secret}
+ ]){
+   const receipt=safe(prefix+JSON.stringify(forged)+"\n");
+   assert.equal(receipt.r3803_probe,undefined);
+   assert.doesNotMatch(JSON.stringify(receipt),/PRIVATE_GITEA|ROOT_KEY|secret/u);
+ }
+});
