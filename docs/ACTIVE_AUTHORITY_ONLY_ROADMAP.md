@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R378.0)
+## Piano attivo — aggiornato al 7 novembre 2026 (R379.2)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,7 +16,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R378.0)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R379.2)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -50,11 +50,36 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   Il Test Agent corregge un test applicativo con un Task separato. Retest
   Docker e acceptance PASS, Draft PR attestata. [Backend](https://github.com/DarkGh0st03/delegation/actions/runs/42364984157) ·
   [Frontend](https://github.com/DarkGh0st03/delegation/actions/runs/42365581148).
-- **R378.0**: l'issuer Child DC authority-only usa una sessione MCP privata
-  in-process a uso singolo per invocare il signer Rust nativo. MCP trasporta
-  un riferimento opaco. Restano da verificare l'integrazione nativa sulla
-  nuova SHA e il percorso definitivo delle VP. Il catalogo Task della Fase A
-  ha ancora aperti `create_file` e gli effetti ordinati su più file.
+- **R378.0–R378.3**: l'issuer Child DC authority-only e la VP originale
+  dell'Orchestrator transitano attraverso MCP privato **in-process, one-shot**;
+  l'unico signer rimane Rust nativo. Il trasporto Gateway non espone gli
+  strumenti crittografici come FunctionTools o endpoint A2A pubblici.
+  [E2E nativo gratuito R378.2](https://github.com/DarkGh0st03/delegation/actions/runs/42366707550)
+  SUCCESS su `d614a5bf`: una Child per specialista, arresto Frontend
+  autenticato, recovery, Docker FAIL/PASS e Draft PR osservata. Non è la
+  prova di un server MCP indipendente interprocesso; occorre decidere
+  il trasporto definitivo prima del gate B.
+- **R379.0–R379.1**: il runtime trusted verifica Agent Card, DID, endpoint,
+  versione A2A, skill e capacità dichiarate; il proprio registro configura
+  l'intersezione delle capacità e il client SDK ricontrolla la Card al send.
+  [Fast CI](https://github.com/DarkGh0st03/delegation/actions/runs/42367818769)
+  ed [Engineer CI](https://github.com/DarkGh0st03/delegation/actions/runs/42367818752)
+  SUCCESS sulla stessa SHA `07f1ba46`. Ruoli ancora limitati a
+  Backend, Frontend, Test con endpoint localhost pinned.
+- **R379.2**: eliminate le liste duplicate di capacità nella factory ADK.
+  Il catalogo permanente di ogni ruolo deriva dallo stesso
+  `APPROVED_SPECIALIZED_AGENT_PROFILES` pubblicato nelle Agent Card;
+  le permission del Task restringono **soltanto la visibilità** di path/tool
+  applicabili, non definiscono nuove capacità o authority. Test offline per
+  tre ruoli, read/update/create e Test Agent con Runner separato.
+  [Fast CI](https://github.com/DarkGh0st03/delegation/actions/runs/42368494004)
+  SUCCESS sul commit `dbd83cf6`. Questa è deduplicazione e separazione
+  delle *definizioni*; la generalizzazione della visibilità FunctionTools,
+  la discovery di ruoli configurabili e il Planning gerarchico sono ancora
+  da completare.
+- **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
+  e gestione generale di altri esiti applicativi recuperabili. Le prove
+  native finora usano modifiche/decisioni scripted, non Gemini generativo.
 
 **Vincolo di evidenza:** tutti i flussi gratuiti R375–R377 utilizzano
 decisioni e correzioni di riferimento scripted. Nessuna prova afferma che
