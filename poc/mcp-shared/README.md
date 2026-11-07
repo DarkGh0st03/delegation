@@ -344,6 +344,41 @@ execution. The complete real Gemini-to-canonical-host wiring remains
 a separate phase C task requiring new free CI and a fresh final
 same-SHA E2E; never reuse R3818's PASS as proof of those new commits.
 
+## R382.5 — signed review to original canonical Executor (no Gemini call)
+
+The original `TrustedAuthorityOnlyReviewHost` now exposes an
+**owner-private in-process** factory
+`createReviewedCanonicalHandoff({provision})`. The SAME host
+independently rereads its Backend planning checkpoint and Engineer
+Ed25519 approval, pins the immutable session / original source SHA /
+authority-grant digest / Engineer DID and checks it a second time
+before recording an operational Root issue intent. An unsigned
+`reviewReadiness()` never issues a Root, calls Rust or a model.
+
+The one-shot `runApprovedCanonical()` obtains operational Root,
+durable journals and the original Branch/SDK adaptive workflow from
+a trusted non-model `provision` callback, then invokes the SAME
+host's `activateOperational` → `admitOperationalExecution` with
+`privateChildMcpTransport:"native-stdio"` →
+`runCanonicalOperationalWorkflow`. Uncertain native effects
+terminate in original-host retirement, not fallback to the historical
+Signed DAG or a second issuer. The module provides no HTTP/ADK/A2A/MCP
+route, no paid inference and no merge action.
+
+Free tests cover the positive owner-only order and unsigned/mismatched
+review, malformed native MCP port, duplicate execution, ambiguous
+Gateway failure, uncertain Root retirement and cancellation racing
+signature verification. Another offline test exercises the **real**
+Review Host's signed checkpoint and Engineer receipt but only calls
+readiness; it does not fake Rust, EVM or Gitea success.
+
+**Still pending phase C**: the former `run-trusted-gemini-owner.mjs`
+uses a historical Planning factory. Its real Gemini Planning instance
+must be moved into the original authority-only Review Host's input
+configuration before the paid autonomous pilot. R3818 native
+end-to-end SUCCESS on `a458b441` remains a distinct scripted
+baseline, not automatic validation for R382.5.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
