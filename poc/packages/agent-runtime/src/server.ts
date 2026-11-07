@@ -67,6 +67,15 @@ export async function startSpecializedAgentServer(
     capabilityProfile: options.capabilityProfile
   });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
+  // R381.6: a private Rust MCP subprocess is an owner-bound signing
+  // transport, never a free-standing A2A capability. Refuse it BEFORE any
+  // listener, discovery host or Task is created without the original
+  // authority-only host and its private one-shot Task registry.
+  if(options.adk?.nativePresentationTransport==="mcp-stdio"&&(
+       process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+       !options.mcpTaskSigning))
+    throw Error("private_native_mcp_requires_owner_bound_task");
+
   // R194 reject retired repository/Runner MCP options for EVERY profile,
   // including direct JS library callers rather than only production launchers.
   if(options.adk&&["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
