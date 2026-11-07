@@ -629,14 +629,46 @@ try{
   admissions:gate,giteaClient:client,journal:createJournal,
   repository:"thesis/iam-console-poc",branch,nowMs
  });
+ const createPublisher=new TrustedGatewayGiteaCreateEvidencePublisher({
+  directory:path("create-receipts"),key:evidenceKey,
+  repository:"thesis/iam-console-poc",branch,
+  independentGiteaClient:independentClient,nowMs
+ });
  const createExecutor=new TrustedAuthorityOnlyGiteaCreateExecutor({
   admissions:gate,preflight:createPreflight,journal:createJournal,
-  giteaClient:client,publisher:new TrustedGatewayGiteaCreateEvidencePublisher({
-   directory:path("create-receipts"),key:evidenceKey,
-   repository:"thesis/iam-console-poc",branch,
-   independentGiteaClient:independentClient,nowMs
-  }),observer:createObserver,repository:"thesis/iam-console-poc",branch
+  giteaClient:client,publisher:createPublisher,observer:createObserver,
+  repository:"thesis/iam-console-poc",branch
  });
+ // R384.3 diagnostic-only wrappers: every private-field method still
+ // executes EXACTLY ONCE and any error is rethrown unchanged. Never print
+ // model content, signed VPs, challenges, bearer tokens or credential bytes.
+ const traceCreateBoundary=(stage,target,method)=>{
+  const original=target[method].bind(target);
+  target[method]=async(...args)=>{
+   try{return await original(...args);}
+   catch(error){
+    const detail=String(error?.message??"")
+     .replace(/[A-Za-z0-9_+\/=:-]{28,}/gu,"[redacted]")
+     .slice(0,180);
+    process.stderr.write(JSON.stringify({
+     event:"r3843_native_create_private_boundary_denial",
+     stage,error_class:error?.constructor?.name??"unknown",
+     error_code:typeof error?.code==="string"?error.code:null,
+     reason:detail
+    })+"\n");
+    throw error;
+   }
+  };
+ };
+ traceCreateBoundary("verified_admission",createPreflight,
+  "assertNativeCreateAdmissionAfterVerification");
+ traceCreateBoundary("journal_assert_reserved",createJournal,"assertReserved");
+ traceCreateBoundary("journal_attempt_fence",createJournal,"reserveAttempt");
+ traceCreateBoundary("provider_head_cas",client,"createFileWithHeadCas");
+ traceCreateBoundary("publisher_independent_mac",createPublisher,"publish");
+ traceCreateBoundary("observer_independent_mac",createObserver,"observe");
+ traceCreateBoundary("journal_completed_evidence",createJournal,
+  "reserveCompletedEvidence");
  const mutationExecutor=new TrustedAuthorityOnlyGiteaMutationExecutor({
   admissions:gate,preflight,journal,giteaClient:client,
   publisher:new TrustedGatewayGiteaMutationEvidencePublisher({
