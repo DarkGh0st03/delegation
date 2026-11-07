@@ -13,7 +13,7 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
 import {DurableAuthorityOnlyGiteaCreateIntentJournal,
  type TrustedGiteaCreateIntent}
  from "./trusted-authority-only-create-intent-journal.ts";
-import type {PreparedRequestRecord} from "./types.ts";
+import type {PreparedRequestRecord,VerifiedDelegation,PolicyDecision} from "./types.ts";
 
 const SHA40=/^[a-f0-9]{40}$/u;
 function deny(detail:string):never{
@@ -77,6 +77,56 @@ export class TrustedAuthorityOnlyGiteaCreatePreflight {
      intent.runtime_task_id!==record.task_id)
    deny("original prepared request has no reserved create intent");
   return intent;
+ }
+ /**
+  * R383.5 — owner-only post-VP/OPA admission, NO Gitea write.
+  * The Gateway must supply ONLY its actual native Rust verifier result
+  * and real OPA allow for the SAME consumed Prepare. This method does
+  * not invoke either service, reserve an attempt or complete a Task.
+  */
+ async assertNativeCreateAdmissionAfterVerification(
+  record:PreparedRequestRecord,verified:VerifiedDelegation,
+  policy:PolicyDecision
+ ):Promise<Readonly<{
+  status:"native_create_task_admitted_no_provider_write";
+  task_id:string;request_id:string;provider_write_authorized:false;
+ }>>{
+  if(!record||record.consumed!==true||
+     !policy||policy.allow!==true||
+     typeof policy.policy_version!=="string"||
+     !policy.policy_version.trim())
+   deny("original consumed Prepare and native VP/OPA allow required");
+  const intent=this.getReservedIntent(record);
+  const binding=this.#admissions.assertTrustedCreateNativeAdmissionBinding(
+   record,verified);
+  const {branch,path,content}=record.request.arguments;
+  const bytes=Buffer.from(content,"utf8");
+  if(intent.repository!==this.#repository||
+     intent.branch!==this.#branch||intent.branch!==branch||
+     intent.path!==path||
+     intent.next_content_bytes!==bytes.length||
+     intent.next_content_sha256!==createHash("sha256").update(bytes).digest("hex")||
+     intent.prepared_at_ms>=record.expires_at_ms||
+     intent.expected_head_sha.length!==40||
+     intent.old_path_absent_at_pinned_head!==true||
+     intent.provider_write_authorized!==false||
+     intent.session_id!==binding.session_id||
+     intent.authority_digest!==binding.authority_digest||
+     intent.root_credential_id!==binding.root_credential_id||
+     intent.task_id!==binding.task_id||
+     intent.runtime_task_id!==binding.runtime_task_id||
+     intent.epoch!==binding.epoch||
+     intent.agent_did!==binding.agent_did||
+     intent.credential_id!==binding.credential_id||
+     intent.request_id!==binding.request_id||
+     intent.request_fingerprint!==binding.request_fingerprint)
+   deny("native create admission differs from immutable reserved intent");
+  await this.#journal.assertReserved(intent);
+  return Object.freeze({
+   status:"native_create_task_admitted_no_provider_write",
+   task_id:intent.task_id,request_id:intent.request_id,
+   provider_write_authorized:false
+  });
  }
  async stageCreate(record:PreparedRequestRecord,expectedHeadSha:string):
  Promise<Readonly<{
