@@ -1,35 +1,16 @@
 {
-  "checkpoint": "R374.0",
-  "source": "R373.1 native full SUCCESS on exact SHA",
-  "predecessor": {
-    "sha": "81bbcede83c57169232e1e6350633d798db579bf",
-    "native_run": 42347370056,
-    "fast_run": 42347370082
-  },
-  "scenario": "Account Suspension from real protected unresolved main; pre-existing feature branch absent",
-  "goal": "One original Ed25519 signed grant; original host Branch -> Backend CAS -> Frontend CAS -> Test authentic Docker acceptance FAIL -> dynamic ADK-selected Frontend revision using existing exact pair permissions -> second real Docker Test FAIL -> verified second failure -> blocked and root retired",
-  "fail_closed": "Only MAC-authenticated original owner Runner FAIL permits a follow-up. Never complete failed Test Tasks, never claim PASS/PR, no unauthorized capabilities, no additional Engineer signature or root.",
+  "checkpoint": "R374.1",
+  "source_commit": "274b14f3da18b394c0a6c51375b01af72efdafe3",
+  "correction": "Point the native workflow's push.paths at the actual new R374 checkpoint JSON path; previous R374.0 workflow was not triggered because of path mismatch.",
+  "runtime_and_security": "unchanged from R374.0, no paid model, one original Engineer grant, 2 real Runner FAILs pending validation",
   "expected": {
     "registered_tasks": 6,
-    "completed_gateway_tasks": 4,
-    "native_children": 5,
-    "gitea_cas": 3,
-    "approved_branch_posts": 1,
-    "internal_cas_staging_branches": 3,
-    "real_runner_calls": 2,
+    "gateway_completed": 4,
+    "child_credentials": 5,
+    "cas_writes": 3,
+    "runner_failed_posts": 2,
     "fail_receipts": 2,
-    "pass_receipts": 0,
-    "model_turns": 6,
-    "pr_posts": 0,
-    "paid_model_calls": 0
+    "pr_created": false
   },
-  "limitations": "Scripted model chooses repair based on independently authenticated researcher_acceptance FAIL. Source revision remains nonfunctional deterministic comment; this is NO autonomous Gemini code repair and no acceptance PASS.",
-  "guardrails": [
-    "No Gemini or paid inference",
-    "No GitHub main mutation",
-    "GitHub PR #38 stays Draft",
-    "Native CI only once at meaningful checkpoint",
-    "No weakening Rust/OPA/Gateway or evidence checks"
-  ],
-  "status": "PENDING native workflow and same-SHA Fast CI"
+  "validation": "Native workflow + Fast CI on same HEAD"
 }

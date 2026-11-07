@@ -46,3 +46,7 @@ must remain Draft/unmerged; production `main` unchanged.
 
 Do not claim success until native R374 and Fast CI both pass on the
 same SHA.
+
+## R374.1 CI trigger correction
+
+The first R374.0 commit incorrectly configured the new native workflow to watch a checkpoint JSON filename that did not exist. Only Fast CI started; **native validation had not run**. R374.1 corrects that trigger path and refreshes the request checkpoint. No runtime or signing/Runner code is changed. Native SUCCESS remains unproven until the new CI completes.

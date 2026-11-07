@@ -9,7 +9,7 @@ on:
   push:
     branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
-      - '.github/ci-checkpoints/r374-protected-main-native-test-fail-request.json'
+      - '.github/ci-checkpoints/r374-original-host-repair-retest-request.json'
 permissions:
   contents: read
 concurrency:
