@@ -1,4 +1,4 @@
-import {giteaPermissionCovers,isProjectTestRepairGrant,isProjectTestSource}
+import {giteaPermissionCovers,isProjectTestRepairGrant,isProjectTestReadGrant,isProjectTestSource}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R287 — opt-in, in-process Gateway admission of permission-only Engineer
@@ -495,7 +495,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      bound.row.task_id!==taskId||bound.row.session_id!==root.session_id||
      bound.row.root_credential_id!==root.root_credential_id||
      bound.row.authority_digest!==root.authority_digest||
-     !["backend","frontend"].includes(bound.row.agent_id)||
+     !(["backend","frontend"].includes(bound.row.agent_id)||
+      (bound.row.agent_id==="test"&&
+       isProjectTestReadGrant(bound.row.permissions)))||
      bound.row.permissions.length!==1||
      bound.row.permissions[0]?.operation!=="read_file"||
      child.root_credential_id!==root.root_credential_id||
@@ -816,7 +818,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("completed source observation lacks original owner-pinned read");
   if(!bound||!child||!flight||!evidence||
      bound.row.task_id!==taskId||
-     !["backend","frontend"].includes(bound.row.agent_id)||
+     !(["backend","frontend"].includes(bound.row.agent_id)||
+      (bound.row.agent_id==="test"&&
+       isProjectTestReadGrant(bound.row.permissions)))||
      bound.row.permissions.length!==1||
      bound.row.permissions[0]?.operation!=="read_file"||
      bound.row.session_id!==root.session_id||
