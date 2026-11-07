@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R381.7)
+## Piano attivo — aggiornato al 7 novembre 2026 (R381.8)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -304,6 +304,22 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   reali, A2A, Gitea e Docker sulla HEAD attuale. In particolare gli
   E2E R375 con agenti scripted non sono automaticamente migrati.
   Conservare i gate di CI e NON attivare workflow Gemini a pagamento.
+- **R381.8 — prova integrata canonica MCP nativo richiesta, NON ancora attestata PASS**:
+  l'E2E storico R375 dispone ora di `R3818_CANONICAL_NATIVE_MCP=1` per
+  verificare l'originale Review Host con Root Engineer diretta a Rust,
+  Child firmate **dentro il processo MCP stdio**, tre agenti
+  Backend/Frontend/Test con VP via MCP stdio, Gateway Rust/EVM/OPA,
+  autentico Gitea + Docker FAIL→recovery→PASS e Draft PR non mergiata.
+  La modalità default R375 rimane invariata. È stato creato un workflow
+  gratuito dedicato `r3818-canonical-private-native-mcp-e2e.yml`,
+  con dipendenze MCP pinned e verifiche delle evidenze: nessuna chiamata
+  AI, Child count esatto, VP per tutti i ruoli, root e main immutabili,
+  receipt Docker e Draft PR attestata. Un checkpoint GitHub Actions
+  esplicito è il solo trigger di push della suite nativa: NON ripetere
+  la suite costosa a ogni commit. **Il codice di test e la CI preparata
+  non equivalgono a una esecuzione SUCCESS**. Recuperare la conclusione
+  del job sull'esatta SHA; correggere gli eventuali FAIL prima di
+  dichiarare conclusa la fase B. La verifica non autorizza Gemini.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
