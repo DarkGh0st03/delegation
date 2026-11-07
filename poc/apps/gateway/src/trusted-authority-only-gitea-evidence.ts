@@ -124,7 +124,9 @@ export class AuthenticatedGiteaReadCompletionObserver{
   * Text is untrusted DATA; no new permission or success is asserted. */
  async observeSource(expected:Readonly<TrustedCompletionExpectation>){
   const {completion,source}=await this.#observeVerified(expected);
-  const excerpt=source.content.slice(0,4096);
+  // Preserve line breaks but remove terminal controls from model-facing data.
+  const excerpt=source.content.slice(0,4096)
+   .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/gu," ");
   return Object.freeze({
    status:"owner_verified_bounded_gitea_source_observation" as const,
    task_id:completion.task_id,runtime_task_id:completion.runtime_task_id,
