@@ -546,6 +546,49 @@ test('R350.2 same Engineer root registers Task, binds Gateway, issues native Chi
  assert.equal(host.phase,'revoked');
  await host.close();
 });
+test('R382.4 canonical authority-only launcher refuses direct Child and missing original Branch',async t=>{
+ const prevArch=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ const prevNative=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ try{
+  for(const nativeMcp of [false,true]){
+   // Build the original test Review Host BEFORE selecting live native
+   // transport, because this fixture intentionally has no Rust socket.
+   const f=await fixture(t),host=await f.start();
+   try{
+    await f.approve(['permission-1','permission-2']);
+    await host.activateOperational(root('urn:r3824:original-root-'+nativeMcp,2));
+    const deps=executionDeps(f);
+    if(nativeMcp){
+     deps.privateChildMcpTransport='native-stdio';
+     deps.nativeCryptoPort.issueChildViaPrivateMcp=async()=>{
+      throw Error('No signed Task should be reached by invalid launcher');
+     };
+    }
+    const execution=await host.admitOperationalExecution(deps);
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE='authority-only';
+    process.env.APPROVED_RUNNER_NATIVE_MCP='1';
+    await assert.rejects(execution.runCanonicalOperationalWorkflow({
+     sdk:{},adaptive:{}
+    }),/canonical authority-only requires native MCP Child and original Branch/u);
+    // No SDK, Child or provider side effect occurs after this denial.
+    assert.equal(execution.gateway.registeredTaskCount,0);
+   }finally{
+    // Restore before another fake Review Host is constructed.
+    if(prevArch===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+    else process.env.DELEGATION_GATEWAY_ARCHITECTURE=prevArch;
+    if(prevNative===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+    else process.env.APPROVED_RUNNER_NATIVE_MCP=prevNative;
+    await host.close();
+   }
+  }
+ }finally{
+  if(prevArch===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=prevArch;
+  if(prevNative===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=prevNative;
+ }
+});
+
 test('R381.7 canonical Review Host routes its signed Child through native MCP once',async t=>{
  const f=await fixture(t),host=await f.start();
  await f.approve(['permission-1','permission-2']);
