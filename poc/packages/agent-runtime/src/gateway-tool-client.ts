@@ -23,7 +23,7 @@ export type SpecializedToolName = (typeof SPECIALIZED_TOOL_NAMES)[number];
 export interface TrustedEffectStagingPort {
   stage(requestId:string):Promise<unknown>;
   /** Optional exact read-only effect pin from the authenticated Task registry. */
-  stagedTool?:"read_file"|"update_file"|"run_tests"|"read_then_update";
+  stagedTool?:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update";
   /** Owner-only independent native evidence confirmation, never model data. */
   attest?(requestId:string,tool:"read_file"|"update_file"):Promise<void>;
   reportNoChange?(requestId:string):Promise<void>;
@@ -137,7 +137,7 @@ export class GatewayControlledToolClient {
     args: Record<string, unknown>
   ): Promise<unknown> {
     this.#signal?.throwIfAborted();
-    // No authority-only create_file executor exists. Never silently fall
+    // R383.8 create is still blocked from model tools until native E2E. Never silently fall
     // through to a legacy provider write when native owner mode is selected.
     if(this.#trustedEffectStager?.stagedTool==="read_then_update"&&
        tool!=="read_file"&&tool!=="update_file")
@@ -145,7 +145,7 @@ export class GatewayControlledToolClient {
         "Mixed native Task supports only exact read_file and update_file");
     if(this.#trustedEffectStager&&tool==="create_file")
       throw new ControlledToolError("authorization_denied",
-        "Authority-only create_file has no trusted owner effect executor");
+        "Authority-only create_file is gated pending native owner E2E");
     let prepareResponse: Response;
     try {
       prepareResponse = await this.#fetch(
