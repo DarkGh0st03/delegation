@@ -755,7 +755,13 @@ try{
  // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
  // All hooks delegate to the original implementations and are restored.
  const cryptoTrace=[];
- const recordPhase=(phase)=>{if(cryptoTrace.length<24)cryptoTrace.push(phase);};
+ let nativeE2eResultEmitted=false;
+ // Diagnostic trace holds only fixed local phases, no paths or credentials.
+ const recordPhase=(phase)=>{
+  if(!/^[a-z_]{3,64}$/u.test(phase))return;
+  cryptoTrace.push(phase);
+  if(cryptoTrace.length>80)cryptoTrace.shift();
+ };
  const originalSelect=TrustedEffectStagingTaskRegistry.prototype.selectFor;
  const originalChallenge=PrivateMcpTaskRegistry.prototype.stageGatewayChallenge;
  const originalCryptoInvoke=PrivateMcpTaskRegistry.prototype.invokeCrypto;
@@ -1269,6 +1275,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   }),/already been attempted/);
   assert.equal(branchPostAttempts,1);
   assert.equal(draftPrCreateAttempts,1);
+  nativeE2eResultEmitted=true;
   process.stdout.write(JSON.stringify({
    event:diagnosticMode?
     "r376_authenticated_diagnostic_read_native_docker_pass_draft_pr":
@@ -1296,6 +1303,20 @@ const tool=record?.request?.tool,role=record?.agent_role;
    tested_head:latest,paid_model_calls:0
   })+"\n");
  }finally{
+  if(diagnosticMode&&!nativeE2eResultEmitted){
+   // The protected provider or A2A exception is deliberately NOT logged.
+   // This distinguishes prepare, private stage, crypto and execute
+   // without leaking signed credentials, repository text or model prompts.
+   process.stderr.write(JSON.stringify({
+    event:"r376_safe_native_owner_phase_diagnostic",
+    phases:cryptoTrace.slice(-34),
+    gateway_routes:events.filter(x=>typeof x==="string"&&
+      /^(?:prepare_attempt_|prepare_|execute_)/u.test(x)).slice(-10),
+    prepared_count:prepared.length,
+    gateway_completed:gate.stagedCompletedTaskCount,
+    registered:coordinator.registeredTaskCount
+   })+"\n");
+  }
   TrustedEffectStagingTaskRegistry.prototype.selectFor=originalSelect;
   PrivateMcpTaskRegistry.prototype.stageGatewayChallenge=originalChallenge;
   PrivateMcpTaskRegistry.prototype.invokeCrypto=originalCryptoInvoke;
