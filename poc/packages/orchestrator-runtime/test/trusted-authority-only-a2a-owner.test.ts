@@ -465,7 +465,8 @@ function nativeCreateFixture(role:"backend"|"test"="backend"){
   repository:"thesis/iam-console-poc",branch,
   planTaskId:taskId,runtimeTaskId,expectedHeadSha:"b".repeat(40)
  });
- return {...f,port};
+ // Preserve the fixture's live getter counters (object spread freezes them).
+ return Object.assign(f,{port});
 }
 test("R384.1 A2A owner accepts exactly one branded native CREATE Child and sends an exact create hint",async()=>{
  const f=nativeCreateFixture();
