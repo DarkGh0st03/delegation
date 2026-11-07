@@ -64,6 +64,8 @@ import {createTrustedAuthorityOnlyRootEffectTransport}
 
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
+import {AuthenticatedGiteaCreateCompletionObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-gitea-create-evidence.ts";
 import {DurableAuthorityOnlySequentialEffectJournal}
  from "../src/trusted-authority-only-sequential-effect-journal.ts";
 import {DurableAuthorityOnlyTaskFenceJournal}
