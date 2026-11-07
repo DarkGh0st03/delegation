@@ -13,18 +13,10 @@ import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {InMemoryTransport} from "@modelcontextprotocol/sdk/inMemory.js";
 import {z} from "zod";
+import {OWNER_PRIVATE_CRYPTO_OPERATIONS as OPERATIONS}
+ from "./owner-private-crypto-catalog.mjs";
 
 export type OwnerPrivateCryptoOperation="child_issue"|"root_issue"|"root_revoke"|"presentation_create";
-const OPERATIONS=Object.freeze({
- child_issue:Object.freeze({tool:"delegation_issue_child_owner_private",
-   error:"Owner-private MCP child issuance unavailable"}),
- root_issue:Object.freeze({tool:"delegation_issue_root_owner_private",
-   error:"Owner-private MCP root issuance unavailable"}),
- root_revoke:Object.freeze({tool:"delegation_revoke_root_owner_private",
-   error:"Owner-private MCP root revocation unavailable"}),
- presentation_create:Object.freeze({tool:"delegation_create_presentation_owner_private",
-   error:"Owner-private MCP presentation unavailable"})
-});
 /**
  * The allowed operation is selected in trusted owner code, never MCP args.
  * One opaque request_ref is the only tool argument. No credentials or
