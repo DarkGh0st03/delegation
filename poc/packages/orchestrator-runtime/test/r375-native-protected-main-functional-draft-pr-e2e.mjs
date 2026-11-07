@@ -735,9 +735,9 @@ try{
   }));
  const models={
   backend:new ScriptedScopedReferenceWriter(branch,"backend",[
-   {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
    ...(diagnosticMode?[{readOnly:true,files:[{path:sharedPath,
     previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath]}]}]:[]),
+   {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
    {files:[{path:sharedPath,
      previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
      replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
@@ -940,7 +940,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   // seven tightly scoped functional corrections after the first true FAIL.
   const firstChoices=[
    {action:"delegate",task:{task_id:backendTaskId,agent_id:"backend",
-    depends_on:["r375-original-root-branch"],permissions:backendPermissions,
+    depends_on:[diagnosticMode?diagnosticTaskId:"r375-original-root-branch"],permissions:backendPermissions,
     instruction:"Read unresolved Backend and commit incomplete D0 source"}},
    {action:"delegate",task:{task_id:taskId,agent_id:"frontend",
     depends_on:[backendTaskId],permissions:taskPermissions,
@@ -958,28 +958,34 @@ const tool=record?.request?.tool,role=record?.agent_role;
     assert.ok(n<15+decisionOffset,
      "native original owner adaptive loop exceeded bounded decisions");
     if(n===0)assert.match(context,/r375-original-root-branch/u);
-    if(n===1||n===2)
-     assert.ok(context.includes(firstChoices[n-1].task.task_id),
-      "ADK next Task requires previous original independent completion");
+    const initialIndex=n-decisionOffset;
     let choice;
-    if(n<3)choice=firstChoices[n];
-    else if(diagnosticMode&&n===3){
-     assert.match(context,/independent_runner_failure/u);
-     assert.match(context,/researcher_acceptance/u);
+    if(diagnosticMode&&n===0){
+     assert.doesNotMatch(context,/independent_runner_failure/u);
      choice={action:"delegate",task:{
       task_id:diagnosticTaskId,agent_id:"backend",
-      depends_on:[taskId],permissions:diagnosticPermissions,
-      instruction:"Read original shared account-status source with the signed read-only Child before proposing correction"
+      depends_on:["r375-original-root-branch"],permissions:diagnosticPermissions,
+      instruction:"Inspect the original shared account-status source before the first edit"
      }};
-    }else if(n>=3+decisionOffset&&n<=12+decisionOffset){
-     const j=n-3-decisionOffset,entry=sourceTasks[j];
+    }else if(initialIndex<3){
+     if(diagnosticMode&&initialIndex===0){
+      assert.ok(context.includes(diagnosticTaskId));
+      assert.match(context,/source_observations/u);
+      assert.match(context,/source_sha256/u);
+      assert.match(context,/account-status.ts/u);
+      assert.doesNotMatch(context,/independent_runner_failure/u);
+     }
+     if(initialIndex>0){
+      assert.ok(context.includes(firstChoices[initialIndex-1].task.task_id),
+       "ADK next Task requires previous original independent completion");
+      if(diagnosticMode)
+       assert.doesNotMatch(context,/source_observations/u,
+        "Original source observations must expire after the first CAS");
+     }
+     choice=firstChoices[initialIndex];
+    }else if(initialIndex<=12){
+     const j=initialIndex-3,entry=sourceTasks[j];
      if(j===0){
-      if(diagnosticMode){
-       assert.ok(context.includes(diagnosticTaskId));
-       assert.match(context,/source_observations/u);
-       assert.match(context,/source_sha256/u);
-       assert.match(context,/account-status.ts/u);
-      }
       assert.match(context,/independent_runner_failure/u);
       assert.match(context,/independently_verified_test_failures/u);
       assert.match(context,/source_evidence_sha256/u);
@@ -992,16 +998,12 @@ const tool=record?.request?.tool,role=record?.agent_role;
       this.verifiedFailBeforeRepair=true;
      }else{
       assert.equal(this.verifiedFailBeforeRepair,true);
-      if(diagnosticMode&&j===1)
-       assert.equal(context.includes("source_observations"),false,
-        "old diagnostic source cannot be reused after first CAS advances HEAD");
       assert.ok(context.includes(sourceTasks[j-1].task_id),
        "No functional edit may precede the last independent source CAS");
      }
      choice={action:"delegate",task:{
       task_id:entry.task_id,agent_id:entry.agent_id,
-      depends_on:[j===0?(diagnosticMode?diagnosticTaskId:taskId):
-       sourceTasks[j-1].task_id],
+      depends_on:[j===0?taskId:sourceTasks[j-1].task_id],
       permissions:entry.permissions,
       instruction:"Read real Gitea "+entry.file+
        " then submit one authorized full-file CAS for Account Suspension"
@@ -1127,14 +1129,14 @@ const tool=record?.request?.tool,role=record?.agent_role;
    adaptive:{model:controller,maxSteps:15+decisionOffset,
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
-     if(epoch===2&&agent_id==="backend")
-      return freshChildParams("urn:r375:child:backend-d0",29153,600);
-     if(epoch===3&&agent_id==="frontend")
-      return freshChildParams("urn:r375:child:frontend-d0",29154,600);
-     if(epoch===4&&agent_id==="test")
-      return freshChildParams("urn:r375:child:test-failed",29155,1200);
-     if(diagnosticMode&&epoch===5&&agent_id==="backend")
+     if(diagnosticMode&&epoch===2&&agent_id==="backend")
       return freshChildParams("urn:r376:child:diagnostic-read",29167,900);
+     if(epoch===2+decisionOffset&&agent_id==="backend")
+      return freshChildParams("urn:r375:child:backend-d0",29153,600);
+     if(epoch===3+decisionOffset&&agent_id==="frontend")
+      return freshChildParams("urn:r375:child:frontend-d0",29154,600);
+     if(epoch===4+decisionOffset&&agent_id==="test")
+      return freshChildParams("urn:r375:child:test-failed",29155,1200);
      if(epoch>=5+decisionOffset&&epoch<=14+decisionOffset){
       const entry=sourceTasks[epoch-5-decisionOffset];
       if(!entry||entry.agent_id!==agent_id)
@@ -1281,6 +1283,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
     "r376_authenticated_diagnostic_read_native_docker_pass_draft_pr":
     "r375_original_protected_main_functional_native_docker_pass_draft_pr",
    authenticated_diagnostic_source_seen_by_decider:diagnosticMode,
+   authenticated_source_seen_before_first_write:diagnosticMode,
    signed_read_only_diagnostic_tasks:decisionOffset,
    status:"pass",
    original_main_immutable:true,

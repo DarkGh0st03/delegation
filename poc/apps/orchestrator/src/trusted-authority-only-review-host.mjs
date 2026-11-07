@@ -1155,11 +1155,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const sequential=pin?.operation==='update_file'&&
        TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
         input.effectStager,gateway,input.taskId,input.runtimeTaskId);
-      // R376: only the adaptive loop AFTER an independently authenticated
-      // Runner FAIL may dispatch a signed one-effect diagnostic read Child.
-      // The private independent receipt reader must already be installed.
+      // A signed one-effect read can support initial investigation or
+      // recovery. Keep dispatch inside the live adaptive loop and require
+      // the independent source observer in both cases.
       const diagnosticRead=pin?.operation==='read_file'&&
-       adaptiveLoopAttempted&&adaptiveVerifiedFailures.length>0&&
+       adaptiveLoopFlight&&
        ['backend','frontend'].includes(pin.agent_id)&&
        nativeEffectBinding?.readObserver instanceof AuthenticatedGiteaReadCompletionObserver;
       if(!pin||pin.task_id!==input.taskId||

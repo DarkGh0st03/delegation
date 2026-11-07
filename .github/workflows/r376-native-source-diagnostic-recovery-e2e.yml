@@ -2,9 +2,9 @@
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Unsigned initial branch is absent; protected unsolved main is unchanged.
 # R376 opt-in: same protected-main Account Suspension + one distinct signed diagnostic read Task,
-# verified Gateway MAC+HEAD+bytes excerpt enters the next ADK turn before correction.
+# verified Gateway MAC+HEAD+bytes excerpt enters the next ADK turn before the first write.
 # One genuinely failed Test remains incomplete; PR permitted only on independently attested Docker PASS.
-name: R376 Native Authenticated Source Read Before Docker Recovery (No AI)
+name: Native Authenticated Source Read Before First Write and Docker Recovery (No AI)
 on:
   workflow_dispatch:
   push:
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   direct-rust-live-evm:
-    name: "R376 Original Host -> authentic FAIL -> signed source READ -> 10 CAS -> PASS -> Draft PR"
+    name: "Original Host -> signed source READ -> authentic FAIL -> recovery -> PASS -> Draft PR"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
