@@ -9,6 +9,7 @@
  * independent of the revoked preliminary root (never its child).
  */
 import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../plan-contracts/src/planning-limits.mjs";
+import {validateDynamicPlanningRoots} from "./trusted-planning-discovery-ledger.ts";
 import {isDeepStrictEqual} from "node:util";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TOOL_NAMES} from "../../../apps/gateway/src/types.ts";
@@ -35,6 +36,10 @@ export interface TrustedPlanningSnapshot {
    * Planning scope. NEVER a model/tool or unsigned GUI option. The trusted
    * snapshot still lists the exact paths discoverable by the Planner. */
   hierarchical_preliminary_read?:boolean;
+  /** Optional explicit source subtrees selected by the authenticated owner
+   * BEFORE signing the preliminary Root. Subtree entries become model-readable
+   * only after a trusted SHA-pinned Gitea list-directory observation. */
+  dynamic_discovery_roots?:readonly string[];
   /** Trusted operator/Gitea-discovery-derived, not model-proposed paths. */
   directories:readonly string[];
   files:readonly string[];
@@ -183,6 +188,10 @@ export function preliminaryReadPermissions(
       operation:"read_file"
     });
   }
+  // Even though the signed hierarchical Root already covers the whole
+  // branch, model-discovered paths require an additional immutable,
+  // operator-selected subtree pin. Invalid opt-ins fail before issuance.
+  validateDynamicPlanningRoots(snapshot);
   if(hierarchical){
     const root=canonicalDirectoryUri(repo,sourceBranch,"");
     // Rust ResourceUri::contains_resource accepts a directory ancestor for
