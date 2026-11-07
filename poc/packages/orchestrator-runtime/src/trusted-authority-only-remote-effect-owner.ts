@@ -13,6 +13,8 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {TrustedAuthorityOnlySequentialReadUpdateStager}
  from "../../../apps/gateway/src/trusted-authority-only-sequential-read-update-stager.ts";
+import {TrustedAuthorityOnlyCreateEffectStager}
+ from "../../../apps/gateway/src/trusted-authority-only-create-effect-stager.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "./trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
@@ -119,12 +121,12 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
      !isDeepStrictEqual(row.permissions,issued.permissions))
     deny("owner root, Coordinator, native Child and Gateway disagree");
   const writes=row.permissions.filter(p=>
-   p.operation==="update_file"||p.operation==="run_tests");
+   p.operation==="update_file"||p.operation==="create_file"||p.operation==="run_tests");
   const effects=writes.length? writes :
    row.permissions.length===1&&row.permissions[0]?.operation==="read_file"
     ?[row.permissions[0]]:[];
   if(effects.length!==1||row.permissions.some(p=>
-     !["read_file","update_file","run_tests"].includes(p.operation)))
+     !["read_file","update_file","create_file","run_tests"].includes(p.operation)))
    deny("one supported Task provider-effect grant required");
   const effect=effects[0]!;
   const reads=row.permissions.filter(p=>p.operation==="read_file");
@@ -134,6 +136,13 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   if(row.agent_id==="test"&&effect.operation==="update_file"&&
      !isProjectTestRepairGrant(row.permissions))
    deny("Test update requires an exact project test repair grant");
+  if(effect.operation==="create_file"){
+   if(!["backend","frontend"].includes(row.agent_id)||
+      row.permissions.length!==1||
+      !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
+       effectStager,this.#gateway,taskId,runtimeTaskId))
+    deny("create Task requires original owner-only Child, HEAD and staging port");
+  }
   if(typedMixed){
    if(!TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
        effectStager,this.#gateway,taskId,runtimeTaskId))
@@ -144,7 +153,8 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   const branch=root.branch;
   const branchUri=canonicalBranchUri(root.repository,branch);
   let path:string|undefined;
-  if(effect.operation==="read_file"||effect.operation==="update_file"){
+  if(effect.operation==="read_file"||effect.operation==="update_file"||
+     effect.operation==="create_file"){
    const prefix=branchUri+"/files/";
    if(!effect.resource.startsWith(prefix))deny("effect file outside original branch");
    const fragment=effect.resource.slice(prefix.length);
@@ -167,7 +177,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    role:row.agent_id as "backend"|"frontend"|"test",
    childCredentialId:issued.credential_id,presenterId:row.agent_did,
    branch,operation:typedMixed?"read_then_update" as const:
-    effect.operation as "read_file"|"update_file"|"run_tests",
+    effect.operation as "read_file"|"update_file"|"create_file"|"run_tests",
    ...(path!==undefined?{path}:{})
   };
   // R328: each role has a separate authenticated owner->agent socket.
