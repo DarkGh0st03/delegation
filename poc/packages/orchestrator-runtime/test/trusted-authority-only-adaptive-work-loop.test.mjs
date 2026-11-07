@@ -121,27 +121,25 @@ test('R383.1 one adaptive owner can modify three different files via distinct si
 });
 
 for(const mode of ['two-writes','read-foreign-then-write',
- 'write-then-read-foreign','read-and-run-tests','create-file-not-native']){
+ 'write-then-read-foreign','read-and-run-tests']){
  test('R383.1 adaptive model cannot mix unrelated native effects: '+mode,async()=>{
   const f=fixture(),base=grant('backend');
   const foreign={operation:'update_file',
    resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-other.ts'};
   const readSame={operation:'read_file',resource:base.resource};
   const readForeign={operation:'read_file',resource:foreign.resource};
-  const create={operation:'create_file',
-   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/new-component.ts'};
+  // R384.3 CREATE has its own authorized, single-effect test below.
   const cases={
    'two-writes':[base,foreign],
    'read-foreign-then-write':[readForeign,base],
    'write-then-read-foreign':[base,readForeign],
-   'read-and-run-tests':[readSame,grant('test')],
-   'create-file-not-native':[create]
+   'read-and-run-tests':[readSame,grant('test')]
   };
   const original=f.hooks.readContext;
   f.hooks.readContext=async()=>{
    const ctx=await original();
-   ctx.rootPermissions.push(foreign,readSame,readForeign,create);
-   ctx.agents.backend.capabilities.push('read_file','create_file','run_tests');
+   ctx.rootPermissions.push(foreign,readSame,readForeign);
+   ctx.agents.backend.capabilities.push('read_file','run_tests');
    return ctx;
   };
   const model=new Decisions([candidate('backend',0,cases[mode])]);
