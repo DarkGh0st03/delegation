@@ -1,23 +1,27 @@
 {
-  "checkpoint": "R376.3",
-  "source_sha": "881209a9dce7b07eec28f4f1a8e0ca3fb2d9c304",
-  "prior_native_checkpoint": {
-    "r375_run": 42354591410,
-    "result": "SUCCESS",
-    "mode": "R375 default unchanged"
+  "checkpoint": "R376.4",
+  "source_sha": "fdaddb103793001a2979848fd1fbd87180117b3c",
+  "prior_native_run": {
+    "id": 42357158535,
+    "result": "FAIL_CLOSED",
+    "initial_docker_status": "acceptance_fail",
+    "last_error": "protected A2A dispatch requires an original owner-bound effect stager",
+    "stage": "first model-selected diagnostic read dispatch before provider read"
   },
+  "cause": "original Review Host dispatch whitelist allowed only update_file and run_tests despite R376 signed read-only stager",
+  "corrective_fix": "read_file dispatch only when original adaptive loop has independently verified Test FAIL, Backend/Frontend specialist and the original owner-injected independent Gitea read observer; original Task, Child and effectStager pins still enforced",
   "fast_ci": {
-    "run": 42357030596,
+    "run": 42357558032,
     "result": "SUCCESS"
   },
-  "purpose": "one FREE original Engineer protected-main native Root Branch -> genuine Docker FAIL -> one model-selected signed Backend read_file-only Child -> independently authenticated MAC/Gitea source excerpt in subsequent ADK context -> 10 signed Gitea CAS repairs -> real Docker project/acceptance PASS -> original Root Draft PR POST/GET",
+  "engineer_ci": {
+    "run": 42357558034,
+    "result": "SUCCESS"
+  },
+  "target": "original Branch -> real FAIL -> one distinct signed diagnostic source read with authenticated MAC/HEAD/bytes -> ADK source observations -> ten functional CAS -> Docker project+researcher acceptance PASS -> root Draft PR POST/GET",
   "opt_in_env": "R376_NATIVE_DIAGNOSIS=1",
-  "adk_inference": "scripted deterministic test only",
-  "paid_model_calls": 0,
-  "total_adaptive_decision_ceiling": 16,
-  "expected_read_only_diagnostic_tasks": 1,
-  "expected_new_permissions": 0,
+  "paid_calls": 0,
   "github_main_unchanged": true,
   "pr38": "draft_unmerged",
-  "status": "PENDING_NATIVE_CI_FAIL_CLOSED_UNTIL_SUCCESS"
+  "status": "PENDING_NATIVE_RETEST"
 }
