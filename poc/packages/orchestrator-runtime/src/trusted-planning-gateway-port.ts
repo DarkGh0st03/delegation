@@ -8,6 +8,8 @@
  * Neither model text nor an HTTP caller can select a credential or grant.
  */
 import {isDeepStrictEqual} from "node:util";
+import {giteaPermissionCovers}
+  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import {deriveRequiredPermission} from "../../../apps/gateway/src/canonical.ts";
 import {validatePrepareAuthorizationRequest}
   from "../../../apps/gateway/src/validation.ts";
@@ -48,6 +50,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
   readonly #snapshot:TrustedPlanningSnapshot;
   readonly #client:OrchestratorPlanningGatewayReadClient;
   readonly #allowed:Set<string>;
+  readonly #hierarchicalGrants:readonly {resource:string;operation:string}[];
   readonly #credentialId:string;
   constructor(config:TrustedPlanningGatewayPortConfig){
     const snapshot=structuredClone(config.snapshot);
@@ -63,6 +66,11 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     this.#coordinator=config.coordinator;
     this.#snapshot=snapshot;
     this.#allowed=new Set(allowed.map(key));
+    // Read-only ancestor coverage is enabled ONLY by the same original
+    // immutable snapshot used to issue and bind the Root. Tool arguments
+    // remain limited to trusted discovered paths, not arbitrary subtrees.
+    this.#hierarchicalGrants=snapshot.hierarchical_preliminary_read===true
+      ?Object.freeze(allowed.map(p=>Object.freeze({...p}))):Object.freeze([]);
     this.#credentialId=root.credential_id;
     this.#client=new OrchestratorPlanningGatewayReadClient({
       gatewayBaseUrl:config.gatewayBaseUrl,
@@ -114,7 +122,9 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
         !this.#snapshot.directories.includes(request.arguments.path)))fail();
     const required=deriveRequiredPermission(
       this.#snapshot.repository as GatewayRepositoryConfig,request);
-    if(!this.#allowed.has(key(required)))fail();
+    if(!this.#allowed.has(key(required))&&
+       !this.#hierarchicalGrants.some(parent=>
+         giteaPermissionCovers(parent,required)))fail();
 
     const execution=await this.#client.readPlanningResource(
       root.session_id,tool,request.arguments,this.#snapshot.repository,
