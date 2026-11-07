@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.2)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.3)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -401,6 +401,33 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   prova su una SHA finale. Non attribuire mai il vecchio FAIL a Docker,
   Planner/Executor generativo o Rust nativo, perché non erano stati
   avviati.
+- **R382.3 — reale DID del signer Rust collegata alle Agent Card native**:
+  il retry gratuito R381.8
+  [#42387283759](https://github.com/DarkGh0st03/delegation/actions/runs/42387283759)
+  su SHA `18266e20` ha superato il preflight, bootstrap
+  Anvil/OPA/Gitea, registri EVM, addon Rust, blocco Adapter legacy e
+  check no-HTTP; è **FAIL** nel vero percorso A2A alla verifica
+  `verified Agent Card differs from trusted specialist DID`, prima
+  del primo dispatch Task. La Card pubblicava la DID statica
+  `did:thesis:<role>-agent`, mentre il trusted Engineer registry e
+  le credenziali native Rust utilizzavano l'identità firmataria
+  `ADAPTER_ID_<ROLE>` (DID `did:ethr:...` sulla chain locale).
+  **La verifica trusted resta intatta**: la factory Card accetta
+  `nativeSignerDid` solo su host ADK Task owner-bound
+  `authority-only`, `APPROVED_RUNNER_NATIVE_MCP=1`, identico
+  all'`ADAPTER_ID_<ROLE>` preprovisionato e, sotto profilo EVM,
+  `did:ethr:`. Il probe SDK risolve la stessa DID dal
+  signer preprovisionato, ricontrolla capacità e Card su ogni send;
+  il Review Host la confronta ancora in modo indipendente col
+  proprio registro Engineer. Il launcher A2A nativo e l'E2E
+  R381.8 passano la DID solo dalla configurazione trusted, mai
+  da modello, Task, A2A metadata o tool. Sono stati aggiunti
+  test positivi e anti-impersonation per i tre ruoli al Fast CI e
+  preflight nativo. La vecchia Card sintetica resta disponibile
+  soltanto nel profilo storico non-native, non come fallback
+  nel profilo authority-only.
+  **Stato:** correzione da validare con Fast CI, poi una sola nuova
+  esecuzione nativa R381.8. Nessun Gemini a pagamento autorizzato.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
