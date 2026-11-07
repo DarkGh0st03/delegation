@@ -5,7 +5,8 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
 import {loadProtectedGeminiOwnerInput,startProtectedGeminiOwnerSession,
-  startProtectedCanonicalGeminiOwnerSession}
+  startProtectedCanonicalGeminiOwnerSession,
+  startProtectedCanonicalGeminiOwnerFromPrivateConfig}
   from "../src/run-trusted-gemini-owner.mjs";
 
 const CONFIRMATION="I AUTHORIZE GEMINI API CHARGES";
@@ -205,6 +206,39 @@ test("R382.6 canonical Gemini owner refuses GitHub runner and missing independen
   }),/Protected Gemini owner input denied/u);
   await assert.rejects(startProtectedCanonicalGeminiOwnerSession({
    ...params,expectedSourceSha:"0".repeat(40)
+  }),/Protected Gemini owner input denied/u);
+ }finally{
+  for(const [k,v] of old)
+   if(v===undefined)delete process.env[k];
+   else process.env[k]=v;
+ }
+});
+
+test("R382.7 protected canonical native entrypoint fails before any paid model, source or manifest read",async()=>{
+ const names=["GITHUB_ACTIONS","DELEGATION_GATEWAY_ARCHITECTURE",
+  "APPROVED_RUNNER_NATIVE_MCP","ENGINEER_CORE_NATIVE_MODE"];
+ const old=new Map(names.map(k=>[k,process.env[k]]));
+ const arg={configPath:"/nonexistent/manifest.json",
+  inputFile:"/nonexistent/model.json",
+  expectedSourceSha:"a".repeat(40),chargeAuthorization:CONFIRMATION,
+  provision:async()=>{throw Error("No operational Root may be issued");}};
+ try{
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+  process.env.ENGINEER_CORE_NATIVE_MODE="1";
+  process.env.GITHUB_ACTIONS="true";
+  await assert.rejects(startProtectedCanonicalGeminiOwnerFromPrivateConfig(arg),
+   /Protected Gemini owner input denied/u);
+  process.env.GITHUB_ACTIONS="false";
+  await assert.rejects(startProtectedCanonicalGeminiOwnerFromPrivateConfig({
+   ...arg,chargeAuthorization:""
+  }),/Protected Gemini owner input denied/u);
+  process.env.ENGINEER_CORE_NATIVE_MODE="0";
+  await assert.rejects(startProtectedCanonicalGeminiOwnerFromPrivateConfig(arg),
+   /Protected Gemini owner input denied/u);
+  process.env.ENGINEER_CORE_NATIVE_MODE="1";
+  await assert.rejects(startProtectedCanonicalGeminiOwnerFromPrivateConfig({
+   ...arg,expectedSourceSha:"bad"
   }),/Protected Gemini owner input denied/u);
  }finally{
   for(const [k,v] of old)
