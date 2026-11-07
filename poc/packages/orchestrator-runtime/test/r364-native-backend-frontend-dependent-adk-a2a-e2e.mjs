@@ -436,9 +436,21 @@ try{
   const gatewayTransport=async(url,init)=>{
    const body=JSON.parse(String(init?.body));
    if(String(url).endsWith("/v1/authorization/prepare")){
-    const response=prepareAuthorization(body,{
-     audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
-    },{store,audit,authorityOnlyAdmissions:gate,nowMs});
+    events.push("prepare_attempt_"+body.agent_role+"_"+body.tool);
+    let response;
+    try{
+     response=prepareAuthorization(body,{
+      audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo
+     },{store,audit,authorityOnlyAdmissions:gate,nowMs});
+    }catch(error){
+     process.stderr.write(JSON.stringify({
+      event:"r364_safe_gateway_prepare_rejection",
+      role:body.agent_role,tool:body.tool,
+      reason_class:error?.constructor?.name??"unknown",
+      reason_code:typeof error?.code==="string"?error.code:null
+     })+"\n");
+     throw error;
+    }
     prepared.push({role:body.agent_role,tool:body.tool,response});
     events.push("prepare_"+body.agent_role+"_"+body.tool);
     return Response.json(response,{status:201});
@@ -487,12 +499,34 @@ try{
   });
   assert.equal(models.backend.requests.length,0);
   assert.equal(models.frontend.requests.length,0);
+  // Check the original same-Task Gateway preflight without preparing/signing
+  // a second request. Does not authorize or execute any provider operation.
+  assert.equal(gate.preflightCanonicalRequest({
+   task_id:backendRuntimeId,agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:backendPath}
+  }).pinned_revision,baseRevision);
   assert.equal(gate.stagedCompletedTaskCount,0);
-  const backendReport=await owner.dispatchIssuedTask({
-   taskId:backendTaskId,runtimeTaskId:backendRuntimeId,
-   instruction:"Read and CAS-update only the signed Backend account source",
-   effectStager:backendStager
-  });
+  let backendReport;
+  try{
+   backendReport=await owner.dispatchIssuedTask({
+    taskId:backendTaskId,runtimeTaskId:backendRuntimeId,
+    instruction:"Read and CAS-update only the signed Backend account source",
+    effectStager:backendStager
+   });
+  }catch(error){
+   // Authority-bearing data, signed credentials and file contents NEVER
+   // enter logs; expose only phase counters and safe tool identifiers.
+   process.stderr.write(JSON.stringify({
+    event:"r364_backend_failure_stage_diagnostic",
+    gateway_routes:events.slice(0,8),
+    prepared_tools:prepared.map(p=>p.role+"."+p.tool),
+    backend_model_turns:models.backend.requests.length,
+    gateway_completed_tasks:gate.stagedCompletedTaskCount,
+    gateway_sequential_tasks:gate.stagedSequentialTaskCount,
+    error_class:error?.constructor?.name??"unknown"
+   })+"\n");
+   throw error;
+  }
   assert.equal(backendReport.status,"a2a_report_not_gateway_completed");
   assert.equal(backendReport.provider_completion_attested,false);
   assert.equal(backendReport.role,"backend");

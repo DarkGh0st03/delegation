@@ -1,6 +1,6 @@
 {
-  "checkpoint": "R364.2",
-  "baseline_native_sha": "ce6ba4113d9d230bd4c20d0ad33cc4e0e8a9411b",
+  "checkpoint": "R364.3",
+  "baseline_native_sha": "1a7c2d20d8aaf8fb15eeb324a1402789f470179d",
   "scenario": "account-suspension",
   "roles": [
     "backend",
@@ -10,7 +10,10 @@
   "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
   "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
   "excluded": "no Test/Docker or PR claim",
-  "status": "one native run requested; PASS must be independently verified",
+  "status": "native rerun requested; do not infer PASS",
   "previous_sha": "c41d989d431d1a3a4723732e70a34c30e5156c52",
-  "fix": "Fix invalid YAML job name colon and actually integrate both role dispatch paths in the E2E executable"
+  "fix": "Fix invalid YAML job name colon and actually integrate both role dispatch paths in the E2E executable",
+  "previous_failure_run": 42314495026,
+  "previous_failure": "Backend first read_file tool_unavailable; no A2A completion",
+  "instrumentation": "safe phase counters and backend Gateway Prepare rejection classification, no credentials or source bytes"
 }
