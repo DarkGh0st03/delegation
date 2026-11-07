@@ -43,8 +43,9 @@ jobs:
           node --test poc/scripts/test/r239-canonical-agent-no-adapter-url.test.mjs
           node --test poc/scripts/test/r240-direct-rust-issuer-config.test.mjs
           node --experimental-strip-types --test poc/packages/agent-runtime/test/native-agent-card-signer-binding.test.ts poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts
+          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-owner-bootstrap.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
-          node --experimental-strip-types --test --test-name-pattern="R382.6" poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs
+          node --experimental-strip-types --test --test-name-pattern="R382.6|R382.7" poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-reviewed-canonical-handoff.test.mjs
           node --experimental-strip-types --test --test-name-pattern="R382.5|R382.6" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
           node --test poc/apps/orchestrator/test/trusted-gemini-owner-dispatch.test.mjs
