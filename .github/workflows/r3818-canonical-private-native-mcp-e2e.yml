@@ -26,7 +26,6 @@ jobs:
       R233_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       R3818_CANONICAL_NATIVE_MCP: "1"
-      DELEGATION_GATEWAY_ARCHITECTURE: authority-only
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: r233-engineer-local
       ADAPTER_CALLER_GATEWAY: r233-gateway-local
@@ -174,6 +173,8 @@ jobs:
           fi
           test ! -e /tmp/native-evm-adapter.pid
       - name: R3818 canonical Review Host native private MCP Child/VP -> Docker FAIL/PASS -> Gitea Draft PR
+        env:
+          DELEGATION_GATEWAY_ARCHITECTURE: authority-only
         run: |
           set -a
           source poc/infra/runtime/gateway.env
