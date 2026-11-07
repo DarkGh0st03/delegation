@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.5)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.6)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -17,7 +17,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP Child/VP e confini Rust attestati nativamente R381.8 su SHA `a458b441`; ulteriori audit Planning/letture composte aperti** |
-| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Launcher Review Host già attraversa E2E scripted; R382.4 blocca fallback legacy in authority-only; collegamento del Planning Gemini reale ancora aperto** |
+| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.6 connette il modello Gemini esplicitamente autorizzato allo stesso Review Host canonico (API owner-only); manca il bootstrap deploy da config 0600 e la prova reale dopo approvazione** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **E2E R381.8 SUCCESS su `a458b441`; nuova verifica stessa-SHA obbligatoria dopo C/E, nessun PASS presunto sui commit successivi** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
@@ -92,6 +92,54 @@ nuova SHA; la prova R381.8 SUCCESS `a458b441` rimane valida
 solo per la baseline precedente. Nessun modello a pagamento è
 stato avviato o autorizzato.
 
+### R382.6 — ingresso Gemini reale nel Review Host authority-only (senza chiamata pagata)
+
+- La nuova API di processo `startProtectedCanonicalGeminiOwnerSession`
+  usa il **medesimo** `createTrustedAuthorityOnlyReviewHost` / 
+  `startTrustedAuthorityOnlyReviewHost`, non
+  `assembleProtectedOwnerGeminiPlanning` o il vecchio
+  `TrustedExecutionCoordinator`. Un Model `Gemini` ADK originale viene
+  costruito **solo dopo** esplicito consenso testuale ai costi,
+  verifica della SHA GitHub reale e pulizia dell'albero locale, lettura
+  dei file 0600 protetti, scelta `authority-only` e signer MCP nativo.
+  L'assemblaggio non invoca il provider; il vero Planning è
+  potenzialmente **a pagamento**, perciò non è stato eseguito.
+- `bindProtectedCanonicalGeminiOwner` confronta **prima di Planning**
+  sessione, repository, base SHA Gitea, inventario, preliminary Root,
+  requirement, identità `did` e `card_ref` Backend/Frontend/Test,
+  indirizzo Gateway e `planId` tra il **protected owner JSON** e le
+  **dipendenze concrete del Review Host originale**. Rifiuta un modello
+  già iniettato o limiti Planning selezionati nel bootstrap, e impone
+  20 turni, 180 s, 12.000 output token, 2 revisioni, thinking LOW.
+  La chiave Backend viene letta solo dal file protetto e ricontrollata
+  dal **checkpoint store originale**, senza creare altri signer.
+  Il modello Gemini non riceve la chiave Engineer, Root, credential
+  signer o i token A2A.
+- Il wrapper con listener loopback inoltra ora
+  `createReviewedCanonicalHandoff({provision})` **solo come
+  capability privata in-process**, non come route HTTP. Dopo Planning,
+  `reviewReadiness()` e `runApprovedCanonical()` riutilizzano la
+  stessa verifica Ed25519 del Review Host, le sessioni originali e
+  il percorso Branch → agenti → Runner → PR in Draft. Nessuna
+  approvazione automatica, nessun merge e nessun fallback Signed DAG.
+- Il vecchio CLI `run-trusted-gemini-owner.mjs` rifiuta
+  **sincronicamente prima di leggere le chiavi o il source pin**
+  `startProtectedGeminiOwnerSession` quando l'architettura è
+  `authority-only`; non è possibile scegliere involontariamente il
+  Planning storico in quel profilo.
+- Test offline in Fast CI: accettazione binding originale, 15 varianti
+  di dati/identità/scope/model contraffatti, rifiuto del downgrade,
+  source pin e consenso prima di import/provider, wrapper
+  Engineer Review Host vero con Planning scripted e nessuna firma
+  operativa senza approvazione. **Nessun nuovo PASS di CI o E2E
+  attribuito finché GitHub Actions non lo conferma sulla SHA finale.**
+- **Ancora aperto:** generare e caricare il set completo delle
+  dipendenze `authority` dal bootstrap host protetto 0600 per un
+  singolo **entrypoint eseguibile** (il nuovo ingresso è API
+  in-process dell'operatore), quindi rieseguire il Full CI gratuito
+  e la prova nativa su quella stessa SHA. Il pilot Gemini richiederà
+  consenso esplicito separato **prima** di qualunque chiamata.
+  
 ### Risultati attuali e limiti di prova
 
 - **R375.8, E2E native [42354591410](https://github.com/DarkGh0st03/delegation/actions/runs/42354591410) SUCCESS**:
