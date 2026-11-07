@@ -200,30 +200,25 @@ async function freeRolePort(){
  return value.port;
 }
 class ScriptedNativeDockerTest extends BaseLlm {
- constructor(branch,readAndRepairStages){
-  super({model:"r375-free-native-tests-and-signed-project-tests"});
+ constructor(branch){
+  super({model:"r375-free-native-test-only-no-paid-inference"});
   this.branch=branch;this.requests=[];
-  this.writer=new ScriptedScopedReferenceWriter(branch,"test",readAndRepairStages);
  }
  async *generateContentAsync(req){
   this.requests.push(req);
   const turn=this.requests.length;
-  // Genuine initial Test FAIL. Three baseline project tests now assert
-  // positive lifecycle behavior; latest Docker Test is called only afterward.
-  if(turn===1||turn===12){
+  if(turn===1||turn===3){
    yield {content:{role:"model",parts:[{functionCall:{
     id:"r375-docker-"+turn,name:"run_tests",
     args:{branch:this.branch,profile:"poc-default"}
    }}]}};
-  }else if(turn===2||turn===13){
+  }else if(turn===2||turn===4){
    yield {content:{role:"model",parts:[{
-    text:"Authenticated original native Docker result received by Test Agent"
+    text:"Native Docker result received against owner-pinned HEAD"
    }]}};
-  }else if(turn>=3&&turn<=11){
-   yield* this.writer.generateContentAsync(req);
-  }else throw Error("R375 Test exceeded signed read/CAS and Runner call budget");
+  }else throw Error("Test model tried unauthorized non-Runner work");
  }
- connect(){throw Error("Paid AI calls forbidden in R375");}
+ connect(){throw Error("Paid provider calls prohibited");}
 }
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
@@ -488,7 +483,7 @@ try{
     frontend:{did:frontendDid,card_ref:"trusted:r375-frontend",
      capabilities:["read_file","update_file"]},
     test:{did:testDid,card_ref:"trusted:r375-test",
-     capabilities:["read_file","update_file","run_tests"]},
+     capabilities:["run_tests"]},
     orchestrator:{did:process.env.ADAPTER_ID_ORCHESTRATOR,
      card_ref:"trusted:r375-orchestrator",
      capabilities:["create_branch","create_pull_request"]}
@@ -558,8 +553,8 @@ try{
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
  const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
   file,task_id:"r375-functional-file-"+(index+1),
-  agent_id:file.startsWith("tests/")?"test":
-    file.startsWith("apps/frontend/")?"frontend":"backend",
+  agent_id:file.startsWith("apps/frontend/")||
+    file.startsWith("tests/frontend/")?"frontend":"backend",
   permissions:permissionsFor(file)
  }));
  assert.equal(sourceTasks.length,10);
@@ -712,22 +707,31 @@ try{
    ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
   replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
  }));
+ const backendTestReferenceFiles=testFiles.filter(file=>
+  file.startsWith("tests/backend/")).map(file=>Object.freeze({
+   path:file,previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
+   replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
+  }));
+ const frontendTestReferenceFiles=testFiles.filter(file=>
+  file.startsWith("tests/frontend/")).map(file=>Object.freeze({
+   path:file,previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
+   replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
+  }));
  const models={
   backend:new ScriptedScopedReferenceWriter(branch,"backend",[
    {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
    {files:[{path:sharedPath,
      previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
      replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
-   ...backendReferenceFiles.map(file=>({files:[file]}))
+   ...backendReferenceFiles.map(file=>({files:[file]})),
+   ...backendTestReferenceFiles.map(file=>({files:[file]}))
   ]),
   frontend:new ScriptedScopedReferenceWriter(branch,"frontend",[
    {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
-   ...frontendReferenceFiles.map(file=>({files:[file]}))
+   ...frontendReferenceFiles.map(file=>({files:[file]})),
+   ...frontendTestReferenceFiles.map(file=>({files:[file]}))
   ]),
-  test:new ScriptedNativeDockerTest(branch,testFiles.map(file=>({
-   files:[{path:file,previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
-    replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]}]
-  })))
+  test:new ScriptedNativeDockerTest(branch)
  };
  // R375.7 diagnostic: observe internal phase ACKs without changing the
  // actual owner Stager, signed Task, crypto registry or MCP tool semantics.
@@ -1167,12 +1171,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
    .filter(name=>name.endsWith(".runner-fail.json")).length,1);
   assert.equal((await readdir(path("runner-receipts")))
    .filter(name=>name.endsWith(".runner.json")).length,1);
-  assert.equal(models.backend.stageIndex,5);
-  assert.equal(models.frontend.stageIndex,4);
-  assert.equal(models.backend.requests.length,15);
-  assert.equal(models.frontend.requests.length,12);
-  assert.equal(models.test.requests.length,13);
-  assert.equal(models.test.writer.stageIndex,3);
+  assert.equal(models.backend.stageIndex,7);
+  assert.equal(models.frontend.stageIndex,5);
+  assert.equal(models.backend.requests.length,21);
+  assert.equal(models.frontend.requests.length,15);
+  assert.equal(models.test.requests.length,4);
   assert.equal(legacyWriteCalls,0);
   const latest=(await independentClient.getBranchMetadata(branch)).commit_sha;
   assert.equal(latest,report.tested_commit_sha);

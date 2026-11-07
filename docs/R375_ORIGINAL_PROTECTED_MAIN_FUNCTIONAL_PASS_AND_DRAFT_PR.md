@@ -126,3 +126,34 @@ offline and free. The source and test content are pre-existing audited
 functional reference fixtures, not Gemini-generated patches. Success
 remains unproven until the R375 native and Fast CI both complete SUCCESS
 on an identical commit. No real paid AI calls or merge are authorized.
+
+## R375.5 — preserve native Gateway's intentional role guard
+
+Native R375.4 [#42351935783](https://github.com/DarkGh0st03/delegation/actions/runs/42351935783)
+independently completed the first authentic Docker acceptance FAIL and
+all **seven** application source read+CAS Tasks, then failed closed
+because `TrustedAuthorityOnlyGatewayAdmissions.beginTrustedSequentialReadUpdateTask`
+explicitly allows mixed read/update only for **Backend or Frontend**
+Children. The new test mutation was assigned to the `test` role,
+so the Gateway correctly refused it before a provider write.
+
+Rather than broaden the Gateway's security-sensitive role admission
+semantics, R375.5 uses existing, already signed exact file grants:
+Backend updates `tests/backend/user.service.test.ts` and
+`tests/backend/user.routes.test.ts`, and Frontend updates
+`tests/frontend/UserDetailPage.test.tsx`. Each update is still
+individually model-selected and independently read and CAS-committed
+with its own original native Child credential. The **Test specialist
+performs only the two independent `run_tests` executions**, making
+a failed Test incomplete and a PASS the only gate to root PR.
+
+No test assertion is dropped, mocked or bypassed; the stronger positive
+project tests come from the unmodified existing reference fixture,
+and the separate researcher acceptance remains outside Gitea.
+The 23-pair original Engineer grant, 15-decision ceiling, 10
+signed file updates, original root Branch/PR and all Rust,
+OPA, Gateway admission and evidence checks are unchanged.
+
+Expected role-model requests now: Backend 21, Frontend 15, Test 4.
+Do not claim R375 native success without green original Docker Runner
+on both project and independent acceptance and one-shot Draft PR GET.
