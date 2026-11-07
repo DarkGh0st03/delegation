@@ -614,6 +614,10 @@ let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
 let pilotPlanningRejection=null,pilotTaskCounts=null;
 // Static, bounded rejection categories for all three draft attempts.
 let pilotPlanningRejectionHistory=[];
+// R380.3 failed CI diagnostics expose only fixed-vocabulary tool phase and
+// integer counters. Neither Gitea paths, model text, VP nor keys can escape.
+const r3803Probe={model_turns:0,verified_lists:0,verified_files:0,
+  denied_reads:0,last_denial:"none",rejected_proposals:0};
 globalThis.__nativeDagBootstrapStage="root_issuance";
 try{
   const started=await coordinator.beginPlanning(root);
@@ -685,6 +689,25 @@ try{
         });
       },
       onObservation:observation=>{
+        if(r3803NativeDiscovery){
+          if(observation?.kind==="model_turn"&&
+             observation.status==="started")r3803Probe.model_turns++;
+          if(observation?.kind==="read"&&
+             observation.status==="verified"){
+            if(observation.tool==="list_directory")r3803Probe.verified_lists++;
+            if(observation.tool==="read_file")r3803Probe.verified_files++;
+          }
+          if(observation?.kind==="read"&&
+             observation.status==="denied"){
+            r3803Probe.denied_reads++;
+            r3803Probe.last_denial=[
+              "trusted_planning_read_failed","outside_planning_scope",
+              "read_budget","planning_deadline","composite_unavailable"
+            ].includes(observation.reason)?observation.reason:"other";
+          }
+          if(observation?.kind==="plan_rejection")
+            r3803Probe.rejected_proposals++;
+        }
         if(observation?.kind==="plan_rejection"){
           pilotPlanningRejection={stage:observation.stage,
             reason:observation.reason};
@@ -2056,6 +2079,10 @@ try{
   }));
 }catch(error){
   if(error!==PLANNING_ONLY_COMPLETED){
+  if(r3803NativeDiscovery)process.stderr.write(
+    "[r3803-planning-probe] "+JSON.stringify({
+      event:"r3803_planning_failure_probe_v1",...r3803Probe
+    })+"\n");
   if(!geminiPilot){
     globalThis.__nativeDagPhaseReported=true;
     process.stderr.write(NATIVE_DAG_FAILURE_PREFIX+
