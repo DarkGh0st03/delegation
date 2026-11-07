@@ -150,3 +150,23 @@ test("forged execution arguments are rejected before Engineer receipt or GitHub 
   assert.equal(f.stats.handoffs,1);
   await f.owner.close();
 });
+
+test("R382.4 authority-only Gemini owner cannot downgrade to historical Signed DAG",async()=>{
+ const before=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ const f=fixture();
+ try{
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  assert.throws(()=>f.owner.runApprovedGeminiDag(f.input),
+   /legacy Signed DAG execution forbidden in authority-only mode/);
+  assert.equal(f.owner.status,"awaiting_human_review");
+  assert.equal(f.stats.reviews,0);
+  assert.equal(f.stats.handoffs,0);
+  // A rejected legacy invocation must never implicitly approve a plan,
+  // consume OIDC admission, or launch a paid model.
+  await f.owner.close();
+  assert.equal(f.stats.closes,1);
+ }finally{
+  if(before===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=before;
+ }
+});
