@@ -78,7 +78,7 @@ and [Engineer CI #42356509429](https://github.com/DarkGh0st03/delegation/actions
 both passed the first integration source SHA `b6d485de`.
 These checks are not a native R376 end-to-end assertion.
 
-## R376.3: opt-in native proof (pending CI verdict)
+## R376.3–R376.5: opt-in native proof — independently verified SUCCESS
 
 Instead of copying the 1,200+ line R375 native Account Suspension harness,
 the **same** original fixture has a separate, default-disabled
@@ -100,9 +100,31 @@ Gemini/OpenAI inference. It uses the same disposable local Gitea, Anvil,
 OPA, native Rust and isolated Docker as R375. The extra read raises the
 bounded adaptive decision count from 15 to 16 but grants no new operation.
 
-**Pending gate:** GitHub Actions must report SUCCESS on the same SHA, with
-a genuine independent signed diagnostic read and source reaching the
-following ADK turn. Until then no R376 native PASS is claimed.
+**Verified native gate (7 November 2026).** The dedicated workflow
+[run #42358777600](https://github.com/DarkGh0st03/delegation/actions/runs/42358777600)
+returned **SUCCESS** on source/checkpoint commit `3c971d2efb9b9af78ba9e82e5640c0d3bd6d17e2`.
+The independent structured E2E assertion reports:
+
+- Authentic first Docker FAIL and original Runner FAIL receipt, with the failed
+  Test deliberately left incomplete.
+- One new signed read-only diagnostic Task, its own original-root Child DC,
+  and independently MAC/HEAD/byte-confirmed source visible in the following
+  ADK decision. Stale source is excluded after the first CAS advances HEAD.
+- Seven application and three project-test corrections, twelve authorized CAS
+  writes; the second Docker run and researcher acceptance both **PASS**.
+- Seventeen registered / sixteen Gateway-completed Tasks and fifteen distinct
+  Child credentials under **one** original Engineer approval.
+- Original-root Draft PR created and independently fetched as open, Draft,
+  and not merged; protected original `main` unchanged.
+- **Zero paid model calls.** All selected tasks and source changes in this
+  native harness remain scripted, not model-generated.
+
+This closes the **native diagnostic-read plumbing** goal; it is not proof of
+autonomous Gemini code generation or general arbitrary-repository recovery.
+A later diagnostics-only harness commit `cebb9bb80c80acaecea0257c118e6288164e2fd6`
+passed [Fast CI #42358842761](https://github.com/DarkGh0st03/delegation/actions/runs/42358842761).
+That Fast CI is a **different SHA** from the native E2E result and must not
+be described as a same-SHA native pair.
 
 After that, next objective is real bounded Gemini generation with
 source-grounded diagnostic recovery, permitted only through existing
