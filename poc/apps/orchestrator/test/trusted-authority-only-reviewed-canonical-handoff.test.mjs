@@ -93,7 +93,12 @@ function fixture(t,opts={}){
   provision:async()=>{
    provisions++;
    return opts.provisionOverride??{
-    root:root(),dependencies:dependencies(),workflow:workflow(),
+    root:root(),dependencies:dependencies(),workflow:opts.localWorkers?
+     {createBranch:workflow().createBranch,adaptive:workflow().adaptive}:workflow(),
+    ...(opts.localWorkers?{async startLocalWorkers(){
+     events.push("start-workers");
+     return {sdk:workflow().sdk,async close(){events.push("close-workers");}};
+    }}:{}),
     async prepareNativeEffects(admitted){
      assert.equal(admitted,gateway);
      events.push("prepare-effects");
@@ -222,4 +227,11 @@ test("native authorization installation failure retires the original Host before
  const f=fixture(t,{installAuthorization:true,failInstall:true});
  await assert.rejects(f.handoff.runApprovedCanonical(),/native authorization install failed/u);
  assert.deepEqual(f.events,["root","admission","prepare-effects","bind","install","retire"]);
+});
+
+test("local A2A workers start after Gateway binding and close on workflow failure",async t=>{
+ const f=fixture(t,{localWorkers:true,installAuthorization:true,failCanonical:true});
+ await assert.rejects(f.handoff.runApprovedCanonical(),/original Gateway provider failed/u);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","install",
+  "start-workers","canonical","close-workers","retire"]);
 });

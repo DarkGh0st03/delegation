@@ -143,6 +143,13 @@ preliminary Root. After signed review, the bootstrap reserves the index
 durably and generates a fresh credential ID. The original Engineer host
 still issues the Root through Rust.
 
+For local A2A, provide `localWorkers` with a private `directory` and
+`workers` entries for Backend, Frontend and Test. Each entry supplies a
+distinct loopback port and trusted ADK configuration. Omit `workflow.sdk`
+in this mode. After Gateway binding, the owner starts the role-pinned
+workers and hands their private channel pins to the existing SDK launcher.
+The handoff closes the local listeners on completion or failure.
+
 **Not yet complete:** the executable owner process needs its
 trusted operational `provision` implementation and a newly validated
 same-SHA full native E2E after the CLI/bootstrap migration. R381.8

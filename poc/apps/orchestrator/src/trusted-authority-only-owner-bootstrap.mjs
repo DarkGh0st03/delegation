@@ -43,6 +43,8 @@ import {assembleTrustedAuthorityOnlyNativeEffects}
  from "./trusted-authority-only-native-effects.mjs";
 import {createTrustedAuthorityOnlyRootEffectTransport}
  from "./trusted-authority-only-root-effect-transport.mjs";
+import {startTrustedAuthorityOnlyLocalA2AWorkers}
+ from "./trusted-authority-only-local-a2a-workers.mjs";
 import {prepareAuthorization} from "../../gateway/src/prepare.ts";
 import {executeAuthorization} from "../../gateway/src/execute.ts";
 import {persistStatusIndexReservation}
@@ -386,7 +388,8 @@ export async function createProtectedCanonicalOperationalProvision(
     operational?.rootReservation===undefined?"reserveRoot":"rootReservation",
     "completionObserver","workflow",
     operational?.nativeEffects===undefined?"prepareNativeEffects":"nativeEffects",
-    ...(Object.hasOwn(operational??{},"rootGateway")?["rootGateway"]:[])])||
+    ...(Object.hasOwn(operational??{},"rootGateway")?["rootGateway"]:[]),
+    ...(Object.hasOwn(operational??{},"localWorkers")?["localWorkers"]:[])])||
     (operational.rootReservation===undefined&&typeof operational.reserveRoot!=="function")||
     (operational.nativeEffects===undefined&&
      typeof operational.prepareNativeEffects!=="function")||
@@ -400,6 +403,13 @@ export async function createProtectedCanonicalOperationalProvision(
   await prepareOperationalRootReservation(authority,operational.rootReservation);
  const assembleEffects=operational.nativeEffects===undefined?undefined:
   await prepareCanonicalNativeEffects(authority,operational.nativeEffects);
+ const {localWorkers}=operational;
+ if(Object.hasOwn(operational,"localWorkers")&&
+    (!localWorkers||(!exact(localWorkers,["directory","workers"])&&
+     !exact(localWorkers,["directory","workers","a2aPolling"]))||
+     Object.hasOwn(workflow,"sdk")))
+  deny();
+ const workerOptions=localWorkers?{...localWorkers,native:true}:undefined;
  const {rootGateway}=operational;
  if(Object.hasOwn(operational,"rootGateway")&&
     (!assembleEffects||!exact(rootGateway,["audit","verifier","policy","executor"])||
@@ -438,7 +448,10 @@ export async function createProtectedCanonicalOperationalProvision(
   if(consumed)deny();
   consumed=true;
   const root=await reserveRoot();
-  if(!assembleEffects)return {root,dependencies,workflow,
+  const local=workerOptions?{
+   startLocalWorkers:()=>startTrustedAuthorityOnlyLocalA2AWorkers(workerOptions)
+  }:{};
+  if(!assembleEffects)return {root,dependencies,workflow,...local,
    prepareNativeEffects:operational.prepareNativeEffects};
   let effects,authorization;
   const withRootTransport=effect=>{
@@ -458,7 +471,7 @@ export async function createProtectedCanonicalOperationalProvision(
    return {...effect,...transport};
   };
   return {
-   root,dependencies,
+   root,dependencies,...local,
    workflow:rootGateway?{
     ...workflow,createBranch:withRootTransport(workflow.createBranch),
     ...(workflow.draftPullRequest?{draftPullRequest:withRootTransport(workflow.draftPullRequest)}:{})

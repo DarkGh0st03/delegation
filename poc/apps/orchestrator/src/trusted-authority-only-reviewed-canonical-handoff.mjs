@@ -47,9 +47,10 @@ function validatedProof(proof,sessionId,baseRevision,planDigest,engineerDid){
 }
 function validatedProvision(result){
  const required=["root","dependencies","workflow","prepareNativeEffects"];
- if((!exact(result,required)&&
-     (!exact(result,[...required,"installNativeAuthorization"])||
-      typeof result.installNativeAuthorization!=="function"))||
+ if(!allowed(result,[...required,"installNativeAuthorization","startLocalWorkers"])||
+    !required.every(key=>Object.hasOwn(result,key))||
+    ["installNativeAuthorization","startLocalWorkers"].some(key=>
+     Object.hasOwn(result,key)&&typeof result[key]!=="function")||
     typeof result.prepareNativeEffects!=="function"||
     !exact(result.root,ROOT_KEYS)||
     typeof result.root.credential_id!=="string"||
@@ -63,7 +64,7 @@ function validatedProvision(result){
     DEPS.some(k=>!Object.hasOwn(result.dependencies,k))||
     typeof result.dependencies.nativeCryptoPort?.issueChildViaPrivateMcp!=="function"||
     !allowed(result.workflow,WORKFLOW_KEYS)||
-    !object(result.workflow.sdk)||
+    (result.startLocalWorkers?Object.hasOwn(result.workflow,"sdk"):!object(result.workflow.sdk))||
     !object(result.workflow.adaptive)||
     !object(result.workflow.createBranch)||
     typeof result.workflow.createBranch.prepare!=="function"||
@@ -171,7 +172,16 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
      await owned.installNativeAuthorization?.();
      if(closed||reviewHost.phase!=="operational"||!liveNative())
       deny("original Executor retired before canonical execution");
-     const result=await execution.runCanonicalOperationalWorkflow(owned.workflow);
+     let workers,result;
+     try{
+      workers=await owned.startLocalWorkers?.();
+      if(closed||reviewHost.phase!=="operational"||!liveNative())
+       deny("original Executor retired during local worker startup");
+      result=await execution.runCanonicalOperationalWorkflow(workers?
+       {...owned.workflow,sdk:workers.sdk}:owned.workflow);
+     }finally{
+      await workers?.close();
+     }
      if(closed)deny("original Review Host retired during execution");
      return result;
     }catch(e){

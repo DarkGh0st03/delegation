@@ -15,8 +15,8 @@ import {TrustedOperationalRecoveryStore}
  from "../src/trusted-operational-recovery-store.ts";
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop}
  from "../src/trusted-authority-only-adaptive-work-loop.mjs";
-import {startSpecializedAgentServer}
- from "../../agent-runtime/src/server.ts";
+import {startTrustedAuthorityOnlyLocalA2AWorkers}
+ from "../../../apps/orchestrator/src/trusted-authority-only-local-a2a-workers.mjs";
 import {startTrustedAuthorityOnlySdkA2AOwner}
  from "../src/trusted-authority-only-a2a-owner.ts";
 import {mkdtemp,mkdir,writeFile,readdir,rm} from "node:fs/promises";
@@ -96,9 +96,6 @@ import {DelegationEvidenceHandler}
  from "../../agent-runtime/src/delegation-evidence-handler.ts";
 import {LocalCryptoMcpBridge}
  from "../../agent-runtime/src/local-crypto-mcp-bridge.ts";
-import {connectTrustedOwnerEffectStagingClient,
- createTrustedEffectAgentBindingServer}
- from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 assert.equal(process.env.R233_NATIVE_EVM,"1");
 assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
@@ -653,8 +650,8 @@ try{
   authorityOnlyAdmissions:gate,nowMs,...nativeEffects.authorization};
  // R375: three distinct pairs of role-pinned HMAC IPC channels; separate
  // agent registries and signing keys, but one original native Engineer root.
- const roles=["backend","frontend","test"],stageChannels={},agentBindingChannels={};
- const registries={},bindingServers=[],roleServers=[],urls={},events=[],prepared=[];
+ const roles=["backend","frontend","test"],events=[],prepared=[];
+ let localWorkers;
  const backendReferenceFiles=backendFiles.map(file=>Object.freeze({
   path:file,
   previous:file===backendPath?backendNewContent:
@@ -787,28 +784,6 @@ try{
  };
  let owner;
  try{
-  for(const role of roles){
-   const stageSocket=path("stage-"+role+".sock");
-   const stageSecret=path("stage-"+role+".hex");
-   const bindingSocket=path("bind-"+role+".sock");
-   const bindingSecret=path("bind-"+role+".hex");
-   for(const secretFile of [stageSecret,bindingSecret])
-    await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
-     {mode:0o600,flag:"wx"});
-   stageChannels[role]={socketPath:stageSocket,secretFile:stageSecret};
-   agentBindingChannels[role]={socketPath:bindingSocket,
-    secretFile:bindingSecret};
-   const registry=new TrustedEffectStagingTaskRegistry();
-   registries[role]=registry;
-   const stageClient=await connectTrustedOwnerEffectStagingClient({
-    socketPath:stageSocket,secretFile:stageSecret
-   });
-   const binder=await createTrustedEffectAgentBindingServer({
-    socketPath:bindingSocket,secretFile:bindingSecret,
-    registry,ownerStageClient:stageClient,expectedRole:role
-   });
-   bindingServers.push(binder);await binder.start();
-  }
   let testSignedVp=null;
   const gatewayTransport=async(url,init)=>{
    // Same original Gateway implementation. Observe the transport entry
@@ -862,32 +837,23 @@ const tool=record?.request?.tool,role=record?.agent_role;
    }
    throw Error("unrecognized Gateway route");
   };
+  const workers={};
+  const ports=new Set();
   for(const role of roles){
-   const opts={role,host:"127.0.0.1",port:await freeRolePort(),
-    capabilityProfile:"approved-plan",delegatedAuthorization:true};
-   if(["backend","frontend","test"].includes(role)){
-    const keys=generateKeyPairSync("ed25519");
-    opts.mcpTaskSigning={
-     signingPrivateKeyPem:keys.privateKey.export({
-      type:"pkcs8",format:"pem"}).toString(),
-     signingPublicKeyPem:keys.publicKey.export({
-      type:"spki",format:"pem"}).toString()
-    };
-    // R382.3: original trusted Owner verifies the actual native signer DID,
-    // not the old synthetic did:thesis:* demo Agent Card identity.
-    if(r3818NativeMcp)
-     opts.nativeSignerDid=process.env["ADAPTER_ID_"+role.toUpperCase()];
-    opts.adk={
-     model:models[role],gatewayBaseUrl:"http://gateway.fixture.invalid",
-     adapterToken:tokens[role],maxModelTurns:4,maxModelCallMs:15000,
-     gatewayTimeoutMs:role==="test"?900000:60000,scopeModelPaths:true,
-     trustedEffectTaskRegistry:registries[role],fetchFn:gatewayTransport,
-     ...(r3818NativeMcp?{nativePresentationTransport:"mcp-stdio"}:{})
-    };
-   }
-   const server=await startSpecializedAgentServer(opts);
-   roleServers.push(server);urls[role]=server.baseUrl;
+   let port;
+   do{port=await freeRolePort();}while(ports.has(port));
+   ports.add(port);
+   workers[role]={port,adk:{
+    model:models[role],gatewayBaseUrl:"http://gateway.fixture.invalid",
+    adapterToken:tokens[role],maxModelTurns:4,maxModelCallMs:15000,
+    gatewayTimeoutMs:role==="test"?900000:60000,scopeModelPaths:true,
+    fetchFn:gatewayTransport
+   }};
   }
+  localWorkers=await startTrustedAuthorityOnlyLocalA2AWorkers({
+   directory:parent,workers,native:r3818NativeMcp,
+   a2aPolling:{deadlineMs:960000,initialIntervalMs:40,maxIntervalMs:1000}
+  });
   assert.equal(models.backend.requests.length,0);
   assert.equal(models.frontend.requests.length,0);
   // R375.2 no registered Task nor native Child before this real SDK
@@ -1098,8 +1064,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
      return branchTransport.execute({request,prepared});
     }
    },
-   sdk:{stageChannels,agentBindingChannels,agentBaseUrls:urls,
-    a2aPolling:{deadlineMs:960000,initialIntervalMs:40,maxIntervalMs:1000}},
+   sdk:localWorkers.sdk,
    adaptive:{model:controller,maxSteps:15+decisionOffset,
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
@@ -1309,8 +1274,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   DelegationEvidenceHandler.prototype.createPresentation=originalCreate;
   LocalCryptoMcpBridge.prototype.createSignedPresentation=originalMcpBridge;
   const results=await Promise.allSettled([
-   host.close(),...bindingServers.reverse().map(b=>b.close()),
-   ...roleServers.reverse().map(s=>s.close()),
+   host.close(),localWorkers?.close(),
    new Promise((resolve,reject)=>
     runnerServer.close(err=>err?reject(err):resolve()))
   ]);
