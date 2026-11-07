@@ -86,6 +86,7 @@ jobs:
           node --experimental-strip-types --test poc/apps/gateway/test/gitea-update-head-cas.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/gitea-create-head-cas.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-authority-only-create-preflight.test.ts
+          node --experimental-strip-types --test poc/apps/gateway/test/trusted-gitea-create-evidence.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-gitea-mutation-evidence.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-runner-intent-journal.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-runner-pass.test.ts
