@@ -642,6 +642,17 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
         !fields(input,['sdk','adaptive','draftPullRequest','createBranch']))
       deny('canonical launch requires original activated and live Engineer owner');
+     // R382.4: authority-only is an original trusted host choice, not
+     // a model-controlled fallback. The single canonical live launcher
+     // requires the original independently attested Branch and private
+     // Rust MCP Child issuer from the R3818 same-SHA native PASS.
+     // No legacy Signed DAG, direct Child fallback or optional Branch
+     // shortcut can be used in this explicitly selected profile.
+     if(process.env.DELEGATION_GATEWAY_ARCHITECTURE==='authority-only'&&
+        (!nativePrivateMcp||
+         process.env.APPROVED_RUNNER_NATIVE_MCP!=='1'||
+         !input.createBranch))
+      deny('canonical authority-only requires native MCP Child and original Branch');
      return runTrustedAuthorityOnlyOperationalWorkflow({
       execution:executionHandle,...input
      });
