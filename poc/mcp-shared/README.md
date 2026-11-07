@@ -173,6 +173,34 @@ not an independent native EVM/OPA/Gitea/Docker green run** and does
 not authorize the final launcher or paid Gemini pilot. The native
 R375 end-to-end workflow is not yet an opt-in proof of this path.
 
+## R381.8 — single-checkpoint original Review Host native MCP proof
+
+The existing full-stack R375 proof now accepts the **explicit**
+`R3818_CANONICAL_NATIVE_MCP=1` test-only mode. The default historical
+R375 mode is unchanged. In this mode, the original signed Engineer
+Review Host passes `privateChildMcpTransport:"native-stdio"` to its
+native Rust Child issuer, while the three protected A2A/ADK agent
+hosts (Backend, Frontend and Test) choose
+`nativePresentationTransport:"mcp-stdio"`. Each role's VP goes
+through its existing private Task-bound `LocalCryptoMcpBridge`,
+then an isolated MCP stdio process, and finally the **same** original
+Rust socket signer. Direct Engineer root issuance/revocation and
+direct Gateway Rust/EVM/OPA verification remain unmodified.
+
+A dedicated no-paid-AI workflow
+`.github/workflows/r3818-canonical-private-native-mcp-e2e.yml`
+boots disposable Anvil/OPA/Gitea/Docker and runs this scenario with
+scripted agents: original Main immutable, authenticated Branch,
+real Backend/Frontend/Test writes and Docker FAIL/recovery/PASS,
+independent provider evidence and one Draft PR (no merge).
+The workflow checks every Child uses the MCP path and each of the
+three roles issues at least one MCP-signed VP. It requires a separate
+explicit checkpoint file to run on push rather than rerunning the
+expensive native suite on every commit. A workflow file is **not**
+itself a successful run: only an observed same-SHA GitHub Actions
+PASS qualifies as R381.8 evidence. This is not autonomous Gemini
+coding and never authorizes a paid pilot.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
