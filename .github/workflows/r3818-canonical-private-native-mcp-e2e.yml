@@ -76,6 +76,7 @@ jobs:
           node --test poc/apps/orchestrator/test/trusted-authority-only-operational-launcher.test.mjs
       - name: R3818 free native MCP Task and Review Host preflight (no model inference)
         run: |
+          node --test poc/scripts/test/verify-r3818-native-mcp-proof.test.mjs
           node --experimental-strip-types --test poc/mcp-shared/test/owner-private-native-crypto-stdio.test.ts
           node --experimental-strip-types --test poc/packages/agent-runtime/test/native-crypto-ipc.test.ts poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/canonical-a2a-no-http-worker.test.ts poc/apps/a2a-agent/test/mcp-tool-flags.test.ts
           node --experimental-strip-types --test --test-name-pattern="R381.7" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
@@ -176,34 +177,18 @@ jobs:
         env:
           DELEGATION_GATEWAY_ARCHITECTURE: authority-only
         run: |
+          set -euo pipefail
+          test "$R3818_CANONICAL_NATIVE_MCP" = "1"
+          test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
           set -a
           source poc/infra/runtime/gateway.env
           source poc/infra/runtime/runner.env
           set +a
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
           node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs | tee "$RUNNER_TEMP/r3818-proof.jsonl"
-          node -e '
-          const fs=require("node:fs"),assert=require("node:assert/strict");
-          const rows=fs.readFileSync(process.argv[1],"utf8").split(/\r?\n/).filter(Boolean);
-          const result=rows.map(line=>{try{return JSON.parse(line);}catch{return null;}})
-           .filter(row=>row?.event==="r375_original_protected_main_functional_native_docker_pass_draft_pr");
-          assert.equal(result.length,1,"one canonical original-Review-Host native E2E proof required");
-          const e=result[0];
-          for(const key of ["r3818_canonical_private_mcp_native_signing",
-           "native_rust_evm","real_opa","original_main_immutable",
-           "original_root_pr_created","independent_pr_get",
-           "pr_draft","pr_open","researcher_acceptance_pass"])
-           assert.equal(e[key],true,key);
-          assert.equal(e.first_docker_status,"fail");
-          assert.equal(e.second_docker_status,"pass");
-          assert.equal(e.pr_merged,false);
-          assert.equal(e.paid_model_calls,0);
-          assert.ok(e.native_mcp_child_issuances>=3);
-          assert.equal(e.native_mcp_child_issuances,e.distinct_child_credentials);
-          for(const role of ["backend","frontend","test"])
-           assert.ok(e.native_mcp_presentations_by_role?.[role]>0,role);
-          console.log(JSON.stringify({event:"r3818_canonical_private_mcp_original_rust_validated",status:"pass",paid_model_calls:0}));
-          ' "$RUNNER_TEMP/r3818-proof.jsonl"
+          node poc/scripts/verify-r3818-native-mcp-proof.mjs "$RUNNER_TEMP/r3818-proof.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only
