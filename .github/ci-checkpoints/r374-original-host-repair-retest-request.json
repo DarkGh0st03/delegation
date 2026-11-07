@@ -1,16 +1,14 @@
 {
-  "checkpoint": "R374.1",
-  "source_commit": "274b14f3da18b394c0a6c51375b01af72efdafe3",
-  "correction": "Point the native workflow's push.paths at the actual new R374 checkpoint JSON path; previous R374.0 workflow was not triggered because of path mismatch.",
-  "runtime_and_security": "unchanged from R374.0, no paid model, one original Engineer grant, 2 real Runner FAILs pending validation",
-  "expected": {
-    "registered_tasks": 6,
-    "gateway_completed": 4,
-    "child_credentials": 5,
-    "cas_writes": 3,
-    "runner_failed_posts": 2,
-    "fail_receipts": 2,
-    "pr_created": false
+  "checkpoint": "R374.2",
+  "preceding_native_attempt": {
+    "run": 42348061028,
+    "sha": "c52e0f9fe2c393a4e78efc22317fed1cad941b12",
+    "outcome": "FAIL after first authentic Docker acceptance FAIL, before FE repair"
   },
-  "validation": "Native workflow + Fast CI on same HEAD"
+  "root_cause": "Original Child issuer correctly rejects a reused validity_start older than 60s. Fixture params were precomputed at Engineer approval time, whereas real Runner elapsed ~84 seconds before model-selected FE repair Child issuance.",
+  "correction": "Construct fresh dynamic Child valid_from at model-selected Task epoch via current ISO timestamp, keeping original Engineer signed root expiry unchanged and every Child duration bounded. Do not alter Rust issuer, OPA/Gateway, grant, existing native root or model recovery budget.",
+  "expected": "2 authenticated real Docker FAILs, model-selected Frontend D1 CAS, 5 distinct Child credentials, 6 registered Tasks/4 independently completed, two incomplete Test tasks, no PR/paid calls.",
+  "checkpoint_phase": "native CI pending",
+  "fast_ci_first_commit": "42348060949 SUCCESS",
+  "no_paid_inference": true
 }

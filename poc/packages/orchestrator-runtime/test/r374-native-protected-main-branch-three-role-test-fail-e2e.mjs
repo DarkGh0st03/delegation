@@ -352,6 +352,16 @@ try{
    credential_id:id,valid_from:issuedAt,validity_seconds:duration,
    credential_status:status(index)
   });
+  // The original native Child issuer rejects timestamps older than 60s.
+  // The first true Docker FAIL takes >60s; refresh only Child *start
+  // metadata* at the actual owner model-selected epoch, not the signed
+  // Engineer grant, root authority, expiry or permitted operations.
+  const freshChildParams=(id,index,duration)=>({
+   credential_id:id,
+   valid_from:new Date().toISOString().slice(0,19)+"Z",
+   validity_seconds:duration,
+   credential_status:status(index)
+  });
   const preliminary=params("urn:r374:preliminary",29151,360);
   const operational=params("urn:r374:operational",29152,1800);
   const planningKey=generateKeyPairSync("ed25519");
@@ -995,15 +1005,15 @@ const tool=record?.request?.tool,role=record?.agent_role;
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
      if(epoch===2&&agent_id==="backend")
-      return params("urn:r374:child:backend",29153,600);
+      return freshChildParams("urn:r374:child:backend",29153,600);
      if(epoch===3&&agent_id==="frontend")
-      return params("urn:r374:child:frontend",29154,600);
+      return freshChildParams("urn:r374:child:frontend",29154,600);
      if(epoch===4&&agent_id==="test")
-      return params("urn:r374:child:test",29155,1200);
+      return freshChildParams("urn:r374:child:test",29155,1200);
      if(epoch===5&&agent_id==="frontend")
-      return params("urn:r374:child:frontend-repair",29156,1200);
+      return freshChildParams("urn:r374:child:frontend-repair",29156,1200);
      if(epoch===6&&agent_id==="test")
-      return params("urn:r374:child:retest",29157,1200);
+      return freshChildParams("urn:r374:child:retest",29157,1200);
      throw Error("Original Host denied unexpected Child metadata");
     }}
 

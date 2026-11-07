@@ -50,3 +50,7 @@ same SHA.
 ## R374.1 CI trigger correction
 
 The first R374.0 commit incorrectly configured the new native workflow to watch a checkpoint JSON filename that did not exist. Only Fast CI started; **native validation had not run**. R374.1 corrects that trigger path and refreshes the request checkpoint. No runtime or signing/Runner code is changed. Native SUCCESS remains unproven until the new CI completes.
+
+## R374.2 — fresh Child timestamps at each original epoch
+
+The native R374.1 attempt [#42348061028](https://github.com/DarkGh0st03/delegation/actions/runs/42348061028) produced the **first authenticated real Docker FAIL** but subsequently refused a new Frontend repair Child with the native issuer guard `Child cannot outlive current Engineer operational root`. The original issuer also correctly requires `abs(Child.valid_from - now) <= 60 seconds`; the fixture incorrectly reused the root-approval timestamp for Child issuances after a Docker run lasting more than a minute. R374.2 refreshes **only per-Child dynamic valid_from at the moment the original Review Host asks for a new Child**, preserving the signed Engineer grant, root expiry, original 600–1200 second Child durations, Rust issuance checks, OPA, Runner evidence and fail-closed behavior. The new native checkpoint must verify whether recovery and retest can progress, and is not yet SUCCESS.
