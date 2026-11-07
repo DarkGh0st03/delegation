@@ -164,6 +164,14 @@ test("R382.7 refuses world-readable and symlinked manifest and foreign signer",a
  process.env.ADAPTER_ID_BACKEND="did:ethr:wrong";
  await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
 });
+test("R382.7 independently rejects an Engineer private key mismatched to signed review public key",async t=>{
+ const f=await fixture(t);
+ const foreign=generateKeyPairSync("ed25519");
+ await writeFile(f.config.approval.privateKeyFile,
+  foreign.privateKey.export({format:"pem",type:"pkcs8"}),{mode:0o600});
+ await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
+});
+
 test("R382.7 forbids CI, missing native Rust, no explicit architecture and forged loaded authority",async t=>{
  const f=await fixture(t);
  process.env.GITHUB_ACTIONS="true";
