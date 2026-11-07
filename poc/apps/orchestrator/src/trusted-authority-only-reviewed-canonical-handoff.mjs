@@ -46,7 +46,8 @@ function validatedProof(proof,sessionId,baseRevision,planDigest,engineerDid){
   proof.dag_executed===false;
 }
 function validatedProvision(result){
- if(!exact(result,["root","dependencies","workflow"])||
+ if(!exact(result,["root","dependencies","workflow","prepareNativeEffects"])||
+    typeof result.prepareNativeEffects!=="function"||
     !exact(result.root,ROOT_KEYS)||
     typeof result.root.credential_id!=="string"||
     result.root.credential_id.length<1||
@@ -154,8 +155,16 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
      });
      if(closed||reviewHost.phase!=="operational"||!liveNative())
       deny("original Executor retired after native MCP admission");
-     if(typeof execution?.runCanonicalOperationalWorkflow!=="function")
+     if(!execution?.gateway||
+        typeof execution.bindNativeGatewayEffects!=="function"||
+        typeof execution.runCanonicalOperationalWorkflow!=="function")
       deny("original Review Host canonical launcher unavailable");
+     // The native ports must be built for the newly admitted Gateway.
+     // The original Host verifies their identity before any Branch effect.
+     const effects=await owned.prepareNativeEffects(execution.gateway);
+     if(closed||reviewHost.phase!=="operational"||!liveNative())
+      deny("original Executor retired before native effect binding");
+     execution.bindNativeGatewayEffects(effects);
      const result=await execution.runCanonicalOperationalWorkflow(owned.workflow);
      if(closed)deny("original Review Host retired during execution");
      return result;

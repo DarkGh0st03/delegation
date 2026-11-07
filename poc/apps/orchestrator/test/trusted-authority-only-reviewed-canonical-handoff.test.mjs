@@ -47,6 +47,8 @@ function fixture(t,opts={}){
  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
  const events=[];let phase="planning";let signed=true;
+ const gateway={};
+ const effects={};
  const host={
   readOnlySessionId:sessionId,
   get phase(){return phase;},
@@ -61,7 +63,11 @@ function fixture(t,opts={}){
    assert.equal(phase,"operational");
    assert.equal(deps.privateChildMcpTransport,"native-stdio");
    assert.equal(typeof deps.nativeCryptoPort.issueChildViaPrivateMcp,"function");
-   return {runCanonicalOperationalWorkflow:async input=>{
+   return {gateway,bindNativeGatewayEffects(input){
+    assert.equal(input,effects);
+    events.push("bind");
+    if(opts.failBinding)throw Error("foreign native Gateway effects");
+   },runCanonicalOperationalWorkflow:async input=>{
     events.push("canonical");
     assert.ok(input.createBranch,"original Branch is mandatory");
     if(opts.failCanonical)throw Error("original Gateway provider failed");
@@ -87,7 +93,12 @@ function fixture(t,opts={}){
   provision:async()=>{
    provisions++;
    return opts.provisionOverride??{
-    root:root(),dependencies:dependencies(),workflow:workflow()
+    root:root(),dependencies:dependencies(),workflow:workflow(),
+    async prepareNativeEffects(admitted){
+     assert.equal(admitted,gateway);
+     events.push("prepare-effects");
+     return effects;
+    }
    };
   }
  });
@@ -110,12 +121,12 @@ test("R382.5 original Engineer review -> one Root -> native MCP admission -> can
  assert.deepEqual(f.events,[]);
  const result=await f.handoff.runApprovedCanonical();
  assert.equal(result.pr_created,true);
- assert.deepEqual(f.events,["root","admission","canonical"]);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","canonical"]);
  assert.equal(f.provisions,1);
  assert.equal(f.handoff.status,"canonical_execution_selected");
  assert.throws(()=>f.handoff.runApprovedCanonical(),/already attempted/u);
  await f.handoff.close();await f.handoff.close();
- assert.deepEqual(f.events,["root","admission","canonical","retire"]);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","canonical","retire"]);
 });
 
 test("R382.5 unsigned review is retryable before any Rust Root or Gitea effect",async t=>{
@@ -126,7 +137,7 @@ test("R382.5 unsigned review is retryable before any Rust Root or Gitea effect",
  assert.deepEqual(f.events,[]);
  f.setSigned(true);
  assert.equal((await f.handoff.runApprovedCanonical()).pr_created,true);
- assert.deepEqual(f.events,["root","admission","canonical"]);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","canonical"]);
  await f.handoff.close();
 });
 
@@ -142,7 +153,7 @@ test("R382.5 mismatched immutable Planning digest or Engineer DID denies before 
 test("R382.5 malformed private native MCP port cannot activate Root",async t=>{
  const broken=dependencies();broken.nativeCryptoPort={issueChild:async()=>({})};
  const f=fixture(t,{provisionOverride:{root:root(),
-  dependencies:broken,workflow:workflow()}});
+  dependencies:broken,workflow:workflow(),prepareNativeEffects:async()=>({})}});
  await assert.rejects(f.handoff.runApprovedCanonical(),
   /original live Root, MCP native owner and Branch required/u);
  assert.equal(f.provisions,1);
@@ -154,7 +165,7 @@ test("R382.5 native provider failure retires original Root once and never retrie
  const f=fixture(t,{failCanonical:true});
  await assert.rejects(f.handoff.runApprovedCanonical(),
   /original Gateway provider failed/u);
- assert.deepEqual(f.events,["root","admission","canonical","retire"]);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","canonical","retire"]);
  assert.equal(f.provisions,1);
  assert.equal(f.handoff.status,"closing_or_closed");
  await f.handoff.close();
@@ -166,7 +177,7 @@ test("R382.5 uncertain original Root retirement cannot be reported as successful
  await assert.rejects(f.handoff.runApprovedCanonical(),
   /original Root retirement unconfirmed after ambiguous execution/u);
  assert.equal(f.provisions,1);
- assert.deepEqual(f.events,["root","admission","canonical","retire"]);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","canonical","retire"]);
 });
 
 test("R382.5 shutdown racing signed review prevents later Root activation",async t=>{
@@ -188,4 +199,10 @@ test("R382.5 refuses legacy/no-native host before reading any signature",t=>{
  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
  process.env.APPROVED_RUNNER_NATIVE_MCP="0";
  assert.throws(()=>f.handoff.runApprovedCanonical(),/already attempted/u);
+});
+
+test("R382.8 native Gateway binding failure prevents Branch and retires the original Host",async t=>{
+ const f=fixture(t,{failBinding:true});
+ await assert.rejects(f.handoff.runApprovedCanonical(),/foreign native Gateway effects/u);
+ assert.deepEqual(f.events,["root","admission","prepare-effects","bind","retire"]);
 });

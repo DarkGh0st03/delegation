@@ -89,6 +89,14 @@ operational Root, original native Child signer, Gateway journals,
 Branch-first SDK/ADK/A2A adaptive workflow and independent Runner/Gitea
 completion observer; it may not extend the reviewed permission ceiling.
 
+The callback returns `{root, dependencies, workflow, prepareNativeEffects}`.
+`prepareNativeEffects(gateway)` runs after the original Review Host
+activates the signed Root and admits the Gateway. Construct the Gitea and
+Runner dependencies for that Gateway and return the input required by
+`bindNativeGatewayEffects`. The Host verifies this binding before Branch
+creation or adaptive execution. Binding failure retires the original Host.
+
+
 `reviewReadiness()` is read-only and checks the original Engineer
 Ed25519 signature; `runApprovedCanonical()` is the sole one-shot
 approved operational entry. Neither runs automatically. If shutdown or
