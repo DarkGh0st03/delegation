@@ -10,6 +10,10 @@ const PROBE_PREFIX="[r3803-planning-probe] ";
 const DENIALS=new Set(["none","trusted_planning_read_failed",
  "outside_planning_scope","read_budget","planning_deadline",
  "composite_unavailable","other"]);
+const VERIFIER_PHASES=new Set([
+ "not_called","verified","native_result_invalid",
+ "native_verification_rejected","other"
+]);
 const GATEWAY_REASONS=new Set([
  "none","verification_rejected","verifier_unavailable","policy_denied",
  "provider_unavailable","trusted_binding_denied",
@@ -28,10 +32,12 @@ function boundedR3803Probe(stderr){
        "event","model_turns","verified_lists","verified_files",
        "denied_reads","first_denial","last_denial","rejected_proposals",
        "gateway_prepares","gateway_executions","gitea_reads",
-       "gateway_last_reason"
+       "gateway_last_reason","single_verifier","composite_verifier"
       ].sort().join("|")||
       !DENIALS.has(item.first_denial)||!DENIALS.has(item.last_denial)||
       !GATEWAY_REASONS.has(item.gateway_last_reason)||
+      !VERIFIER_PHASES.has(item.single_verifier)||
+      !VERIFIER_PHASES.has(item.composite_verifier)||
       ["model_turns","verified_lists","verified_files","denied_reads",
        "rejected_proposals","gateway_prepares","gateway_executions",
        "gitea_reads"].some(k=>!Number.isSafeInteger(item[k])||
@@ -47,7 +53,9 @@ function boundedR3803Probe(stderr){
      gateway_prepares:item.gateway_prepares,
      gateway_executions:item.gateway_executions,
      gitea_reads:item.gitea_reads,
-     gateway_last_reason:item.gateway_last_reason
+     gateway_last_reason:item.gateway_last_reason,
+     single_verifier:item.single_verifier,
+     composite_verifier:item.composite_verifier
    });
  }
  return null;
