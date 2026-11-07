@@ -19,6 +19,8 @@ import {TrustedGatewayRunnerFailEvidencePublisher,
 import {TrustedGatewayGiteaReadEvidencePublisher}
  from "../../gateway/src/trusted-authority-only-gitea-publisher.ts";
 import {TrustedGatewayRunnerPassEvidencePublisher} from "../../gateway/src/trusted-authority-only-runner-evidence.ts";
+import {assembleTrustedAuthorityOnlyNativeCreateEffects}
+ from "./trusted-authority-only-native-create-effects.mjs";
 
 /** Compose provider ports for the admitted Gateway without executing effects.
  * The Review Host must verify the binding before Branch or A2A execution.
@@ -28,6 +30,17 @@ export function assembleTrustedAuthorityOnlyNativeEffects({
  runnerClient,runnerPassObserver:runnerObserver,readObserver,repository,
  branch,evidenceKey,directories,nowMs
 }){
+ // R383.9: opt-in only with TWO separately prevalidated 0700 owner folders.
+ // Never reinterpret UPDATE evidence for a CREATE effect.
+ if((Object.hasOwn(directories,"createIntent")!==Object.hasOwn(directories,"createReceipts")))
+  throw Error("Native CREATE effects require both independent owner directories");
+ const create=Object.hasOwn(directories,"createIntent")
+  ?assembleTrustedAuthorityOnlyNativeCreateEffects({
+   gateway:gate,store,giteaClient:client,
+   independentGiteaClient:independentClient,repository,branch,
+   evidenceKey,createIntentDirectory:directories.createIntent,
+   createReceiptDirectory:directories.createReceipts,nowMs
+  }):undefined;
  const journal=new DurableAuthorityOnlyGiteaMutationIntentJournal(directories.mutationIntent);
  const preflight=new TrustedAuthorityOnlyGiteaMutationPreflight({
   admissions:gate,giteaClient:client,journal,repository,
@@ -97,12 +110,15 @@ export function assembleTrustedAuthorityOnlyNativeEffects({
   binding:Object.freeze({
    store,mutation:preflight,runner:runnerPreflight,giteaClient:client,
    mutationObserver:observer,...(readObserver===undefined?{}:{readObserver}),
+   ...(create?{create:create.preflight,createObserver:create.observer}:{}),
    runnerPassObserver:runnerObserver,failureObserver:failObserver,
    pullRequestExecutor:prExecutor,branchExecutor
   }),
   authorization:Object.freeze({
    authorityOnlyReadEnabled:true,authorityOnlyReceiptWriter:readPublisher,
    authorityOnlyMutationEnabled:true,authorityOnlyMutationExecutor:mutationExecutor,
+   ...(create?{authorityOnlyCreateEnabled:true,
+    authorityOnlyCreateExecutor:create.executor}:{}),
    authorityOnlyRunnerEnabled:true,authorityOnlyRunnerExecutor:runnerExecutor,
    authorityOnlyPullRequestEnabled:true,authorityOnlyPullRequestExecutor:prExecutor,
    authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:branchExecutor
