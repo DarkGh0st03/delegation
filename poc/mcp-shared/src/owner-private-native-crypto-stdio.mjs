@@ -124,8 +124,8 @@ async function runWorker(){
  if(!mode||!REF.test(ref??"")){process.exitCode=1;return;}
  // Loaded ONLY in the child process. The original Engineer's native Rust
  // addon remains the sole signing service, accessible by authenticated IPC.
- const {invokeNativeCrypto}=await import(
-  "../../packages/agent-runtime/src/native-crypto-ipc.ts");
+ const {invokeNativeCryptoWire}=await import(
+  "./native-rust-transport.mjs");
  let consumed=false;
  const server=new McpServer({
   name:"owner-private-native-rust-mcp",version:"0.1.0"
@@ -145,7 +145,7 @@ async function runWorker(){
    return {isError:true,content:[{type:"text",text:"request_denied"}]};
   consumed=true; // no retry even if native Rust response is ambiguous
   try{
-   const result=await invokeNativeCrypto({
+   const result=await invokeNativeCryptoWire({
     socketPath:socket_path,token:bearer_token,timeoutMs:timeout_ms
    },mode.operation,native_body);
    if(!object(result))throw Error("denied");
