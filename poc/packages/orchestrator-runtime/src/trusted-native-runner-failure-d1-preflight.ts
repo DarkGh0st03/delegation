@@ -169,7 +169,7 @@ export async function preflightNativeD1FailureCandidate(input:
     !Array.isArray(proposed.permissions)||proposed.permissions.length<1||
     proposed.permissions.length>32)
   deny("bounded, trusted owner-selected D1 candidate required");
- let effects=0;
+ let effects=0,creates=0;
  const seen=new Set<string>();
  for(const permission of proposed.permissions){
   if(!permission||Object.keys(permission).sort().join(",")!=="operation,resource"||
@@ -186,7 +186,7 @@ export async function preflightNativeD1FailureCandidate(input:
     deny("branch Runner effect must be a signed Test Task");
    effects++;continue;
   }
-  if(!["read_file","update_file"].includes(permission.operation)||
+  if(!["read_file","update_file","create_file"].includes(permission.operation)||
      proposed.role==="test")
    deny("unsupported D1 operation for specialized role");
   const prefix=branchUri+"/files/";
@@ -201,8 +201,17 @@ export async function preflightNativeD1FailureCandidate(input:
      canonicalFileUri(root.repository,root.branch,file)!==permission.resource)
    deny("noncanonical D1 path");
   if(permission.operation==="update_file")effects++;
+  if(permission.operation==="create_file"){
+   // A native CREATE cannot be hidden in a read/update or multi-file D1.
+   // Its independently pinned absence, O_EXCL intent and CAS/MAC evidence
+   // are checked only by the original owner after this preflight.
+   creates++;effects++;
+  }
  }
- if(effects!==1)deny("exactly one approved side effect per candidate Task");
+ if(effects!==1||creates>1||
+    (creates===1&&(proposed.permissions.length!==1||
+      !["backend","frontend"].includes(proposed.role))))
+  deny("exactly one approved side effect per candidate Task");
  const observed=await observeTrustedNativeTestFailure(input);
  return Object.freeze({
   ...observed,
