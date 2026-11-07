@@ -259,6 +259,42 @@ test("R294 missing outcome, unsigned, invented OPA or malformed signed claims fa
   await assert.rejects(reader().observe(expected),/precise permission boundary/);
  });
 });
+test("R376.2 only the independent authenticated read exposes a bounded source observation",async()=>{
+ await fixture(async({record,sign,save,reader})=>{
+  await save(sign(record()));
+  const observer=reader();
+  assert.equal(observer.isForRepository("thesis/iam-console-poc","feature/account-suspension"),true);
+  assert.equal(observer.isForRepository("foreign/iam-console-poc","feature/account-suspension"),false);
+  assert.equal(observer.isForRepository("thesis/iam-console-poc","feature/another"),false);
+  const value=await observer.observeSource(expected);
+  assert.equal(value.status,"owner_verified_bounded_gitea_source_observation");
+  assert.equal(value.task_id,expected.task_id);
+  assert.equal(value.runtime_task_id,expected.runtime_task_id);
+  assert.equal(value.path,"apps/backend/user.ts");
+  assert.equal(value.revision,revision);
+  assert.equal(value.source_sha256,sha(contents));
+  assert.equal(value.excerpt,contents);
+  assert.equal(value.excerpt_truncated,false);
+  assert.equal(value.evidence_sha256,(await observer.observe(expected)).evidence_sha256);
+ });
+});
+test("R376.2 diagnostic excerpt is bounded, controls sanitized and signed bytes immutable",async()=>{
+ await fixture(async({record,sign,save,reader})=>{
+  const long="const value = 1;\n"+"x".repeat(4700)+"\u0007";
+  await save(sign({...record(),source_sha256:sha(long),
+   source_bytes:Buffer.byteLength(long)}));
+  const observed=await reader({content:long}).observeSource(expected);
+  assert.equal(observed.excerpt.length,4096);
+  assert.equal(observed.excerpt_truncated,true);
+  assert.equal(observed.source_bytes,Buffer.byteLength(long));
+  await assert.rejects(reader({content:long+"modified"}).observeSource(expected),
+   /contents do not match/u);
+  await assert.rejects(reader({revision:"f".repeat(40)}).observeSource(expected),
+   /HEAD differs/u);
+  await assert.rejects(reader({key:Buffer.alloc(32,23)}).observeSource(expected),
+   /authentication failed/u);
+ });
+});
 test("R294 symlinked evidence file cannot impersonate Gateway-owned record",async()=>{
  await fixture(async({directory,record,sign,save,reader})=>{
   await save(sign(record()));
