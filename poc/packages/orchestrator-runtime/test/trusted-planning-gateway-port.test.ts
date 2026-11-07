@@ -9,6 +9,8 @@ import {execFileSync} from "node:child_process";
 import {mkdtemp,mkdir,rm,readFile,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
+import {giteaPermissionCovers}
+  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import {makeApproval} from "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {signEngineerApproval} from "../../plan-contracts/src/signed-approval.mjs";
@@ -320,8 +322,11 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
       if(!permission||permission.audience!==input.audience||
          permission.challenge!==input.challenge||
          permission.permissions.length!==1||
-         permission.permissions[0].operation!==input.required_permission.operation||
-         permission.permissions[0].resource!==input.required_permission.resource)
+         !permission.permissions.some(p=>
+           p.operation===input.required_permission.operation&&
+           (p.resource===input.required_permission.resource||
+            ((options.hierarchicalPlanning||options.dynamicDiscovery)&&
+             giteaPermissionCovers(p,input.required_permission)))))
         throw Error("Fixture proof binding rejected");
       return {presenter_id:"did:thesis:orchestrator",
         credential_id:rootId,issuer_id:"did:thesis:engineer",
@@ -333,10 +338,11 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
       const signedProof=signed.get(input.signed_vp);
       if(!signedProof||signedProof.audience!==input.audience||
          signedProof.challenge!==input.challenge||
-         signedProof.permissions.length!==input.required_permissions.length||
-         input.required_permissions.some((p,i)=>
-           p.operation!==signedProof.permissions[i].operation||
-           p.resource!==signedProof.permissions[i].resource))
+         input.required_permissions.some(p=>!signedProof.permissions.some(q=>
+           p.operation===q.operation&&
+           (p.resource===q.resource||
+            ((options.hierarchicalPlanning||options.dynamicDiscovery)&&
+             giteaPermissionCovers(q,p)))))
         throw Error("Fixture composite proof binding rejected");
       return {presenter_id:"did:thesis:orchestrator",
         credential_id:rootId,issuer_id:"did:thesis:engineer",
@@ -415,6 +421,12 @@ function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:numb
       const permissions=body.disclosed_permissions as Array<{
         resource:string;operation:string}>;
       assert.ok(permissions.length>=1);
+      if(options.hierarchicalPlanning||options.dynamicDiscovery){
+        const signedOriginal=preliminaryReadPermissions(planningSnapshot);
+        assert.ok(permissions.every(p=>signedOriginal.some(root=>
+          root.operation===p.operation&&root.resource===p.resource)),
+          "R380.3 must disclose only exact Root permissions, never invented leaves");
+      }
       const token="fixture-signed-vp-"+observed.adapter;
       signed.set(token,{permissions:permissions.map(p=>({...p})),
         challenge:String(body.challenge),audience:String(body.audience)});
