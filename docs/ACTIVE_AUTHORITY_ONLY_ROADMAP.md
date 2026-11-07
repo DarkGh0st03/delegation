@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R384.4 root coverage preflight)
+## Piano attivo — aggiornato all'8 novembre 2026 (R384.4 native FAIL→PASS, scripted)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,56 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R384.3 native Backend→Frontend→Docker FAIL→Backend CREATE D1→Docker FAIL SUCCESS SHA `8edd5afe`, native run #42421634065 + Fast CI #42421634061. Recovery sicuro multi-Task provato, PASS funzionale NON provato. R384.4: audit test-owner-only dei file richiesti dal percorso di riferimento, senza ampliare la Root o avviare Gemini.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R384.4 E2E scripted FAIL→CREATE D1→CAS→Docker PASS e Draft PR attestata: esecuzione e sicurezza provate. Autonomia del codice generato da Gemini NON dimostrata. Budget e recovery generale da consolidare.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.3 nativo e Fast CI 2/2 SUCCESS sulla stessa SHA `8edd5afe` (runs #42421634065 / #42421634061); sono PASS architetturali con due FAIL di accettazione verificati. R384.4 Fast CI audit permessi funzionali sulla SHA corrente da confermare; resta l'E2E nativo FAIL→PASS.** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 native SUCCESS su `81ad3fdd` (run #42423327568); Fast CI SUCCESS sulla SHA successiva `f236a4dd` (run #42423579107). Non sono due gate verdi sulla stessa HEAD. Ripetere validazione completa dopo il cleanup.** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R384.4 — Esito nativo funzionale acquisito (8 novembre 2026; NO Gemini)
+
+**Checkpoint di esecuzione scripted, non prova di autonomia generativa.**
+Il workflow [R384.4 native #42423327568](https://github.com/DarkGh0st03/delegation/actions/runs/42423327568)
+ha **conclusion: success** sulla SHA
+`81ad3fdd2efa2426a507c6b1ff38286764e5a3b0`.
+L'evidenza strutturata del checkpoint
+`.github/ci-checkpoints/r3844-functional-create-d1-pass-request.json`
+attesta un percorso offline con Root Engineer nuovamente firmata e limitata
+ai file necessari, Backend/Frontend iniziali, Test Docker con FAIL autentico,
+CREATE Backend D1, Task distinti di correzione con CAS,
+nuovo Docker/acceptance PASS sulla HEAD corrente e Draft PR attestata
+senza merge. Il codice correttivo è **scripted reference/fixture** e non
+è stato scritto autonomamente da Gemini; `paid_model_calls=0`.
+
+Secondo il report tecnico R384.4 risultano 15 Child Rust/MCP,
+12 CAS, una CREATE D1, 17 Task registrati (16 completati) e
+due chiamate al Runner. Le prove del Runner devono restare legate
+alla SHA effettivamente testata e verificabili indipendentemente.
+
+La [Fast CI #42423579107](https://github.com/DarkGh0st03/delegation/actions/runs/42423579107)
+è **success** sulla HEAD successiva
+`f236a4dd55a3525a9fd7d0df4cc612a423b32cea`.
+**Non dichiarare** un gate E2E + Fast CI sulla stessa HEAD:
+il native PASS appartiene a `81ad3fdd`, la Fast CI a `f236a4dd`.
+Una nuova verifica sulla SHA finale sarà necessaria **dopo il cleanup**.
+
+**Priorità operative successive (senza chiamate Gemini a pagamento):**
+1. Consolidare la decisione adattiva e le prove di recovery senza introdurre
+   repair hardcoded. I limiti del Work Loop sono `maxSteps<=16`,
+   history di FAIL fino a 2 e osservazioni sorgente fino a 4:
+   valutare budget configurabili **solo dal trusted owner**, preservando
+   fail-closed per errori ambigui, revoca e permission insufficiente.
+2. Confermare un singolo launcher authority-only, MCP nativo, card e
+   FunctionTools, senza fallback al Signed DAG operativo.
+3. Inventariare import statici/dinamici, workflow e test legacy;
+   eliminare gradualmente solo ciò che non protegge più contratti attivi.
+4. Validare dopo il cleanup Fast CI, security regressions ed E2E
+   nativo sulla **medesima SHA**. Solo allora valutare il pilot
+   generativo **previo consenso esplicito ai costi**.
+5. GUI/dimostratore dopo il pilot; mantenere la PR #38 Draft e
+   `main` invariato.
 
 ### R384.4 — Copertura minima della Root per un PASS funzionale (audit offline, NON autorizzante)
 
