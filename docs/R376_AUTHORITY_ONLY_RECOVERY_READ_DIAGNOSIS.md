@@ -48,20 +48,63 @@ Test completed. Existing R375 full-stack success remains a separate
 pinned baseline; no new native R376 E2E PASS or generative Gemini success
 is claimed from these tests.
 
-## Next mandatory R376 gates
+## R376.2: authenticated bounded source observations
 
-1. Provide **independently authenticated, bounded diagnostic observations**
-   from an authorized Gateway source read (path, tested HEAD, content
-   excerpt/digest, optional structured compiler or acceptance details).
-   Do not treat A2A messages or model-generated prose as evidence or bypass
-   the Gateway with unscoped owner Gitea access.
-2. Prove that the adaptive proposer receives these observations as
-   *untrusted task data* (not instructions or authority), rechecks the
-   same original root, and can select a different permitted correction.
-3. Run a free native scenario with a **model-selected read-only Task**,
-   a distinct signed Child, authenticated Gateway read completion, and
-   a subsequent model-selected correction and real Docker retest.
-4. Only then consider the authorized paid Gemini pilot after its existing
-   cost, CI and explicit-consent gates.
+The original Gateway now has an owner-only *post-completion* binding for a
+one-shot read-only Task, including its exact original Child and evidence
+digest. Neither source paths nor provider success are accepted from ADK/A2A.
 
-No paid inference, automatic merge or `main` mutation belongs to R376.
+The existing authenticated Gitea reader first validates the owner-only
+receipt MAC, immutable Task/session/Child pins, independent source bytes,
+blob SHA and exact branch HEAD. Only then can the private original Host
+obtain a source excerpt (max 4,096 characters, control bytes neutralized),
+path, revision, source hash, byte count and completion evidence hash.
+The Host binds the returned path to the **same signed Engineer exact-file
+read grant** and rejects absent or different HEAD, Task, MAC, source or role.
+
+The adaptive proposer accepts at most four entries associated with
+independently completed Backend/Frontend `read_file` Tasks, from the
+*current* HEAD only. A mutation automatically makes the prior excerpt
+ineligible for the next decision. These source bytes are explicitly
+untrusted DATA, not model instructions, claims of Test PASS, or authority.
+Original Rust/Gateway/OPA gates, one-shot PR and bounded signed Tasks
+remain unchanged.
+
+Offline validation includes forged completion expectations, altered MAC,
+provider byte and HEAD mismatch, spoofed reader prototypes, bounded
+excerpt controls, obsolete SHA, unknown Task and oversized model context.
+[Fast CI #42356509424](https://github.com/DarkGh0st03/delegation/actions/runs/42356509424)
+and [Engineer CI #42356509429](https://github.com/DarkGh0st03/delegation/actions/runs/42356509429)
+both passed the first integration source SHA `b6d485de`.
+These checks are not a native R376 end-to-end assertion.
+
+## R376.3: opt-in native proof (pending CI verdict)
+
+Instead of copying the 1,200+ line R375 native Account Suspension harness,
+the **same** original fixture has a separate, default-disabled
+`R376_NATIVE_DIAGNOSIS=1` mode. Original R375 behavior remains the default.
+
+The extra scripted ADK decision runs **after** an authenticated initial
+Docker FAIL and **before** any functional repair: Backend receives one
+extra signed read-only Child for the unresolved shared account-status file.
+Original Gateway verifies the receipt; independent Gitea reader re-fetches
+its bytes; the next ADK choice must see `source_observations`. After the
+first CAS advances HEAD, that observation must disappear from the next
+model turn. The remaining ten reference edits, replacement real Docker
+PASS, original-root Draft PR and provider GET are preserved.
+
+The dedicated workflow
+`.github/workflows/r376-native-source-diagnostic-recovery-e2e.yml`
+is trigger-scoped to a single explicit R376 checkpoint and has **zero**
+Gemini/OpenAI inference. It uses the same disposable local Gitea, Anvil,
+OPA, native Rust and isolated Docker as R375. The extra read raises the
+bounded adaptive decision count from 15 to 16 but grants no new operation.
+
+**Pending gate:** GitHub Actions must report SUCCESS on the same SHA, with
+a genuine independent signed diagnostic read and source reaching the
+following ADK turn. Until then no R376 native PASS is claimed.
+
+After that, next objective is real bounded Gemini generation with
+source-grounded diagnostic recovery, permitted only through existing
+explicit cost/consent and CI gates. No paid inference, merge or GitHub
+`main` mutation is authorized by these tests.
