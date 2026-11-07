@@ -1736,6 +1736,74 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
+  * R383.3 private, read-only native CREATE preflight binding. A genuine
+  * original unconsumed Prepare, registered exact-file Task, enrolled
+  * native Child and signed Engineer Root are mandatory. This method
+  * NEVER verifies an actual Rust VP/OPA decision and NEVER authorizes
+  * a provider write, completion or a created Child.
+  *
+  * In particular: a create-only Task may not smuggle unrelated grants,
+  * a Test Agent cannot create application sources, and signed scopes
+  * cannot be enlarged by the model's requested filename.
+  */
+ assertTrustedGiteaCreateIntentBinding(
+  record:PreparedRequestRecord
+ ):Readonly<TrustedCompletionExpectation>{
+  const root=this.#live();
+  if(!record||typeof record!=="object"||record.consumed!==false||
+     record.request.tool!=="create_file"||
+     record.authority_only_digest!==root.authority_digest||
+     record.expires_at_ms<=this.#now())
+   deny("create preflight requires fresh, original unconsumed Prepare");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  const taskId=bound?.row.task_id;
+  if(!bound||!child||!taskId||
+     !["backend","frontend"].includes(bound.row.agent_id)||
+     bound.row.agent_id!==record.agent_role||
+     bound.row.permissions.length!==1||
+     bound.row.permissions[0].operation!=="create_file"||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
+     this.#flights.has(taskId)||this.#sequential.has(taskId)||
+     this.#completed.has(taskId)||
+     record.authority_only_plan_task_id!==taskId||
+     record.authority_only_agent_did!==bound.row.agent_did||
+     child.credential_id===root.root_credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("create preflight lacks original single-effect Task/Child");
+  const p=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  const fingerprint=createHash("sha256").update(JSON.stringify({
+   task_id:record.task_id,agent_role:record.agent_role,
+   request:record.request
+  })).digest("hex");
+  const content=record.request.arguments.content;
+  if(pair(p.required_permission)!==pair(record.required_permission)||
+     pair(bound.row.permissions[0])!==pair(p.required_permission)||
+     record.request_fingerprint!==fingerprint||
+     typeof content!=="string"||
+     Buffer.byteLength(content,"utf8")<1||
+     Buffer.byteLength(content,"utf8")>2_000_000||
+     content.includes("\0"))
+   deny("create Prepare does not match exact signed file permission");
+  return Object.freeze({
+   session_id:root.session_id,
+   authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,
+   task_id:taskId,runtime_task_id:record.task_id,
+   epoch:bound.row.epoch,agent_did:bound.row.agent_did,
+   credential_id:child.credential_id,
+   request_id:record.request_id,
+   request_fingerprint:record.request_fingerprint
+  });
+ }
+ /**
   * R302.4 OWNER-ONLY authenticated UPDATE execution binding.
   * Called strictly after native Rust VP, OPA and durable preflight/Task
   * flight. This verifies the exact Child, root, Task, permission and
