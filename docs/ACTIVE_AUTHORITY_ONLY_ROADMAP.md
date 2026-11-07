@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R381.8)
+## Piano attivo — aggiornato al 7 novembre 2026 (R381.9)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -320,6 +320,27 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   non equivalgono a una esecuzione SUCCESS**. Recuperare la conclusione
   del job sull'esatta SHA; correggere gli eventuali FAIL prima di
   dichiarare conclusa la fase B. La verifica non autorizza Gemini.
+- **R381.9 — verifica riproducibile e anti-false-PASS delle evidenze native MCP**:
+  `poc/scripts/verify-r3818-native-mcp-proof.mjs` legge il JSONL
+  prodotto dall'**originale** E2E R375/R381.8 e richiede **esattamente
+  una** evidenza terminale PASS. Verifica il Child count MCP uguale al
+  numero Child firmate, almeno una VP MCP per ognuno dei tre ruoli,
+  verifica Rust/EVM/OPA, main immutabile, branch originale, fallimento
+  Docker autentico seguito dal PASS, source/test updates, Draft PR
+  indipendente non mergiata e zero modelli a pagamento. Rifiuta
+  attestazioni parziali, falsificate, duplicate, replay contatori errati
+  e valori estranei, stampando soltanto un certificato sanificato.
+  Sono aggiunti test **gratuiti** nel Fast CI e nel preflight del
+  workflow R381.8. La sezione E2E usa `set -euo pipefail`, controlla
+  la modalità authority-only prima **e dopo** i file runtime e non
+  accetta un fallimento del processo Node occultato da `tee`.
+  La logica del verificatore è stata controllata con un campione PASS
+  e sei mutazioni negative; **non risulta verificata la CI GitHub Actions
+  né la suite nativa R381.8 sulla SHA aggiornata**. I metodi GitHub
+  disponibili per le run del commit filtrano gli eventi pull_request,
+  quindi la lista vuota non certifica l'assenza di run `push`.
+  Non viene richiamata automaticamente una nuova lunga suite nativa
+  in assenza dell'esito della precedente. Nessuna API AI a pagamento.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
