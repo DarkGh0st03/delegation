@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R383.5)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.6)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,66 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.5 prepara il binding post-VP/OPA per `create_file` e conserva il deny sul legacy executor; R383.4 contiene il journal single-attempt. La connessione al Gateway nativo, il vero writer e la receipt MAC restano aperti.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.6 aggiunge l'executor owner-only `create_file`, con CAS Gitea, tentativo monouso durable e receipt MAC verificata due volte; ancora NON collegato al Gateway runtime, FunctionTools o al pilot. La Fast CI e la prova nativa integrata sono da confermare.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI R383.1 SUCCESS sulla SHA `f4011a2` (run #42402960670), E2E native precedente PASS su `63a4414`; R383.2 e post-cleanup richiedono nuove prove sulla SHA finale** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.6 — Executor CREATE CAS e ricevuta MAC indipendente (non attivato)
+
+Nuovo `TrustedAuthorityOnlyGiteaCreateExecutor` owner-private, costruito
+con il medesimo Gateway Admissions, preflight R383.5, GiteaClient
+pinned, journal R383.4 e due porte indipendenti di evidence.
+Non ammette client Gitea di una repository differente, un host
+senza originale Task/Child o un observer che condivide l'istanza
+writer. L'esecuzione richiede `PreparedRequestRecord` consumato,
+`VerifiedDelegation` Rust nativa, OPA `allow` originale, flight
+durable e intent preflight identico per Task, Child, Root, branch,
+path, HEAD e SHA-256 del contenuto.
+
+Il journal `reserveAttempt` O_EXCL/fsync deve completare PRIMA di
+qualsiasi I/O Gitea. L'executor invoca solo
+`GiteaClient.createFileWithHeadCas`: branch staging privata da
+HEAD esatta, assenza verificata, commit parent unico e CAS
+`old_commit_id -> new_commit_id` con `force:false`.
+Risposte perse, CAS conflict, fallimenti I/O o crash sono
+terminali per quel Task: nessun retry.
+
+`TrustedGatewayGiteaCreateEvidencePublisher` usa un **diverso**
+GiteaClient read-only per verificare HEAD, singolo parent,
+assenza del vecchio path sulla SHA originale e contenuto/blob
+nuovo; soltanto dopo scrive un receipt `0600` con HMAC-SHA256.
+`AuthenticatedGiteaCreateCompletionObserver` riapre il receipt,
+valida firma MAC e contesto del Task, poi ripete indipendentemente
+la stessa osservazione Gitea e restituisce il digest di evidenza.
+Solo allora il journal registra la prova di completamento con
+marker O_EXCL/fsync. I marker di intent e attempt restano
+distinti dalla receipt.
+
+Sono stati aggiunti test gratuiti per MAC tampering, parent
+falsificato, HEAD mutata, file precedentemente esistente,
+contenuto alterato, CAS ambiguo, doppio tentativo e assenza
+di fallback sul provider legacy. La suite evidence usa il
+vero verificatore read-only `GiteaClient.verifyCreatedFileHeadCas`;
+l'executor viene testato con Rust/OPA e trasporto mutativo
+**simulati**, quindi non è prova nativa end-to-end.
+I nuovi test sono collegati alla Fast CI; verificare il
+risultato sulla SHA definitiva prima di dichiarare PASS.
+
+**Limite operativo essenziale:** `executeAuthorization`, il
+Gateway owner deployment e gli Agent FunctionTools NON
+selezionano ancora questo nuovo executor. Il percorso
+`create_file` del runtime resta fail-closed, senza nuove
+scritture né cambi di permessi. Il prossimo gate deve abilitare
+l'executor **solo** nel ramo `DirectCoreRustVerifier` +
+`OpaPolicyClient` + `TrustedAuthorityOnlyGatewayAdmissions`
+originali e aggiornare il trusted owner staging. Segue una prova
+nativa Rust/EVM/OPA/Gitea e controlli di revoca/race, prima di
+sbloccare il Tool agente, cleanup e pilot Gemini. Nessun modello
+a pagamento, merge o modifica a main.
 
 ### R383.5 — Bound Create admission post-VP/OPA (NO-WRITE)
 
