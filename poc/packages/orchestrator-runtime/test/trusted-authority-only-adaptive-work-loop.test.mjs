@@ -248,6 +248,25 @@ test('R376.0 read-only diagnosis before verified Test FAIL is denied',async()=>{
  assert.equal(f.verified.length,0);
  assert.equal(f.retired,true);
 });
+test('R376.1 a Test-role read cannot replace signed run_tests authority',async()=>{
+ const f=verifiedFailureFixture();
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  // Even when a trusted registry advertises the capability, the Test
+  // specialist cannot execute a recovery diagnosis disguised as a read.
+  ctx.agents.test.capabilities.push('read_file');
+  return ctx;
+ };
+ const inspect=candidate('test',1,[diagnosticRead()]);
+ inspect.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),inspect]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,2);
+ assert.equal(f.done.length,0);
+ assert.equal(f.retired,true);
+});
 test('R376.0 diagnostic read outside immutable Engineer root is denied',async()=>{
  const f=verifiedFailureFixture();
  const inspect=candidate('backend',1,[{
