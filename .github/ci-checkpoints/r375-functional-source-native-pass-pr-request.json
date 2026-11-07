@@ -1,24 +1,30 @@
 {
-  "checkpoint": "R375.6",
-  "previous_sha": "348e656e0c822b4823b39c5910b0c710445ca409",
-  "previous_native_run": 42352523511,
-  "verified_application_evidence": {
-    "initial_native_docker": {
-      "project": "pass",
-      "researcher_acceptance": "fail",
-      "head_matches": true
-    },
-    "ten_authorized_gitea_cas": true,
-    "retet_native_docker": {
-      "project": "pass",
-      "researcher_acceptance": "pass",
-      "head_matches": true
-    }
+  "checkpoint": "R375.7",
+  "source_sha": "70e9673af99a8f691931375726c5e237b53ce33e",
+  "previous_native_run": 42353157504,
+  "previous_native_result": "FAIL_CLOSED_AFTER_INDEPENDENT_RUNNER_PASS",
+  "previous_native_evidence": {
+    "original_protected_main_branch": true,
+    "first_authentic_researcher_acceptance": "fail",
+    "seven_functional_source_CAS": true,
+    "three_strengthened_project_test_CAS": true,
+    "final_docker_project": "pass",
+    "final_docker_researcher_acceptance": "pass",
+    "final_docker_head_matches": true,
+    "final_error": "adaptive loop exceeds original owner decision budget",
+    "pr_post_attempted": false
   },
-  "first_failure_after_pass": "ENOENT attempting Gitea read evidence receipt for r375-functional-retest, because fixture observer recognized only r375-test-task as Runner Test Task",
-  "fix": "Route original failed Test ID and replacement passed Test ID to original authenticated Runner PASS completion observer; all non-Test Tasks remain on read observer. Keep same original signed root, Rust, OPA, MAC and HEAD pin.",
-  "expected": "independent PASS completion -> ready_for_pr -> original root signed one-shot Draft PR -> independent Gitea GET, PR open Draft unmerged",
-  "no_paid_inference": true,
-  "pr38": "draft unmerged",
-  "status": "native CI pending"
+  "root_cause": "R375 original root Branch decision incremented shared decisionCalls before 15-step adaptive loop; 15th ready_for_pr rejected although adaptive maxSteps=15",
+  "source_fix": "Separate per-invocation adaptiveDecisionCalls from original root Branch and PR one-shot decision counter; keep existing maxSteps hard cap 16, distinct native authority, Gateway and OPA unchanged",
+  "source_validation": {
+    "fast_ci": 42353768526,
+    "fast_ci_result": "SUCCESS",
+    "engineer_ci": 42353768495,
+    "engineer_ci_result": "SUCCESS"
+  },
+  "expected": "15 bounded adaptive turns including final independent ready_for_pr -> latest authenticated Test PASS -> original root one-shot signed Draft PR POST -> independent Gitea GET open Draft unmerged",
+  "paid_model_calls": 0,
+  "github_main_unchanged": true,
+  "pr38": "draft_unmerged",
+  "status": "pending isolated native E2E CI on same checkpoint SHA"
 }
