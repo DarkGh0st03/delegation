@@ -22,6 +22,8 @@ import {TrustedAuthorityOnlyChildIssuer}
  from "./trusted-authority-only-child-issuer.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
+import {TrustedAuthorityOnlyCreateEffectStager}
+ from "../../../apps/gateway/src/trusted-authority-only-create-effect-stager.ts";
 import {
  TrustedAuthorityOnlyRemoteEffectBootstrap,
  type TrustedAuthorityOnlyRemoteEffectBootstrapOptions
@@ -160,9 +162,10 @@ export class TrustedAuthorityOnlyA2AOwner {
      deny("Test run cannot escape approved branch");
     continue;
    }
-   if(p.operation!=="read_file"&&p.operation!=="update_file")
+   if(p.operation!=="read_file"&&p.operation!=="update_file"&&
+      p.operation!=="create_file")
     deny("unsupported A2A Task grant is not a native effect");
-   if(p.operation==="update_file"||
+   if(p.operation==="update_file"||p.operation==="create_file"||
       (p.operation==="read_file"&&row.permissions.length===1))effects++;
    const prefix=branchUri+"/files/";
    if(!p.resource.startsWith(prefix))
@@ -194,9 +197,18 @@ export class TrustedAuthorityOnlyA2AOwner {
      (!hasRunner&&!typedMixed&&
       (row.permissions.length!==1||filePermissions.length!==1)))
    deny("native A2A Task cannot combine unrelated read/write/Runner grants");
+  if(role==="test"&&filePermissions.some(p=>p.operation==="create_file"))
+   deny("Test Agent cannot create native application files without a separately approved implementation");
   if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&
      !isProjectTestRepairGrant(row.permissions))
    deny("Test update requires an exact project test repair grant");
+  if(filePermissions.some(p=>p.operation==="create_file")&&
+     (filePermissions.length!==1||
+      !["backend","frontend"].includes(role)||
+      !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
+       input.effectStager,this.#gateway,input.taskId,input.runtimeTaskId,
+       root.repository.owner+"/"+root.repository.repository,branch)))
+   deny("CREATE A2A requires one original branded owner Task/Child/branch stager");
   if(typedMixed&&
      (input.effectStager.stagedTool!=="read_then_update"||
       typeof input.effectStager.attest!=="function"))
