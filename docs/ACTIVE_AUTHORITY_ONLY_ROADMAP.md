@@ -264,6 +264,19 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   nativa A2A/Rust/EVM/OPA/Gitea/Docker; CI su nuova SHA da verificare**.
   Il gate B resta aperto per la scelta finale del trasporto, il launcher
   canonico e la regressione reale.
+- **R381.5 — regressione privata Agent/Task → MCP → Rust (offline)**:
+  in `local-crypto-mcp-bridge.test.ts` la stessa catena usata
+  dal runtime ADK viene esercitata in locale per Backend, Frontend e Test:
+  `Gateway prepare` di riferimento → `PrivateMcpTaskRegistry`
+  → `LocalCryptoMcpBridge` → `DelegationEvidenceHandler`
+  → processo MCP stdio → socket nativo Rust **simulato**.
+  I test verificano Child ID, audience, challenge, permission, bearer
+  distinto per ruolo, tre richieste monouso e nessuna chiamata HTTP;
+  negano replay, Task chiuso e risposta Rust errata senza mostrare
+  errori privati. È nuova **copertura offline**, non conferma delle
+  CI sulla SHA, di Gitea/Docker né dell'autonomia generativa.
+  Prima di chiudere B serve ancora evidenza nativa integrata e un
+  launcher definitivo. `main` e approvazioni non vengono modificati.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
