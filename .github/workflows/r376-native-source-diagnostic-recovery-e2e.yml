@@ -1,7 +1,8 @@
 # R233: REAL native Rust issuance + EVM trust + public-only Gateway verifier.
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Unsigned initial branch is absent; protected unsolved main is unchanged.
-# R376 opt-in: same protected-main Account Suspension + one distinct signed diagnostic read Task,\n# verified Gateway MAC+HEAD+bytes excerpt enters the next ADK turn before correction.
+# R376 opt-in: same protected-main Account Suspension + one distinct signed diagnostic read Task,
+# verified Gateway MAC+HEAD+bytes excerpt enters the next ADK turn before correction.
 # One genuinely failed Test remains incomplete; PR permitted only on independently attested Docker PASS.
 name: R376 Native Authenticated Source Read Before Docker Recovery (No AI)
 on:
