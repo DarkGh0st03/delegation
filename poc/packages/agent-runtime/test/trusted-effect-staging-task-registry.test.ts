@@ -214,3 +214,35 @@ test("R377.3 Test repair binds one project test without Runner authority",()=>{
  assert.throws(()=>invalid.selectFor({...repair,subtask:{...repair.subtask,approved_run_tests:true}}),
   /differs from trusted owner/u);
 });
+
+test("R383.8 signed CREATE Task requires exact file/role and one owner-private stage",async()=>{
+ const f=pins(),registry=new TrustedEffectStagingTaskRegistry();
+ const binding={...f.binding,operation:"create_file" as const,
+  effectStager:{stagedTool:"create_file" as const,async stage(id:string){
+   f.calls.push(id);return {provider_write_authorized:false};
+  }}};
+ registry.bindTask(binding);
+ const ctx:AgentTaskContext={...context(),
+  subtask:{...context().subtask,
+   approved_file_permissions:[{path,operation:"create_file"}]}};
+ const selected=registry.selectFor(ctx);
+ assert.equal(selected.stagedTool,"create_file");
+ assert.deepEqual(await selected.stage("create-3838"),
+  {provider_write_authorized:false});
+ await assert.rejects(selected.stage("create-3838"),/already consumed/u);
+ assert.deepEqual(f.calls,["create-3838"]);
+ const wrongPath=new TrustedEffectStagingTaskRegistry();
+ wrongPath.bindTask(binding);
+ assert.throws(()=>wrongPath.selectFor({
+  ...ctx,subtask:{...ctx.subtask,
+   relevant_paths:["apps/backend/src/other.ts"]}
+ }),/differs from trusted owner Task/u);
+ const wrongRole=new TrustedEffectStagingTaskRegistry();
+ assert.throws(()=>wrongRole.bindTask({
+  ...binding,role:"test"
+ }),/one-shot effect port required/u);
+ const missingStager=new TrustedEffectStagingTaskRegistry();
+ assert.throws(()=>missingStager.bindTask({
+  ...binding,effectStager:{async stage(){}}
+ }),/one-shot effect port required/u);
+});
