@@ -5,6 +5,7 @@ import {createServer} from "node:net";
 import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {createOwnerPrivateNativeCryptoMcpSession}
  from "../src/owner-private-native-crypto-stdio.mjs";
 
@@ -175,4 +176,44 @@ test("R382.0 cancellation during native Rust IPC never releases VP or retries",a
    await assert.rejects(session.invokeOnce(),/presentation unavailable/u);
    assert.equal(calls.length,1);
   });
+});
+
+
+test("R382.1 native MCP rejects forged Task cancellation signals before starting",()=>{
+ assert.throws(()=>createOwnerPrivateNativeCryptoMcpSession(
+  "presentation_create",{
+   socketPath:"/tmp/native-private-r3821.sock",bearerToken:"PRIVATE",
+   signal:{aborted:false}
+  },{credential_id:"urn:child:r3821"}),
+ /Owner-private native MCP configuration unavailable/u);
+});
+
+test("R382.1 stalled MCP handshake has a finite whole-session deadline",{
+ timeout:12500,concurrency:false
+},async()=>{
+ // Deliberately hold SDK handshake forever without invoking the worker.
+ // This exercises the *outer* watchdog, not the Rust IPC timeout.
+ // Restore the SDK prototype even when the assertion fails.
+ const original=Client.prototype.connect;
+ Client.prototype.connect=()=>new Promise(()=>{});
+ const started=Date.now();
+ try{
+  const session=createOwnerPrivateNativeCryptoMcpSession(
+   "presentation_create",{
+    socketPath:"/tmp/r3821-no-worker-native.sock",
+    bearerToken:"PRIVATE_OWNER",timeoutMs:1
+   },{credential_id:"urn:child:r3821",challenge:"nonce",
+     audience:"cloud-access-gateway",
+     disclosed_permissions:[{resource:"gitea://trusted",
+      operation:"read_file"}]});
+  await assert.rejects(session.invokeOnce(),error=>{
+   assert.match(String(error),/presentation unavailable/u);
+   return true;
+  });
+  assert.ok(Date.now()-started<11000,
+   "outer watchdog must interrupt a stuck MCP handshake");
+  await assert.rejects(session.invokeOnce(),/presentation unavailable/u);
+ }finally{
+  Client.prototype.connect=original;
+ }
 });
