@@ -278,7 +278,7 @@ test("R384.3 CREATE recovery cannot expand scope, mix effects, change branch or 
    operation:"create_file"
   }],signedRoot:expanded},
   {role:"backend",permissions:[{
-   resource:canonicalFileUri(repo,branch,"apps/backend/src/users/../escape.ts"),
+   resource:uri+"/files/apps/backend/src/users/%2E%2E/escape.ts",
    operation:"create_file"
   }],signedRoot:expanded}
  ];
