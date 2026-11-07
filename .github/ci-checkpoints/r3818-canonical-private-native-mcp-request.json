@@ -1,6 +1,6 @@
 {
-  "schema": "r3818-canonical-native-private-mcp-once-v1",
-  "candidate_parent_sha": "0a7db9742d7c824b84c30b08378c9312d7d1bd86",
+  "schema": "r3818-canonical-native-private-mcp-retry-r3822-v2",
+  "candidate_parent_sha": "1bfd2704d0276fbe5d39e5a386cc5e542768b31c",
   "workflow": "r3818-canonical-private-native-mcp-e2e.yml",
   "purpose": "One free same-SHA original authority-only Engineer Review Host E2E: Root direct Rust; Task-bound Child DC and all 3 original protected A2A role VPs signed inside private MCP stdio through one native Rust signer; independent EVM/OPA/Gitea/Docker FAIL-repair-PASS and Draft PR.",
   "requested": true,
@@ -25,5 +25,11 @@
     "original main unchanged",
     "Docker FAIL then independently attested PASS",
     "Draft PR independently observed unmerged"
-  ]
+  ],
+  "retry_of_run_id": 42384687716,
+  "retry_of_sha": "f2b8bc51762301d4205d00055703678e44bcc753",
+  "retry_reason": "Prior execution failed only in offline R381.7 mock Review Host preflight because native Rust socket guard was inherited from job; explicitly scoped simulated test to non-native subprocess; actual R3818 full-stack signing stays mandatory native.",
+  "retry_count": 1,
+  "previous_preflight_status": "failed_before_native_services",
+  "gate_before_native": "R382.2 mock offline/native separation regression + existing R3818 crypto/MCP tests"
 }
