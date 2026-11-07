@@ -2,14 +2,12 @@ name: F1 Real Gitea Pilot-Equivalent Planning (No AI)
 on:
   push:
     branches: [refactor/post-prof-plan-contracts-20261021]
+    # Anvil/Rust/EVM/Gitea Docker suite is deliberately opt-in per
+    # checkpoint, not rerun for every incremental runtime/test edit.
+    # Fast CI and the cheap offline Planner preflight cover source pushes.
     paths:
       - '.github/workflows/f1-real-gitea-planning-parity.yml'
-      - 'poc/scripts/f1-real-planning-parity-manifest.mjs'
-      - 'poc/scripts/test/f1-real-planning-parity-manifest.test.mjs'
-      - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
-      - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
-      - 'poc/apps/test-runner-controller/scripts/f1-safe-offline-planning-failure.mjs'
-      - 'poc/apps/test-runner-controller/test/f1-safe-offline-planning-failure.test.mjs'
+      - '.github/ci-checkpoints/r3803-native-planning-read-request.json'
   workflow_dispatch:
 permissions:
   contents: read
