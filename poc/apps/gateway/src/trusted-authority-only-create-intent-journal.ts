@@ -156,4 +156,57 @@ export class DurableAuthorityOnlyGiteaCreateIntentJournal {
   if(!isDeepStrictEqual(actual,intent))
    deny("original immutable create intent differs from persistent marker");
  }
+
+ /**
+  * R383.4 — crash-durable, irrevocable one-shot attempt fence.
+  * Only the trusted owner may invoke this AFTER the Gateway independently
+  * verifies the native Rust VP, OPA allow and consumed Task/Child flight.
+  * This NO-WRITE marker is NOT an authorization, Gitea result or receipt.
+  * An ambiguous attempt is terminal, including after process restart.
+  */
+ async reserveAttempt(intent:TrustedGiteaCreateIntent):Promise<void>{
+  if(this.#writeInFlight)deny("concurrent create attempt reservation");
+  this.#writeInFlight=true;
+  try{
+   await this.assertReserved(intent);
+   await this.#privateDirectory();
+   const attempt=Object.freeze({
+    schema:"authority-only-gitea-create-attempt-v1",
+    session_id:intent.session_id,
+    authority_digest:intent.authority_digest,
+    root_credential_id:intent.root_credential_id,
+    task_id:intent.task_id,
+    runtime_task_id:intent.runtime_task_id,
+    epoch:intent.epoch,
+    agent_did:intent.agent_did,
+    credential_id:intent.credential_id,
+    request_id:intent.request_id,
+    request_fingerprint:intent.request_fingerprint,
+    repository:intent.repository,
+    branch:intent.branch,
+    path:intent.path,
+    expected_head_sha:intent.expected_head_sha,
+    next_content_sha256:intent.next_content_sha256,
+    next_content_bytes:intent.next_content_bytes,
+    provider_write_authorized:false
+   } as const);
+   const file=this.#filename(intent).replace(".create-intent.json",
+    ".create-attempt.json");
+   const fd=await open(join(this.#directory,file),
+    constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY|
+    constants.O_NOFOLLOW,0o600);
+   try{
+    const st=await fd.stat();
+    if(!st.isFile()||st.nlink!==1||
+       (st.mode&0o777)!==0o600||
+       (typeof process.getuid==="function"&&st.uid!==process.getuid()))
+     deny("unsafe create-attempt marker");
+    await fd.writeFile(JSON.stringify(attempt)+"\n","utf8");
+    await fd.sync();
+   }finally{await fd.close();}
+   const dirfd=await open(this.#directory,
+    constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+   try{await dirfd.sync();}finally{await dirfd.close();}
+  }finally{this.#writeInFlight=false;}
+ }
 }
