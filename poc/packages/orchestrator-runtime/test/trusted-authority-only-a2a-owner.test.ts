@@ -323,6 +323,37 @@ test("R334 Test FAIL report never reaches independent Gateway success observer",
  assert.deepEqual(f.calls,["private_bind","a2a_send"]);
 });
 
+for(const mode of ["two-updates","foreign-read-with-update",
+ "update-with-foreign-read","runner-with-spare-read"]){
+ test("R383.1 original A2A owner denies a multi-effect Child before transport: "+mode,async()=>{
+  const foreignPath="apps/backend/src/users/audit.ts";
+  const foreignUpdate={resource:canonicalFileUri(repo,branch,foreignPath),
+   operation:"update_file" as const};
+  const foreignRead={resource:foreignUpdate.resource,
+   operation:"read_file" as const};
+  const read={resource:effect.resource,operation:"read_file" as const};
+  const runner={resource:canonicalBranchUri(repo,branch),
+   operation:"run_tests" as const};
+  const perms=mode==="two-updates"?[effect,foreignUpdate]:
+   mode==="foreign-read-with-update"?[foreignRead,effect]:
+   mode==="update-with-foreign-read"?[effect,foreignRead]:[runner,read];
+  const testRole=mode==="runner-with-spare-read";
+  const patchedRow={...row,agent_id:testRole?"test":"backend",permissions:perms};
+  const patchedChild={...child,agent_id:patchedRow.agent_id,permissions:perms};
+  const f=fixture({
+   root:{...root,root_permissions:perms},
+   row:patchedRow,child:patchedChild,
+   receipt:{...receipt,agent_id:patchedRow.agent_id},
+   signed:{...signed,credentialSubject:{sub:did,per:perms}}
+  } as never);
+  const action=request();
+  await assert.rejects(f.owner.dispatchIssuedTask(action),
+   /cannot combine unrelated read\/write\/Runner grants|Test run cannot escape approved branch/u);
+  assert.deepEqual(f.calls,[],
+   "never bind remote private port or send the signed credential");
+ });
+}
+
 test("R359.6 a signed mixed A2A report cannot bypass native two-effect finalization",async()=>{
  const read={...effect,operation:"read_file" as const};
  const permissions=[read,effect];
