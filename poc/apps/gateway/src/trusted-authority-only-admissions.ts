@@ -118,6 +118,12 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #enrolledChildren=new Map<string,VerifiedStagedChild>();
  readonly #flights=new Map<string,TrustedTaskFlight>();
  readonly #sequential=new Map<string,SequentialTaskProgress>();
+ // R376: one-use, owner-pinned HEAD and exact scope for single-file read-only
+ // diagnostic Tasks. A model cannot select a revision or install this pin.
+ readonly #readPins=new Map<string,Readonly<{
+  task_id:string;credential_id:string;epoch:number;expectedHeadSha:string;
+  resource:string;
+ }>>();
  readonly #completed=new Set<string>();
  readonly #completionEvidence=new Map<string,string>();
  readonly #branchPins=new Map<string,Readonly<{
@@ -478,6 +484,40 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#enrollmentInFlight=false;}
  }
+ /** The original Engineer owner fixes the exact approved source and
+  * current Gitea HEAD before a diagnostic read's Gateway Prepare. This is
+  * not provider execution or a public source of authority. */
+ pinTrustedSingleReadTask(taskId:string,runtimeTaskId:string,expectedHeadSha:string){
+  const root=this.#live();
+  const bound=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  if(!SHA40.test(expectedHeadSha)||!bound||!child||
+     bound.row.task_id!==taskId||bound.row.session_id!==root.session_id||
+     bound.row.root_credential_id!==root.root_credential_id||
+     bound.row.authority_digest!==root.authority_digest||
+     !["backend","frontend"].includes(bound.row.agent_id)||
+     bound.row.permissions.length!==1||
+     bound.row.permissions[0]?.operation!=="read_file"||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.credential_id===root.root_credential_id||
+     child.epoch!==bound.row.epoch||
+     child.agent_did!==bound.row.agent_did||
+     this.#now()>=Date.parse(child.expires_at)||
+     this.#readPins.has(runtimeTaskId)||
+     this.#sequential.has(taskId)||this.#flights.has(taskId)||
+     this.#completed.has(taskId)||
+     this.#flightInFlight||this.#completionInFlight||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("single read pin requires original enrolled, scoped and unspent Child");
+  const pin=Object.freeze({
+   task_id:taskId,credential_id:child.credential_id,epoch:bound.row.epoch,
+   expectedHeadSha,resource:bound.row.permissions[0].resource
+  });
+  this.#readPins.set(runtimeTaskId,pin);
+  return Object.freeze({status:"owner_single_read_head_pinned_only" as const,
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   gateway_execution_authorized:false as const});
+ }
  /**
   * R293: reserve exactly ONE Task flight in an independent durable journal.
   * The caller supplies a previously protected local Gateway Prepare record,
@@ -517,6 +557,16 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
   if(pair(allowed.required_permission)!==pair(record.required_permission))
    deny("Task flight request differs from canonical signed grant");
+  if(record.request.tool==="read_file"){
+   const pin=this.#readPins.get(record.task_id);
+   if(!pin||pin.task_id!==bound.row.task_id||
+      pin.credential_id!==child.credential_id||
+      pin.epoch!==bound.row.epoch||
+      pin.resource!==record.required_permission.resource||
+      record.pinned_revision!==pin.expectedHeadSha||
+      allowed.pinned_revision!==pin.expectedHeadSha)
+    deny("read flight differs from original owner-pinned signed HEAD");
+  }
   const flight:TrustedTaskFlight=Object.freeze({
    session_id:root.session_id,authority_digest:root.authority_digest,
    root_credential_id:root.root_credential_id,
@@ -624,6 +674,14 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      this.#now()>=Date.parse(child.expires_at))
    deny("completed read lacks native-rooted enrolled Task Child");
   const flight=this.#flights.get(bound.row.task_id);
+  const readPin=this.#readPins.get(record.task_id);
+  if((readPin&&(readPin.task_id!==bound.row.task_id||
+       readPin.credential_id!==child.credential_id||
+       readPin.resource!==record.required_permission.resource||
+       readPin.expectedHeadSha!==record.pinned_revision))||
+     (!readPin&&!this.#sequential.has(bound.row.task_id)&&
+       record.pinned_revision!==undefined))
+   deny("read evidence differs from originally pinned source revision");
   if(!flight||this.#completed.has(bound.row.task_id)||
      flight.request_id!==record.request_id||
      flight.request_fingerprint!==record.request_fingerprint||
@@ -748,6 +806,13 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const child=this.#enrolledChildren.get(runtimeTaskId);
   const flight=this.#flights.get(taskId);
   const evidence=this.#completionEvidence.get(taskId);
+  const pin=this.#readPins.get(runtimeTaskId);
+  if(!pin||pin.task_id!==taskId||
+     pin.credential_id!==child?.credential_id||
+     pin.epoch!==bound?.row.epoch||
+     pin.resource!==bound?.row.permissions[0]?.resource||
+     !SHA40.test(pin.expectedHeadSha))
+   deny("completed source observation lacks original owner-pinned read");
   if(!bound||!child||!flight||!evidence||
      bound.row.task_id!==taskId||
      !["backend","frontend"].includes(bound.row.agent_id)||
@@ -1405,10 +1470,19 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !this.#rootPermissions!.some(p=>giteaPermissionCovers(p,required)))
    deny("request operation or resource not in exact signed Task grant");
   const typed=this.#sequential.get(bound.row.task_id);
+  const readPin=this.#readPins.get(request.task_id);
   const nativeHead=typed?.manifest.effect_plan!==undefined&&
     typed.manifest.runtime_task_id===request.task_id&&
     (tool==="read_file"||tool==="update_file")
-     ?typed.pinnedHead:undefined;
+     ?typed.pinnedHead:
+     tool==="read_file"&&readPin&&readPin.task_id===bound.row.task_id&&
+     readPin.epoch===bound.row.epoch&&
+     readPin.resource===required.resource&&
+     readPin.credential_id===this.#enrolledChildren.get(request.task_id)?.credential_id
+      ?readPin.expectedHeadSha:undefined;
+  if(tool==="read_file"&&typed?.manifest.effect_plan===undefined&&
+     !nativeHead&&bound.row.permissions.length===1)
+   deny("single-file source read requires original owner-pinned HEAD");
   if(typed?.manifest.effect_plan!==undefined&&
      (tool==="read_file"||tool==="update_file")&&
      !SHA40.test(nativeHead??""))
