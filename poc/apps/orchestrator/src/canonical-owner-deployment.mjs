@@ -17,6 +17,8 @@ import {executeAuthorization} from "../../gateway/src/execute.ts";
 import {AuthenticatedRunnerCompletionObserver} from "../../gateway/src/trusted-authority-only-runner-evidence.ts";
 import {AuthenticatedGiteaReadCompletionObserver} from "../../gateway/src/trusted-authority-only-gitea-evidence.ts";
 import {AuthenticatedGiteaMutationCompletionObserver} from "../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
+import {AuthenticatedGiteaCreateCompletionObserver}
+ from "../../gateway/src/trusted-authority-only-gitea-create-evidence.ts";
 
 const roles=["backend","frontend","test"];
 function deny(){throw Error("Protected canonical deployment configuration denied");}
@@ -56,9 +58,15 @@ export async function prepareOperational({expectedSourceSha,chargeAuthorization}
 /** Shared in-process composition. Model construction does not perform inference. */
 export async function assembleCanonicalOperationalDeployment({pins,config:c,loadModelFactory}){
  if(typeof loadModelFactory!=="function")deny();
- if(!exact(c,["directory","giteaUrl","giteaWriterFile","giteaReaderFile",
-   "runnerUrl","runnerTokenFile","opaUrl","evidenceKeyFile","orchestratorTokenFile",
-   "workerTokens","workerPorts","rootIndex","childIndices","draftTitle","draftBody"])||
+ const standardKeys=["directory","giteaUrl","giteaWriterFile","giteaReaderFile",
+  "runnerUrl","runnerTokenFile","opaUrl","evidenceKeyFile","orchestratorTokenFile",
+  "workerTokens","workerPorts","rootIndex","childIndices","draftTitle","draftBody"];
+ // No implicit CREATE enablement from an environment variable or agent payload:
+ // only the already protected 0600 owner deployment manifest may opt in.
+ const nativeCreateEnabled=c?.enableNativeCreateFile===true;
+ if(!(nativeCreateEnabled
+   ?exact(c,[...standardKeys,"enableNativeCreateFile"])
+   :exact(c,standardKeys))||
     typeof c.directory!=="string"||!c.directory.startsWith("/")||
     !exact(c.workerTokens,roles)||!exact(c.workerPorts,roles)||
     !Array.isArray(c.childIndices)||c.childIndices.length<1||c.childIndices.length>16||
@@ -91,7 +99,8 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  const rootGateway={audit,verifier:loadDirectCoreRustVerifier({allowGiteaScopeCoverage:true}),
   policy:new OpaPolicyClient({baseUrl:opaUrl}),executor:new GiteaExecutor(giteaClient)};
  const directories=Object.fromEntries([
-  "mutationIntent","giteaReceipts","runnerIntent","runnerFailureReceipts","runnerPassReceipts"
+  "mutationIntent","giteaReceipts","runnerIntent","runnerFailureReceipts","runnerPassReceipts",
+  ...(nativeCreateEnabled?["createIntent","createReceipts"]:[])
  ].map(name=>[name,join(c.directory,name)]));
  const evidenceKey=Buffer.from(key,"hex");
  const observation={key:evidenceKey,repository:repoName,branch,giteaClient:independentGiteaClient};
@@ -104,12 +113,22 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  const mutationObserver=new AuthenticatedGiteaMutationCompletionObserver({
   ...observation,directory:directories.giteaReceipts
  });
+ const createObserver=nativeCreateEnabled
+  ?new AuthenticatedGiteaCreateCompletionObserver({
+    directory:directories.createReceipts,key:evidenceKey,
+    repository:repoName,branch,independentGiteaClient
+   }):undefined;
  const completionObserver=new TrustedAuthorityOnlyCompletionObserver({
   async readVerifiedCompletion(expected){
    switch(store.get(expected.request_id)?.request.tool){
     case "run_tests":return runnerPassObserver.observe(expected);
     case "read_file":case "read_files":return readObserver.observe(expected);
-    case "create_file":case "update_file":return mutationObserver.observe(expected);
+    case "create_file":
+     // CREATE has no old blob. Never accept the UPDATE receipt schema for
+     // an effect which must independently prove old-file absence.
+     if(!createObserver)deny();
+     return createObserver.observe(expected);
+    case "update_file":return mutationObserver.observe(expected);
     default:deny();
    }
   }
