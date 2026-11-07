@@ -12,6 +12,8 @@ import {TrustedAuthorityOnlyGiteaCreatePreflight as Preflight}
 import {DurableAuthorityOnlyGiteaCreateIntentJournal as Journal}
  from "../src/trusted-authority-only-create-intent-journal.ts";
 import type {PreparedRequestRecord} from "../src/types.ts";
+import {executeAuthorization} from "../src/execute.ts";
+import {InMemoryRequestStore} from "../src/prepare.ts";
 
 const HEAD="a".repeat(40),NEXT="b".repeat(40);
 const branch="feature/account-suspension";
@@ -332,4 +334,63 @@ test("R383.5 rejects mutable source, changed admission binding and tampered on-d
  await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
   f.record,verified,allow),/differs from persistent marker/u);
  assert.equal(f.stats().writes,0);
+});
+
+test("R383.5 Gateway never falls through to legacy create_file even after VP and OPA allow",async()=>{
+ const original=new InMemoryRequestStore();
+ const request:PreparedRequestRecord={
+  request_id:"req-create-3835",task_id:"task-create-3835",
+  agent_role:"backend",
+  request:{tool:"create_file",arguments:{
+   branch,path,content
+  }},
+  required_permission:{
+   resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path,
+   operation:"create_file"
+  },
+  audience:"cloud-access-gateway",
+  challenge:"challenge-3835",
+  request_fingerprint:"c".repeat(64),
+  authority_only_digest:"d".repeat(64),
+  authority_only_plan_task_id:"plan-create-3835",
+  authority_only_agent_did:bound.agent_did,
+  created_at_ms:Date.now(),expires_at_ms:Date.now()+60000,
+  consumed:false
+ };
+ original.put(request);
+ let verifierCalls=0,opaCalls=0,providerCalls=0;
+ const admissions=Object.assign(Object.create(Admissions.prototype),{
+  assertTrustedCreateNativeAdmissionBinding(){
+   throw Error("create admission alone is not Gitea execution");
+  },
+  assertVerifiedVpAndPolicyForExecution(){
+   throw Error("unsupported native create: no independently attested executor");
+  }
+ });
+ await assert.rejects(executeAuthorization({
+  request_id:request.request_id,signed_vp:"offline-signed-vp"
+ },{
+  store:original,
+  audit:{emit:()=>{}},
+  verifier:{async verify(){verifierCalls++;return {
+   presenter_id:bound.agent_did,
+   credential_id:bound.credential_id,
+   issuer_id:"did:example:issuer",
+   root_credential_id:bound.root_credential_id,
+   hierarchy_depth:1,
+   permissions:[request.required_permission]
+  };}},
+  policy:{async evaluate(){opaCalls++;return {
+   allow:true,policy_version:"offline-allow"
+  };}},
+  repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"},
+  executor:{provider:"gitea",async execute(){providerCalls++;
+   throw Error("LEGACY GITEA CREATE MUST NEVER RUN");
+  }},
+  authorityOnlyAdmissions:admissions
+ } as never),/not enabled/u);
+ assert.equal(verifierCalls,1);
+ assert.equal(opaCalls,1);
+ assert.equal(providerCalls,0);
+ assert.equal(request.consumed,true,"original Prepare remains single-use");
 });
