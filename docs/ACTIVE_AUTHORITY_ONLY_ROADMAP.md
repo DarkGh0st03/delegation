@@ -234,6 +234,22 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   far transitare la richiesta crittografica e la sua risposta
   attraverso un server MCP privato realmente autorizzato,
   senza secondo signer o credenziali nel modello.
+- **R381.3 — servizio MCP stdio nativo opt-in, da validare**:
+  distinto dal broker ACK-only R381.2, il processo MCP separato riceve
+  richiesta Child o VP su canale stdio privato e invoca direttamente
+  il socket autenticato del **medesimo** CryptoRuntime Rust. Il signer
+  Rust non viene duplicato; token e credenziali non sono accessibili
+  a Gemini, Agent Card, FunctionTool, A2A pubblico o HTTP.
+  L'Engineer mantiene Root issue/revoke diretti al Core.
+  Il Child issuer ammette la modalità owner-only `native-stdio`
+  esclusivamente se il port Rust possiede il metodo nativo esplicito;
+  non c'è downgrade automatico a `stdio` o `in-process`.
+  Test offline su socket disposable verificano successi, replay,
+  risposta corrotta, chiusura e rifiuto delle operazioni Root.
+  Il test R292 possiede un opt-in `R3813_NATIVE_MCP_SIGNING=1`
+  per Child e tre VP, **ma non è ancora certificato PASS in tale modalità**.
+  Richiesti Fast CI e successiva prova nativa Rust/EVM/OPA sulla stessa SHA;
+  launcher definitivo, adapter MCP per gli agenti e gate B restano aperti.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
