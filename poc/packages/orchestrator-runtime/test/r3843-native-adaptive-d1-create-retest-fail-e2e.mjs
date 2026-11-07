@@ -323,12 +323,11 @@ const createRootGrant={resource:resourcePrefix+"/directories/apps/backend/src/us
 const createPermission={resource:resourcePrefix+"/files/"+createPath,
  operation:"create_file"};
 const grantPermissions=[
- branchPermission,testPermission,
+ branchPermission,testPermission,createRootGrant,
  {resource:resourcePrefix+"/files/"+backendPath,operation:"read_file"},
  {resource:resourcePrefix+"/files/"+backendPath,operation:"update_file"},
  {resource:resourcePrefix+"/files/"+mutationPath,operation:"read_file"},
- {resource:resourcePrefix+"/files/"+mutationPath,operation:"update_file"},
- createRootGrant
+ {resource:resourcePrefix+"/files/"+mutationPath,operation:"update_file"}
 ];
 assert.equal(grantPermissions.length,7);
 const readPermission={resource:resourcePrefix+"/files/"+mutationPath,
