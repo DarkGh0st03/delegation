@@ -181,7 +181,7 @@ test("R383.4 create attempt is durable, exactly once and never a provider write"
  const f=await fixture(t);
  const {intent}=await f.mkPreflight().stageCreate(f.record,HEAD);
  await f.journal.reserveAttempt(intent);
- const stem=createHash("sha256").update(bound.session_id+"\\n"+bound.task_id)
+ const stem=createHash("sha256").update(bound.session_id+"\n"+bound.task_id)
   .digest("hex");
  assert.deepEqual((await readdir(f.dir)).sort(),[
   stem+".create-attempt.json",stem+".create-intent.json"
