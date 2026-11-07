@@ -101,7 +101,8 @@ export class DelegationEvidenceHandler {
           ?await createOwnerPrivateNativeCryptoMcpSession(
             "presentation_create",{
               socketPath:this.#nativeSocketPath,
-              bearerToken:this.#adapterToken,timeoutMs:this.#timeoutMs
+              bearerToken:this.#adapterToken,timeoutMs:this.#timeoutMs,
+              signal:this.#signal
             },args).invokeOnce()
           :await invokeNativeCrypto({
             socketPath:this.#nativeSocketPath,token:this.#adapterToken,
