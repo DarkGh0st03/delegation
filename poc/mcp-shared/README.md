@@ -407,8 +407,10 @@ method. A fresh signature and the original native Rust identity are
 still required before the single canonical Root/Branch/ADK/Runner
 execution. On provider failure the original Host retires; there is
 no legacy Signed DAG fallback. The historical
-`startProtectedGeminiOwnerSession` now denies any authority-only
-process before touching keys or starting the old Coordinator.
+`startProtectedGeminiOwnerSession` now denies authority-only AND unset
+architectures before touching keys or starting the old Coordinator;
+historical billing requires an explicit
+`DELEGATION_GATEWAY_ARCHITECTURE=legacy-signed-dag` choice.
 
 The binding is covered with offline BaseLlm fakes and negative
 identity/scope tests, and the real Review Host wrapper is covered
