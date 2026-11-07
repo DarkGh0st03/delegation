@@ -690,8 +690,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
  'pr-execute-foreign-child','pr-execute-child-depth','pr-execute-post-failure','pr-execute-race',
  'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
- 'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale','adaptive-work','adaptive-from-zero',
+ 'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale','adaptive-work','adaptive-from-zero','adaptive-from-zero-test',
  'adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest','adaptive-repair-pr'])test(
+ mode==='adaptive-from-zero-test'?
+  'R368.1 original Review Host dynamically selects all 3 agents and verifies Runner PASS':
  mode==='adaptive-from-zero'?
   'R368 original Review Host dynamically chooses Backend and Frontend from ZERO registered Tasks':
  mode==='adaptive-work'?
@@ -733,8 +735,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
   ['adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest','adaptive-repair-pr'].includes(mode),
   noFailureReceipt=mode==='failure-no-receipt'||mode==='adaptive-unverified-fail',
   foreignD1Model=mode==='failure-model-denied',
-  throughTest=mode==='test'||mode.startsWith('pr')||['adaptive-ready','adaptive-stale'].includes(mode)||throughFailure,
-  throughFrontend=mode==='frontend'||mode==='adaptive-work'||mode==='adaptive-from-zero'||throughTest,
+  throughTest=mode==='test'||mode.startsWith('pr')||['adaptive-ready','adaptive-stale','adaptive-from-zero-test'].includes(mode)||throughFailure,
+  throughFrontend=mode==='frontend'||mode==='adaptive-work'||['adaptive-from-zero','adaptive-from-zero-test'].includes(mode)||throughTest,
   d1Retest=mode==='failure-d1-retest'||adaptiveRepairMode,
    d1Effect=mode==='failure-d1-effect'||d1Retest;
  const wantsPrGrant=(mode.startsWith('pr')&&mode!=='pr-denied')||mode==='adaptive-repair-pr';
@@ -876,11 +878,11 @@ for(const mode of ['missing','backend','frontend','test','failure',
  }
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   events.push('native_child_fixture');
-  if(mode==='adaptive-from-zero'&&req.delegatee==='backend')
+  if(['adaptive-from-zero','adaptive-from-zero-test'].includes(mode)&&req.delegatee==='backend')
    staged={credential_id:req.credential_id};
-  if(['adaptive-work','adaptive-from-zero'].includes(mode)&&req.delegatee==='frontend')
+  if(['adaptive-work','adaptive-from-zero','adaptive-from-zero-test'].includes(mode)&&req.delegatee==='frontend')
    frontendStaged={credential_id:req.credential_id};
-  if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)&&req.delegatee==='test')testStaged={credential_id:req.credential_id};
+  if(['adaptive-observed-fail','adaptive-unverified-fail','adaptive-from-zero-test'].includes(mode)&&req.delegatee==='test')testStaged={credential_id:req.credential_id};
   if(adaptiveRepairMode){
    if(req.delegatee==='backend'&&model.calls===2)
     nativeD1={new_child_credential_id:req.credential_id};
@@ -907,7 +909,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
   agent_id:'backend',depends_on:[],permissions:task.task.permissions,
   instruction:'Update Backend Account Suspension within signed scope'});
  let staged;
- if(mode!=='adaptive-from-zero'){
+ if(!['adaptive-from-zero','adaptive-from-zero-test'].includes(mode)){
   staged=verified?await execution.proposeAndStageTask({
    model:firstChoice,runtimeTaskId:task.runtimeTaskId,
    childParameters:task.childParameters
@@ -932,7 +934,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
   ...(throughTest?{runnerPassObserver}:{}),
   ...(prExecutor?{pullRequestExecutor:prExecutor}:{})
  }).gateway_execution_authorized,false);
- const nativeStager=mode==='adaptive-from-zero'?undefined:
+ const nativeStager=['adaptive-from-zero','adaptive-from-zero-test'].includes(mode)?undefined:
   execution.createEnrolledNativeEffectStager({
    runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
   });
@@ -943,7 +945,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const fetchFn=async(url,options)=>{
   const u=String(url),body=JSON.parse(String(options?.body));
   if(u.endsWith('/v1/authorization/prepare')){
-   if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)&&body.agent_role==='test')testTask.runtimeTaskId=body.task_id;
+   if(['adaptive-observed-fail','adaptive-unverified-fail','adaptive-from-zero-test'].includes(mode)&&body.agent_role==='test')testTask.runtimeTaskId=body.task_id;
    if(adaptiveRepairMode){
     if(body.agent_role==='test'){
      if(testAgentModel.calls<3)testTask.runtimeTaskId=body.task_id;
@@ -972,9 +974,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
     assert.equal(store.size(),retestRequest?5:3);
     return Response.json(prepared,{status:201});
    }
-   if(mode==='adaptive-from-zero'&&body.agent_role==='backend')
+   if(['adaptive-from-zero','adaptive-from-zero-test'].includes(mode)&&body.agent_role==='backend')
     task.runtimeTaskId=body.task_id;
-   if(['adaptive-work','adaptive-from-zero'].includes(mode)&&
+   if(['adaptive-work','adaptive-from-zero','adaptive-from-zero-test'].includes(mode)&&
       body.agent_role==='frontend')next.runtimeTaskId=body.task_id;
    const d1Request=d1Effect&&nativeD1&&
     body.task_id===nativeD1.runtime_task_id;
@@ -1163,7 +1165,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
     deadlineMs:15000,initialIntervalMs:25,maxIntervalMs:80}});
   assert.equal(ownerStartup.status,'owner_protected_a2a_started_no_provider_execution');
   assert.equal('dispatchIssuedTask' in ownerStartup,false);
-  if(mode==='adaptive-from-zero'){
+  if(['adaptive-from-zero','adaptive-from-zero-test'].includes(mode)){
+   const fullTest=mode==='adaptive-from-zero-test';
    // R368: SDK A2A was bootstrapped before the first Task or native Child;
    // the owner must then admit the model-selected tasks one by one.
    assert.equal(coordinator.registeredTaskCount,0);
@@ -1176,6 +1179,19 @@ for(const mode of ['missing','backend','frontend','test','failure',
    });
    next.runtimeTaskId='dispatch_'+'M'.repeat(22);
    next.childParameters.credential_status.statusListIndex='31';
+   if(fullTest){
+    testTask={runtimeTaskId:'dispatch_'+'T'.repeat(22),
+     childParameters:{
+      credential_id:'urn:r368:child:test',
+      credential_status:{type:'BitstringStatusListEntry',
+       statusPurpose:'revocation',statusListCredential:'https://status.invalid/r368-test',
+       statusListIndex:'32'},
+      valid_from:new Date().toISOString(),validity_seconds:90
+     }};
+   }
+   const testPermission=fullTest?coordinator.assertTrustedGatewayAuthorityBinding()
+    .root_permissions.find(p=>p.operation==='run_tests'):undefined;
+   if(fullTest)assert.ok(testPermission,'original Engineer did not authorize Test');
    class ScriptedOwnerFromZero extends BaseLlm{
     calls=0;requests=[];
     constructor(){super({model:'r368-review-host-free-first-task-adaptive'});}
@@ -1190,7 +1206,14 @@ for(const mode of ['missing','backend','frontend','test','failure',
        task_id:next.task.task_id,agent_id:'frontend',
        depends_on:[task.task.task_id],permissions:next.task.permissions,
        instruction:'Update Frontend after independently attested Backend CAS'}},
-      {action:'blocked',reason:'Bounded original Review Host integration complete'}
+      ...(fullTest?[
+       {action:'delegate',task:{
+        task_id:'r3513-test',agent_id:'test',
+        depends_on:[task.task.task_id,next.task.task_id],
+        permissions:[testPermission],
+        instruction:'Run approved Test against independently verified current Frontend HEAD'}},
+       {action:'ready_for_pr',reason:'Latest native Runner receipt independently verified'}
+      ]:[{action:'blocked',reason:'Bounded original Review Host integration complete'}])
      ];
      assert.ok(this.calls<=choices.length);
      if(this.calls>1)assert.ok(JSON.stringify(request).includes(
@@ -1201,36 +1224,54 @@ for(const mode of ['missing','backend','frontend','test','failure',
    }
    const adaptive=new ScriptedOwnerFromZero(),supplied=[];
    const result=await execution.runAdaptiveWorkLoop({
-    model:adaptive,maxSteps:3,
+    model:adaptive,maxSteps:fullTest?4:3,
     nextChildParameters:info=>{
      supplied.push(info);
      if(info.agent_id==='backend')return task.childParameters;
      if(info.agent_id==='frontend')return next.childParameters;
+     if(fullTest&&info.agent_id==='test')return testTask.childParameters;
      throw Error('unapproved role attempted Child issuance');
     }
    });
-   assert.equal(result.status,'owner_adaptive_work_blocked');
-   assert.equal(result.executed_tasks,2);
+   assert.equal(result.status,fullTest?'owner_adaptive_work_ready_for_pr':'owner_adaptive_work_blocked');
+   assert.equal(result.executed_tasks,fullTest?3:2);
    assert.equal(result.pr_created,false);
-   assert.equal(adaptive.calls,3);
+   assert.equal(adaptive.calls,fullTest?4:3);
    assert.deepEqual(supplied,[{epoch:1,agent_id:'backend'},
-    {epoch:2,agent_id:'frontend'}]);
+    {epoch:2,agent_id:'frontend'},
+    ...(fullTest?[{epoch:3,agent_id:'test'}]:[])]);
    assert.equal(firstChoice.calls,0);
    assert.equal(model.calls,2);
    assert.equal(frontendModel.calls,2);
-   assert.equal(coordinator.registeredTaskCount,2);
-   assert.equal(gateway.stagedCompletedTaskCount,2);
+   assert.equal(testAgentModel.calls,fullTest?2:0);
+   assert.equal(coordinator.registeredTaskCount,fullTest?3:2);
+   assert.equal(gateway.stagedCompletedTaskCount,fullTest?3:2);
    assert.equal(provider.head,frontendSha);
-   assert.equal(host.phase,'revoked');
+   if(fullTest){
+    assert.equal(result.source_test_task_id,'r3513-test');
+    assert.equal(result.tested_commit_sha,frontendSha);
+    assert.equal(provider.prPosts,0);
+    assert.equal(host.phase,'operational');
+    assert.equal((await readdir(f.dirs.runnerEvidence))
+     .filter(n=>n.endsWith('.runner.json')).length,1);
+   }else assert.equal(host.phase,'revoked');
    assert.equal((await readdir(f.dirs.flights))
-    .filter(n=>n.endsWith('.completion.json')).length,2);
+    .filter(n=>n.endsWith('.completion.json')).length,fullTest?3:2);
    assert.deepEqual(events.filter(e=>e==='native_child_fixture'),[
-    'native_child_fixture','native_child_fixture']);
+    'native_child_fixture','native_child_fixture',
+    ...(fullTest?['native_child_fixture']:[])]);
    const secondPrompt=JSON.stringify(adaptive.requests[1]);
    assert.ok(secondPrompt.includes(fileSha));
    for(const privateValue of [vp,frontendVp,requestId,frontendRequestId,
     staged.credential_id,frontendStaged.credential_id])
     assert.equal(secondPrompt.includes(privateValue),false);
+   if(fullTest){
+    const readyPrompt=JSON.stringify(adaptive.requests[3]);
+    assert.ok(readyPrompt.includes('r3513-test'));
+    assert.ok(readyPrompt.includes(frontendSha));
+    for(const privateValue of [testVp,testRequestId,testStaged.credential_id])
+     assert.equal(readyPrompt.includes(privateValue),false);
+   }
    await host.close();
    return;
   }
