@@ -1,0 +1,29 @@
+{
+  "schema": "r3818-canonical-native-private-mcp-once-v1",
+  "candidate_parent_sha": "0a7db9742d7c824b84c30b08378c9312d7d1bd86",
+  "workflow": "r3818-canonical-private-native-mcp-e2e.yml",
+  "purpose": "One free same-SHA original authority-only Engineer Review Host E2E: Root direct Rust; Task-bound Child DC and all 3 original protected A2A role VPs signed inside private MCP stdio through one native Rust signer; independent EVM/OPA/Gitea/Docker FAIL-repair-PASS and Draft PR.",
+  "requested": true,
+  "attested": false,
+  "trigger_once": true,
+  "disposable_gitea_anvil_opa_docker": true,
+  "scripted_model_only": true,
+  "paid_model_calls_allowed": false,
+  "exclusions": [
+    "No GEMINI_API_KEY",
+    "No OPENAI_API_KEY",
+    "No production Gitea changes",
+    "No main branch merge",
+    "No second Rust signer",
+    "No production autonomous AI claim"
+  ],
+  "expected_evidence": [
+    "same-SHA GitHub Actions completed SUCCESS",
+    "original reviewed Root and Gitea Branch",
+    "native MCP Child count matches all issued Children",
+    "Backend Frontend Test VPs signed through native MCP",
+    "original main unchanged",
+    "Docker FAIL then independently attested PASS",
+    "Draft PR independently observed unmerged"
+  ]
+}
