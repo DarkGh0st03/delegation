@@ -56,7 +56,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
 import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 import {createNativeOrchestratorPresentation}
- from "../src/orchestrator-gateway-transport.ts";
+ from "../src/native-orchestrator-presentation.ts";
 
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
