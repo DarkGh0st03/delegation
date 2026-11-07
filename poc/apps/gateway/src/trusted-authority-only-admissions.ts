@@ -677,12 +677,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("completed read lacks native-rooted enrolled Task Child");
   const flight=this.#flights.get(bound.row.task_id);
   const readPin=this.#readPins.get(record.task_id);
-  if((readPin&&(readPin.task_id!==bound.row.task_id||
+  if(readPin&&(readPin.task_id!==bound.row.task_id||
        readPin.credential_id!==child.credential_id||
        readPin.resource!==record.required_permission.resource||
-       readPin.expectedHeadSha!==record.pinned_revision))||
-     (!readPin&&!this.#sequential.has(bound.row.task_id)&&
-       record.pinned_revision!==undefined))
+       readPin.expectedHeadSha!==record.pinned_revision))
    deny("read evidence differs from originally pinned source revision");
   if(!flight||this.#completed.has(bound.row.task_id)||
      flight.request_id!==record.request_id||
