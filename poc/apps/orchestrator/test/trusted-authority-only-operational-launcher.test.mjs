@@ -42,6 +42,31 @@ const prConfig=()=>({
  prepare:()=>{throw Error('provider should not be called');},
  execute:()=>{throw Error('provider should not be called');}
 });
+test('R384.5 owner forwards bounded recovery budget without changing PR authority',async()=>{
+ const {owner,events}=fakeOwner();
+ const original=owner.runAdaptiveWorkLoop;
+ owner.runAdaptiveWorkLoop=async budget=>{
+  assert.equal(budget.maxSteps,24);
+  assert.equal(budget.maxVerifiedFailures,4);
+  return original(budget);
+ };
+ const config=canonicalConfig(owner);
+ config.adaptive.maxSteps=24;
+ config.adaptive.maxVerifiedFailures=4;
+ const outcome=await launch(config);
+ assert.equal(outcome.status,'owner_operational_ready_for_review_not_pr_authorized');
+ assert.deepEqual(events,['a2a','adaptive']);
+});
+test('R384.5 unbounded or malformed recovery budgets rejected before A2A startup',async()=>{
+ for(const invalid of [-1,5,1.5,NaN,'4']){
+  const {owner,events}=fakeOwner();
+  const config=canonicalConfig(owner);
+  config.adaptive.maxVerifiedFailures=invalid;
+  await assert.rejects(launch(config),
+   /trusted owner, protected A2A and bounded adaptive model required/);
+  assert.deepEqual(events,[]);
+ }
+});
 test('R370 readiness alone never issues PR, Child, root VP or provider effect',async()=>{
  const {owner,events}=fakeOwner();
  const result=await launch(canonicalConfig(owner));
