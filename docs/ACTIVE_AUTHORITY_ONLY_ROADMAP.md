@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.7)
+## Piano attivo — aggiornato al 7 novembre 2026 (R383.0)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,52 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP Child/VP e confini Rust attestati nativamente R381.8 su SHA `a458b441`; ulteriori audit Planning/letture composte aperti** |
-| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.7 porta il manifest 0600 fino ai journal originali e al port Engineer→Rust/Gateway IPC; manca il `provision` operativo trusted, il CLI unico e la prova finale stessa SHA** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **E2E R381.8 SUCCESS su `a458b441`; nuova verifica stessa-SHA obbligatoria dopo C/E, nessun PASS presunto sui commit successivi** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **R383.0 apre investigazione read-only per Test su file di test applicativi già autorizzati, con proof Gitea; Task di creazione file / multi-file e recovery generico ancora aperti** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
+| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Fast CI e R3818 E2E native PASS sulla stessa SHA `63a4414` (run #42399581378 e #42399581386); necessarie nuove regressioni dopo R383.0 e post-cleanup** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R383.0 — lettura diagnostica del Test Agent, senza nuova autorità
+
+**Baseline reale:** commit `63a4414a1e59` con Fast CI
+[#42399581378](https://github.com/DarkGh0st03/delegation/actions/runs/42399581378)
+SUCCESS e native E2E
+[#42399581386](https://github.com/DarkGh0st03/delegation/actions/runs/42399581386)
+SUCCESS sulla medesima SHA. L'E2E ha attraversato
+`canonical_deployment_native_preflight` e
+`canonical_signed_handoff_native`: original Engineer Review Host,
+MCP Child/VP interprocesso, Rust/EVM/OPA, Gitea/Docker FAIL→PASS e
+Draft PR non mergiata. I log attestano
+`source_code_generated_autonomously_by_model=false` e
+`paid_model_calls=0`; **non** prova il pilot generativo.
+
+**Nuova estensione A (da validare nella CI R383.0):** il Task
+read-only del Test Agent diventa una decisione possibile dell'ADK
+adaptive work loop, *solo* per file sorgente in
+`tests/backend/**/*.test.ts[x]` o
+`tests/frontend/**/*.test.ts[x]`, e soltanto se la stessa Root
+Engineer firmata e l'Agent Card trusted contengono `read_file`.
+Un helper `isProjectTestReadGrant` convalida un'unica permission
+exact-file; il Gateway originale la ricontrolla sia al pin della
+HEAD prima del Prepare sia durante la verifica della lettura
+Gitea indipendente. Il Review Host non accetta il report A2A
+come completion, rilegge la prova autenticata e scarta HEAD
+obsolete. Il modello riceve solo il bounded excerpt verificato.
+`run_tests` rimane un Task Test distinto; non è possibile
+scambiare una lettura con un PASS e non sono stati ampliati
+i permessi di scrittura Test o quelli dei test di acceptance.
+Test offline positivi e negativi: Root assente, capability assente,
+file non di test, directory/extra grant, errore nella sorgente
+verificata. Nessun permesso può essere aggiunto dal modello.
+
+**Restano A/B:** `create_file` nel vero adaptive SDK,
+multi-file bounded Task, fallimenti applicativi differenti dal Test
+FAIL, configurabilità dei ruoli e maggiore separazione delle
+FunctionTools. La lettura composta Planning è già presente,
+quindi non va ricostruita.
 
 ### Nuova evidenza integrata R381.8 — 7 novembre 2026
 
