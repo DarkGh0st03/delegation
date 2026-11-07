@@ -690,8 +690,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
  'pr-execute-foreign-child','pr-execute-child-depth','pr-execute-post-failure','pr-execute-race',
  'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
- 'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale','adaptive-work',
+ 'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale','adaptive-work','adaptive-from-zero',
  'adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest','adaptive-repair-pr'])test(
+ mode==='adaptive-from-zero'?
+  'R368 original Review Host dynamically chooses Backend and Frontend from ZERO registered Tasks':
  mode==='adaptive-work'?
   'R355 original adaptive loop executes chosen Frontend through real ADK A2A and independent Gateway completion':
  mode==='adaptive-observed-fail'?
@@ -732,7 +734,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
   noFailureReceipt=mode==='failure-no-receipt'||mode==='adaptive-unverified-fail',
   foreignD1Model=mode==='failure-model-denied',
   throughTest=mode==='test'||mode.startsWith('pr')||['adaptive-ready','adaptive-stale'].includes(mode)||throughFailure,
-  throughFrontend=mode==='frontend'||mode==='adaptive-work'||throughTest,
+  throughFrontend=mode==='frontend'||mode==='adaptive-work'||mode==='adaptive-from-zero'||throughTest,
   d1Retest=mode==='failure-d1-retest'||adaptiveRepairMode,
    d1Effect=mode==='failure-d1-effect'||d1Retest;
  const wantsPrGrant=(mode.startsWith('pr')&&mode!=='pr-denied')||mode==='adaptive-repair-pr';
@@ -874,7 +876,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
  }
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   events.push('native_child_fixture');
-  if(mode==='adaptive-work'&&req.delegatee==='frontend')frontendStaged={credential_id:req.credential_id};
+  if(mode==='adaptive-from-zero'&&req.delegatee==='backend')
+   staged={credential_id:req.credential_id};
+  if(['adaptive-work','adaptive-from-zero'].includes(mode)&&req.delegatee==='frontend')
+   frontendStaged={credential_id:req.credential_id};
   if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)&&req.delegatee==='test')testStaged={credential_id:req.credential_id};
   if(adaptiveRepairMode){
    if(req.delegatee==='backend'&&model.calls===2)
@@ -901,12 +906,18 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const firstChoice=new R351ScriptedDecision({task_id:task.task.task_id,
   agent_id:'backend',depends_on:[],permissions:task.task.permissions,
   instruction:'Update Backend Account Suspension within signed scope'});
- const staged=verified?await execution.proposeAndStageTask({
-  model:firstChoice,runtimeTaskId:task.runtimeTaskId,
-  childParameters:task.childParameters
- }):await stageTask(task);
- assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
- if(verified)assert.equal(firstChoice.calls,1);
+ let staged;
+ if(mode!=='adaptive-from-zero'){
+  staged=verified?await execution.proposeAndStageTask({
+   model:firstChoice,runtimeTaskId:task.runtimeTaskId,
+   childParameters:task.childParameters
+  }):await stageTask(task);
+  assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
+  if(verified)assert.equal(firstChoice.calls,1);
+ }else{
+  assert.equal(coordinator.registeredTaskCount,0);
+  assert.equal(firstChoice.calls,0);
+ }
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const {mutation:nativeMutation,runner:nativeRunner,gitea}=
   nativeOfflinePreflights(gateway,f.dirs,events,verified?provider:undefined,
@@ -921,9 +932,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
   ...(throughTest?{runnerPassObserver}:{}),
   ...(prExecutor?{pullRequestExecutor:prExecutor}:{})
  }).gateway_execution_authorized,false);
- const nativeStager=execution.createEnrolledNativeEffectStager({
-  runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
- });
+ const nativeStager=mode==='adaptive-from-zero'?undefined:
+  execution.createEnrolledNativeEffectStager({
+   runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
+  });
  const temp=await mkdtemp(join(tmpdir(),'r3504a2a-'));
  const roles=['backend','frontend','test'],stageChannels={},
   agentBindingChannels={},a2aUrls={},servers=[],binders=[];
@@ -960,7 +972,10 @@ for(const mode of ['missing','backend','frontend','test','failure',
     assert.equal(store.size(),retestRequest?5:3);
     return Response.json(prepared,{status:201});
    }
-   if(mode==='adaptive-work'&&body.agent_role==='frontend')next.runtimeTaskId=body.task_id;
+   if(mode==='adaptive-from-zero'&&body.agent_role==='backend')
+    task.runtimeTaskId=body.task_id;
+   if(['adaptive-work','adaptive-from-zero'].includes(mode)&&
+      body.agent_role==='frontend')next.runtimeTaskId=body.task_id;
    const d1Request=d1Effect&&nativeD1&&
     body.task_id===nativeD1.runtime_task_id;
    const frontendRequest=throughFrontend&&next&&
@@ -1148,6 +1163,77 @@ for(const mode of ['missing','backend','frontend','test','failure',
     deadlineMs:15000,initialIntervalMs:25,maxIntervalMs:80}});
   assert.equal(ownerStartup.status,'owner_protected_a2a_started_no_provider_execution');
   assert.equal('dispatchIssuedTask' in ownerStartup,false);
+  if(mode==='adaptive-from-zero'){
+   // R368: SDK A2A was bootstrapped before the first Task or native Child;
+   // the owner must then admit the model-selected tasks one by one.
+   assert.equal(coordinator.registeredTaskCount,0);
+   assert.equal(gateway.registeredTaskCount,0);
+   assert.equal(events.length,0);
+   assert.equal(model.calls,0);
+   next=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding(),{
+    taskId:'r368-frontend-dynamic',epoch:2,
+    childId:'urn:r368:frontend-child',permission:task.task.permissions[0]
+   });
+   next.runtimeTaskId='dispatch_'+'M'.repeat(22);
+   next.childParameters.credential_status.statusListIndex='31';
+   class ScriptedOwnerFromZero extends BaseLlm{
+    calls=0;requests=[];
+    constructor(){super({model:'r368-review-host-free-first-task-adaptive'});}
+    async *generateContentAsync(request){
+     this.requests.push(request);this.calls++;
+     const choices=[
+      {action:'delegate',task:{
+       task_id:task.task.task_id,agent_id:'backend',depends_on:[],
+       permissions:task.task.permissions,
+       instruction:'Update Backend within original signed authority'}},
+      {action:'delegate',task:{
+       task_id:next.task.task_id,agent_id:'frontend',
+       depends_on:[task.task.task_id],permissions:next.task.permissions,
+       instruction:'Update Frontend after independently attested Backend CAS'}},
+      {action:'blocked',reason:'Bounded original Review Host integration complete'}
+     ];
+     assert.ok(this.calls<=choices.length);
+     if(this.calls>1)assert.ok(JSON.stringify(request).includes(
+      choices[this.calls-2].task.task_id),'next decision must see verified prior Task');
+     yield {content:{role:'model',parts:[{text:JSON.stringify(choices[this.calls-1])}]}};
+    }
+    connect(){throw Error('Paid model forbidden in R368 Review Host');}
+   }
+   const adaptive=new ScriptedOwnerFromZero(),supplied=[];
+   const result=await execution.runAdaptiveWorkLoop({
+    model:adaptive,maxSteps:3,
+    nextChildParameters:info=>{
+     supplied.push(info);
+     if(info.agent_id==='backend')return task.childParameters;
+     if(info.agent_id==='frontend')return next.childParameters;
+     throw Error('unapproved role attempted Child issuance');
+    }
+   });
+   assert.equal(result.status,'owner_adaptive_work_blocked');
+   assert.equal(result.executed_tasks,2);
+   assert.equal(result.pr_created,false);
+   assert.equal(adaptive.calls,3);
+   assert.deepEqual(supplied,[{epoch:1,agent_id:'backend'},
+    {epoch:2,agent_id:'frontend'}]);
+   assert.equal(firstChoice.calls,0);
+   assert.equal(model.calls,2);
+   assert.equal(frontendModel.calls,2);
+   assert.equal(coordinator.registeredTaskCount,2);
+   assert.equal(gateway.stagedCompletedTaskCount,2);
+   assert.equal(provider.head,frontendSha);
+   assert.equal(host.phase,'revoked');
+   assert.equal((await readdir(f.dirs.flights))
+    .filter(n=>n.endsWith('.completion.json')).length,2);
+   assert.deepEqual(events.filter(e=>e==='native_child_fixture'),[
+    'native_child_fixture','native_child_fixture']);
+   const secondPrompt=JSON.stringify(adaptive.requests[1]);
+   assert.ok(secondPrompt.includes(fileSha));
+   for(const privateValue of [vp,frontendVp,requestId,frontendRequestId,
+    staged.credential_id,frontendStaged.credential_id])
+    assert.equal(secondPrompt.includes(privateValue),false);
+   await host.close();
+   return;
+  }
   const report=await execution.dispatchEnrolledTask({
    taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId,
    instruction:'Update only the Engineer-approved file',
