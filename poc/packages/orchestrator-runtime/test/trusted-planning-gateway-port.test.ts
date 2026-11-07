@@ -520,8 +520,10 @@ test("R380.2 malformed source listing cannot partially expand the trusted Planni
 test("R380.2 ADK proposes only a verified newly discovered source file for Engineer review",async()=>{
  class SourceDrivenPlanner extends BaseLlm {
    readonly requests:LlmRequest[]=[];
-   constructor(private readonly skipListing=false){
+   readonly skipListing:boolean;
+   constructor(skipListing=false){
      super({model:"offline-r3802-source-discovery"});
+     this.skipListing=skipListing;
    }
    override async *generateContentAsync(request:LlmRequest):
      AsyncGenerator<LlmResponse,void>{
