@@ -1,6 +1,6 @@
 {
   "checkpoint": "R384.3",
-  "increment": "native-multi-agent-safe-diagnostic",
+  "increment": "native-multi-agent-private-create-boundary-diagnostics",
   "scenario": "account-suspension",
   "objective": "same-original-engineer-root-adaptive-fail-create-d1-retest",
   "sequence": [
@@ -20,6 +20,6 @@
   "changes_main": false,
   "permission_escalation": false,
   "notes": "A second authentic Test FAIL is expected; this proves native D1 continuity and fail-closed, NOT functional repair success.",
-  "revision": 4,
-  "fix": "Classify genuine post-FAIL Gateway CREATE denial by immutable audit reason and GatewayError code only; never log VP, tokens or source."
+  "revision": 5,
+  "fix": "Classify private original CREATE admission, O_EXCL, Gitea CAS and MAC failures; log only redacted reason and preserve fail-closed behavior"
 }
