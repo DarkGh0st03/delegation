@@ -1,10 +1,12 @@
-# Manual and potentially BILLED: refactor pilot with FOUR genuine Gemini models.
+# R384.6 RETIRED: historical Signed DAG pilot, deliberately disabled.
+# This file is retained temporarily for auditable migration / workflow references.
+# Its two potentially billable jobs are unconditional SKIP (no API calls).
 # Original authenticated Engineer service is NOT represented here.
 # This pilot uses a clearly identified signed ENGINEER TEST fixture and may
 # FAIL if Gemini proposes a DAG shape the existing acceptance harness rejects.
 # The default-branch workflow of this same filename remains legacy; select
 # refactor/post-prof-plan-contracts-20261021 explicitly in GitHub Actions.
-name: Gemini Real - Refactor Signed DAG Account Suspension Pilot (Manual Only)
+name: RETIRED - Historical Gemini Signed DAG Pilot (Disabled)
 on:
   workflow_dispatch:
     inputs:
@@ -51,7 +53,8 @@ concurrency:
 jobs:
   account-suspension:
     name: Four Gemini models - real signed DC VP Gitea Docker - TEST approval
-    if: ${{ github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' && inputs.model == 'gemini-3.8-flash' && inputs.thinking_level == 'LOW' && inputs.execution_mode == 'full-d0' }}
+    # R384.6: unconditional skip even for a manually authorized dispatch.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     # Accommodate independent bounded Planning and signed ADK/A2A Tasks.
     # GitHub still terminates the run; this is not a monetary spending cap.
@@ -530,18 +533,8 @@ jobs:
   # F1 explicit selector shares the registered default-branch workflow file,
   # but never enters the full four-model D0 job.
   f1-real-gitea-planning:
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.repository == 'DarkGh0st03/delegation' &&
-      github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' &&
-      github.run_attempt == 1 &&
-      inputs.execution_mode == 'planning-only' &&
-      inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' &&
-      inputs.billing_cap_acknowledgement == 'I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES' &&
-      inputs.pinned_commit_sha == github.sha &&
-      inputs.model == 'gemini-3.8-flash' &&
-      inputs.thinking_level == 'LOW' &&
-      inputs.repair_authorization == 'NO ADDITIONAL REPAIR AUTHORIZED'
+    # R384.6: separate Planning-only job is also retired.
+    if: ${{ false }}
     name: One signed preliminary ADK Planner, no approval (potentially billed)
     runs-on: ubuntu-latest
     timeout-minutes: 65
