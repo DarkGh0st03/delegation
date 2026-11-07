@@ -1,0 +1,13 @@
+{
+  "checkpoint": "R368.2.1",
+  "base": "2cd72af178ec2383090187528825291072ad9a00",
+  "scope": "Account Suspension",
+  "test": "Original Engineer Review Host creates Planning, signed root, Coordinator, Gateway, Child issuer, runs model-selected Backend -> Frontend -> Test and independently confirms current Runner PASS",
+  "providers": "Disposable real native Rust/EVM/OPA/Gitea/Docker and SDK A2A",
+  "models": "Free scripted ADK only",
+  "paid_inference": false,
+  "pre_registered_tasks": 0,
+  "pull_request_created": false,
+  "merge": false,
+  "validation": "Unverified until workflow succeeds"
+}
