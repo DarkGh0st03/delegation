@@ -1,6 +1,6 @@
 {
   "checkpoint": "R384.3",
-  "increment": "full-native-multi-agent-third-attempt",
+  "increment": "native-multi-agent-safe-diagnostic",
   "scenario": "account-suspension",
   "objective": "same-original-engineer-root-adaptive-fail-create-d1-retest",
   "sequence": [
@@ -20,6 +20,6 @@
   "changes_main": false,
   "permission_escalation": false,
   "notes": "A second authentic Test FAIL is expected; this proves native D1 continuity and fail-closed, NOT functional repair success.",
-  "revision": 3,
-  "fix": "Canonical authority-only needs original native-stdio private Child MCP issueChildViaPrivateMcp; forbid legacy direct issuance. No downgrade or expanded grant."
+  "revision": 4,
+  "fix": "Classify genuine post-FAIL Gateway CREATE denial by immutable audit reason and GatewayError code only; never log VP, tokens or source."
 }
