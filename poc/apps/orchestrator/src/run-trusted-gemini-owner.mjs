@@ -223,6 +223,42 @@ export async function startProtectedCanonicalGeminiOwnerSession({
  }
 }
 
+/**
+ * R382.7 — executable trusted owner *API* with all concrete Review Host
+ * classes loaded from 0600, source-pinned metadata and the sole Rust Core.
+ * The operator supplies only approved paths, billing consent and a private
+ * provision callback. No JSON may supply a callable tool, Root port, or
+ * approved Task permission. This is still not a GitHub Actions or HTTP
+ * endpoint and no inferencing occurs unless the operator invokes it.
+ */
+export async function startProtectedCanonicalGeminiOwnerFromPrivateConfig({
+ configPath,expectedSourceSha,inputFile,chargeAuthorization,provision
+}={}){
+ if(process.env.GITHUB_ACTIONS==="true"||
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+    process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+    process.env.ENGINEER_CORE_NATIVE_MODE!=="1"||
+    !SOURCE_SHA.test(expectedSourceSha??"")||
+    chargeAuthorization!==CONFIRMATION||
+    typeof provision!=="function")
+  deny();
+ // Check clean checkout and the expected SHA BEFORE owner manifest,
+ // native Rust transport, Gateway IPC or any potentially billable model.
+ checkLocalSourceSha(expectedSourceSha);
+ const {loadProtectedCanonicalOwnerManifest,
+  assembleProtectedCanonicalOwnerAuthority}=await import(
+  "./trusted-authority-only-owner-bootstrap.mjs");
+ const loaded=await loadProtectedCanonicalOwnerManifest(configPath,{
+  expectedSourceSha
+ });
+ const authority=await assembleProtectedCanonicalOwnerAuthority(loaded);
+ // The second check in the existing API and its independent owner-JSON
+ // source/Root/roles binding remain mandatory. No Signed DAG fallback.
+ return startProtectedCanonicalGeminiOwnerSession({
+  authority,expectedSourceSha,inputFile,chargeAuthorization,provision
+ });
+}
+
 if(process.argv[1]&&import.meta.url===
     pathToFileURL(resolve(process.argv[1])).href){
   let active,startPromise,stopPromise,interrupted=false;
