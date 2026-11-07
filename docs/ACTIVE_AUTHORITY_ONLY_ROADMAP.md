@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R380.3)
+## Piano attivo — aggiornato al 7 novembre 2026 (R381.0)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,7 +16,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R380.3: Planning nativo riuscito)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R381.0: broker MCP stdio interprocesso provato offline, integrazione issuer aperta)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -169,6 +169,25 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   `.github/ci-checkpoints/r3803-native-planning-read-request.json`
   (o dispatch manuale); gli altri push usano Fast CI e i test gratuiti
   mirati. Non lanciare ripetutamente suite native ad ogni commit.
+- **R381.0 — primo confine MCP interprocesso verificabile**:
+  aggiunti un vero server MCP SDK **stdio in processo separato**,
+  un client trusted owner con env minima (nessun secret/token/sorgente),
+  un catalogo statico unico di quattro tool privati (Child, Root,
+  revoca, VP) e un protocollo con richiesta opaque monouso,
+  singolo ACK vincolato al ref e PID di un processo distinto.
+  Il callback Rust originale rimane nella memoria dell'Owner e
+  viene invocato **solo dopo** un MCP ACK valido: nessun trasferimento
+  del DC firmato/VP al server, nessun HTTP/A2A endpoint e nessuna
+  authority allargata. Test positivi, chiusura anticipata, replay,
+  invocazione concorrente, input sconosciuto ed errore privato
+  sanificato in
+  [Cryptographic MCP Profile](https://github.com/DarkGh0st03/delegation/actions/workflows/crypto-mcp-offline.yml).
+  **Limite esplicito**: è un broker di capability/trasporto e NON
+  ancora il servizio MCP crittografico che emette davvero la Child
+  o crea la VP tra processi. Non è attivato nell'issuer canonico,
+  né sufficiente per chiudere B. Il passo successivo deve associare
+  il processo privato all'Owner/Task originale e riprovare una
+  vera Child e VP nativa senza fallback a un secondo signer.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
