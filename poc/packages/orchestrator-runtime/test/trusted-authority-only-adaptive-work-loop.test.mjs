@@ -830,3 +830,82 @@ for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete',
   }
  });
 }
+
+/** R384.3: owner decision is only a recommendation. A real CREATE still
+ * requires R384.2's prebound native Child, pinned absent path, Rust VP,
+ * OPA, Gitea CAS, independent MAC and completion before a Test can run.
+ * This fixture simulates owner hook completions; it is NOT an E2E proof.
+ */
+test('R384.3 adaptive owner permits exactly one signed CREATE Task followed by new Test on created HEAD',async()=>{
+ const f=fixture();
+ const create={operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(create);
+  ctx.agents.backend.capabilities.push('create_file');
+  ctx.executionProgress.completed_work=ctx.executionProgress.completed_work.map((p,i)=>({
+   ...p,operation:f.verified[i].permissions[0].operation
+  }));
+  return ctx;
+ };
+ const decisions=[
+  candidate('backend',0,[create]),
+  candidate('test',1),
+  {action:'ready_for_pr',reason:'Current post-create HEAD independently tested'}
+ ];
+ const model=new Decisions(decisions);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.equal(result.source_test_task_id,'task-1');
+ assert.equal(result.pr_created,false);
+ assert.deepEqual(f.verified.map(x=>x.permissions[0].operation),
+  ['create_file','run_tests']);
+ assert.deepEqual(f.events.filter(x=>x.startsWith('gateway_attested:')),
+  ['gateway_attested:backend','gateway_attested:test']);
+ assert.equal(f.retired,false);
+});
+for(const mode of [
+ 'no-signed-create','no-role-capability','test-cannot-create',
+ 'two-creates','create-plus-update','create-plus-read','create-wrong-branch'
+]){
+ test('R384.3 adaptive model CREATE is denied before any owner effect: '+mode,async()=>{
+  const f=fixture(),original=f.hooks.readContext;
+  const create={operation:'create_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created.ts'};
+  const create2={operation:'create_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created2.ts'};
+  const read={operation:'read_file',resource:create.resource};
+  const update={operation:'update_file',resource:create.resource};
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   if(mode!=='no-signed-create')
+    ctx.rootPermissions.push(create,create2,read,update);
+   if(mode!=='no-role-capability'){
+    ctx.agents.backend.capabilities.push('create_file','read_file');
+    ctx.agents.test.capabilities.push('create_file');
+   }
+   return ctx;
+  };
+  let choice=candidate('backend',0,[create]);
+  if(mode==='test-cannot-create')choice=candidate('test',0,[create]);
+  if(mode==='two-creates')choice=candidate('backend',0,[create,create2]);
+  if(mode==='create-plus-update')choice=candidate('backend',0,[create,update]);
+  if(mode==='create-plus-read')choice=candidate('backend',0,[read,create]);
+  if(mode==='create-wrong-branch')choice=candidate('backend',0,[{
+   operation:'create_file',
+   resource:repo+'/branches/feature%2Fforeign/files/apps/backend-created.ts'
+  }]);
+  const model=new Decisions([choice]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks,maxSteps:1
+  }),/Task choice denied/u);
+  assert.equal(f.verified.length,0);
+  assert.equal(f.retired,true);
+  assert.deepEqual(f.events.filter(x=>x.startsWith('dispatch:')),[]);
+ }
+});
