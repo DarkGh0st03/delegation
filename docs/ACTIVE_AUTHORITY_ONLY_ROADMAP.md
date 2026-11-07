@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R380.1)
+## Piano attivo — aggiornato al 7 novembre 2026 (R380.2)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,7 +16,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R379.2)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R380.2)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -117,6 +117,30 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   L'attuale enum ADK dei file resta basato sulla lista trusted, fino
   a 4096 voci nell'opt-in: l'ottimizzazione dello schema del modello e
   dei limiti di output è un lavoro distinto, non un permesso aggiuntivo.
+- **R380.2 discovery dinamica con scope Owner esplicito**:
+  `TrustedPlanningSnapshot.dynamic_discovery_roots` (max 8 directory già
+  elencate nello snapshot trusted) è valido SOLO quando
+  `hierarchical_preliminary_read:true`. La Root firmata resta quella
+  read-only di R380.0, senza nuove permission. Il ledger privato
+  `TrustedPlanningDiscoveryLedger` registra nuovi file/sottodirectory
+  **solo dopo** una risposta `list_directory` Gitea al commit originale
+  e dentro le subtree scelte dal Software Engineer: ogni entry deve avere
+  path canonico, essere figlia diretta e superare i limiti (200 entry per
+  elenco, 4096 file e 4096 directory totali). Un listing parzialmente
+  invalido non modifica il ledger.
+  `TrustedPlanningGatewayReadPort` conserva controllo attivo della Root,
+  identità, branch, scope e SHA; un file inventato è respinto **prima**
+  di Gateway prepare. `TrustedAdkReadOnlyPlanner` abilita il path dinamico
+  per `read_file`/`read_files` solo in questa modalità e aggiorna
+  **localmente** le liste usate per validare la proposta non approvata.
+  La Root preliminare e lo snapshot owner-signed non sono riscritti.
+  L'Engineer deve ancora firmare la Root operativa indipendente.
+  [Planner preflight #42371230353](https://github.com/DarkGh0st03/delegation/actions/runs/42371230353)
+  SUCCESS: Gitea pinned, directory e file nuovi, ADK scripted che
+  propone modifica di un file scoperto, spoof/traversal e lettura anticipata
+  negati, revoca e regressioni legacy. **Resta aperta** la prova nativa
+  Rust/EVM end-to-end della nuova discovery e dell'issuer effettivo.
+  Nessuna autonomia generativa di Gemini dimostrata.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
