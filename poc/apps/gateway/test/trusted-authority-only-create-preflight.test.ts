@@ -20,6 +20,8 @@ import {OpaPolicyClient} from "../src/policy-client.ts";
 
 import {TrustedAuthorityOnlyGiteaCreateExecutor as CreateExecutor}
  from "../src/trusted-authority-only-create-executor.ts";
+import {TrustedAuthorityOnlyCreateEffectStager as CreateStager}
+ from "../src/trusted-authority-only-create-effect-stager.ts";
 import {AuthenticatedGiteaCreateCompletionObserver as CreateObserver,
  TrustedGatewayGiteaCreateEvidencePublisher as CreatePublisher}
  from "../src/trusted-authority-only-gitea-create-evidence.ts";
@@ -40,7 +42,7 @@ const bound=Object.freeze({
 async function fixture(t:import("node:test").TestContext,opts:{
  exists?:boolean;status?:number;head?:string;
  changeHeadDuringRead?:boolean;expire?:boolean;
- blockGateway?:boolean;foreignGitea?:boolean
+ blockGateway?:boolean;foreignGitea?:boolean;runtimeTaskId?:string
 }={}){
  const dir=await mkdtemp(join(tmpdir(),"r3833-create-intent-"));
  t.after(()=>rm(dir,{recursive:true,force:true}));
@@ -70,8 +72,9 @@ async function fixture(t:import("node:test").TestContext,opts:{
   baseUrl:"http://gitea.local:3000",owner:opts.foreignGitea?"other":"thesis",
   repository:"iam-console-poc",token:"owner-private",fetchFn
  });
+ const runtimeId=opts.runtimeTaskId??bound.runtime_task_id;
  const record={
-  consumed:false,request_id:bound.request_id,task_id:bound.runtime_task_id,
+  consumed:false,request_id:bound.request_id,task_id:runtimeId,
   request_fingerprint:bound.request_fingerprint,
   expires_at_ms:Date.now()+(opts.expire?-1:60000),
   request:{tool:"create_file",arguments:{branch,path,content}}
@@ -81,7 +84,7 @@ async function fixture(t:import("node:test").TestContext,opts:{
    gateCalls++;
    assert.equal(actual,record,"only original in-memory Prepare can reach owner preflight");
    if(opts.blockGateway)throw Error("Gateway rejected untrusted Child before Gitea read");
-   return bound;
+   return {...bound,runtime_task_id:runtimeId};
   }
  }) as Admissions;
  const journal=new Journal(dir);
@@ -685,4 +688,109 @@ test("R383.7 generic verifier and fake OPA cannot use native create owner opt-in
  }),/not enabled/u);
  assert.equal(g.counters().writerCalls,0);
  assert.equal(g.counters().legacyCalls,0);
+});
+
+test("R383.8 original owner stages CREATE intent then one native Child flight, never provider write",async t=>{
+ const runtimeTaskId="dispatch_"+"C".repeat(22);
+ const f=await fixture(t,{runtimeTaskId});
+ Object.assign(f.record,{
+  authority_only_plan_task_id:bound.task_id,agent_role:"backend"
+ });
+ const store=new InMemoryRequestStore();
+ store.put(f.record);
+ const preflight=f.mkPreflight();
+ let flights=0;
+ Object.assign(f.admissions,{
+  async stageTrustedTaskFlight(actual:PreparedRequestRecord){
+   assert.equal(actual,f.record);
+   flights++;
+   return {
+    status:"task_flight_reserved_no_provider_execution",
+    task_id:bound.task_id,runtime_task_id:runtimeTaskId,
+    gateway_execution_authorized:false
+   };
+  }
+ });
+ const owner=new CreateStager({
+  store,admissions:f.admissions,preflight,giteaClient:f.giteaClient,
+  repository,branch,planTaskId:bound.task_id,
+  runtimeTaskId,expectedHeadSha:HEAD
+ });
+ assert.equal(owner.stagedTool,"create_file");
+ assert.equal(CreateStager.isNativeForOwner(owner,f.admissions,
+  bound.task_id,runtimeTaskId),true);
+ assert.equal(CreateStager.isNativeForOwner(owner,f.admissions,
+  "foreign-task",runtimeTaskId),false);
+ assert.equal(CreateStager.isNativeForOwner(Object.create(
+  CreateStager.prototype),f.admissions,bound.task_id,runtimeTaskId),false);
+ const result=await owner.stage(f.record.request_id);
+ assert.equal(result.status,"create_owner_intent_and_task_flight_staged");
+ assert.equal(result.gateway_execution_authorized,false);
+ assert.equal(result.provider_write_authorized,false);
+ assert.equal(flights,1);
+ assert.deepEqual(f.stats(),{head:HEAD,gets:3,writes:0,gateCalls:1});
+ const markers=await readdir(f.dir);
+ assert.equal(markers.filter(x=>x.endsWith(".create-intent.json")).length,1);
+ assert.equal(markers.filter(x=>x.endsWith(".create-attempt.json")).length,0);
+ await assert.rejects(owner.stage(f.record.request_id),/already attempted/u);
+ assert.equal(flights,1);
+ assert.equal(f.stats().gets,3);
+});
+test("R383.8 owner CREATE failed or ambiguous absence is terminal before a Task flight",async t=>{
+ const runtimeTaskId="dispatch_"+"D".repeat(22);
+ const f=await fixture(t,{runtimeTaskId,status:503});
+ Object.assign(f.record,{
+  authority_only_plan_task_id:bound.task_id,agent_role:"backend"
+ });
+ const store=new InMemoryRequestStore();
+ store.put(f.record);
+ let flights=0;
+ Object.assign(f.admissions,{
+  async stageTrustedTaskFlight(){flights++;}
+ });
+ const stager=new CreateStager({
+  store,admissions:f.admissions,preflight:f.mkPreflight(),
+  giteaClient:f.giteaClient,repository,branch,
+  planTaskId:bound.task_id,runtimeTaskId,expectedHeadSha:HEAD
+ });
+ await assert.rejects(stager.stage(f.record.request_id));
+ await assert.rejects(stager.stage(f.record.request_id),/already attempted/u);
+ assert.equal(flights,0);
+ assert.equal(f.stats().writes,0);
+ assert.deepEqual(await readdir(f.dir),[]);
+});
+test("R383.8 original native owner refuses wrong Task, consumed request and a mismatched flight",async t=>{
+ const runtimeTaskId="dispatch_"+"E".repeat(22);
+ const f=await fixture(t,{runtimeTaskId});
+ Object.assign(f.record,{
+  authority_only_plan_task_id:bound.task_id,agent_role:"backend"
+ });
+ const store=new InMemoryRequestStore();
+ store.put(f.record);
+ const make=(planTaskId=bound.task_id)=>new CreateStager({
+  store,admissions:f.admissions,preflight:f.mkPreflight(),
+  giteaClient:f.giteaClient,repository,branch,
+  planTaskId,runtimeTaskId,expectedHeadSha:HEAD
+ });
+ assert.throws(()=>new CreateStager({
+  store,admissions:f.admissions,preflight:f.mkPreflight(),
+  giteaClient:f.giteaClient,repository,branch,
+  planTaskId:bound.task_id,runtimeTaskId,expectedHeadSha:"main"
+ }),/original Gateway, owner Gitea preflight/u);
+ const foreign=make("other-plan");
+ await assert.rejects(foreign.stage(f.record.request_id),/original unconsumed CREATE Prepare/u);
+ assert.equal(f.stats().gets,0);
+ const owner=make();
+ Object.assign(f.admissions,{
+  async stageTrustedTaskFlight(){
+   return {status:"task_flight_reserved_no_provider_execution",
+    task_id:"other-task",runtime_task_id:runtimeTaskId,
+    gateway_execution_authorized:false};
+  }
+ });
+ await assert.rejects(owner.stage(f.record.request_id),/flight is not exactly reserved/u);
+ await assert.rejects(owner.stage(f.record.request_id),/already attempted/u);
+ assert.equal(f.stats().writes,0);
+ assert.equal((await readdir(f.dir)).filter(x=>
+  x.endsWith(".create-attempt.json")).length,0);
 });
