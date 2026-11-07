@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.6)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.7)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -17,7 +17,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP Child/VP e confini Rust attestati nativamente R381.8 su SHA `a458b441`; ulteriori audit Planning/letture composte aperti** |
-| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.6 connette il modello Gemini esplicitamente autorizzato allo stesso Review Host canonico (API owner-only); manca il bootstrap deploy da config 0600 e la prova reale dopo approvazione** |
+| **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.7 porta il manifest 0600 fino ai journal originali e al port Engineer→Rust/Gateway IPC; manca il `provision` operativo trusted, il CLI unico e la prova finale stessa SHA** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **E2E R381.8 SUCCESS su `a458b441`; nuova verifica stessa-SHA obbligatoria dopo C/E, nessun PASS presunto sui commit successivi** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
@@ -141,6 +141,52 @@ stato avviato o autorizzato.
   e la prova nativa su quella stessa SHA. Il pilot Gemini richiederà
   consenso esplicito separato **prima** di qualunque chiamata.
   
+### R382.7 — bootstrap nativo owner-protected, senza avviare modelli
+
+- Aggiunto `loadProtectedCanonicalOwnerManifest`: valida **senza
+  provider** il manifest `0600` esatto, SHA GitHub della sorgente,
+  snapshot Gitea/repository/base revision/requirement/work branch,
+  Root preliminare, DID Backend/Frontend/Test/Orchestrator contro
+  `ADAPTER_ID_<ROLE>`, capability allowlist, URL Gateway e Adapter
+  loopback, sei directory separate `0700`, file protetti e
+  **corrispondenza Ed25519 private/public dell'Engineer**.
+  Rifiuta symlink, link count, permessi laschi, chiavi manomesse,
+  file extra e modalità legacy.
+- Aggiunto `assembleProtectedCanonicalOwnerAuthority`: unisce
+  **lo stesso** Backend `AuthorityPlanningCheckpointStore`,
+  `DurableAuthorityOnlyActivationJournal`,
+  `DurableAuthorityTaskJournal`,
+  `TrustedOperationalRecoveryStore`,
+  `TrustedOperationalSessionStore`, revisione Planning su
+  `TrustedPlanIpcClient.connect` con attestazione IPC originale,
+  e `createTrustedEngineerCredentialPort` in modalità
+  **`ENGINEER_CORE_NATIVE_MODE=1`** (Rust Core diretto, nessun
+  downgrade HTTP o shared MCP). Il token Gateway e il token Rust
+  provengono soltanto da file owner-only e non sono un JSON field.
+  Il manifest verificato può essere assemblato **una sola volta**.
+- L'API protetta `startProtectedCanonicalGeminiOwnerFromPrivateConfig`
+  compie verifiche di consenso costi e SHA locale **prima** di
+  aprire manifest, Gateway o caricare il modello Gemini; poi richiama
+  l'ingresso Gemini `authority-only` R382.6 sullo stesso Host,
+  il medesimo checkpoint Backend e la stessa approvazione firmata
+  Engineer. Nessuna firma automatica, root operativa automatica,
+  modello a pagamento o merge.
+- Test gratuiti: manifest valido con Ed25519 reali, dati non
+  riconosciuti, DID scambiate, secret file non privati, symlink,
+  sorgente stale, separazione delle directory, chiave Engineer
+  sostituita, GitHub Actions proibita, CORE nativo assente e
+  tentativi di authority forgiata; invocazione API bloccata
+  prima dell'accesso a chiavi/sorgenti in assenza del consenso.
+  Collegati a Fast CI. Esiti ancora da osservare sulla nuova SHA.
+- **Perimetro e prossimo passo:** `provision` operativo è ancora
+  una callback trusted del processo (NON un programma caricabile
+  dal file 0600). Serve collegarla al vero Root emesso e ai journal
+  originali, con Gitea Branch, Executor ADK/A2A e Runner;
+  quindi esporre l'unico eseguibile owner e verificare CI/E2E
+  gratuita **sulla SHA finale**. Il PASS nativo R381.8 resta valido
+  solo per la precedente SHA `a458b441`. Pilot Gemini a pagamento
+  **non autorizzato**.
+
 ### Risultati attuali e limiti di prova
 
 - **R375.8, E2E native [42354591410](https://github.com/DarkGh0st03/delegation/actions/runs/42354591410) SUCCESS**:
