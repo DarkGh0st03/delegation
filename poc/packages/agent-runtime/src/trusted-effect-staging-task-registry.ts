@@ -30,7 +30,7 @@ export interface TrustedEffectTaskOwnerPins {
   childCredentialId:string;
   presenterId:string;
   branch:string;
-  operation:"read_file"|"update_file"|"run_tests"|"read_then_update";
+  operation:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update";
   /** Required for a pinned read or update; never model provided. */
   path?:string;
   /** Owner-side gateway stager, permanently bound to its original request store. */
@@ -57,7 +57,9 @@ export class TrustedEffectStagingTaskRegistry {
      !ID.test(input.planTaskId)||!ID.test(input.childCredentialId)||
      !DID.test(input.presenterId)||
      !["backend","frontend","test"].includes(input.role)||
-     !["read_file","update_file","run_tests","read_then_update"].includes(input.operation)||
+     !["read_file","update_file","create_file","run_tests","read_then_update"].includes(input.operation)||
+      (input.operation==="create_file"&&
+       (input.role==="test"||input.effectStager.stagedTool!=="create_file"))||
      typeof input.effectStager?.stage!=="function"||
      (input.operation==="read_then_update"&&
       (input.effectStager.stagedTool!=="read_then_update"||
@@ -65,7 +67,7 @@ export class TrustedEffectStagingTaskRegistry {
    deny("exact trusted owner Task/Child and one-shot effect port required");
   try{validatePrivateApprovedBranch(input.branch);}
   catch{deny("invalid owner-pinned feature branch");}
-  if(["update_file","read_file","read_then_update"].includes(input.operation)){
+  if(["update_file","create_file","read_file","read_then_update"].includes(input.operation)){
    if(typeof input.path!=="string"||!PATH.test(input.path)||
       input.path.startsWith("/")||input.path.includes("//")||
       input.path.split("/").some(p=>p==="."||p===".."||!p))
@@ -121,7 +123,7 @@ export class TrustedEffectStagingTaskRegistry {
          !hints.some(row=>row?.operation==="update_file"&&row.path===p.path)||
          !Array.isArray(sub.relevant_paths)||
          sub.relevant_paths.length!==1||sub.relevant_paths[0]!==p.path
-       : p.operation==="update_file"||p.operation==="read_file"
+       : p.operation==="update_file"||p.operation==="create_file"||p.operation==="read_file"
        ? !hints.some(row=>row?.operation===p.operation&&row.path===p.path)||
          !Array.isArray(sub.relevant_paths)||
          !sub.relevant_paths.includes(p.path!)
