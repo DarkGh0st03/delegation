@@ -1074,6 +1074,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         dispatchAttempts.has(input.runtimeTaskId))
       deny('native effect stager requires enrolled, unspent Task');
      operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+     if(pin.operation==='read_file'){
+      // Reserve the signed exact-file read HEAD on the original Gateway
+      // BEFORE the model can invoke Prepare; later staging checks the same
+      // HEAD against its immutable one-shot provider flight.
+      gateway.pinTrustedSingleReadTask(pin.task_id,input.runtimeTaskId,
+       input.expectedHeadSha);
+     }
      const stager=new TrustedAuthorityOnlyEffectStager({
       store:nativeEffectBinding.store,admissions:gateway,
       mutation:nativeEffectBinding.mutation,
