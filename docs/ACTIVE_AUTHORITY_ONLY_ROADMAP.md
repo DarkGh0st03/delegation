@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R382.0)
+## Piano attivo — aggiornato al 7 novembre 2026 (R382.1)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -355,6 +355,22 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   il journal/Task non può riutilizzare o ritentare l'effetto ambiguo.
   Test aggiunti al Fast CI, nessuna suite nativa a pagamento.
   Il nuovo commit non ha ancora esito Fast CI/E2E verificato.
+- **R382.1 — timeout MCP completo (handshake, discovery, IPC)**:
+  il servizio interprocesso nativo dispone di un limite **sull'intera
+  sessione** `native_timeout_ms + 5000`, non soltanto sul socket
+  Rust. `Client.connect`, `listTools` e `callTool` competono con
+  lo stesso watchdog. Su timeout o cancellazione: chiusura del processo
+  MCP, errore sanificato, nessuna VP/Child restituita e nessun retry
+  sul port diretto/HTTP. Il timer resta attivo anche se l'handshake
+  ha lasciato zero handle Node; viene rimosso su completamento.
+  Test aggiunti per il blocco artificiale del handshake SDK,
+  la scadenza temporale e il rifiuto di segnali Task non validi.
+  Nel Fast CI i test MCP sono già eseguiti via
+  `npm --prefix poc/mcp-shared test`; non serve una suite lunga
+  per ciascun commit. **Nuova SHA ancora senza prova GitHub
+  Actions PASS recuperabile; non chiudere B sulla base dei test
+  scritti.** La cancellazione non annulla effetti già inviati
+  al Rust signer; resta obbligatorio il journal fail-closed.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
