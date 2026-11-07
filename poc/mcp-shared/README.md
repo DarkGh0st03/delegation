@@ -264,6 +264,34 @@ one-shot native effects, timeout after request dispatch is
 **ambiguous**, not proof that Rust rolled the operation back;
 the durable owner journal still forbids automatic retry.
 
+## R382.2 — actual R381.8 CI failure triaged; mock-only preflight isolated
+
+GitHub Actions R381.8 run
+[#42384687716](https://github.com/DarkGh0st03/delegation/actions/runs/42384687716)
+**failed before Anvil, OPA, Rust, Gitea, or Docker**: the offline
+R381.7 Review Host unit fixtures did not provision a native Rust socket,
+but inherited `APPROVED_RUNNER_NATIVE_MCP=1` from the full-stack CI job.
+The canonical transport correctly rejected the missing native signer.
+This is a test-environment mismatch, **not evidence of a failed native
+Child/VP exchange**.
+
+The dedicated R381.8 workflow now invokes only those three mock-based
+Review Host tests with a subprocess-scoped native signing flag of `0`,
+while the actual full-stack run is still explicitly forced to `1` and
+`DELEGATION_GATEWAY_ARCHITECTURE=authority-only` after runtime env
+loading. No HTTP Adapter downgrade is allowed in the native section.
+Two free regression tests assert this separation and are included in
+Fast CI and in the native preflight.
+
+The SHA `6236599e` has Fast CI
+[#42386677279](https://github.com/DarkGh0st03/delegation/actions/runs/42386677279)
+and offline crypto MCP suites
+[#42386677234](https://github.com/DarkGh0st03/delegation/actions/runs/42386677234)
+and
+[#42386677440](https://github.com/DarkGh0st03/delegation/actions/runs/42386677440)
+verified **SUCCESS**. A new single free native checkpoint must be
+observed on its own SHA before closing the architecture gate.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
