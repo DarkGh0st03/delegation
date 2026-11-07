@@ -823,14 +823,15 @@ const tool=record?.request?.tool,role=record?.agent_role;
       const backendEnrolled=await gate.enrollTrustedIssuedChild(
        backendTaskId,backendRuntimeId,issuer);
       assert.equal(backendEnrolled.credential_id,backendChild.credential_id);
-  // Check the original same-Task Gateway preflight without preparing/signing
-  // a second request. Does not authorize or execute any provider operation.
+  // The original sequential stager must FIRST reserve the exact
+  // Task/HEAD two-effect manifest. Only then can this read-only Gateway
+  // preflight expose the owner-pinned revision (no provider I/O).
+  const backendStager=await prepareBackendStager();
   assert.equal(gate.preflightCanonicalRequest({
    task_id:backendRuntimeId,agent_role:"backend",tool:"read_file",
    arguments:{branch,path:backendPath}
   }).pinned_revision,baseRevision);
   assert.equal(gate.stagedCompletedTaskCount,0);
-  const backendStager=await prepareBackendStager();
   let backendReport;
   try{
    backendReport=await owner.dispatchIssuedTask({
