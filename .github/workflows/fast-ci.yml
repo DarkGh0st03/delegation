@@ -42,6 +42,7 @@ jobs:
           node --test poc/packages/agent-runtime/test/r238-scenario-fixture-isolation.test.mjs
           node --test poc/scripts/test/r239-canonical-agent-no-adapter-url.test.mjs
           node --test poc/scripts/test/r240-direct-rust-issuer-config.test.mjs
+          node --test poc/scripts/test/verify-r3818-native-mcp-proof.test.mjs
           node --check poc/packages/orchestrator-runtime/test/r330-native-two-adk-a2a-frontend-test-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r331-native-three-adk-a2a-test-docker-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r354-native-reviewed-root-branch-e2e.mjs
