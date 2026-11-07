@@ -96,7 +96,18 @@ function fixture(options:{
   message:"R3832 private owner staged create",
   requestId:"r3832-create-task-1",expectedHeadSha:OLD};
  const run=()=>client.createFileWithHeadCas(input);
- return {client,input,run,stats:()=>({
+ const independent=new GiteaClient({
+  baseUrl:"http://gitea.local:3000",owner:"thesis",
+  repository:"iam-console-poc",token:"r3832-owner-only",fetchFn
+ });
+ const verify=(change:Awaited<ReturnType<typeof run>>)=>independent
+  .verifyCreatedFileHeadCas({
+   branch:BRANCH,path:FILE,expectedHeadSha:OLD,
+   createdCommitSha:change.commit_sha,createdBlobSha:change.blob_sha,
+   expectedContentSha256:change.next_content_sha256,
+   expectedContentBytes:Buffer.byteLength(CONTENT)
+  });
+ return {client,independent,input,run,verify,stats:()=>({
   head,stage,stageHead,providerWrites,stageWrites,created,branchCas,calls
  })};
 }
@@ -124,6 +135,46 @@ test("R383.2 absent old source -> isolated file create -> parent proof -> featur
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().branchCas,1);
 });
+test("R383.2 independent Gitea client reopens parent, old absence, new HEAD, blob and UTF-8",async()=>{
+ const f=fixture();
+ assert.notEqual(f.client,f.independent);
+ const change=await f.run();
+ const writes=f.stats().providerWrites;
+ const evidence=await f.verify(change);
+ assert.equal(evidence.status,"gitea_create_head_cas_read_only_verified");
+ assert.equal(evidence.previous_head_sha,OLD);
+ assert.equal(evidence.commit_sha,NEW);
+ assert.equal(evidence.blob_sha,BLOB);
+ assert.equal(evidence.content_sha256,change.next_content_sha256);
+ assert.equal(evidence.provider_write_authorized,false);
+ assert.equal(f.stats().providerWrites,writes,
+  "observer must not send an additional staging ref, mutation or CAS");
+});
+
+test("R383.2 independent observer detects forged blob, changed parent, new bytes and old path existence",async()=>{
+ for(const mode of ["wrong-blob","parent","bytes","previously-existed"]){
+  const options:{forgeParent?:boolean;stagedContent?:string;existing?:boolean}={};
+  const f=fixture(options),result=await f.run();
+  const writes=f.stats().providerWrites;
+  if(mode==="wrong-blob"){
+   await assert.rejects(f.independent.verifyCreatedFileHeadCas({
+    branch:BRANCH,path:FILE,expectedHeadSha:OLD,
+    createdCommitSha:result.commit_sha,
+    createdBlobSha:"e".repeat(40),
+    expectedContentSha256:result.next_content_sha256,
+    expectedContentBytes:Buffer.byteLength(CONTENT)
+   }),ProviderConflictError);
+  }else{
+   if(mode==="parent")options.forgeParent=true;
+   if(mode==="bytes")options.stagedContent="malicious mutation";
+   if(mode==="previously-existed")options.existing=true;
+   await assert.rejects(f.verify(result),ProviderConflictError);
+  }
+  assert.equal(f.stats().providerWrites,writes,
+   "failed independent observation never authorizes another provider write");
+ }
+});
+
 test("R383.2 already-existing file at pinned SHA is denied before provider writes",async()=>{
  const f=fixture({existing:true});
  await assert.rejects(f.run(),ProviderConflictError);
