@@ -195,7 +195,7 @@ test("R382.1 stalled MCP handshake has a finite whole-session deadline",{
  // This exercises the *outer* watchdog, not the Rust IPC timeout.
  // Restore the SDK prototype even when the assertion fails.
  const original=Client.prototype.connect;
- Client.prototype.connect=()=>new Promise(()=>{});
+ Client.prototype.connect=()=>new Promise<void>(()=>{});
  const started=Date.now();
  try{
   const session=createOwnerPrivateNativeCryptoMcpSession(
