@@ -234,7 +234,10 @@ async function verifyCompositeInternal(
     const nativePlanningHierarchy=readExecution&&
       record.read_execution?.guard==="planning"&&
       deps.planningRevisions!==undefined&&
-      deps.approvedPlans===undefined&&
+      // A trusted approved-plan registry may be instantiated but cannot
+      // grant these requests: the pinned Planning guard, not component
+      // presence, decides which original Root authenticates the batch.
+      record.read_execution?.guard==="planning"&&
       record.agent_role==="orchestrator"&&
       deps.verifier instanceof DirectCoreRustVerifier&&
       deps.verifier.allowsGiteaScopeCoverage;
