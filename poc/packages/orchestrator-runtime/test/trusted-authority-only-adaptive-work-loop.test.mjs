@@ -414,6 +414,42 @@ for(const mode of ['missing-signed-root','missing-test-capability','non-project-
  });
 }
 
+test('R383.0 forged Test source observation cannot reach a later ADK decision',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const target='tests/backend/account.test.ts';
+ const readGrant={operation:'read_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/'+target};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(readGrant);
+  ctx.agents.test.capabilities.push('read_file');
+  if(ctx.previousTasks.length){
+   // The first actual Child read is completed, but this untrusted
+   // observation tries to replace the independently authenticated
+   // application test source with a different path.
+   ctx.executionProgress.source_observations=[{
+    task_id:'task-0',agent_id:'test',path:'apps/backend.ts',
+    revision:ctx.executionProgress.current_head_sha,
+    source_sha256:'f'.repeat(64),source_bytes:5,
+    excerpt:'false',excerpt_truncated:false,evidence_sha256:'e'.repeat(64)
+   }];
+  }
+  return ctx;
+ };
+ const model=new Decisions([
+  candidate('test',0,[readGrant]),
+  candidate('test',1),
+  {action:'ready_for_pr',reason:'untrusted proof'}
+ ]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ }),/Task choice denied/u);
+ assert.equal(model.calls,1,'the forged source was rejected before a model retry');
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-0']);
+ assert.equal(f.retired,true);
+});
+
 test('R377.0 Test read of a non-project source remains denied before any failure',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const original=f.hooks.readContext;
