@@ -215,3 +215,100 @@ test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>
  assert.deepEqual(proof.failing_test_files,[allowed]);
  assert.equal(proof.recovery_authorized,false);
 });
+
+/** R384.3: the native R384.2 CREATE effect may be a D1 candidate
+ * only when the ORIGINAL Engineer approved that exact operation. The
+ * prior Test FAIL is a genuine owner-observed MAC proof in this offline
+ * fixture; D1 preflight never performs provider writes or checks absence.
+ */
+test("R384.3 authentic Runner FAIL allows create-only Backend/Frontend D1 under original Engineer ceiling",async()=>{
+ const path="apps/backend/src/users/account-suspension-created.ts";
+ const permission={
+  resource:canonicalFileUri(repo,branch,path),operation:"create_file" as const
+ };
+ const expanded={...root,root_permissions:[
+  ...approved,{resource:uri+"/directories/apps/backend",operation:"create_file" as const}
+ ]};
+ for(const role of ["backend","frontend"] as const){
+  const f=fixture({root:expanded});
+  const output=await preflightNativeD1FailureCandidate({
+   ...f.config,candidate:{role,permissions:[permission]}
+  });
+  assert.equal(output.status,"native_d1_failure_source_preflight_only");
+  assert.equal(output.candidate_role,role);
+  assert.equal(output.failed_task_id,intent.task_id);
+  assert.equal(output.failed_runtime_task_id,intent.runtime_task_id);
+  assert.equal(output.tested_commit_sha,intent.expected_head_sha);
+  assert.equal(output.recovery_authorized,false);
+  assert.equal(output.child_credential_issued,false);
+  assert.equal(output.gateway_task_completed,false);
+  assert.equal(output.task_registered,false);
+  assert.match(output.candidate_permissions_sha256,/^[0-9a-f]{64}$/u);
+  assert.equal(f.reads,1);
+ }
+});
+test("R384.3 CREATE recovery cannot expand scope, mix effects, change branch or gain Test role",async()=>{
+ const newPath="apps/backend/src/users/account-suspension-created.ts";
+ const exact={
+  resource:canonicalFileUri(repo,branch,newPath),operation:"create_file"
+ };
+ const expanded={...root,root_permissions:[
+  ...approved,{resource:uri+"/directories/apps/backend",operation:"create_file" as const}
+ ]};
+ const cases=[
+  {role:"backend",permissions:[exact],signedRoot:root},
+  {role:"test",permissions:[exact],signedRoot:expanded},
+  {role:"backend",permissions:[exact,{
+   resource:canonicalFileUri(repo,branch,newPath),operation:"read_file"
+  }],signedRoot:expanded},
+  {role:"backend",permissions:[exact,{
+   resource:canonicalFileUri(repo,branch,newPath),operation:"update_file"
+  }],signedRoot:expanded},
+  {role:"backend",permissions:[exact,{
+   resource:canonicalFileUri(repo,branch,"apps/backend/src/users/another.ts"),
+   operation:"create_file"
+  }],signedRoot:expanded},
+  {role:"backend",permissions:[exact,exact],signedRoot:expanded},
+  {role:"backend",permissions:[{
+   resource:canonicalFileUri(repo,branch,"apps/frontend/src/foreign.ts"),
+   operation:"create_file"
+  }],signedRoot:expanded},
+  {role:"backend",permissions:[{
+   resource:canonicalFileUri(repo,"feature/foreign",newPath),
+   operation:"create_file"
+  }],signedRoot:expanded},
+  {role:"backend",permissions:[{
+   resource:canonicalFileUri(repo,branch,"apps/backend/src/users/../escape.ts"),
+   operation:"create_file"
+  }],signedRoot:expanded}
+ ];
+ for(const {role,permissions,signedRoot} of cases){
+  const f=fixture({root:signedRoot});
+  await assert.rejects(preflightNativeD1FailureCandidate({
+   ...f.config,candidate:{role,permissions}
+  } as never),/NO-GO/u);
+  assert.equal(f.reads,0,
+   "a malformed/excessive CREATE candidate cannot even consume native FAIL observation");
+ }
+});
+test("R384.3 native CREATE recovery still rejects forged FAIL, stale HEAD or changed signed root",async()=>{
+ const permission={
+  resource:canonicalFileUri(repo,branch,"apps/backend/src/users/new.ts"),
+  operation:"create_file" as const
+ };
+ const expanded={...root,root_permissions:[
+  ...approved,{resource:uri+"/directories/apps/backend",operation:"create_file" as const}
+ ]};
+ for(const bad of [
+  {child:{...child,credential_id:"foreign"}},
+  {expected:{...expected,tested_commit_sha:"e".repeat(40)}},
+  {expected:{...expected,repair_candidate:false}},
+  {expected:{...expected,first_failed_phase:"dependency_install"}},
+  {secondRoot:{...expanded,authority_digest:"b".repeat(64)}}
+ ]){
+  const f=fixture({root:expanded,...bad} as never);
+  await assert.rejects(preflightNativeD1FailureCandidate({
+   ...f.config,candidate:{role:"backend",permissions:[permission]}
+  }),/NO-GO/u);
+ }
+});
