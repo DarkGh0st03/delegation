@@ -65,7 +65,7 @@ jobs:
           node poc/scripts/init-local-env.mjs --force
       - name: Preflight free R371 root Branch-before-SDK operational launcher
         run: |
-          node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-branch-three-role-test-fail-e2e.mjs
+          node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
           node --check poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-adaptive-work-loop.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-operational-launcher.test.mjs
@@ -168,8 +168,8 @@ jobs:
           source poc/infra/runtime/gateway.env
           source poc/infra/runtime/runner.env
           set +a
-          node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-branch-three-role-test-fail-e2e.mjs
-          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-branch-three-role-test-fail-e2e.mjs
+          node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
+          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only

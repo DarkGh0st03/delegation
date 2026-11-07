@@ -65,3 +65,7 @@ Draft/unmerged, and actual GitHub main is not touched.
 The native R375 proof is **pending** until GitHub Actions establishes
 SUCCESS. If any original owner, file, Docker or PR attestation fails,
 the checkpoint must fail closed rather than claim a PASS.
+
+## R375.1 — Workflow source path correction
+
+R375.0 workflow [#42350171857](https://github.com/DarkGh0st03/delegation/actions/runs/42350171857) failed at preflight: the newly copied workflow referenced a nonexistent old R374-style test pathname. R375.1 points both syntax and actual native invocations to the new R375 test file and updates the checkpoint. No source authority, Rust, policy, read/CAS or acceptance behavior changes. No end-to-end PASS can be claimed before the new run completes.

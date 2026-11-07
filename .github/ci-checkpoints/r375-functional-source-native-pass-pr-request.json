@@ -1,35 +1,9 @@
 {
-  "checkpoint": "R375.0",
-  "branch": "refactor/post-prof-plan-contracts-20261021",
-  "previous_success": {
-    "sha": "b8c01c7e537cff85f480361e1c380fcbfddeb615",
-    "native_run": 42348565068,
-    "fast_ci": 42348565102
-  },
-  "goal": "Real protected unresolved main Branch -> Backend/Frontend D0 incomplete -> true Docker acceptance FAIL -> 7 separate model-selected exact-file read/CAS Tasks producing functional Account Suspension -> true independent native Docker PASS -> original root signed Draft PR with independent Gitea GET",
-  "signed_root_permission_pairs": 17,
-  "max_adaptive_decisions": 16,
-  "actual_adaptive_decisions": 12,
-  "task_contract": "Each adaptive mutation uses one read_file + one update_file on the exact same Engineer-granted path, its own native Rust Child and independent Gateway CAS evidence",
-  "expected": {
-    "sources_modified": 7,
-    "src_test_generated_by_model": false,
-    "original_main_unchanged": true,
-    "registered_tasks": 13,
-    "independently_completed_gateway_tasks": 12,
-    "native_children": 11,
-    "gitea_cas_writes": 9,
-    "private_cas_staging_refs": 9,
-    "real_docker_runs": 2,
-    "first_researcher_acceptance": "fail",
-    "second_researcher_acceptance": "pass",
-    "authenticated_failure_receipts": 1,
-    "authenticated_pass_receipts": 1,
-    "original_root_draft_pr_posts": 1,
-    "independent_pr_get": true,
-    "paid_inference_calls": 0
-  },
-  "limitations": "Deterministic FREE scripted models reproduce existing repository-owned reference source AFTER obtaining genuine authenticated Gitea source through delegated tools. NOT a generative Gemini implementation or a production human UI approval.",
-  "security": "No GitHub main write or PR#38 merge, no late privilege growth, PR only after latest original Docker PASS, no synthetic PASS or Runner bypass; failure receipt first, one-shot root PR.",
-  "validation": "R375 native workflow and Fast CI must both show SUCCESS on identical SHA"
+  "checkpoint": "R375.1",
+  "from_sha": "a5b3f016e05a1bad09dfc03a1c1d2097f430d54f",
+  "first_run": 42350171857,
+  "configuration_fix": "Use exact newly committed r375-native-protected-main-functional-draft-pr-e2e.mjs in node --check and native step; old R374-derived path did not exist.",
+  "security": "No runtime or original Engineer root/OPA changes; success still pending",
+  "no_paid_inference": true,
+  "expected": "native Runner FAIL then seven actual scoped file CAS and Docker PASS and independently observed Draft PR"
 }
