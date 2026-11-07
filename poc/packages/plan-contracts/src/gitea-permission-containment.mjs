@@ -38,6 +38,15 @@ export function isProjectTestSource(path) {
  return typeof path==="string"&&
   /^tests\/(backend|frontend)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.test\.tsx?$/u.test(path);
 }
+/** R383.0 — Test may investigate ONLY owner-scoped application test
+ * sources in a dedicated read-only Child. This cannot authorize an edit,
+ * Docker acceptance changes, Runner PASS or a broader directory grant. */
+export function isProjectTestReadGrant(permissions) {
+ if(!Array.isArray(permissions)||permissions.length!==1||
+    permissions[0]?.operation!=="read_file")return false;
+ const file=scope(permissions[0].resource);
+ return file?.kind==="files"&&isProjectTestSource(file.path.join("/"));
+}
 export function isProjectTestRepairGrant(permissions) {
  const read=permissions.find(p=>p.operation==="read_file");
  const update=permissions.find(p=>p.operation==="update_file");
