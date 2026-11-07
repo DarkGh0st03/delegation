@@ -139,6 +139,39 @@ test("preliminary root lists only exact read-only operations on main and is boun
   ])assert.throws(()=>preliminaryReadPermissions(attack));
 });
 
+test("R380.0 explicit hierarchical Planning Root is bounded and strictly read-only",()=>{
+  const files=Array.from({length:160},(_,i)=>`src/group/item-${i}.ts`);
+  const large={...snapshot(),directories:["","src","src/group"],files};
+  assert.throws(()=>preliminaryReadPermissions(large),/oversized file list/u);
+  const scoped={...large,hierarchical_preliminary_read:true};
+  const main=preliminaryReadPermissions(scoped);
+  const rootScope=rootUri+"/branches/main/directories";
+  assert.deepEqual(main,[
+    {resource:rootUri,operation:"read_repository"},
+    {resource:rootScope,operation:"list_directory"},
+    {resource:rootScope,operation:"read_file"}
+  ]);
+  const feature=preliminaryReadPermissions({
+    ...scoped,planning_branch:"feature/planning-explicit"
+  });
+  const featureScope=rootUri+"/branches/feature%2Fplanning-explicit/directories";
+  assert.deepEqual(feature,[
+    {resource:featureScope,operation:"list_directory"},
+    {resource:featureScope,operation:"read_file"}
+  ]);
+  assert.ok(!feature.some(p=>p.resource.includes("/branches/main/")));
+  assert.ok([...main,...feature].every(p=>![
+    "update_file","create_file","run_tests","create_branch","create_pull_request"
+  ].includes(p.operation)));
+  for(const invalid of [
+    {...scoped,hierarchical_preliminary_read:"yes"},
+    {...scoped,files:[...files,"../../private"]},
+    {...scoped,directories:["","src","src//private"]},
+    {...scoped,directories:["src"]},
+    {...scoped,files:Array.from({length:4097},(_,i)=>`src/item-${i}.ts`)}
+  ])assert.throws(()=>preliminaryReadPermissions(invalid as never));
+});
+
 test("approval revokes preliminary root before independent operational root issuance",async()=>{
   const {session,adapter}=fixture();
   const planning=await session.startPlanning(root(PREP_ID,"100",600));
