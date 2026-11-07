@@ -867,6 +867,76 @@ export class GiteaClient {
     });
   }
 
+  /**
+   * R383.2 read-only verifier. The Gateway must inject a DIFFERENT
+   * authenticated GiteaClient and compare this proof against an immutable,
+   * durably reserved native create intent before publishing any MAC receipt.
+   * Alone this observation is NOT a signed grant, Rust/OPA approval,
+   * authenticated Gateway receipt, or permission to report Task completion.
+   */
+  async verifyCreatedFileHeadCas(input:Readonly<{
+    branch:string;path:string;expectedHeadSha:string;
+    createdCommitSha:string;createdBlobSha:string;
+    expectedContentSha256:string;expectedContentBytes:number;
+  }>):Promise<Readonly<{
+    status:"gitea_create_head_cas_read_only_verified";
+    branch:string;path:string;previous_head_sha:string;
+    commit_sha:string;blob_sha:string;content_sha256:string;
+    provider_write_authorized:false;
+  }>>{
+    if(!input||typeof input!=="object")
+      throw new ProviderConflictError("Original owner create observation pins required");
+    const {branch,path,expectedHeadSha,createdCommitSha,
+      createdBlobSha,expectedContentSha256,expectedContentBytes}=input;
+    if(typeof branch!=="string"||branch==="main"||
+       !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
+       branch.includes("..")||branch.includes("//")||
+       branch.startsWith("feature/r302-internal-")||
+       branch.startsWith("feature/r3832-create-")||
+       typeof path!=="string"||!path||path.length>512||
+       path.startsWith("/")||
+       path.split("/").some(p=>!p||p==="."||p===".."||
+        p.includes("%")||p.includes("\\"))||
+       !/^[a-f0-9]{40}$/u.test(expectedHeadSha??"")||
+       !/^[a-f0-9]{40}$/u.test(createdCommitSha??"")||
+       !/^[a-f0-9]{40}$/u.test(createdBlobSha??"")||
+       !/^[a-f0-9]{64}$/u.test(expectedContentSha256??"")||
+       expectedHeadSha===createdCommitSha||
+       !Number.isSafeInteger(expectedContentBytes)||
+       expectedContentBytes<1||expectedContentBytes>2_000_000)
+      throw new ProviderConflictError("Invalid pinned Gitea create observation");
+    if((await this.getBranchMetadata(branch)).commit_sha!==createdCommitSha)
+      throw new ProviderConflictError("Created commit is no longer feature HEAD");
+    if(await this.getSingleGitCommitParent(createdCommitSha)!==expectedHeadSha)
+      throw new ProviderConflictError("Created commit has wrong original parent");
+    try{
+      await this.readTextFile(branch,path,expectedHeadSha);
+    }catch(error){
+      if(!(error instanceof ProviderNotFoundError))throw error;
+      // Only a genuine NotFound at the independently pinned old tree is
+      // evidence of absence; any reachable file is a conflict.
+      const current=await this.readTextFile(branch,path,createdCommitSha);
+      const bytes=Buffer.from(current.content,"utf8");
+      const digest=createHash("sha256").update(bytes).digest("hex");
+      if(current.branch!==branch||current.path!==path||
+         current.revision!==createdCommitSha||
+         current.blob_sha!==createdBlobSha||
+         bytes.length!==expectedContentBytes||
+         digest!==expectedContentSha256||
+         (await this.getBranchMetadata(branch)).commit_sha!==createdCommitSha)
+        throw new ProviderConflictError(
+         "Actual created file, HEAD or bytes differ from original owner pins");
+      return Object.freeze({
+        status:"gitea_create_head_cas_read_only_verified",
+        branch,path,previous_head_sha:expectedHeadSha,
+        commit_sha:createdCommitSha,blob_sha:createdBlobSha,
+        content_sha256:digest,provider_write_authorized:false
+      });
+    }
+    throw new ProviderConflictError(
+      "Created file already existed at the original pinned HEAD");
+  }
+
   #parseFileMutation(body: JsonObject, branch: string, path: string): GiteaFileMutation {
     const content = object(body.content, "Gitea file mutation content");
     const commit = object(body.commit, "Gitea file mutation commit");
