@@ -35,6 +35,8 @@ export interface AdkA2ATaskHandlerConfig {
   /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
   adapterBaseUrl?: string;
   adapterToken: string;
+  /** Trusted A2A host only; never selected by Task, MCP or ADK. */
+  nativePresentationTransport?: "direct"|"mcp-stdio";
   maxModelTurns?: number;
   maxModelCallMs?: number;
   generateContentConfig?: AdkGenerationConfig;
@@ -283,6 +285,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       // shared CryptoRuntime socket is mounted. Native failure is terminal.
       ...(context.trusted_gateway_task_id&&process.env.ADAPTER_ENGINEER_NATIVE_SOCKET
         ?{nativeSocketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET}:{}),
+      ...(config.nativePresentationTransport==="mcp-stdio"
+        ?{nativePresentationTransport:"mcp-stdio" as const}:{}),
       ...(signal ? {signal} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
