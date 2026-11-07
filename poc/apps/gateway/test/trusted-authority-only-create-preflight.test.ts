@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {mkdtemp,chmod,readdir,readFile,rm} from "node:fs/promises";
+import {mkdtemp,chmod,readdir,readFile,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -233,5 +233,101 @@ test("R383.4 failed preflight cannot reserve a create attempt",async t=>{
  };
  await assert.rejects(f.journal.reserveAttempt(forged as never));
  assert.deepEqual(await readdir(f.dir),[]);
+ assert.equal(f.stats().writes,0);
+});
+
+/**
+ * R383.5 post-native boundary tests. These are intentionally OFFLINE:
+ * the admission double enforces its input identity, not a real Rust/OPA
+ * cryptographic result or real Task flight. The production method uses the
+ * private admission class and is gated upstream by executeAuthorization.
+ */
+test("R383.5 immutable preflight joins consumed native Child VP, OPA and original flight without write",async t=>{
+ const f=await fixture(t);
+ const preflight=f.mkPreflight();
+ const {intent}=await preflight.stageCreate(f.record,HEAD);
+ const verified={presenter_id:bound.agent_did,
+  credential_id:bound.credential_id,
+  root_credential_id:bound.root_credential_id,
+  hierarchy_depth:1,
+  permissions:[{operation:"create_file",resource:"gitea://example"}]};
+ const policy={allow:true,policy_version:"r3835-opa"};
+ let admitted=0;
+ Object.assign(f.admissions,{
+  assertTrustedCreateNativeAdmissionBinding(
+   actual:PreparedRequestRecord,proof:typeof verified){
+   admitted++;
+   assert.equal(actual,f.record);
+   if(proof!==verified)throw Error("different original native verifier response");
+   return bound;
+  }
+ });
+ f.record.consumed=true;
+ const response=await preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified as never,policy as never);
+ assert.equal(response.status,"native_create_task_admitted_no_provider_write");
+ assert.equal(response.provider_write_authorized,false);
+ assert.equal(response.request_id,intent.request_id);
+ assert.equal(response.task_id,intent.task_id);
+ assert.equal(admitted,1);
+ assert.deepEqual((await readdir(f.dir)).length,1,
+  "this read-only admission MUST NOT reserve an attempt or attest completion");
+ assert.equal(f.stats().writes,0);
+});
+
+test("R383.5 fails closed on missing native admission, unconsumed request and OPA denial",async t=>{
+ const f=await fixture(t);
+ const preflight=f.mkPreflight();
+ await preflight.stageCreate(f.record,HEAD);
+ const verified={} as never;
+ const allow={allow:true,policy_version:"opa"} as never;
+ await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified,allow),/consumed Prepare/u);
+ f.record.consumed=true;
+ await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified,{allow:false,policy_version:"opa"} as never),
+  /native VP\\/OPA allow/u);
+ await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified,{allow:true,policy_version:""} as never),
+  /native VP\\/OPA allow/u);
+ Object.assign(f.admissions,{
+  assertTrustedCreateNativeAdmissionBinding(){
+   throw Error("Gateway missing durable Task flight or native Child VP");
+  }
+ });
+ await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified,allow),/missing durable Task flight/u);
+ assert.equal(f.stats().writes,0);
+ assert.deepEqual((await readdir(f.dir)).length,1);
+});
+
+test("R383.5 rejects mutable source, changed admission binding and tampered on-disk intent",async t=>{
+ const f=await fixture(t);
+ const preflight=f.mkPreflight();
+ const {intent}=await preflight.stageCreate(f.record,HEAD);
+ Object.assign(f.admissions,{
+  assertTrustedCreateNativeAdmissionBinding(){return bound;}
+ });
+ f.record.consumed=true;
+ const verified={} as never;
+ const allow={allow:true,policy_version:"opa"} as never;
+ const oldContent=f.record.request.arguments.content;
+ f.record.request.arguments.content=oldContent+"// unapproved change";
+ await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified,allow),/differs from immutable reserved intent/u);
+ f.record.request.arguments.content=oldContent;
+ Object.assign(f.admissions,{
+  assertTrustedCreateNativeAdmissionBinding(){return {...bound,epoch:99};}
+ });
+ await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified,allow),/differs from immutable reserved intent/u);
+ Object.assign(f.admissions,{
+  assertTrustedCreateNativeAdmissionBinding(){return bound;}
+ });
+ const name=(await readdir(f.dir))[0];
+ await writeFile(join(f.dir,name),JSON.stringify({...intent,
+  request_fingerprint:"f".repeat(64)})+"\\n");
+ await assert.rejects(preflight.assertNativeCreateAdmissionAfterVerification(
+  f.record,verified,allow),/differs from persistent marker/u);
  assert.equal(f.stats().writes,0);
 });
