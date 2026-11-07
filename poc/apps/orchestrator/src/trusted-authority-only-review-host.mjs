@@ -36,6 +36,8 @@ import {AuthenticatedGiteaMutationCompletionObserver}
 import {AuthenticatedGiteaReadCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
+import {isProjectTestReadGrant,isProjectTestSource}
+ from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
@@ -818,6 +820,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
             observation.evidence_sha256!==binding.evidence_sha256||
             observation.revision!==context.executionProgress.current_head_sha||
             binding.permission_resource!==choice.permissions[0].resource||
+            (choice.agent_id==='test'&&!isProjectTestSource(observation.path))||
             canonicalFileUri(snapshot.repository,branch,observation.path)!==
              binding.permission_resource)
           deny('diagnostic source differs from original signed read and current HEAD');
@@ -1241,7 +1244,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       // the independent source observer in both cases.
       const diagnosticRead=pin?.operation==='read_file'&&
        adaptiveLoopFlight&&
-       ['backend','frontend'].includes(pin.agent_id)&&
+       (['backend','frontend'].includes(pin.agent_id)||
+        (pin.agent_id==='test'&&isProjectTestReadGrant(
+         operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions)))&&
        nativeEffectBinding?.readObserver instanceof AuthenticatedGiteaReadCompletionObserver;
       if(!pin||pin.task_id!==input.taskId||
          (!['update_file','run_tests'].includes(pin.operation)&&!diagnosticRead)||
