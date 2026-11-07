@@ -54,20 +54,30 @@ the existing in-process MCP implementation to avoid divergent tool
 names. The child process has **no HTTP or A2A listener** and cannot
 mint/revoke authority by itself.
 
-**Proof boundary:** the opt-in
+**Proof boundary:** R381.0's opt-in
 `createOwnerPrivateInterprocessMcpSession` is verified by offline
 subprocess tests in `test/owner-private-crypto-stdio.test.ts`.
-It is **NOT yet wired into the canonical Child/Root/VP production
-issuer**, and the crypto callback still executes inside the original
-owner, after the MCP acknowledgement. Therefore R381.0 demonstrates
-a real interprocess MCP *capability/transport boundary*, **not**
-complete signing through a standalone private MCP service, not
-the whole B architecture gate, and not an AI-generated workflow.
-The existing single signer, in-process production route and all
-Gateway/Rust/OPA policies remain unchanged. Next, bind the
-interprocess session explicitly to trusted owner lifecycle and
-prove native Child/DC/VP after the boundary, without exporting
-a public crypto endpoint.
+**R381.1** also exposes `privateMcpTransport:"stdio"` exclusively on
+the original `TrustedAuthorityOnlyChildIssuer` constructor, AFTER its
+immutable Task/Child/journal admission. The default remains
+`"in-process"`. An independent offline issuer regression verifies
+that the same original owner-native Rust signer port is invoked once,
+the issued credential is not leaked by MCP, and invalid Child/replay
+cannot reissue. There is no automatic stdio fallback to the legacy
+MCP transport on failure.
+
+This option is **not yet activated by the canonical production
+launcher**, and the crypto callback still executes inside the
+original owner, after the MCP acknowledgement. These tests demonstrate
+a real interprocess MCP capability/transport boundary and optional
+Child-issuer adoption, **not** complete signing through a standalone
+MCP cryptographic service, not root/VP service migration, not the
+whole B architecture gate, and not an AI-generated workflow.
+The production default, single original Rust signer, Gateway and OPA
+remain unchanged. Next, prove a native Rust/EVM Child/DC/VP with the
+trusted owner-selected stdio option, then evaluate an authenticated
+service-side signing channel without introducing another signer or
+exposing a public crypto endpoint.
 
 ## Retired remote compatibility paths
 
