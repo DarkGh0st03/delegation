@@ -1,6 +1,7 @@
 /**
- * PRIVILEGED OWNER PROCESS ONLY: one-shot real Gemini read-only Planning
- * through the ORIGINAL Gitea-pinned Gateway/Adapter/Engineer Coordinator.
+ * PRIVILEGED OWNER PROCESS ONLY: real Gemini Planning through the
+ * canonical authority-only Engineer Review Host. The old Signed DAG
+ * startup is deliberately retired (fail-closed compatibility API).
  * Requires human API billing consent provided separately at invocation,
  * protected 0600 files and an exact protected GitHub OIDC source SHA.
  *
@@ -14,16 +15,10 @@ import {open,lstat,realpath} from "node:fs/promises";
 import {dirname,isAbsolute,normalize,resolve} from "node:path";
 import {createInterface} from "node:readline";
 import {pathToFileURL,fileURLToPath} from "node:url";
-import {prepareConfiguredOwnerEngineerBootstrap}
-  from "./trusted-engineer-service.mjs";
 import {createGeminiAdkModel}
   from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {bindProtectedCanonicalGeminiOwner}
   from "./trusted-authority-only-gemini-owner-binding.mjs";
-import {createProtectedGeminiOwnerDispatch}
-  from "./trusted-gemini-owner-dispatch.mjs";
-import {assertR5AuthenticSignedReviewReady}
-  from "./trusted-r5-scripted-review-readiness.mjs";
 import {
   MAX_PRELIMINARY_ROOT_SECONDS,DEFAULT_PLANNER_SESSION_MS,
   DEFAULT_ENGINEER_REVIEW_MS,TRUSTED_PLANNING_HANDOFF_MARGIN_MS
@@ -116,50 +111,12 @@ export async function loadProtectedGeminiOwnerInput(inputFile,{chargeAuthorizati
  * Requires a separately owned private Engineer Host, never hosted Actions.
  * This method neither approves a plan nor authorizes Execution.
  */
-export async function startProtectedGeminiOwnerSession({
-  configPath,expectedSourceSha,inputFile,chargeAuthorization
-}={}){
-  // R382.6: never start the obsolete Signed DAG Coordinator when the
-  // original authority-only architecture is selected. No automatic
-  // conversion, provider billing or permission downgrade is possible.
-  // Legacy Planning is available ONLY by explicitly selecting its
-  // historical architecture. Unset/unknown mode is not an implicit
-  // fallback and cannot silently incur Gemini API charges.
-  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="legacy-signed-dag")deny();
-  if(process.env.GITHUB_ACTIONS==="true"||
-     !SOURCE_SHA.test(expectedSourceSha??"")||
-     chargeAuthorization!==CONFIRMATION)deny();
-  // Exact locally deployed GitHub source MUST agree with the protected
-  // OIDC pin; a user-entered SHA alone is not authoritative.
-  checkLocalSourceSha(expectedSourceSha);
-  const prepared=await prepareConfiguredOwnerEngineerBootstrap(configPath,{
-    expectedLiveSourceSha:expectedSourceSha
-  });
-  const params=await loadProtectedGeminiOwnerInput(inputFile,{
-    chargeAuthorization
-  });
-  const assembly=await prepared.assembleGeminiPlanning(params);
-  // ONLY this owner action can invoke Gemini; no inference during assembly.
-  const host=await prepared.start(assembly.planning);
-  const dispatch=createProtectedGeminiOwnerDispatch({
-    assembly,host,geminiApiKey:params.geminiApiKey,
-    verifySignedReview:()=>assertR5AuthenticSignedReviewReady({
-      coordinator:assembly.coordinator,
-      reviewGate:assembly.planning.reviewGate,
-      checkpointStore:assembly.planning.checkpointStore,
-      expectedSessionId:assembly.planning.snapshot.session_id,
-      expectedBaseRevision:assembly.planning.snapshot.base_revision
-    })
-  });
-  return Object.freeze({
-    engineerUrl:host.engineerUrl,
-    oidcAdmissionEndpoint:host.oidcAdmissionEndpoint,
-    status:"real_gemini_planning_staged_for_human_review_not_authorized_execution",
-    get coordinatorPhase(){return assembly.coordinator.phase;},
-    reviewReadiness:dispatch.reviewReadiness,
-    runApprovedGeminiDag:dispatch.runApprovedGeminiDag,
-    close:dispatch.close
-  });
+/**
+ * R384.6 retired compatibility API: historical callers must fail closed.
+ * No local source read, secret loading, model construction or provider call.
+ */
+export async function startProtectedGeminiOwnerSession(){
+  deny();
 }
 
 /**
@@ -318,8 +275,8 @@ if(process.argv[1]&&import.meta.url===
     chargeAuthorization:process.env.DELEGATION_GEMINI_CHARGE_CONFIRMATION
   };
   startPromise=(async()=>{
-    if(!canonical)return startProtectedGeminiOwnerSession(input);
-    if(!process.stdin.isTTY)deny();
+    // No legacy CLI path remains, including with an explicit historical mode.
+    if(!canonical||!process.stdin.isTTY)deny();
     const operational=await loadCanonicalCliOperational({
       ...input,modulePath:process.env.DELEGATION_CANONICAL_OPERATIONAL_MODULE
     });
