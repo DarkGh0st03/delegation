@@ -201,6 +201,29 @@ itself a successful run: only an observed same-SHA GitHub Actions
 PASS qualifies as R381.8 evidence. This is not autonomous Gemini
 coding and never authorizes a paid pilot.
 
+## R381.9 — strict, tested full-stack native proof gate
+
+The R381.8 no-AI GitHub Actions checkpoint now invokes
+`poc/scripts/verify-r3818-native-mcp-proof.mjs <proof.jsonl>`
+instead of an embedded, partially checked Node expression. The strict
+checker expects **one** original Review Host terminal proof event,
+counts every Child issued through real MCP against all issued Children,
+requires Backend/Frontend/Test VPs, genuine Rust/EVM/OPA, independent
+Gitea/Docker FAIL → accepted PASS, original main immutability and an
+unmerged Draft PR. It rejects any unexpected paid-model invocation or
+claims of autonomous model-generated source in this scripted fixture.
+It emits only bounded non-secret metadata.
+
+The verifier's negative tests run in Fast CI and before the expensive
+R381.8 integration step. The E2E shell uses `set -euo pipefail` so a
+failed native process cannot be masked by `tee`, and confirms the
+authority-only and no-paid-AI environment both before and after runtime
+file sourcing. This is a stronger E2E **proof contract**, not a new
+claim of successful GitHub Actions execution. The connected commit-run
+listing only includes pull-request-triggered runs; an empty listing
+does not establish the state of a push-triggered native checkpoint.
+Do not rerun the long E2E blindly until the previous run is observed.
+
 ## Retired remote compatibility paths
 
 R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
