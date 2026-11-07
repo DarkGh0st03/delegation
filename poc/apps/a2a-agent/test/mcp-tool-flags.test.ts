@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {requireProductionDirectGatewayTools,requireProductionNativeCrypto} from "../src/mcp-tool-flags.ts";
+import {requireProductionDirectGatewayTools,requireProductionNativeCrypto,
+ selectOwnerPrivateNativeMcpSigning} from "../src/mcp-tool-flags.ts";
 
 test("R187 production has no executable legacy MCP repository/Runner flag selector",()=>{
  const source=readFileSync(new URL("../src/mcp-tool-flags.ts",import.meta.url),"utf8");
@@ -62,4 +63,33 @@ test("R220 production ADK requires a native Rust signer and task-local MCP",()=>
   },engine),/production_adk_requires_task_local_crypto_mcp/u);
  }
  assert.doesNotThrow(()=>requireProductionNativeCrypto({},"deterministic"));
+});
+
+test("R381.4 native MCP signing is opt-in only in trusted authority-only ADK host",()=>{
+ const socket="/tmp/delegation-private-rust.sock";
+ assert.equal(selectOwnerPrivateNativeMcpSigning({
+  ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+ },"authority-only","adk"),false);
+ assert.equal(selectOwnerPrivateNativeMcpSigning({
+  DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:"1",
+  ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+ },"authority-only","adk"),true);
+ for(const flag of ["", "true", "0", "false", "yes"]){
+  assert.throws(()=>selectOwnerPrivateNativeMcpSigning({
+   DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:flag,
+   ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+  },"authority-only","adk"),/selector must be exactly 1/u);
+ }
+ for(const [architecture,engine] of [
+  ["legacy-signed-dag","adk"],["authority-only","deterministic"],
+  [undefined,"adk"]
+ ] as const){
+  assert.throws(()=>selectOwnerPrivateNativeMcpSigning({
+   DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:"1",
+   ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+  },architecture,engine),/requires authority-only ADK host/u);
+ }
+ assert.throws(()=>selectOwnerPrivateNativeMcpSigning({
+  DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:"1"
+ },"authority-only","adk"),/production_adk_requires_native_rust_crypto/u);
 });
