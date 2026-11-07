@@ -107,7 +107,7 @@ jobs:
       # Cache compiled Rust dependencies/builds separately from executable
       # assertions. A failing E2E must still retain a verified preceding
       # native build cache; never cache local keys, runtime env or Gitea.
-      - name: Restore R365 native Rust build cache
+      - name: Restore verified R364-compatible native Rust build cache
         id: rust-cache
         uses: actions/cache/restore@v4
         with:
@@ -117,7 +117,7 @@ jobs:
             services/delegation-engineer-node/target
             services/delegation-core-node/target
             services/delegation-adapter/target
-          key: r365-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Build Engineer direct owner + independent public-only Gateway native addons
         run: |
           cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
@@ -127,7 +127,7 @@ jobs:
           cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
           echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/r233-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
-      - name: Save R365 native Rust build cache before E2E
+      - name: Save verified native Rust build cache before E2E
         if: steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
@@ -137,7 +137,7 @@ jobs:
             services/delegation-engineer-node/target
             services/delegation-core-node/target
             services/delegation-adapter/target
-          key: r365-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
       - name: Assert legacy Adapter executable refuses duplicate issuer in direct mode
         run: |
           # This command must reject BEFORE EVM signing keys or an HTTP server
