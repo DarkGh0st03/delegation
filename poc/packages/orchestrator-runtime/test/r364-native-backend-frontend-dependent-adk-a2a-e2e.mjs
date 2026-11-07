@@ -566,7 +566,10 @@ try{
    }
    if(String(url).endsWith("/v1/authorization/execute")){
     const record=store.get(body.request_id);
-    const tool=record?.request?.tool,role=record?.request?.agent_role;
+    // PreparedRequestRecord stores the role on its TOP-LEVEL envelope.
+// Reading record.request.agent_role incorrectly treats every native execute
+// as unknown, masking successful owner IPC and VP as tool_unavailable.
+const tool=record?.request?.tool,role=record?.agent_role;
     if(!["read_file","update_file"].includes(tool)||
        !["backend","frontend"].includes(role))
      throw Error("unrecognized role or native Gateway effect");
