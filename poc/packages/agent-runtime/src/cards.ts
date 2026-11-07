@@ -54,9 +54,28 @@ export function createSpecializedAgentCard(
     delegatedAuthorization?: boolean;
     /** Trusted server-startup choice, not a per-Task grant or identity proof. */
     capabilityProfile?: "legacy" | "approved-plan";
+    /** Original native Rust role signer DID; never an A2A/ADK/model input. */
+    nativeSignerDid?: string;
   } = {}
 ): AgentCard {
   const config = ROLE_CONFIG[role];
+  // R382.3: the native Rust signer DID is not the historical static
+  // demonstration Card DID. Publish ONLY the already provisioned role's
+  // actual signing identity, and only in the verified authority-only host.
+  // The owner Review Host will independently compare this public assertion
+  // with the DID in its immutable trusted registry and signed Child.
+  const configured=process.env["ADAPTER_ID_"+role.toUpperCase()];
+  const nativeDid=options.nativeSignerDid;
+  if(nativeDid!==undefined&&(
+      process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+      process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+      !/^[a-z0-9]+:[A-Za-z0-9._:%-]+$/u.test(nativeDid.slice(4))||
+      !nativeDid.startsWith("did:")||
+      nativeDid!==configured||
+      (process.env.ADAPTER_TRUST_PROFILE==="evm"&&
+       !nativeDid.startsWith("did:ethr:"))))
+   throw Error("Trusted native A2A Agent Card signer DID mismatch");
+  const signerDid=nativeDid??config.did;
   // General role capabilities are the default for all new A2A discovery.
   // Historical scenario Card descriptions are explicit opt-in test fixtures.
   const approved = options.capabilityProfile !== "legacy";
@@ -91,7 +110,7 @@ export function createSpecializedAgentCard(
                 "Carries Delegation Evidence in Message.metadata while authority remains enforced by the Delegation Credential/Gateway path.",
               required: true,
               params: {
-                agentDid: config.did,
+                agentDid: signerDid,
                 ...(approved?{taskCapabilities:[...APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools]}:{}),
                 evidenceLocation: "message.metadata.delegation_evidence"
               }
