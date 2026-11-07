@@ -11,7 +11,7 @@ function canonicalPath(value:unknown,allowRoot=false):value is string {
   if(typeof value!=="string"||value.length>240||
      (!allowRoot&&value.length===0)||value.startsWith("/")||
      value.endsWith("/")||value.includes("\\")||
-     value.split("/").some(part=>part===""?(allowRoot&&value===""):
+     value.split("/").some(part=>part===""?!(allowRoot&&value===""):
        !SEG.test(part)||part==="."||part===".."||part.includes("..")||
        part.includes("%")))return false;
   return true;
