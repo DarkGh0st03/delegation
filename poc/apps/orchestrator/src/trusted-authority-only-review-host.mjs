@@ -29,6 +29,12 @@ import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
  from '../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts';
 import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
+import {TrustedAuthorityOnlyCreateEffectStager}
+ from '../../gateway/src/trusted-authority-only-create-effect-stager.ts';
+import {TrustedAuthorityOnlyGiteaCreatePreflight}
+ from '../../gateway/src/trusted-authority-only-create-preflight.ts';
+import {AuthenticatedGiteaCreateCompletionObserver}
+ from '../../gateway/src/trusted-authority-only-gitea-create-evidence.ts';
 import {TrustedAuthorityOnlySequentialReadUpdateStager}
  from '../../gateway/src/trusted-authority-only-sequential-read-update-stager.ts';
 import {AuthenticatedGiteaMutationCompletionObserver}
@@ -460,7 +466,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       stagedTaskIds.set(input.runtimeTaskId,Object.freeze({
        task_id:registered.task_id,agent_id:registered.agent_id,
        operation:registered.permissions.find(p=>
-        p.operation==='update_file'||p.operation==='run_tests'||
+        p.operation==='update_file'||p.operation==='create_file'||p.operation==='run_tests'||
         p.operation==='create_pull_request')?.operation??
         (registered.permissions.length===1&&
          registered.permissions[0]?.operation==='read_file'?'read_file':undefined)
@@ -555,7 +561,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver','readObserver'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver','readObserver',
+          'create','createObserver'])||
+        (Object.hasOwn(deps,'create')!==Object.hasOwn(deps,'createObserver'))||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
          deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
@@ -565,6 +573,14 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
          deps.runner,gateway,deps.giteaClient,
          snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
+        (deps.create!==undefined&&
+         !TrustedAuthorityOnlyGiteaCreatePreflight.isNativeForOwner(
+          deps.create,gateway,deps.giteaClient,
+          snapshot.repository.owner+'/'+snapshot.repository.repository,branch))||
+        (deps.createObserver!==undefined&&
+         !AuthenticatedGiteaCreateCompletionObserver.isForRepository(
+          deps.createObserver,
+          snapshot.repository.owner+'/'+snapshot.repository.repository,branch))||
         (deps.mutationObserver!==undefined&&
          !AuthenticatedGiteaMutationCompletionObserver.isForRepository(
           deps.mutationObserver,
@@ -1153,7 +1169,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !/^[a-f0-9]{40}$/u.test(input.expectedHeadSha))
       deny('native effect staging requires pinned owner HEAD and live runtime');
      const pin=stagedTaskIds.get(input.runtimeTaskId);
-     if(!pin||!['read_file','update_file','run_tests'].includes(pin.operation)||
+     if(!pin||!['read_file','update_file','create_file','run_tests'].includes(pin.operation)||
         issuedEffectStagers.has(input.runtimeTaskId)||
         dispatchAttempts.has(input.runtimeTaskId))
       deny('native effect stager requires enrolled, unspent Task');
@@ -1165,13 +1181,28 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       gateway.pinTrustedSingleReadTask(pin.task_id,input.runtimeTaskId,
        input.expectedHeadSha);
      }
-     const stager=new TrustedAuthorityOnlyEffectStager({
-      store:nativeEffectBinding.store,admissions:gateway,
-      mutation:nativeEffectBinding.mutation,
-      runner:nativeEffectBinding.runner,
-      runtimeTaskId:input.runtimeTaskId,
-      tool:pin.operation,expectedHeadSha:input.expectedHeadSha
-     });
+     const stager=pin.operation==='create_file'
+      ?(()=>{
+       if(!nativeEffectBinding.create||
+          !nativeEffectBinding.createObserver||
+          !['backend','frontend'].includes(pin.agent_id))
+        deny('original CREATE owner has no independent native preflight/observer');
+       return new TrustedAuthorityOnlyCreateEffectStager({
+        store:nativeEffectBinding.store,admissions:gateway,
+        preflight:nativeEffectBinding.create,
+        giteaClient:nativeEffectBinding.giteaClient,
+        repository:snapshot.repository.owner+'/'+snapshot.repository.repository,
+        branch,planTaskId:pin.task_id,runtimeTaskId:input.runtimeTaskId,
+        expectedHeadSha:input.expectedHeadSha
+       });
+      })()
+      :new TrustedAuthorityOnlyEffectStager({
+       store:nativeEffectBinding.store,admissions:gateway,
+       mutation:nativeEffectBinding.mutation,
+       runner:nativeEffectBinding.runner,
+       runtimeTaskId:input.runtimeTaskId,
+       tool:pin.operation,expectedHeadSha:input.expectedHeadSha
+      });
      issuedEffectStagers.set(input.runtimeTaskId,stager);
      return stager;
     },
@@ -1236,6 +1267,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const pin=stagedTaskIds.get(input.runtimeTaskId);
       const ordinary=input.effectStager instanceof TrustedAuthorityOnlyEffectStager&&
        input.effectStager.isForOwnerTask(gateway,input.runtimeTaskId,pin?.operation);
+      const created=pin?.operation==='create_file'&&
+       nativeEffectBinding?.createObserver&&
+       TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
+        input.effectStager,gateway,input.taskId,input.runtimeTaskId,
+        snapshot.repository.owner+'/'+snapshot.repository.repository,branch);
       const sequential=pin?.operation==='update_file'&&
        TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
         input.effectStager,gateway,input.taskId,input.runtimeTaskId);
@@ -1249,9 +1285,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions)))&&
        nativeEffectBinding?.readObserver instanceof AuthenticatedGiteaReadCompletionObserver;
       if(!pin||pin.task_id!==input.taskId||
-         (!['update_file','run_tests'].includes(pin.operation)&&!diagnosticRead)||
+         (!['update_file','create_file','run_tests'].includes(pin.operation)&&!diagnosticRead)||
          issuedEffectStagers.get(input.runtimeTaskId)!==input.effectStager||
-         !(ordinary||sequential))
+         !(ordinary||sequential||created))
        deny('protected A2A dispatch requires an original owner-bound effect stager');
       if(input.d1Candidate!==undefined&&
          (pin.operation!=='run_tests'||pin.agent_id!=='test'||
