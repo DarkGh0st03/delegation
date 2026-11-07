@@ -711,9 +711,11 @@ export class TrustedAdkReadOnlyPlanner {
           // Check the full listing (including canonical direct-child paths)
           // before extending the private resource catalog. A partial or
           // forged listing must never authorize a new model read.
-          discovery.observeListings([{path:args.path as string,entries}]);
-          for(const file of discovery.files())files.add(file);
-          for(const directory of discovery.directories())directories.add(directory);
+          if(discovery.enabled){
+            discovery.observeListings([{path:args.path as string,entries}]);
+            for(const file of discovery.files())files.add(file);
+            for(const directory of discovery.directories())directories.add(directory);
+          }
           verified(args.path as string);
           return {ok:true,revision:result.revision,entries};
         }
