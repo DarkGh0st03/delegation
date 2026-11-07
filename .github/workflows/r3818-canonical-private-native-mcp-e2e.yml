@@ -79,7 +79,14 @@ jobs:
           node --test poc/scripts/test/verify-r3818-native-mcp-proof.test.mjs
           node --experimental-strip-types --test poc/mcp-shared/test/owner-private-native-crypto-stdio.test.ts
           node --experimental-strip-types --test poc/packages/agent-runtime/test/native-crypto-ipc.test.ts poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/canonical-a2a-no-http-worker.test.ts poc/apps/a2a-agent/test/mcp-tool-flags.test.ts
-          node --experimental-strip-types --test --test-name-pattern="R381.7" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
+          # R382.2: R381.7 Review Host unit fixtures deliberately use a
+          # synthetic Gateway/Child port. The canonical native flag enforces
+          # a REAL Orchestrator Rust socket at Planning constructor time.
+          # Disable it ONLY for this one offline Node process, not for the
+          # workflow or the later full-stack R3818 native execution step.
+          env -u ADAPTER_ENGINEER_NATIVE_SOCKET APPROVED_RUNNER_NATIVE_MCP=0 \
+            R3818_CANONICAL_NATIVE_MCP=0 \
+            node --experimental-strip-types --test --test-name-pattern="R381.7" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
       - name: Boot only disposable Anvil and OPA (no Adapter or Gateway HTTP service)
         run: |
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa gitea
@@ -190,6 +197,7 @@ jobs:
           # original Review Host: refuse downgrade even after sourcing files.
           test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
           test "${R3818_CANONICAL_NATIVE_MCP:-}" = "1"
+          test "${APPROVED_RUNNER_NATIVE_MCP:-}" = "1"
           test -z "${GEMINI_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
