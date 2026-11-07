@@ -23,6 +23,26 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
 
+### R384.6 — Ritiro del vecchio Signed DAG billable (cleanup fase E, in corso)
+
+L'inventario e la motivazione sono in
+[`R3846_LEGACY_RETIREMENT_REGISTER.md`](./R3846_LEGACY_RETIREMENT_REGISTER.md).
+Il vecchio launcher `startProtectedGeminiOwnerSession` è conservato
+come API di compatibilità **solo-deny**; l'eseguibile canonico rifiuta
+esplicitamente `legacy-signed-dag` senza fallback.
+Nel workflow storico `gemini-paid-shared-mcp-final.yml` sono stati
+disabilitati **entrambi** i job potenzialmente fatturabili, compreso
+il Planning-only, mediante `if: ${{ false }}`.
+Nuovi test offline verificano tali confini e vengono eseguiti da Fast CI.
+
+**Gate aperto:** attendere Fast CI della SHA finale di R384.6;
+non considerare il cleanup concluso: la reachability dei moduli
+DAG/recovery storici e il consolidamento dei 91 workflow sono ancora da
+completare. Core Rust, MCP crittografico, approvazione Ed25519, OPA,
+CAS, MAC, Runner e Draft PR restano invarianti e NON devono essere
+rimossi per mera somiglianza del nome.
+Nessun Gemini a pagamento e nessun merge.
+
 ### R384.5 — Budget owner-only per Execution e recovery (8 novembre 2026; CI da verificare)
 
 L'originale launcher authority-only supporta, nel **manifest privato 0600**
