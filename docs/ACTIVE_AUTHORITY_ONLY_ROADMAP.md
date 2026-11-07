@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato al 7 novembre 2026 (R380.2)
+## Piano attivo — aggiornato al 7 novembre 2026 (R380.3)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,7 +16,7 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errore di autorizzazione o effetto ambiguo resta fail-closed | **Recovery nativo provato, catalogo Task da estendere** |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R380.2)** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **In corso (R380.3: Planning nativo riuscito)** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **Da completare** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **Da ripetere dopo migrazione** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
@@ -92,8 +92,9 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   L'enumerazione e il limite 128 originali restano la modalità default.
   [Planner preflight R380.0](https://github.com/DarkGh0st03/delegation/actions/runs/42369299057)
   PASS con >128 file e controlli negativi su out-of-snapshot, branch e write.
-  **Non** è ancora discovery ricorsiva dinamica di file che non compaiono nello
-  snapshot né una nuova prova Rust/EVM nativa del root subtree.
+  Al checkpoint R380.0 **non** erano ancora dimostrate discovery ricorsiva
+  di nuovi file né la verifica nativa Rust/EVM; entrambe hanno evidenza
+  successiva in R380.3, descritta sotto.
 - **R380.1 completato nel percorso Planning preliminare separato**:
   `OrchestratorGatewayTransport.invokeReadComposite` usa le route
   `prepare-read-composite` / `execute-read-composite` del Gateway e
@@ -111,8 +112,8 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   Rimane INVARIATO il rifiuto delle route composite dal
   `GatewayRuntime` **operativo authority-only**; il batch è ammesso solo
   dal Gateway preliminare provvisto di `TrustedPlanningRevisions`.
-  Non è ancora un nuovo E2E Rust/EVM nativo né una soluzione di discovery
-  dinamica per file non presenti nello snapshot trusted.
+  A R380.1 si trattava ancora di prove offline; la verifica nativa
+  e la discovery dinamica sono attestate separatamente in R380.3.
   Una Root gerarchica non concede nuovi path al modello.
   L'attuale enum ADK dei file resta basato sulla lista trusted, fino
   a 4096 voci nell'opt-in: l'ottimizzazione dello schema del modello e
@@ -138,9 +139,36 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
   [Planner preflight #42371230353](https://github.com/DarkGh0st03/delegation/actions/runs/42371230353)
   SUCCESS: Gitea pinned, directory e file nuovi, ADK scripted che
   propone modifica di un file scoperto, spoof/traversal e lettura anticipata
-  negati, revoca e regressioni legacy. **Resta aperta** la prova nativa
-  Rust/EVM end-to-end della nuova discovery e dell'issuer effettivo.
+  negati, revoca e regressioni legacy. La prova nativa corrispondente,
+  successivamente chiusa in R380.3, usa invece Rust/EVM/OPA/Gitea reali.
   Nessuna autonomia generativa di Gemini dimostrata.
+- **R380.3 — Planning gerarchico/discovery/composite nativo PASS**:
+  [F1 No AI #42375886151](https://github.com/DarkGh0st03/delegation/actions/runs/42375886151)
+  SUCCESS sulla SHA di codice `e24632c6`: il test avvia veri Rust
+  issuer/Verifier e trust/status EVM, OPA e Gitea disposable. Esclude
+  deliberatamente il file Frontend dallo snapshot originale; il Planner ADK
+  **scripted** deve prima osservarlo via Gitea `list_directory` pinned,
+  poi leggerlo con un secondo file in **una sola VP multipermission**.
+  La Root preliminare ha 3 grant read-only e il signer divulga soltanto
+  i dir grant firmati dalla Root; il Core Rust corrobora ciascuna leaf
+  richiesta, senza sintetizzare leaf nella VP. Il Gateway distingue
+  `record.pinned_revision` + registry Planning attiva da un
+  `approvedPlans` solo istanziato ma **non attivato**; nessuna authority
+  operativa eredita l'opt-in. Il risultato strutturato attesta SHA
+  Gitea `405748b1e77992b6bd8630a3ab6f990658d32f6b`,
+  discovery verificata, 1 VP multipermission, Root revocata, zero
+  scritture/approvazioni operative/PR, zero chiamate Gemini.
+  [Planner Preflight #42375807668](https://github.com/DarkGh0st03/delegation/actions/runs/42375807668)
+  SUCCESS include i test negativi su branch errato, permessi
+  impliciti, Root non opt-in e path non scoperti.
+  L'F1 resta una **prova di Planning**: non dimostra un Executor AI
+  generativo, MCP indipendente interprocesso, launcher finale né
+  E2E Docker post-cleanup.
+- **CI native R380.3 deliberate**: la costosa F1 con Rust/EVM/Docker
+  parte da modifica del proprio workflow oppure da checkpoint
+  `.github/ci-checkpoints/r3803-native-planning-read-request.json`
+  (o dispatch manuale); gli altri push usano Fast CI e i test gratuiti
+  mirati. Non lanciare ripetutamente suite native ad ogni commit.
 - **Fase A ancora aperta**: `create_file` authority-only, journal multi-file,
   e gestione generale di altri esiti applicativi recuperabili. Le prove
   native finora usano modifiche/decisioni scripted, non Gemini generativo.
