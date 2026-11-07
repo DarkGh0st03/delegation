@@ -32,6 +32,37 @@ export class OrchestratorPlanningGatewayReadClient {
     this.#transport=new OrchestratorGatewayTransport(transport);
   }
 
+  /** Multiple prevalidated snapshot actions, one pinned Gateway challenge
+   * and one multipermission native VP; no arbitrary caller-defined scopes. */
+  async readCompositePlanningResources(
+    taskId:string,
+    actions:readonly {tool:"read_file"|"list_directory";
+      arguments:Record<string,unknown>}[],
+    repository:GatewayRepositoryConfig,
+    pinnedRevision:string,
+    signal?:AbortSignal
+  ):Promise<unknown>{
+    if(!Array.isArray(actions)||actions.length<2||actions.length>12)
+      throw new OrchestratorGatewayClientError("Invalid Planning composite size");
+    const normalized=actions.map(action=>{
+      const n=validatePrepareAuthorizationRequest({
+        task_id:nonEmptyString(taskId,"Planning Task ID"),
+        agent_role:"orchestrator",tool:action.tool,arguments:action.arguments
+      });
+      if(n.request.tool!=="read_file"&&n.request.tool!=="list_directory")
+        throw new OrchestratorGatewayClientError("Composite Planning rejects non-read tools");
+      if(n.request.arguments.branch!==this.#planningBranch)
+        throw new OrchestratorGatewayClientError("Composite Planning branch differs from owner pin");
+      return {tool:n.request.tool,arguments:n.request.arguments,
+        permission:deriveRequiredPermission(repository,n.request)};
+    });
+    const actionsPinned=normalized.map(a=>({
+      tool:a.tool,arguments:a.arguments
+    }));
+    return this.#transport.invokeReadComposite(taskId,actionsPinned,
+      normalized.map(a=>a.permission),pinnedRevision,signal);
+  }
+
   /**
    * Planning-only read transport. Must be held by the trusted read port,
    * never published to ADK as a writable/unrestricted client.
