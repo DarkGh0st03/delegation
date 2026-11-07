@@ -718,11 +718,11 @@ test("R383.8 original owner stages CREATE intent then one native Child flight, n
  });
  assert.equal(owner.stagedTool,"create_file");
  assert.equal(CreateStager.isNativeForOwner(owner,f.admissions,
-  bound.task_id,runtimeTaskId),true);
+  bound.task_id,runtimeTaskId,repository,branch),true);
  assert.equal(CreateStager.isNativeForOwner(owner,f.admissions,
-  "foreign-task",runtimeTaskId),false);
+  "foreign-task",runtimeTaskId,repository,branch),false);
  assert.equal(CreateStager.isNativeForOwner(Object.create(
-  CreateStager.prototype),f.admissions,bound.task_id,runtimeTaskId),false);
+  CreateStager.prototype),f.admissions,bound.task_id,runtimeTaskId,repository,branch),false);
  const result=await owner.stage(f.record.request_id);
  assert.equal(result.status,"create_owner_intent_and_task_flight_staged");
  assert.equal(result.gateway_execution_authorized,false);
