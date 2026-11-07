@@ -142,7 +142,7 @@ test("R384.1 create-only Task cannot access UPDATE/READ/Runner tools",async t=>{
 });
 for(const variant of ["wrong-path","wrong-branch","wrong-tool",
  "wrong-revision","wrong-blob","wrong-request","absent-allow",
- "missing-provider"] as const){
+ "missing-provider","unexpected-secret"] as const){
  test("R384.1 reject unauthenticated create response "+variant,async t=>{
   nativeEnvironment(t);
   const valid={
@@ -162,6 +162,7 @@ for(const variant of ["wrong-path","wrong-branch","wrong-tool",
     case "wrong-revision":e.revision="c".repeat(40);break;
     case "wrong-blob":e.blob_sha="f".repeat(6);break;
     case "missing-provider":e.provider="legacy";break;
+    case "unexpected-secret":Object.assign(e,{debug_token:"PROVIDER_SECRET_DO_NOT_RELAY"});break;
    }
    response={...valid,execution:e};
   }
