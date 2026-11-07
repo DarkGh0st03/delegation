@@ -546,6 +546,42 @@ test('R350.2 same Engineer root registers Task, binds Gateway, issues native Chi
  assert.equal(host.phase,'revoked');
  await host.close();
 });
+test('R382.5 original Review Host independently re-reads signed Engineer approval for canonical handoff',async t=>{
+ const f=await fixture(t),host=await f.start();
+ const prevArch=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ const prevNative=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ try{
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE='authority-only';
+  process.env.APPROVED_RUNNER_NATIVE_MCP='1';
+  let provisioned=0;
+  const handoff=host.createReviewedCanonicalHandoff({
+   provision:async()=>{provisioned++;throw Error('No activation in readiness check');}
+  });
+  await assert.rejects(handoff.reviewReadiness(),/verified review not ready|approval|receipt/u);
+  assert.equal(provisioned,0);
+  assert.equal(host.phase,'planning');
+  await f.approve(['permission-1','permission-2']);
+  const verified=await handoff.reviewReadiness();
+  assert.equal(verified.session_id,snapshot.session_id);
+  assert.equal(verified.base_revision,snapshot.base_revision);
+  assert.match(verified.plan_digest,/^[a-f0-9]{64}$/u);
+  assert.equal(verified.authenticated_engineer_did,did);
+  assert.equal(verified.operational_root_issued,false);
+  assert.equal(verified.dag_executed,false);
+  assert.equal(provisioned,0);
+  assert.equal(host.phase,'planning');
+  assert.equal(f.log.filter(e=>e.startsWith('issue:')).length,0);
+  await handoff.close();
+  assert.equal(host.phase,'revoked');
+ }finally{
+  if(prevArch===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=prevArch;
+  if(prevNative===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=prevNative;
+  await host.close();
+ }
+});
+
 test('R382.4 canonical authority-only launcher refuses direct Child and missing original Branch',async t=>{
  const prevArch=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
  const prevNative=process.env.APPROVED_RUNNER_NATIVE_MCP;
