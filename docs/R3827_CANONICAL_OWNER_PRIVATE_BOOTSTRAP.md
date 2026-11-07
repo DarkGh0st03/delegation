@@ -113,6 +113,13 @@ MCP Child port. It calls the trusted `reserveRoot` capability once, after
 signature verification. The trusted process still supplies the
 `completionObserver`, `workflow`, and `prepareNativeEffects` capabilities.
 
+For `prepareNativeEffects(gateway)`, reuse
+`assembleTrustedAuthorityOnlyNativeEffects` with the original request store,
+the pinned writer and independent reader, the authenticated Runner client,
+and the protected receipt paths and key. Return its `binding` to the
+Review Host and use its `authorization` with the same request store and
+admissions in the Gateway execution path. R375 uses this same assembly.
+
 **Not yet complete:** the executable owner process needs its
 trusted operational `provision` implementation and a newly validated
 same-SHA full native E2E after the CLI/bootstrap migration. R381.8

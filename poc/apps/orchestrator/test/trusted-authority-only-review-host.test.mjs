@@ -2994,3 +2994,44 @@ for(const mode of ['blocked','premature-pr','missing-a2a']){
   await host.close();
  });
 }
+
+test('native effects assembly binds real provider ports to the admitted Review Host without provider calls',async t=>{
+ const f=await fixture(t),host=await f.start();
+ try{
+  await f.approve(['permission-1','permission-2']);
+  await host.activateOperational(root('urn:assembled-native-effects',2));
+  const execution=await host.admitOperationalExecution(executionDeps(f));
+  const {assembleTrustedAuthorityOnlyNativeEffects}=await import(
+   '../src/trusted-authority-only-native-effects.mjs');
+  const {owner,repository}=snapshot.repository;
+  const pinnedRepository=owner+'/'+repository;
+  let providerCalls=0;
+  const fetchFn=async()=>{providerCalls++;throw Error('unexpected provider call');};
+  const client=token=>new GiteaClient({baseUrl:'http://offline.invalid',
+   token,owner,repository,fetchFn});
+  const writer=client('writer'),reader=client('reader');
+  const store=new InMemoryRequestStore(),key=Buffer.alloc(32,96);
+  const branch=f.options.workBranch;
+  const directory=await mkdtemp(join(tmpdir(),'owner-native-effects-'));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const dirs=Object.fromEntries([
+   'mutationIntent','giteaReceipts','runnerIntent','runnerFailureReceipts','runnerPassReceipts'
+  ].map(name=>[name,join(directory,name)]));
+  await Promise.all(Object.values(dirs).map(path=>mkdir(path,{mode:0o700})));
+  const runnerPassObserver=new AuthenticatedRunnerCompletionObserver({
+   directory:dirs.runnerPassReceipts,key,repository:pinnedRepository,branch,
+   giteaClient:reader
+  });
+  const {binding,authorization}=assembleTrustedAuthorityOnlyNativeEffects({
+   gateway:execution.gateway,store,giteaClient:writer,independentGiteaClient:reader,
+   runnerClient:new RunnerClient({baseUrl:'http://offline.invalid',gatewayToken:'runner',fetchFn}),
+   runnerPassObserver,repository:pinnedRepository,branch,evidenceKey:key,directories:dirs
+  });
+  assert.equal(binding.store,store);
+  assert.equal(binding.branchExecutor,authorization.authorityOnlyBranchExecutor);
+  assert.equal(binding.pullRequestExecutor,authorization.authorityOnlyPullRequestExecutor);
+  assert.equal(execution.bindNativeGatewayEffects(binding).status,
+   'owner_native_gateway_effects_bound_no_execution');
+  assert.equal(providerCalls,0);
+ }finally{await host.close();}
+});

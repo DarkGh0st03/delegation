@@ -1,3 +1,5 @@
+import {assembleTrustedAuthorityOnlyNativeEffects}
+ from "../../../apps/orchestrator/src/trusted-authority-only-native-effects.mjs";
 /** R375.0 — original Engineer Review Host native root Branch first + SDK A2A
  * and original authenticated Gateway/Gitea/Docker; free scripted ADK.
  */
@@ -60,34 +62,15 @@ import {createNativeOrchestratorPresentation}
 
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
-import {TrustedAuthorityOnlyGiteaMutationPreflight} from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
-import {DurableAuthorityOnlyGiteaMutationIntentJournal} from "../../../apps/gateway/src/trusted-authority-only-mutation-intent-journal.ts";
-import {TrustedAuthorityOnlyGiteaMutationExecutor} from "../../../apps/gateway/src/trusted-authority-only-mutation-executor.ts";
-import {TrustedGatewayGiteaMutationEvidencePublisher,
- AuthenticatedGiteaMutationCompletionObserver} from "../../../apps/gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
 import {DurableAuthorityOnlySequentialEffectJournal}
  from "../src/trusted-authority-only-sequential-effect-journal.ts";
 import {DurableAuthorityOnlyTaskFenceJournal}
  from "../src/trusted-authority-only-task-fence-journal.ts";
 import {TrustedAuthorityOnlyCompletionObserver}
  from "../src/trusted-authority-only-completion-observer.ts";
-import {TrustedAuthorityOnlyRunnerPreflight}
- from "../../../apps/gateway/src/trusted-authority-only-runner-preflight.ts";
-import {DurableAuthorityOnlyRunnerIntentJournal}
- from "../../../apps/gateway/src/trusted-authority-only-runner-intent-journal.ts";
-import {TrustedAuthorityOnlyRunnerExecutor}
- from "../../../apps/gateway/src/trusted-authority-only-runner-executor.ts";
-import {TrustedAuthorityOnlyPullRequestExecutor}
- from "../../../apps/gateway/src/trusted-authority-only-pull-request-executor.ts";
-import {TrustedAuthorityOnlyBranchExecutor}
- from "../../../apps/gateway/src/trusted-authority-only-branch-executor.ts";
 import {ProviderNotFoundError} from "../../../apps/gateway/src/errors.ts";
-import {TrustedGatewayRunnerPassEvidencePublisher,
- AuthenticatedRunnerCompletionObserver}
+import {AuthenticatedRunnerCompletionObserver}
  from "../../../apps/gateway/src/trusted-authority-only-runner-evidence.ts";
-import {TrustedGatewayRunnerFailEvidencePublisher,
- AuthenticatedRunnerFailureObserver}
- from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
 import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
 import {TrustedAuthorityOnlyEffectStager}
  from "../../../apps/gateway/src/trusted-authority-only-effect-stager.ts";
@@ -100,8 +83,6 @@ import {ACCOUNT_SUSPENSION_REFERENCE_FILES}
 import {ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT,
  ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES}
  from "../../../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs";
-import {TrustedGatewayGiteaReadEvidencePublisher}
- from "../../../apps/gateway/src/trusted-authority-only-gitea-publisher.ts";
 import {AuthenticatedGiteaReadCompletionObserver}
  from "../../../apps/gateway/src/trusted-authority-only-gitea-evidence.ts";
 import {TrustedAuthorityOnlySequentialReadUpdateStager}
@@ -616,31 +597,6 @@ try{
     legacyWriteCalls++;return super.execute(...args);}
  }
  const executor=new ObservedGiteaExecutor(client);
- const journal=new DurableAuthorityOnlyGiteaMutationIntentJournal(path("intent"));
- const preflight=new TrustedAuthorityOnlyGiteaMutationPreflight({
-  admissions:gate,giteaClient:client,journal,repository:"thesis/iam-console-poc",
-  branch,nowMs
- });
- const observer=new AuthenticatedGiteaMutationCompletionObserver({
-  directory:path("receipts"),key:evidenceKey,
-  repository:"thesis/iam-console-poc",branch,giteaClient:independentClient,nowMs
- });
- const mutationExecutor=new TrustedAuthorityOnlyGiteaMutationExecutor({
-  admissions:gate,preflight,journal,giteaClient:client,
-  publisher:new TrustedGatewayGiteaMutationEvidencePublisher({
-   directory:path("receipts"),key:evidenceKey,
-   repository:"thesis/iam-console-poc",
-   branch,independentGiteaClient:independentClient,nowMs
-  }),observer,repository:"thesis/iam-console-poc",branch
- });
- // Separate native Test Runner path, bound to the SAME trusted Gateway.
- // It makes no provider call until native Rust VP and real OPA both allow.
- const runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(
-  path("runner-intent"));
- const runnerPreflight=new TrustedAuthorityOnlyRunnerPreflight({
-  admissions:gate,giteaClient:client,journal:runnerJournal,
-  repository:"thesis/iam-console-poc",branch,nowMs
- });
  const runnerBearer=randomBytes(32).toString("hex");
  const controller=new IsolatedDockerRunnerExecutor({
   gitea_base_url:process.env.GITEA_RUNNER_BASE_URL,
@@ -680,62 +636,21 @@ try{
   baseUrl:"http://127.0.0.1:"+address.port,
   gatewayToken:runnerBearer,timeoutMs:900000
  });
- const failObserver=new AuthenticatedRunnerFailureObserver({
-  directory:path("runner-fail-receipts"),key:evidenceKey,
-  giteaClient:client,journal:runnerJournal,
-  repository:"thesis/iam-console-poc",branch,nowMs
- });
- const failPublisher=new TrustedGatewayRunnerFailEvidencePublisher({
-  directory:path("runner-fail-receipts"),key:evidenceKey,
-  // The original RunnerExecutor requires the exact SAME Gateway Gitea port
-  // for its one-shot flight; the independent MAC failure observer then
-  // reopens the attested source HEAD through that original bound identity.
-  runnerClient,independentGiteaClient:client,
-  journal:runnerJournal,repository:"thesis/iam-console-poc",branch,nowMs
- });
- const runnerExecutor=new TrustedAuthorityOnlyRunnerExecutor({
-  admissions:gate,preflight:runnerPreflight,
-  journal:runnerJournal,giteaClient:client,runnerClient,
-  publisher:new TrustedGatewayRunnerPassEvidencePublisher({
-   directory:path("runner-receipts"),key:evidenceKey,
-   runnerClient,independentGiteaClient:independentClient,
-   repository:"thesis/iam-console-poc",branch,nowMs
-  }),observer:runnerObserver,
-  failurePublisher:failPublisher,failureObserver:failObserver,
-  repository:"thesis/iam-console-poc",branch
- });
- const branchExecutor=new TrustedAuthorityOnlyBranchExecutor({
-  admissions:gate,giteaClient:client,
-  independentGiteaClient:independentClient,
-  repository:"thesis/iam-console-poc",nowMs
- });
- const prExecutor=new TrustedAuthorityOnlyPullRequestExecutor({
-  admissions:gate,giteaClient:client,runnerObserver,
-  repository:"thesis/iam-console-poc",branch,
-  independentGiteaClient:independentClient
- });
- const readPublisher=new TrustedGatewayGiteaReadEvidencePublisher({
-  directory:path("receipts"),key:evidenceKey,admissions:gate,
-  // Authenticated read-only client is independent from the Gateway writer.
-  independentGiteaClient:independentClient,
-  repository:"thesis/iam-console-poc",branch,nowMs
- });
- assert.equal(execution.bindNativeGatewayEffects({
-  store,mutation:preflight,runner:runnerPreflight,
-  giteaClient:client,mutationObserver:observer,
+ const nativeEffects=assembleTrustedAuthorityOnlyNativeEffects({
+  gateway:gate,store,giteaClient:client,independentGiteaClient:independentClient,
+  runnerClient,runnerPassObserver:runnerObserver,
   ...(sourceObservationMode?{readObserver}:{}),
-  runnerPassObserver:runnerObserver,failureObserver:failObserver,
-  pullRequestExecutor:prExecutor,branchExecutor
- }).status,"owner_native_gateway_effects_bound_no_execution");
+  repository:"thesis/iam-console-poc",branch,evidenceKey,nowMs,
+  directories:{
+   mutationIntent:path("intent"),giteaReceipts:path("receipts"),
+   runnerIntent:path("runner-intent"),runnerFailureReceipts:path("runner-fail-receipts"),
+   runnerPassReceipts:path("runner-receipts")
+  }
+ });
+ assert.equal(execution.bindNativeGatewayEffects(nativeEffects.binding).status,
+  "owner_native_gateway_effects_bound_no_execution");
  const deps={store,audit,verifier,policy,repository:repo,executor,
-  authorityOnlyAdmissions:gate,nowMs,authorityOnlyReadEnabled:true,
-  authorityOnlyReceiptWriter:readPublisher,
-  authorityOnlyMutationEnabled:true,authorityOnlyMutationExecutor:mutationExecutor,
-  authorityOnlyRunnerEnabled:true,authorityOnlyRunnerExecutor:runnerExecutor,
-  authorityOnlyPullRequestEnabled:true,
-  authorityOnlyPullRequestExecutor:prExecutor,
-  authorityOnlyBranchEnabled:true,
-  authorityOnlyBranchExecutor:branchExecutor};
+  authorityOnlyAdmissions:gate,nowMs,...nativeEffects.authorization};
  // R375: three distinct pairs of role-pinned HMAC IPC channels; separate
  // agent registries and signing keys, but one original native Engineer root.
  const roles=["backend","frontend","test"],stageChannels={},agentBindingChannels={};
