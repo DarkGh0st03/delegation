@@ -178,7 +178,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
     nextEpoch:epoch,
     executionProgress:{current_head_sha:head,completed_work:done.map(p=>({
      task_id:p.task_id,agent_id:p.agent_id,
-     operation:p.permissions.find(g=>g.operation==='update_file'||g.operation==='run_tests')?.operation??'read_file',
+     operation:p.permissions.find(g=>['update_file','create_file','run_tests'].includes(g.operation))?.operation??'read_file',
      instruction:p.instruction}))},
     ...(failure?{verifiedFailure:{failed_phase:failure.failed_phase,
      source_evidence_sha256:failure.source_evidence_sha256,
@@ -203,7 +203,8 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
      throw Error('A2A Test FAILED: untrusted error is NOT proof');
     return {status:'owner_verified_native_test_failure_preflight_only'};
    }
-   if(task.permissions.some(g=>g.operation==='update_file'))head='b'.repeat(40);
+   if(task.permissions.some(g=>['update_file','create_file'].includes(g.operation)))
+    head='b'.repeat(40);
    done.push({...task,tested:runsTests?head:undefined});
    events.push('gateway_attested:'+task.task_id);
   },
@@ -907,3 +908,46 @@ for(const mode of [
   assert.deepEqual(f.events.filter(x=>x.startsWith('dispatch:')),[]);
  });
 }
+
+test('R384.3 adaptive CREATE selected after independently authenticated Test FAIL requires new Test before PR readiness',async()=>{
+ const f=verifiedFailureFixture();
+ const created={operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-new-d1.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(created);
+  ctx.agents.backend.capabilities.push('create_file');
+  return ctx;
+ };
+ const repair=candidate('backend',1,[created]);
+ repair.task.depends_on=[]; // failed Test is NOT a completed dependency
+ const retest=candidate('test',2);
+ const model=new Decisions([
+  candidate('test',0),
+  repair,
+  retest,
+  {action:'ready_for_pr',reason:'New HEAD retested with independent Runner PASS'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:4
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2,'failed Test is not a completed Task');
+ assert.equal(result.source_test_task_id,'task-2');
+ assert.equal(result.tested_commit_sha,'b'.repeat(40));
+ assert.equal(result.pr_created,false);
+ assert.deepEqual(f.done.map(row=>row.task_id),['task-1','task-2']);
+ assert.deepEqual(f.done.map(row=>row.permissions[0].operation),
+  ['create_file','run_tests']);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,1);
+ assert.ok(f.events.indexOf('original-owner-observe-runner-fail')<
+  f.events.indexOf('dispatch:task-1'));
+ assert.ok(f.events.indexOf('gateway_attested:task-1')<
+  f.events.indexOf('dispatch:task-2'));
+ const prompts=JSON.stringify(model.requests);
+ assert.match(prompts,/independent_runner_failure/u);
+ assert.match(prompts,/create_file/u);
+ assert.equal(prompts.includes('A2A Test FAILED: untrusted error'),false);
+ assert.equal(f.retired,false);
+});
