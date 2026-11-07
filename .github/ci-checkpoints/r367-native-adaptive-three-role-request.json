@@ -1,0 +1,19 @@
+{
+  "checkpoint": "R367.2",
+  "prior_head": "491ae8e56e291f769b6a925c8f77418244a138ec",
+  "prior_native_proof": "313e5cec67de0d66fb37d4cccf44b648c1cd0327",
+  "scope": "account-suspension",
+  "source": "owner-seeded disposable account-suspension reference; scripted free ADK roles and decisions",
+  "objective": "Exercise existing R355 adaptive loop with original real Rust/EVM Coordinator, signed root, Gateway/OPA/Gitea read-CAS, A2A, Docker and independently reopened Test evidence, without registering Tasks/Child before first model decision",
+  "paid_model_calls_allowed": false,
+  "pre_registered_tasks": 0,
+  "reviewer_note": "This is native adaptive controller proof, not proof that the separate R367 Review Host path drives all three roles or that Gemini generates the application",
+  "native_workflow_attempted": false,
+  "expected": [
+    "ADK selects Backend, Frontend, Test after previous independent native completions",
+    "no DAG of Tasks pre-registered",
+    "read/CAS, Docker PASS, current HEAD",
+    "root-authorization not expanded",
+    "ready_for_pr does not create PR"
+  ]
+}
