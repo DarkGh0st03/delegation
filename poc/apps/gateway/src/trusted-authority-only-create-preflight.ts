@@ -28,6 +28,7 @@ export class TrustedAuthorityOnlyGiteaCreatePreflight {
  readonly #nowMs:()=>number;
  #inFlight=false;
  readonly #reserved=new WeakMap<PreparedRequestRecord,TrustedGiteaCreateIntent>();
+ readonly #attempted=new WeakSet<PreparedRequestRecord>();
  constructor(opts:{
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   giteaClient:GiteaClient;
@@ -83,7 +84,8 @@ export class TrustedAuthorityOnlyGiteaCreatePreflight {
   intent:TrustedGiteaCreateIntent;
   provider_write_authorized:false;
  }>>{
-  if(this.#inFlight)deny("concurrent create intent reservation");
+  if(this.#inFlight||this.#attempted.has(record))
+   deny("concurrent or repeated create preflight reservation");
   if(!SHA40.test(expectedHeadSha))
    deny("trusted original owner must pin exact Gitea source HEAD");
   // Confirm the ORIGINAL unconsumed canonical Prepare, signed ROOT,
@@ -100,6 +102,10 @@ export class TrustedAuthorityOnlyGiteaCreatePreflight {
      bytes.includes(0)||
      new TextDecoder("utf-8",{fatal:true}).decode(bytes)!==content)
    deny("unsupported or noncanonical UTF-8 create path/source");
+  // Burn the original object slot BEFORE the first external HEAD
+  // query. A failed or ambiguous preflight is terminal for this
+  // in-process Task (a fresh Task needs fresh signed authority).
+  this.#attempted.add(record);
   this.#inFlight=true;
   try{
    const head1=await this.#client.getBranchMetadata(branch);
