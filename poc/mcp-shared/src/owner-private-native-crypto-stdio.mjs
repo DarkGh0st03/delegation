@@ -36,6 +36,11 @@ const validSocket=value=>typeof value==="string"&&value.startsWith("/")&&
 const validToken=value=>typeof value==="string"&&
   value.length>0&&value.length<=8192;
 const validTimeout=value=>Number.isSafeInteger(value)&&value>=1&&value<=120000;
+const validSignal=value=>value===undefined||
+  (value!==null&&typeof value==="object"&&
+   typeof value.aborted==="boolean"&&
+   typeof value.addEventListener==="function"&&
+   typeof value.removeEventListener==="function");
 
 /**
  * Trusted OWNER ONLY. The operation cannot be chosen by an MCP client or
@@ -49,6 +54,7 @@ export function createOwnerPrivateNativeCryptoMcpSession(
  if(!mode||!config||!validSocket(config.socketPath)||
     !validToken(config.bearerToken)||
     !validTimeout(config.timeoutMs??10000)||
+    !validSignal(config.signal)||
     !object(body))throw Error("Owner-private native MCP configuration unavailable");
  const request=structuredClone(body);
  if(Buffer.byteLength(JSON.stringify(request))>110000)
@@ -66,9 +72,14 @@ export function createOwnerPrivateNativeCryptoMcpSession(
  };
  return Object.freeze({
   async invokeOnce(){
-   if(started||closed)throw Error(mode.error);
+   if(started||closed||config.signal?.aborted)throw Error(mode.error);
    started=true;
+   // A cancelled signed Task must close its private MCP child process.
+   // Only the trusted owner may supply this signal; never a model tool.
+   const onAbort=()=>{void close();};
+   config.signal?.addEventListener("abort",onAbort,{once:true});
    try{
+    if(config.signal?.aborted)throw Error(mode.error);
     // No bearer, signed credential, source, API key or inherited secret
     // appears in the child environment or command line.
     transport=new StdioClientTransport({
@@ -111,7 +122,10 @@ export function createOwnerPrivateNativeCryptoMcpSession(
     // Never pass raw MCP stdout/stderr, Rust denial or credential bytes to
     // an untrusted caller or diagnostic record.
     throw Error(mode.error);
-   }finally{await close();}
+   }finally{
+    config.signal?.removeEventListener("abort",onAbort);
+    await close();
+   }
   },
   close
  });
