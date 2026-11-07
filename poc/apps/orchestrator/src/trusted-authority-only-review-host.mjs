@@ -257,9 +257,21 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     deny('execution admission already attempted');
    executionAdmissionAttempted=true; // one-shot even on ambiguous failure
    executionAdmissionFlight=(async()=>{
+    // Owner-only opt-in. This argument is accepted exclusively by the
+    // original Review Host's private admission call, never by the signed
+    // Engineer proposal, ADK model, A2A Task or Gateway HTTP request.
+    // The default path is unchanged until native MCP proves same-SHA E2E.
+    const nativePrivateMcp=deps?.privateChildMcpTransport==='native-stdio';
+    if(deps?.privateChildMcpTransport!==undefined&&
+       !nativePrivateMcp)
+     deny('private Child MCP transport must be explicitly native-stdio');
+    if(nativePrivateMcp&&
+       typeof deps.nativeCryptoPort?.issueChildViaPrivateMcp!=='function')
+     deny('private Child MCP requires original native Rust signing port');
     if(!fields(deps,['operationalSessionStore','gatewayTaskJournal',
       'issuerChildJournal','gatewayChildJournal','nativeCryptoPort',
-      'effectFenceJournal','sequentialEffectJournal','completionObserver'])||
+      'effectFenceJournal','sequentialEffectJournal','completionObserver',
+      'privateChildMcpTransport'])||
        !(deps.operationalSessionStore instanceof TrustedOperationalSessionStore)||
        deps.operationalSessionStore!==options.operationalSessionStore||
        !(deps.gatewayTaskJournal instanceof DurableAuthorityTaskJournal)||
@@ -287,7 +299,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     });
     const childIssuer=new TrustedAuthorityOnlyChildIssuer({
      coordinator:operationalCoordinator,nativeCryptoPort:deps.nativeCryptoPort,
-     journal:deps.issuerChildJournal
+     journal:deps.issuerChildJournal,
+     ...(nativePrivateMcp?{privateMcpTransport:'native-stdio'}:{})
     });
     const admission=await gateway.activate(snapshot.session_id,snapshot.base_revision);
     if(closed)deny('host closed during Gateway admission');
