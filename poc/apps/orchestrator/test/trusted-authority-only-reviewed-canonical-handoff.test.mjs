@@ -147,7 +147,7 @@ test("R382.5 malformed private native MCP port cannot activate Root",async t=>{
   /original live Root, MCP native owner and Branch required/u);
  assert.equal(f.provisions,1);
  assert.deepEqual(f.events,["retire"]);
- await assert.rejects(f.handoff.runApprovedCanonical(),/already attempted/u);
+ assert.throws(()=>f.handoff.runApprovedCanonical(),/already attempted/u);
 });
 
 test("R382.5 native provider failure retires original Root once and never retries",async t=>{
