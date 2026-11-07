@@ -172,11 +172,12 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     // Register new paths only after ALL provider outcomes, signed bindings
     // and immutable Gitea revisions have been verified. Invalid entries
     // must not partially change the discovery ledger.
-    this.#discovery.observeListings(value.executions.flatMap((raw,i)=>
-      normalized[i].tool==="list_directory"
-        ?[{path:normalized[i].arguments.path as string,
-           entries:(raw as Record<string,unknown>).entries}]
-        :[]));
+    if(this.#discovery.enabled)
+      this.#discovery.observeListings(value.executions.flatMap((raw,i)=>
+        normalized[i].tool==="list_directory"
+          ?[{path:normalized[i].arguments.path as string,
+             entries:(raw as Record<string,unknown>).entries}]
+          :[]));
     return result;
   }
 
@@ -236,7 +237,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     }
     // A newly discovered path becomes visible only from a completed,
     // authenticated and SHA-pinned Gitea listing; never from model text.
-    if(request.tool==="list_directory")
+    if(this.#discovery.enabled&&request.tool==="list_directory")
       this.#discovery.observeListings([{
         path:request.arguments.path,entries:response.entries
       }]);
