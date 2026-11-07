@@ -11,6 +11,8 @@ import {
   type LlmResponse
 } from "@google/adk";
 import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
+import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "../src/approved-specialized-profiles.ts";
+import {createSpecializedAgentCard} from "../src/cards.ts";
 import {
   ControlledToolError,
   createAdkSpecializedAgent,
@@ -786,4 +788,53 @@ test("R282 signed Backend/Frontend create_file requires exact private approved T
   assert.deepEqual(notGranted.agent.tools.map(x=>x.name),["read_file"]);
   assert.deepEqual(notGranted.profile.creatable_paths,[]);
  }
+});
+
+test("R379.2 verified role capabilities are stable while signed Task grants change",()=>{
+  for(const role of ["backend","frontend","test"] as const){
+    const path=PATHS[role];
+    const fromCard=createSpecializedAgentCard(role,"http://127.0.0.1:7001")
+      .capabilities.extensions?.[0]?.params?.taskCapabilities;
+    const permitted=APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools;
+    assert.deepEqual(fromCard,permitted,"published Agent Card must match role's ADK capabilities");
+    const make=(operations:readonly ("read_file"|"update_file"|"create_file")[])=>
+      createAdkSpecializedAgent({
+        role,model:new ScriptedAdkLlm("read_file",{branch:BRANCH,path}),
+        gatewayClient:{invoke:async()=>{throw Error("No effects permitted in capability test");}} as never,
+        trustedBranch:BRANCH,
+        trustedTaskPaths:[path],
+        trustedFilePermissions:operations.map(operation=>({operation,path})),
+        ...(role==="test"?{trustedRunTestsAllowed:false}:{})
+      });
+    const read=make(["read_file"]);
+    const write=make(["read_file","update_file"]);
+    const create=make(["create_file"]);
+    for(const current of [read,write,create]){
+      assert.deepEqual(current.profile.tools,fromCard,
+        "permanent tool capabilities cannot be expanded or narrowed by a Task grant");
+      assert.ok(!current.agent.tools.some(tool=>tool.name==="run_tests"),
+        "a file Task must not inherit Runner authority");
+    }
+    assert.deepEqual(read.agent.tools.map(tool=>tool.name),["read_file"]);
+    assert.deepEqual(write.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
+    assert.deepEqual(create.agent.tools.map(tool=>tool.name),["create_file"]);
+    assert.deepEqual(read.profile.writable_paths,[]);
+    assert.deepEqual(write.profile.writable_paths,[path]);
+    assert.deepEqual(create.profile.creatable_paths,[path]);
+    assert.equal(permitted.includes("run_tests"),role==="test");
+  }
+});
+
+test("R379.2 Test Agent Runner visibility is independent of its published capabilities",()=>{
+  const built=createAdkSpecializedAgent({
+    role:"test",model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
+    gatewayClient:{invoke:async()=>{throw Error("No Runner effect permitted");}} as never,
+    trustedBranch:BRANCH,trustedTaskPaths:[],
+    trustedFilePermissions:[],trustedRunTestsAllowed:true
+  });
+  assert.deepEqual(built.profile.tools,
+    APPROVED_SPECIALIZED_AGENT_PROFILES.test.tools);
+  assert.deepEqual(built.agent.tools.map(tool=>tool.name),["run_tests"]);
+  assert.equal(built.profile.writable_paths.length,0);
+  assert.equal(built.profile.creatable_paths.length,0);
 });
