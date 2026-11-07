@@ -91,7 +91,8 @@ export function createOwnerPrivateNativeCryptoMcpSession(
    try{
     config.signal?.addEventListener("abort",onAbort,{once:true});
     deadline=setTimeout(onAbort,sessionBudgetMs);
-    deadline.unref?.();
+    // Keep the watchdog referenced: a stalled handshake must settle even
+    // when no subprocess or socket remains alive.
     if(closed||config.signal?.aborted)throw Error(mode.error);
     // No bearer, signed credential, source, API key or inherited secret
     // appears in the child environment or command line.
