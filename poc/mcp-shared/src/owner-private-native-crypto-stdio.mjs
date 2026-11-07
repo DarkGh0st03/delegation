@@ -74,12 +74,25 @@ export function createOwnerPrivateNativeCryptoMcpSession(
   async invokeOnce(){
    if(started||closed||config.signal?.aborted)throw Error(mode.error);
    started=true;
-   // A cancelled signed Task must close its private MCP child process.
-   // Only the trusted owner may supply this signal; never a model tool.
-   const onAbort=()=>{void close();};
+   // Native IPC's own timeout does not bound a dead MCP handshake or
+   // tool-discovery request. Bound the TOTAL lifetime (startup + request),
+   // retaining 5 seconds for Node/SDK startup and shutdown overhead.
+   const sessionBudgetMs=(config.timeoutMs??10000)+5000;
+   let interrupt;
+   const interrupted=new Promise((_,reject)=>{interrupt=reject;});
+   // The first abort can race with the first MCP connect await.
+   // Register a handler immediately so no rejected promise is unobserved.
+   void interrupted.catch(()=>undefined);
+   const onAbort=()=>{
+    interrupt(Error(mode.error));
+    void close();
+   };
+   let deadline;
    try{
     config.signal?.addEventListener("abort",onAbort,{once:true});
-    if(config.signal?.aborted)throw Error(mode.error);
+    deadline=setTimeout(onAbort,sessionBudgetMs);
+    deadline.unref?.();
+    if(closed||config.signal?.aborted)throw Error(mode.error);
     // No bearer, signed credential, source, API key or inherited secret
     // appears in the child environment or command line.
     transport=new StdioClientTransport({
@@ -94,15 +107,15 @@ export function createOwnerPrivateNativeCryptoMcpSession(
     });
     client=new Client({name:"trusted-owner-native-crypto-client",
       version:"0.1.0"},{capabilities:{}});
-    await client.connect(transport);
-    if(closed)throw Error(mode.error);
-    const catalog=await client.listTools();
+    await Promise.race([client.connect(transport),interrupted]);
+    if(closed||config.signal?.aborted)throw Error(mode.error);
+    const catalog=await Promise.race([client.listTools(),interrupted]);
     if(catalog.tools.length!==1||catalog.tools[0]?.name!==mode.tool||
        closed||config.signal?.aborted)
      throw Error(mode.error);
     // A Task cancelled during MCP discovery must never dispatch a
     // cryptographic native Rust call afterwards.
-    const response=await client.callTool({
+    const response=await Promise.race([client.callTool({
      name:mode.tool,
      arguments:{
       request_ref:ref,
@@ -111,7 +124,7 @@ export function createOwnerPrivateNativeCryptoMcpSession(
       timeout_ms:config.timeoutMs??10000,
       native_body:request
      }
-    });
+    }),interrupted]);
     const data=response.structuredContent;
     if(closed||response.isError===true||!object(data)||
        Object.keys(data).sort().join(",")!==
@@ -126,6 +139,7 @@ export function createOwnerPrivateNativeCryptoMcpSession(
     // an untrusted caller or diagnostic record.
     throw Error(mode.error);
    }finally{
+    clearTimeout(deadline);
     config.signal?.removeEventListener("abort",onAbort);
     await close();
    }
