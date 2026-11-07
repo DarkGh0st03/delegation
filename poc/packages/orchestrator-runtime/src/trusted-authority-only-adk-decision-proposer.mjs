@@ -236,7 +236,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    // choosing its correction. Investigation is ONE signed, read-only Child
    // Task: no Test actor, mutation, new authority or implicit retry.
    const diagnosticRead=this.decisionKind==='adaptive'&&!!this.verifiedFailure&&
-     raw.agent_id!=='test'&&selected.length===1&&selected[0].operation==='read_file';
+     ['backend','frontend'].includes(raw.agent_id)&&selected.length===1&&
+     selected[0].operation==='read_file';
    if(selected.some(p=>p.operation==='create_pull_request')||
       (!diagnosticRead&&
        selected.filter(p=>p.operation==='update_file'||p.operation==='run_tests').length!==1))
