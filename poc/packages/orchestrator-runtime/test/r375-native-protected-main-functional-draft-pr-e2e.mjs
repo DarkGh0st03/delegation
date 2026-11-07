@@ -958,6 +958,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
      signingPublicKeyPem:keys.publicKey.export({
       type:"spki",format:"pem"}).toString()
     };
+    // R382.3: original trusted Owner verifies the actual native signer DID,
+    // not the old synthetic did:thesis:* demo Agent Card identity.
+    if(r3818NativeMcp)
+     opts.nativeSignerDid=process.env["ADAPTER_ID_"+role.toUpperCase()];
     opts.adk={
      model:models[role],gatewayBaseUrl:"http://gateway.fixture.invalid",
      adapterToken:tokens[role],maxModelTurns:4,maxModelCallMs:15000,
