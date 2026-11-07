@@ -212,7 +212,7 @@ test("R383.2 altered staged commit parent stops before feature HEAD CAS",async()
 });
 test("R383.2 altered staged bytes block feature HEAD CAS",async()=>{
  const f=fixture({stagedContent:"not the owner bytes"});
- await assert.rejects(f.run(),/staged create file differs/u);
+ await assert.rejects(f.run(),/Staged create file differs/u);
  assert.equal(f.stats().created,1);
  assert.equal(f.stats().branchCas,0);
 });
