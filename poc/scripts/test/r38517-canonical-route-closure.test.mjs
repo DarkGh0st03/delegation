@@ -120,3 +120,23 @@ test("R385.17 real tracked graph retains every private MCP module; not deletion 
  const direct=r38516LegacyInventory(root,tracked);
  assert.equal(direct.status,"INVENTORY_PROVENANCE_OK");
 });
+
+test("R385.18 historical repair controller consumes neutral credential contracts, not HTTP issuer",()=>{
+ const controller=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
+ const neutral=read("poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts");
+ assert.match(controller,
+  /import type \{ChildIssuanceInput\} from "\.\/trusted-credential-contracts\.ts";/u);
+ assert.doesNotMatch(controller,/from "\.\/authority-client\.ts"/u,
+  "repair DAG data type must not depend on HTTP Engineer client");
+ assert.match(neutral,/export interface ChildIssuanceInput/u);
+ assert.doesNotMatch(neutral,/authority-adapter-transport|postCredential|fetch\(/u,
+  "neutral credential shapes are not an HTTP authority transport");
+ // The historical controller remains a retained fixture; this is not
+ // evidence that its runtime DAG can be deleted.
+ const observed=r38516LegacyInventory(root,gitTrackedFiles(root));
+ const issuer=observed.legacyModules.find(x=>
+  x.path==="poc/packages/orchestrator-runtime/src/authority-client.ts");
+ assert.ok(issuer);
+ assert.ok(!issuer.staticImporters.includes(
+  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts"));
+});
