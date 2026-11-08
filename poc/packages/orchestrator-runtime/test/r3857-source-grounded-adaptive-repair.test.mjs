@@ -218,7 +218,15 @@ async function fixture(t,source,{forgery=null}={}){
 for(const [index,source] of originals.entries()){
  test("R385.7 actual Node FAIL -> signed read -> source-derived ADK choice -> local CAS -> Node PASS, variant "+index,async t=>{
   const f=await fixture(t,source);
-  const outcome=await f.run();
+  let outcome;
+  try{outcome=await f.run();}
+  catch(error){
+   throw Error("R385.7 offline fixture diagnostics "+JSON.stringify({
+    modelCalls:f.model.calls,prompts:f.model.requestTexts.length,
+    events:f.state().events,runnerOutcomes:f.state().actualRunnerResults,
+    reason:String(error)
+   }),{cause:error});
+  }
   assert.equal(outcome.status,"owner_adaptive_work_ready_for_pr");
   assert.equal(outcome.executed_tasks,3,"failed Test is never Gateway-completed");
   assert.equal(outcome.pr_created,false,"readiness cannot post a PR");
