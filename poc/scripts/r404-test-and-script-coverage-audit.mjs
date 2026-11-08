@@ -193,6 +193,10 @@ function main(){
   writeFileSync(resolve(process.argv[at+1]),JSON.stringify(report,null,2)+"\n");
  }
  console.log(JSON.stringify({event:"R404_TEST_COVERAGE",
-  ...report.summary,automaticDeletionAuthorized:false}));
+  ...report.summary,
+  reviewCandidates:report.records.filter(x=>x.kind!=="TEST_CONFIGURED")
+   .map(x=>({path:x.path,kind:x.kind,workflows:x.workflows})),
+  unresolvedPreview:report.unresolved.slice(0,30),
+  automaticDeletionAuthorized:false}));
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main();

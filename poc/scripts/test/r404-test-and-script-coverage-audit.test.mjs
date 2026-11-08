@@ -50,3 +50,14 @@ test("R404 refuses missing protected security test sources in strict mode",()=>{
   /R404 missing security witnesses/u);
  assert.ok(analyzeR404(fake()).summary.missingSecurityWitnessGroups.length);
 });
+
+test("R404.2 review candidates are only candidates, even if not configured",()=>{
+ const report=analyzeR404(fake());
+ const unresolved=report.records.filter(x=>x.kind!=="TEST_CONFIGURED");
+ assert.equal(unresolved.length,3);
+ assert.deepEqual(unresolved.map(x=>x.kind).sort(),[
+  "FILTERED_TEST_CONFIGURED","NO_CONFIGURED_TEST_OBSERVED","SYNTAX_ONLY"
+ ].sort());
+ assert.ok(unresolved.every(x=>x.deletionAuthorized===false));
+ assert.equal(report.verifiedBehavioralDuplication,undefined);
+});
