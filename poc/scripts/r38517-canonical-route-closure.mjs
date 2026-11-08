@@ -70,10 +70,16 @@ export function auditR38517WorkflowRoutes({
   "positive Security CI still refers to retired shared-MCP branch");
  demand(positive.includes("security-ci:isolated-positive-smoke"),
   "positive Security CI lost its disposable independent Runner test");
+ demand(/^[ ]{4}authority-only-native-rust-positive:\s*$/mu.test(positive)&&
+  /^[ ]{4}uses: \.\/\.github\/workflows\/r38513-native-strict-full-recovery\.yml\s*$/mu.test(positive)&&
+  positive.includes("contents: read"),
+  "positive Security CI must invoke canonical no-AI Rust/Child/VP full E2E");
+ demand(positive.includes("'.github/workflows/r38513-native-strict-full-recovery.yml'"),
+  "native reusable workflow changes must trigger positive Security CI");
  demand(!/(GEMINI_API_KEY|GOOGLE_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)/u.test(positive),
   "positive Security CI cannot have paid-model credentials");
- demand(equalArray(configuredWorkflowEvents(native),["workflow_dispatch","push"]),
-  "canonical native E2E trigger unexpectedly changed");
+ demand(equalArray(configuredWorkflowEvents(native),["workflow_call","workflow_dispatch","push"]),
+  "canonical native E2E must be reusable and retain explicit/pinned dispatch");
  demand(native.includes('R38513_NATIVE_STRICT_FULL_RECOVERY: "1"')&&
   native.includes('R3818_CANONICAL_NATIVE_MCP: "1"'),
   "native E2E must retain trusted Rust/MCP strict recovery route");
