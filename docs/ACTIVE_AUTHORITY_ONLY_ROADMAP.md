@@ -32,6 +32,10 @@ Il vecchio transport HTTP e i suoi due caller dinamici gated restano per
 il batch Adapter successivo; la migrazione non autorizza cancellazioni di
 implementazioni Owner, private crypto MCP o attivazioni a pagamento.
 
+**R413 validato — 8 novembre 2026.** La [Fast CI #42524272610](https://github.com/DarkGh0st03/delegation/actions/runs/42524272610) e la [Security CI nativa #42524272605](https://github.com/DarkGh0st03/delegation/actions/runs/42524272605) sono entrambe **SUCCESS 2/2** sulla stessa SHA `7e60ce948cadb13aa7ded2f6e56bdb315f9687b2`. La rimozione fisica dei tre shim Signed DAG/Planner/repair ha conservato i core Owner, la Rust EVM, le diagnosi firmate e la Draft PR disposable. Le prime due CI fallite durante la migrazione sono state riparate senza reintrodurre gli shim; `main` e' invariato.
+
+**R414 — separazione dei tipi Engineer dall'HTTP legacy.** `trusted-engineer-crypto-port.ts` importa ora `TrustedEngineerCoreConfig` dal contratto neutro e definisce localmente la sola shape HTTP per la fixture: nessun import nemmeno di tipo da `authority-adapter-transport.ts` nel selector canonico. R412 aggiunge il test di assenza, la Security CI nativa osserva ora selector e trasporto storico. Non vengono cancellati i due issuer HTTP: restano 3 test storici + 2 import dinamici protetti e una dipendenza di `authority-adapter-transport.ts` da `authority-client.ts`. La loro rimozione richiede una migrazione attestata del Runner EVM legacy e della fixture Engineer, con conservazione dei test di revoca/permessi, prima di ogni cancellazione. Anche questo batch deve passare Fast + Security CI **sulla propria SHA**, senza Gemini pagato e senza merge.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

@@ -40,6 +40,19 @@ async function withFixtureEnv(fn){
   }
  }
 }
+test("R414 canonical Engineer selector is type-decoupled from HTTP transport",()=>{
+ const canonical="poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
+ const src=readFileSync(resolve(root,canonical),"utf8");
+ const module=new SourceTextModule(stripTypeScriptTypes(src),{identifier:canonical});
+ assert.match(src,/import type \{TrustedEngineerCoreConfig\} from "\.\/trusted-credential-contracts\.ts";/u);
+ assert.doesNotMatch(src,/from "\.\/authority-(?:client|adapter-transport)\.ts"/u);
+ assert.doesNotMatch(src,/\bAdapterClientConfig\b/u);
+ assert.ok(!module.dependencySpecifiers.some(x=>/authority-client|authority-adapter-transport/u.test(x)));
+ assert.match(src,/loaded\?\?=import\("\.\/trusted-engineer-legacy-mcp-http-port\.ts"\)/u,
+  "Historical issuer is still isolated behind a lazy fixture-only boundary");
+ assert.match(src,/assertLegacyEngineerHttpFixtureAllowed\(\);/u,
+  "Native host must never silently downgrade to HTTP");
+});
 test("R412 historical MCP wrapper has one gated dynamic issuer import, no eager issuer edge",()=>{
  const src=source();
  const parsed=new SourceTextModule(stripTypeScriptTypes(src),{identifier:path});

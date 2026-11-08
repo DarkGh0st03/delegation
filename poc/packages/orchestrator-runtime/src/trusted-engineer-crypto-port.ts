@@ -11,10 +11,19 @@ import {createDirectRustEngineerCredentialPort}
  from "./trusted-engineer-direct-core-port.ts";
 import {assertLegacyEngineerHttpFixtureAllowed}
  from "./trusted-engineer-legacy-fixture-gate.ts";
-import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
+import type {TrustedEngineerCoreConfig} from "./trusted-credential-contracts.ts";
 import type {EngineerCredentialPort,RootParameters}
  from "./trusted-engineer-authority.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
+
+/** R414: legacy HTTP settings stay a local, type-erased fixture shape.
+ * Canonical Engineer source MUST NOT import even types from HTTP transport.
+ * Native issuer settings come only from TrustedEngineerCoreConfig.
+ */
+type HistoricalEngineerHttpConfig=TrustedEngineerCoreConfig&{
+ adapterBaseUrl:string;
+ fetchFn?:typeof fetch;
+};
 
 /**
  * Backwards-compatible *lazy* bridge for historical offline fixtures ONLY.
@@ -25,7 +34,7 @@ import type {DelegatedPermission} from "./delegated-permission.ts";
  * the same asynchronous, one-shot issuance and revocation operations.
  */
 export function createOwnerPrivateMcpEngineerCredentialPort(
- config:AdapterClientConfig
+ config:HistoricalEngineerHttpConfig
 ):EngineerCredentialPort{
  assertLegacyEngineerHttpFixtureAllowed();
  // Retain the historical synchronous input validation (before any import).
@@ -64,8 +73,8 @@ export function createOwnerPrivateMcpEngineerCredentialPort(
  * native failure. Historical offline fixtures may still use MCP -> Adapter.
  */
 export function createTrustedEngineerCredentialPort(
- config:Pick<AdapterClientConfig,"bearerToken"|"timeoutMs">&
-  {adapterBaseUrl?:string;fetchFn?:AdapterClientConfig["fetchFn"]}
+ config:TrustedEngineerCoreConfig&
+  {adapterBaseUrl?:string;fetchFn?:typeof fetch}
 ):EngineerCredentialPort{
  const path=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  const direct=process.env.ENGINEER_CORE_NATIVE_MODE;
