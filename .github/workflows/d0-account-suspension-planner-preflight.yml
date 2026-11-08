@@ -12,7 +12,6 @@ on:
       - 'poc/scripts/account-suspension-source-readiness.mjs'
       - 'poc/apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs'
       - 'poc/scripts/test/run-gemini-planner-fixture.test.mjs'
-      - '.github/workflows/gemini-planner-manual-feasibility.yml'
   workflow_dispatch:
 permissions:
   contents: read

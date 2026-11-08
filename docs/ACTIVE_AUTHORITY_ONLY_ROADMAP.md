@@ -106,6 +106,34 @@ ottenuto Full CI EVM. Non si puo' dichiarare R419 validato prima di
 Fast + Security CI sulla nuova SHA; divieto merge e Gemini a pagamento
 invariato.
 
+**R419 fully validated — 8 novembre 2026.**
+[Fast CI #42533150790](https://github.com/DarkGh0st03/delegation/actions/runs/42533150790) **SUCCESS 2/2** and
+[Security CI #42533150792](https://github.com/DarkGh0st03/delegation/actions/runs/42533150792) **SUCCESS 2/2** on the same
+`e3990e8c32d8cd9a7d542f2cfeaa9f10b5a20448` SHA.
+The former `authority-adapter-transport.ts` is absent; `authority-client.ts`
+retains credential status validation, the exact permission response check,
+and checked root revocation with all original unit tests. Security CI also
+covers the updated R384.9 public-index negative test. No change to `main`,
+no paid inference.
+
+**R420 — remove three already-unrunnable paid entrypoint workflows as one batch.**
+The following historical launchers are removed from this **feature branch**:
+`.github/workflows/gemini-real-gitea-planning-only.yml`,
+`.github/workflows/gemini-planner-manual-feasibility.yml`,
+`.github/workflows/f1-paid-real-gitea-once.yml`.
+Their billable jobs were already unconditional `if: ${{ false }}`; no
+working operational or paid execution route is lost. The existing
+`trusted-authority-only-legacy-retirement.test.mjs` now fails if any
+launcher is reintroduced, and the R6 tracked-reachability inventory keeps
+the three as negative retirement targets. The offline Account Suspension
+D0 workflow no longer watches the removed Planner YAML. The main
+historical `gemini-paid-shared-mcp-final.yml` is intentionally **not**
+removed in this batch because multiple current negative safety/regression
+tests require its disabled contents; Git history still preserves all
+deleted launcher records. Full R420 validation depends on Fast CI and
+Security CI on the new SHA; no Gemini, manual human approval bypass, or
+merge are authorized.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

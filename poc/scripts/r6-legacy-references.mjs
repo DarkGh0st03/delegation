@@ -36,6 +36,10 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/apps/test-runner-controller/fixtures/account-suspension-reference.mjs",
   "poc/workflow-ui/mock-plan.js",
   ".github/workflows/gemini-paid-shared-mcp-final.yml",
+  // R420: previously disabled paid entrypoints are now absent entirely.
+  ".github/workflows/gemini-real-gitea-planning-only.yml",
+  ".github/workflows/gemini-planner-manual-feasibility.yml",
+  ".github/workflows/f1-paid-real-gitea-once.yml",
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml",
   "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs",
@@ -84,6 +88,10 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
 export const R6_RETIRED_TARGETS=Object.freeze([
+  // R420: retired, previously non-executable paid launcher records.
+  ".github/workflows/gemini-real-gitea-planning-only.yml",
+  ".github/workflows/gemini-planner-manual-feasibility.yml",
+  ".github/workflows/f1-paid-real-gitea-once.yml",
   // R419: historical Adapter transport merged into its sole HTTP issuer.
   "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
   // R413: true historical Signed-DAG wrapper retirement; core Owner modules remain.
