@@ -74,7 +74,10 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
        binding.resource!==decision.task.permissions.find(p=>p.operation==='update_file')?.resource||
        binding.revision!==before.executionProgress?.current_head_sha||
        !/^[a-f0-9]{64}$/u.test(binding.evidence_sha256??'')||
-       typeof binding.read_task_id!=='string')
+       typeof binding.read_task_id!=='string'||
+       !before.executionProgress?.completed_work?.some(row=>
+        row.task_id===binding.read_task_id&&
+        row.agent_id===decision.task.agent_id&&row.operation==='read_file'))
      deny('post-FAIL UPDATE lacks independently signed diagnostic source');
     signal?.throwIfAborted();
     const afterReadGate=await hooks.readContext();
