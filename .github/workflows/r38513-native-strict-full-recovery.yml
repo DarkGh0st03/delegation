@@ -31,6 +31,9 @@ jobs:
       R3858_NATIVE_STRICT_POSTFAIL_PROBE: "1"
       R38512_NATIVE_TEST_AGENT_SOURCE_PROBE: "1"
       R38513_NATIVE_STRICT_FULL_RECOVERY: "1"
+      # The canonical native strict E2E also verifies Security CI's
+      # exact status on its OWN generated Draft PR (no merge/no paid AI).
+      R399_NATIVE_SAME_PR_GATE: "1"
       R3818_CANONICAL_NATIVE_MCP: "1"
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: r233-engineer-local
@@ -228,8 +231,11 @@ jobs:
           test -z "${GEMINI_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           set -a
+          source poc/infra/.env
           source poc/infra/runtime/gateway.env
           source poc/infra/runtime/runner.env
+          test -n "${GITEA_ADMIN_USER:-}"
+          test -n "${GITEA_ADMIN_PASSWORD:-}"
           set +a
           test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
           test "${R3818_CANONICAL_NATIVE_MCP:-}" = "1"
@@ -239,6 +245,7 @@ jobs:
           test -z "${GEMINI_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
+          node --check poc/packages/orchestrator-runtime/test/native-gitea-ci-human-gate-fixture.mjs
           node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs | tee "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"event":"canonical_signed_handoff_native"' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"event":"r38513_native_ten_signed_reads_ten_cas_docker_pass_draft_pr"' "$RUNNER_TEMP/r38513-proof.jsonl"
@@ -255,6 +262,9 @@ jobs:
           grep -Fq '"pr_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"pr_merged":false' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"original_main_immutable":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"event":"r399_native_draft_pr_exact_head_security_ci"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"original_root_pr_unchanged":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"read_only_human_gate_denied_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"source_code_generated_autonomously_by_model":false' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"paid_model_calls":0' "$RUNNER_TEMP/r38513-proof.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)

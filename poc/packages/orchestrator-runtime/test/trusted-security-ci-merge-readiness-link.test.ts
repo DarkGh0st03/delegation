@@ -58,7 +58,7 @@ test("R396: one actual CI status producer and read-only Gate see same PR and exa
   }else if(path===REPO+"/branches/main"&&method==="GET"){
    value={commit:{id:BASE}};
   }else if(path===REPO+"/pulls/17"&&method==="GET"){
-   value={number:17,state:"open",merged:false,mergeable:true,
+   value={number:17,state:"open",merged:false,draft:false,mergeable:true,
     head:{ref:"feature/account-suspension",sha:prHead,
      repo:{full_name:"thesis/iam-console-poc"}},
     base:{ref:"main",sha:BASE,repo:{full_name:"thesis/iam-console-poc"}}};

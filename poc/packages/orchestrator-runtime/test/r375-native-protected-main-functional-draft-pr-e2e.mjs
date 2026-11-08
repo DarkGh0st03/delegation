@@ -145,6 +145,9 @@ const strictReadProbe=process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1";
 const secondReadProbe=process.env.R3859_NATIVE_SECOND_REPAIR_PROBE==="1";
 const testAgentProbe=process.env.R38512_NATIVE_TEST_AGENT_SOURCE_PROBE==="1";
 const strictFullRecovery=process.env.R38513_NATIVE_STRICT_FULL_RECOVERY==="1";
+const r399NativeSamePrGate=process.env.R399_NATIVE_SAME_PR_GATE==="1";
+assert.ok(!r399NativeSamePrGate||strictFullRecovery,
+ "R399 native same-PR Security CI must use strict R385.13 original owner");
 assert.ok(!strictFullRecovery||(strictReadProbe&&testAgentProbe&&
  !secondReadProbe&&!diagnosticMode&&!specialistStop),
  "R385.13 requires isolated native strict signed Test Agent mode");
@@ -1561,6 +1564,23 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(draft.merged,false);
   assert.equal(draft.head_revision,latest);
   assert.equal(draft.base_revision,disposableMainHead);
+  if(r399NativeSamePrGate){
+   // AFTER original native Engineer/Child/OPA/Gitea/MAC Runner PASS and
+   // original root Draft PR attestation, CI repeats genuine Docker tests
+   // on precisely THIS original PR head using a separate CI identity.
+   // Human readiness MUST remain denied because this PR is still Draft.
+   const {proveNativeDraftPrSameHeadSecurityCi}=await import(
+    "./native-gitea-ci-human-gate-fixture.mjs");
+   const security=await proveNativeDraftPrSameHeadSecurityCi({
+    giteaBaseUrl:process.env.GITEA_HOST_BASE_URL,
+    readToken:process.env.GITEA_RUNNER_TOKEN,
+    runner:controller,number:workflow.pull_request_number,
+    headSha:latest,mainSha:disposableMainHead
+   });
+   assert.equal(security.status,"pass");
+   assert.equal(security.head_sha,latest);
+   assert.equal(security.pull_request_number,workflow.pull_request_number);
+  }
   await assert.rejects(executeAuthorization({
    request_id:privateBranchFlight.prepared.request_id,
    signed_vp:privateBranchFlight.signed_vp
