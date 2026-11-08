@@ -14,7 +14,8 @@ import type {TrustedRunnerAssertionContext} from "./trusted-runner-assertion-con
  * Gateway/Runner attestation on the exact SHA after all tasks.
  */
 import type {ProtectedA2AClientPort} from "./a2a-workflow.ts";
-import type {ChildIssuanceInput} from "./authority-client.ts";
+// Historical repair DAG consumes neutral types, never HTTP Adapter authority.
+import type {ChildIssuanceInput} from "./trusted-credential-contracts.ts";
 import {dispatchTrustedAdmittedRepairA2A,
  confirmTrustedAdmittedRepairA2A} from "./trusted-admitted-repair-a2a.ts";
 import {TrustedOperationalEpochIntake}
