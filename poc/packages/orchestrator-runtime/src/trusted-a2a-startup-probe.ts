@@ -8,7 +8,7 @@
  * delegated credentials to this read-only probe.
  */
 import {A2A_PROTOCOL_VERSION,type AgentCard} from "@a2a-js/sdk";
-import {APPROVED_SPECIALIZED_AGENT_PROFILES}
+import {APPROVED_SPECIALIZED_AGENT_PROFILES,nativeAuthorityOnlyAdvertisedCapabilities}
   from "../../agent-runtime/src/approved-specialized-profiles.ts";
 import {trustedSignerAgentDid} from "../../agent-runtime/src/cards.ts";
 import {DELEGATED_AUTHORIZATION_EXTENSION_URI}
@@ -43,7 +43,14 @@ export function verifyTrustedApprovedAgentCard(role:Role,base:string,card:AgentC
   // The trusted role DID must agree with the original Rust signer in
   // authority-only mode. Historical Cards retain their fixed demonstration DID.
   const expectedDid=trustedSignerAgentDid(role);
-  const supported=new Set<string>(APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools);
+  // The native signer can only advertise effects implemented by this
+  // canonical owner. Test create_file exists in historical ADK fixtures but
+  // is intentionally NOT executable by the original authority-only owner.
+  const nativeOwner=process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&
+   process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only";
+  const supported=new Set<string>(nativeOwner?
+   nativeAuthorityOnlyAdvertisedCapabilities(role):
+   APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools);
   if(!Array.isArray(capabilities)||capabilities.length===0||
      capabilities.length>supported.size||new Set(capabilities).size!==capabilities.length||
      capabilities.some(c=>typeof c!=="string"||!supported.has(c))||
@@ -58,10 +65,8 @@ export function verifyTrustedApprovedAgentCard(role:Role,base:string,card:AgentC
      ext[0]?.params?.agentDid!==expectedDid||
      ext[0]?.params?.evidenceLocation!==
        "message.metadata.delegation_evidence"||
-     !Array.isArray(card?.skills)||
-     !card.skills.some((s:unknown)=>
-       typeof s==="object"&&s!==null&&
-       (s as {id?:string}).id===SKILLS[role]))
+     !Array.isArray(card?.skills)||card.skills.length!==1||
+     card.skills[0]?.id!==SKILLS[role])
     denied();
   return Object.freeze({did:expectedDid,
     capabilities:Object.freeze([...capabilities])});
