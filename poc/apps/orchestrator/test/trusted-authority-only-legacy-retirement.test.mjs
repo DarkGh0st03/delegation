@@ -54,6 +54,26 @@ test('R384.6 both historical billed GitHub Actions jobs are unconditionally skip
  }
 });
 
+
+test('R384.7 remaining historical paid workflows cannot execute any job',()=>{
+ for(const [filename,job] of [
+  ['gemini-real-gitea-planning-only.yml','real-planner'],
+  ['gemini-planner-manual-feasibility.yml','read-only-planner'],
+  ['f1-paid-real-gitea-once.yml','f1-real-planning']
+ ]){
+  const contents=readFileSync(path('.github/workflows/'+filename),'utf8');
+  assert.match(contents,/^on:\s*$/mu,'preserve archived workflow evidence');
+  const marker='  '+job+':\n';
+  const offset=contents.indexOf(marker);
+  assert.ok(offset>=0,job+' missing from '+filename);
+  const jobBody=contents.slice(offset+marker.length);
+  const boundary=jobBody.search(/^  [a-zA-Z0-9_-]+:\s*$/mu);
+  const section=boundary<0?jobBody:jobBody.slice(0,boundary);
+  assert.match(section,/^    if:\s*\$\{\{ false \}\}\s*$/mu,
+   job+' must never execute, even with prior paid consent');
+ }
+});
+
 test('R384.6 canonical production entrypoints never import historical reviewed DAG',()=>{
  for(const file of [
   'poc/apps/orchestrator/src/canonical-owner-deployment.mjs',
