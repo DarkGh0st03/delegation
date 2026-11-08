@@ -25,6 +25,9 @@ test("R385.2 pure endpoint preflight preserves strict duplicate, loopback and im
  assert.equal(Object.isFrozen(pinned),true);
  input.backend="http://127.0.0.1:45104";
  assert.equal(pinned.backend,"http://127.0.0.1:45101");
+ assert.equal(purePins({...input,frontend:"http://127.0.0.1:65535"}).frontend,
+  "http://127.0.0.1:65535",
+  "The maximum TCP port remains usable; 65536 must be denied");
  for(const invalid of [
   {...input,frontend:input.backend},
   {...input,backend:"http://localhost:45101"},
@@ -32,6 +35,7 @@ test("R385.2 pure endpoint preflight preserves strict duplicate, loopback and im
   {...input,test:"http://0.0.0.0:45103"},
   {...input,frontend:"http://127.0.0.1:0"},
   {...input,test:"http://127.0.0.1:65536"},
+  {...input,test:"http://127.0.0.1:99999"},
   {...input,frontend:"http://127.0.0.1:45102/path"},
   {...input,test:undefined}
  ])assert.throws(()=>purePins(invalid),
