@@ -130,8 +130,8 @@ test("R385.17 real tracked graph retains every private MCP module; not deletion 
   "R419 former Adapter transport must be absent and have zero active callers");
  assert.equal(r.callers.privateMcp.length,4);
  assert.ok(r.callers.privateMcp.every(m=>m.present));
- assert.ok(r.callers.modules.filter(m=>/trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)\.ts$/u.test(m.path)).every(m=>!m.present));
- assert.ok(r.callers.modules.filter(m=>!/trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)\.ts$/u.test(m.path)).every(m=>m.present));
+ assert.ok(r.callers.modules.filter(m=>/(?:trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)|authority-adapter-transport)\.ts$/u.test(m.path)).every(m=>!m.present));
+ assert.ok(r.callers.modules.filter(m=>!/(?:trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)|authority-adapter-transport)\.ts$/u.test(m.path)).every(m=>m.present));
  assert.equal(r.callers.deletionAuthorized,false);
  assert.equal(r.callers.externalConsumersVerified,false);
  assert.ok(r.callers.unresolvedIndirections>0);
