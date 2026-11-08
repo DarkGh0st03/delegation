@@ -59,5 +59,5 @@ test("R404.2 review candidates are only candidates, even if not configured",()=>
   "FILTERED_TEST_CONFIGURED","NO_CONFIGURED_TEST_OBSERVED","SYNTAX_ONLY"
  ].sort());
  assert.ok(unresolved.every(x=>x.deletionAuthorized===false));
- assert.equal(report.verifiedBehavioralDuplication,undefined);
+ assert.equal(report.verifiedBehavioralDuplication,false);
 });
