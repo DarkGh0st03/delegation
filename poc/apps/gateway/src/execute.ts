@@ -10,7 +10,7 @@ import {TrustedAuthorityOnlyRunnerExecutor}
 import {TrustedAuthorityOnlyPullRequestExecutor}
  from "./trusted-authority-only-pull-request-executor.ts";
 import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
-import {giteaPermissionCovers}
+import {giteaPermissionCovers,isProjectTestCreateGrant}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import { performance } from "node:perf_hooks";
 import {
@@ -382,7 +382,9 @@ export async function executeAuthorization(
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedMutationEvidenceBinding(
           record,verified);
       }else if(record.request.tool==="create_file"&&
-         ["backend","frontend"].includes(record.agent_role)&&
+         (["backend","frontend"].includes(record.agent_role)||
+          (record.agent_role==="test"&&
+           isProjectTestCreateGrant([record.required_permission])))&&
          dependencies.authorityOnlyCreateEnabled===true&&
          dependencies.authorityOnlyCreateExecutor instanceof
            TrustedAuthorityOnlyGiteaCreateExecutor&&
@@ -393,6 +395,8 @@ export async function executeAuthorization(
          dependencies.policy instanceof OpaPolicyClient&&
          dependencies.executor instanceof GiteaExecutor&&
          !dependencies.approvedPlans&&!dependencies.planningRevisions){
+        // Test CREATE is additionally constrained to one exact tests/*
+        // project source by the original signed Child and Gateway admission.
         // The ORIGINAL consumed Prepare, signed single-file Child and
         // durable Task flight are checked only after actual Rust VP + OPA.
         // Neither a mock verifier nor a legacy Gitea create can reach CAS.
