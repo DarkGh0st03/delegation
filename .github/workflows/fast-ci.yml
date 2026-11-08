@@ -44,6 +44,9 @@ jobs:
           node --test poc/scripts/test/r240-direct-rust-issuer-config.test.mjs
           # R385.0: legacy MCP/HTTP Engineer path is lazy; native direct Rust path stays first.
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
+          # R385.2: pure endpoint preflight, lazy DAG import and original root-retirement safety.
+          node --experimental-strip-types --test poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-native-port.test.ts
           node --experimental-strip-types --test poc/packages/agent-runtime/test/native-agent-card-signer-binding.test.ts poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts
