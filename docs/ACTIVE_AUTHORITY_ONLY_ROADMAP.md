@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.16 Human Gate static audit + legacy inventory PASS; physical cleanup still gated)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.17 workflow migration + per-caller audit PASS; physical module cleanup still gated)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -18,10 +18,58 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori; Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL autentici. Negazioni di autorità ed effetti ambigui restano fail-closed | **E2E nativa scripted R385.13 SUCCESS** su `0e42cdf6`: dieci Task di lettura firmati, dieci Task di correzione CAS, Test Agent su tre file, Docker FAIL→PASS e Draft PR. Test ADK isolato R385.13 SUCCESS in Fast CI `5f4d9c5f`, senza ritenere il Test FAIL una dipendenza completata. **Ancora aperto:** dimostrare generalizzazione delle decisioni e comportamento generativo reale; la prova scripted non è autonomia Gemini |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; R385.14 allinea la Card nativa del Test Agent a read/update/run_tests e nega skill estranee e create_file non disponibile; R385.15 esige un grant Runner esplicito per i FunctionTools dei Task Test firmati (l'assenza del flag non equivale ad autorizzazione); altri profili/FunctionTools richiedono audit di consolidamento.** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi e negativi, Rust/EVM/OPA/Gitea/Docker/MCP e A2A sulla SHA finale dopo B/C e post-cleanup | **R385.13 Native Strict SUCCESS #42468353532**, SHA `0e42cdf6`: 1 Engineer approval, 24 Child native, 25 decisioni, 10 diagnosi post-FAIL, 10 repair CAS, 2 Docker (FAIL→PASS), researcher acceptance PASS e Draft PR indipendentemente verificata; zero AI a pagamento. **Fast CI SUCCESS #42468524528** su `5f4d9c5f` e **#42468834499** su `d43f1b3f` per i test aggiuntivi. Non attribuire questi PASS a un singolo SHA: il run nativo è su una SHA precedente. **R385.14 Fast CI #42469954220 e full Native #42469953971 entrambe SUCCESS sulla SHA `06afd1e0`**, incluso nuovo Test Card ceiling e Docker FAIL→PASS. **R385.15 Fast CI #42471999062 (2/2) ed E2E nativa #42471999178 SUCCESS sulla SHA `f4106a88`**; R385.16 Fast CI #42473310606 SUCCESS 2/2 sulla SHA `cb7edf17` con audit Human Gate e 6/6 nuovi test; validazione Merge solo mock. Mancano i gate gratuiti conclusivi **sulla stessa SHA post-cleanup** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.16 legge 5 candidati legacy e preserva 4 moduli MCP privati; 117 indirezioni runtime irrisolte e un workflow storico `main`/Adapter HTTP richiedono migrazione/review, non cancellazione automatica. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
+| **D. Validazione gratuita** | Test positivi e negativi, Rust/EVM/OPA/Gitea/Docker/MCP e A2A sulla SHA finale dopo B/C e post-cleanup | **R385.13 Native Strict SUCCESS #42468353532**, SHA `0e42cdf6`: 1 Engineer approval, 24 Child native, 25 decisioni, 10 diagnosi post-FAIL, 10 repair CAS, 2 Docker (FAIL→PASS), researcher acceptance PASS e Draft PR indipendentemente verificata; zero AI a pagamento. **Fast CI SUCCESS #42468524528** su `5f4d9c5f` e **#42468834499** su `d43f1b3f` per i test aggiuntivi. Non attribuire questi PASS a un singolo SHA: il run nativo è su una SHA precedente. **R385.14 Fast CI #42469954220 e full Native #42469953971 entrambe SUCCESS sulla SHA `06afd1e0`**, incluso nuovo Test Card ceiling e Docker FAIL→PASS. **R385.15 Fast CI #42471999062 (2/2) ed E2E nativa #42471999178 SUCCESS sulla SHA `f4106a88`**; R385.16 Fast CI #42473310606 SUCCESS 2/2 sulla SHA `cb7edf17` con audit Human Gate e 6/6 nuovi test; validazione Merge solo mock. **R385.17 Fast CI #42474653882 SUCCESS 2/2 e audit 7/7 su `cb2b18db`**; Security CI positiva #42474258290 SUCCESS su SHA `42435c7a` ma legacy-style Gateway HTTP. Mancano i gate gratuiti conclusivi **sulla stessa SHA post-cleanup** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.16 legge 5 candidati legacy e preserva 4 moduli MCP privati; 117 indirezioni runtime irrisolte e un workflow storico `main`/Adapter HTTP richiedono migrazione/review, non cancellazione automatica. R385.17 rimuove il trigger automatico Phase11 HTTP su `main`, migra il trigger positivo del Runner sul branch corrente e traccia **18 caller** dei 5 moduli legacy senza consentire cancellazioni. Quattro moduli MCP stdio privati sono da preservare; restano 117 indirezioni irrisolte. Il Runner positivo storico resta via Gateway HTTP e NON dimostra Child/VP Rust canonici; la sua copertura va migrata prima del cleanup.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.17 — Workflow storici e caller per modulo: migration gate PASS
+
+**Evidenza:** [Fast CI #42474653882](https://github.com/DarkGh0st03/delegation/actions/runs/42474653882)
+**SUCCESS (2/2 job)** sulla SHA `cb2b18dba29418c7d94e050c57a034f3dd8a5ef8`.
+L'audit `R38517_MIGRATION_GATE_PASS` attesta zero issue e
+**7/7 test R385.17 PASS**; la seconda pipeline Docker failure-evidence
+è anch'essa verde.
+
+**Effetti concretamente applicati:**
+- Il workflow storico `phase11-security.yml` non parte più su
+  push a `main`; rimane `workflow_dispatch`-only per le sue
+  regressioni legacy HTTP finché non saranno trasferite a Rust/Gateway
+  nativi. Nessun merge o workflow Phase11 è stato avviato.
+- La Security CI positiva `isolated-positive-security-ci.yml`
+  segue il branch authority-only, con precaricamento dell'OPA pinned
+  `openpolicyagent/opa:1.21.1`, e la
+  [run #42474258290](https://github.com/DarkGh0st03/delegation/actions/runs/42474258290)
+  **SUCCESS** su `42435c7a`. Test applicativi, Docker Runner,
+  researcher acceptance e OPA PASS, senza AI a pagamento o merge.
+  **Importante:** il risultato riporta
+  `native_rust_signed_child_and_vp:false` e
+  `runner_via_gateway_http:true`: è una **regressione positiva storica
+  del Runner**, non la prova E2E authority-only nativa. L'E2E nativa
+  completa precedente #42471999178 era verde su `f4106a88`.
+- Il nuovo inventario distingue per ciascuno dei cinque moduli legacy
+  import statici, dinamici letterali, script e caller configurati:
+  **18 riferimenti**, di cui 5 `authority-client`, 1
+  `authority-adapter-transport`, 6 `trusted-reviewed-approved-dag`,
+  3 `trusted-operational-repair-planner`, 3
+  `trusted-repair-dag-controller`.
+  La CI rifiuta nuovi riferimenti canonici ai moduli legacy, nuove
+  attivazioni HTTP automatiche e la perdita dei 4 MCP crittografici
+  privati. Conserva il test negativo che pretende il fallimento
+  dell'Adapter HTTP sotto Engineer Core diretto.
+
+**Vincolo:** la scansione R6 segnala ancora 117 indirezioni non risolte,
+`deletionAuthorized:false`; né i file legacy né
+`poc/mcp-shared` sono stati eliminati. Nessuna affermazione di
+copertura completa sulle dipendenze esterne o sui runtime calcolati.
+
+[Report R385.17](./R38517_WORKFLOW_AND_CALLER_MIGRATION.md).
+**Checkpoint successivo R385.18:** migrare i caller HTTP e le
+regressioni uniche del Runner positivo/Phase11 verso Rust diretto,
+Gateway nativo, MCP privato e Child DC; rimuovere selettivamente
+soltanto entrypoint ormai sostituiti; rieseguire tutti i gate
+sulla **stessa SHA dopo cleanup**. Pilot Gemini ancora vincolato
+al consenso esplicito, nessuna autorizzazione al merge.
 
 ### R385.16 — Human Gate e reachability legacy (offline, read-only)
 
