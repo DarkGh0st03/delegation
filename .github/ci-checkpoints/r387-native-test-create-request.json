@@ -5,6 +5,6 @@
   "proof": "signed Test project source CREATE, Gitea CAS and independently observed MAC",
   "paid_model_calls_authorized": false,
   "merge_authorized": false,
-  "attempt": 4,
-  "reason": "R390 allow private HMAC Test create only on exact project-test source with one-shot staging"
+  "attempt": 5,
+  "reason": "R391 fixes model-facing controlled tool gate for exact signed project test create"
 }
