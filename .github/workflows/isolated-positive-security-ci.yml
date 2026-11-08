@@ -36,6 +36,7 @@ on:
       # R411: native EVM fixture must never silently regress onto a legacy shim.
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
       - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'
+      - 'poc/scripts/test/r408-reviewed-dag-caller-migration.test.mjs'
       - 'poc/scripts/r38517-canonical-route-closure.mjs'
       - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
       - 'poc/scripts/test/r409-owner-repair-core-migration.test.mjs'

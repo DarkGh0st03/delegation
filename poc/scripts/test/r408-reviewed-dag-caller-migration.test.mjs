@@ -76,7 +76,8 @@ test("R408 tracked provenance: old shim no Owner callers; new core exactly 3",()
  assert.deepEqual(old.staticImporters.map(x=>x.source).sort(),[
   "poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
   "poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts",
-  "poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs"
+  "poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs",
+  "poc/scripts/test/r411-legacy-compatibility.test.mjs"
  ].sort());
  assert.deepEqual(active.runtimeIndirectionHints.map(x=>x.source).sort(),
   handoffs.slice().sort());
