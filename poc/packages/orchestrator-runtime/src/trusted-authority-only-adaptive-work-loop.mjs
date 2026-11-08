@@ -6,13 +6,15 @@ import {TrustedAuthorityOnlyAdkDecisionProposer} from './trusted-authority-only-
 // file Tasks; each keeps its own native Child, same-file read/CAS journal and
 // exact original root permissions. 24 is a hard owner-only decision ceiling.
 const deny=s=>{throw Error('Authority-only adaptive work loop: '+s);};
-export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal}){
+export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false}){
  if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>24||
     !hooks||['readContext','beforeDecision','executeTask','confirmReady','retire']
      .some(k=>typeof hooks[k]!=='function')||
     (hooks.runDecision!==undefined&&typeof hooks.runDecision!=='function')||
     (hooks.observeVerifiedTestFailure!==undefined&&
      typeof hooks.observeVerifiedTestFailure!=='function')||
+    (typeof requireVerifiedRepairDiagnostic!=='boolean')||
+    (requireVerifiedRepairDiagnostic&&typeof hooks.verifyRepairDiagnostic!=='function')||
     (signal!==undefined&&!(signal instanceof AbortSignal)))deny('invalid original owner loop configuration');
  let executed=0,retestRequired=false;
  try{
@@ -56,6 +58,28 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     return Object.freeze({status:'owner_adaptive_work_ready_for_pr',executed_tasks:executed,
      source_test_task_id:proof.task_id,source_test_runtime_task_id:proof.runtime_task_id,
      tested_commit_sha:proof.tested_commit_sha,pr_created:false});
+   }
+   // R385.6: opt-in owner policy. After an independently verified Test FAIL,
+   // model-selected UPDATE can be staged only after a distinct signed,
+   // Gateway-completed diagnostic read of that *same* source and HEAD.
+   // No model excerpt, permission claim or A2A result can satisfy this gate.
+   if(requireVerifiedRepairDiagnostic&&before.verifiedFailureHistory?.length&&
+      decision.task.permissions.some(p=>p.operation==='update_file')){
+    const binding=await hooks.verifyRepairDiagnostic(Object.freeze({
+     task:decision.task,context:before
+    }));
+    if(binding?.status!=='owner_verified_signed_diagnostic_read_for_repair'||
+       binding.repair_task_id!==decision.task.task_id||
+       binding.agent_id!==decision.task.agent_id||
+       binding.resource!==decision.task.permissions.find(p=>p.operation==='update_file')?.resource||
+       binding.revision!==before.executionProgress?.current_head_sha||
+       !/^[a-f0-9]{64}$/u.test(binding.evidence_sha256??'')||
+       typeof binding.read_task_id!=='string')
+     deny('post-FAIL UPDATE lacks independently signed diagnostic source');
+    signal?.throwIfAborted();
+    const afterReadGate=await hooks.readContext();
+    if(JSON.stringify(afterReadGate)!==JSON.stringify(before))
+     deny('original owner changed during authenticated diagnostic read gate');
    }
    // A thrown A2A/provider error is *always* terminal. Recovery is
    // possible only through an explicit outcome authenticated by the owner.
