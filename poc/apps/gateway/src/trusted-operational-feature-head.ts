@@ -14,7 +14,7 @@ import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-
 import {TrustedOperationalEpochIntake} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
 import type {TrustedFeatureRevision} from
-  "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
+  "../../../packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts";
 
 type Repository={authority:string;owner:string;repository:string};
 const SHA=/^[a-f0-9]{40}$/u;
