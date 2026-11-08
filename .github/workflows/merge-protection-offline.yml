@@ -71,7 +71,18 @@ jobs:
           assert.ok(triggers,"paid workflow trigger missing");
           assert.match(triggers[1],/^  workflow_dispatch:/m);
           assert.doesNotMatch(triggers[1],/^  (push|schedule|pull_request|workflow_run|workflow_call):/m);
-          assert.match(text,/github\.run_attempt == 1/);
+          // R420.1: archived billable jobs cannot run at all.
+          // Unconditional skips are stronger than an old run-attempt guard.
+          for(const name of ["account-suspension","f1-real-gitea-planning"]){
+            const marker="  "+name+":\n";
+            const start=text.indexOf(marker);
+            assert.ok(start>=0,"archived job marker absent: "+name);
+            const rest=text.slice(start+marker.length);
+            const next=rest.search(/^  [a-zA-Z0-9_-]+:\s*$/m);
+            const body=next<0?rest:rest.slice(0,next);
+            assert.match(body,/^    if: \$\{\{ false \}\}$/m,
+             "archived billed job must remain unconditional SKIP: "+name);
+          }
           assert.match(text,/inputs\.authorization == 'I AUTHORIZE GEMINI API CHARGES'/);
           const consent=fs.readFileSync("poc/scripts/signed-gemini-pilot-consent.mjs","utf8");
           const gate=fs.readFileSync("poc/scripts/signed-gemini-pilot-ci-gate.mjs","utf8");

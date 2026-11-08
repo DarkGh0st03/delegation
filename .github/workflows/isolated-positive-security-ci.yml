@@ -16,6 +16,8 @@ on:
     paths:
       - '.github/workflows/isolated-positive-security-ci.yml'
       - '.github/workflows/r38513-native-strict-full-recovery.yml'
+      # R420.1: the protected merge offline regression must not regress to a runnable paid path.
+      - '.github/workflows/merge-protection-offline.yml'
       # R400: native PR, exact-SHA read-only Gate or its original E2E
       # must automatically exercise the REAL native Security CI path.
       - 'poc/packages/orchestrator-runtime/src/merge-readiness.ts'
