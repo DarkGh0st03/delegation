@@ -35,9 +35,8 @@ export const R38518_ALLOWED_NONTEST_LEGACY_CALLERS=Object.freeze({
   "poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs",
   "poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts"
  ]),
- "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts":Object.freeze([
-  "poc/packages/orchestrator-runtime/src/authority-client.ts"
- ]),
+ // R419: the split HTTP transport has been physically retired.
+ "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts":Object.freeze([]),
  "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts":Object.freeze([]),
  "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts":Object.freeze([]),
  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts":Object.freeze([])
@@ -162,11 +161,14 @@ export function auditR38517CallerInventory(legacy){
   issues.push("Missing exact legacy/private MCP inventory targets");
  if(privateMcp.some(x=>!x.present))
   issues.push("Native private crypto MCP source must not be removed");
- const retired=new Set(R3854_DAG_BOUNDARIES.map(x=>x.target));
+ const retired=new Set([
+  ...R3854_DAG_BOUNDARIES.map(x=>x.target),
+  "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts"
+ ]);
  if(modules.some(x=>retired.has(x.path)&&x.present))
   issues.push("Retired Signed DAG wrapper reintroduced");
  if(modules.some(x=>!retired.has(x.path)&&!x.present))
-  issues.push("Retained HTTP legacy candidate disappeared without migration");
+  issues.push("Historical HTTP issuer disappeared without regression migration");
  if(modules.some(x=>x.callers.some(c=>c.classification==="canonical-owner-review-required")))
   issues.push("Canonical owner still references legacy module; review before migration");
  // Fail closed on *every* new non-test caller, not merely those whose

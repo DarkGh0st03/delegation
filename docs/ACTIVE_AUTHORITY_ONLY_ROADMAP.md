@@ -78,6 +78,34 @@ La revoca, i contratti Ed25519, OPA, Gateway e test E2E nativi restano protetti.
 Nessun Gemini a pagamento, nessun merge, nessuna cancellazione prematura:
 Fast + Security CI devono avere esito positivo **sulla SHA R418**.
 
+**R418 — validation concluded (8 novembre 2026).**
+[Fast CI #42530732152](https://github.com/DarkGh0st03/delegation/actions/runs/42530732152) **SUCCESS 2/2**,
+[Native Gateway/Core Rust #42530732240](https://github.com/DarkGh0st03/delegation/actions/runs/42530732240) **SUCCESS**,
+[Operation Catalog #42530732179](https://github.com/DarkGh0st03/delegation/actions/runs/42530732179) **SUCCESS**,
+[Security CI #42530732233](https://github.com/DarkGh0st03/delegation/actions/runs/42530732233) **SUCCESS 2/2** sulla stessa SHA
+`62086567fb58b977e36764ef987064c67025be33`.
+Nota di copertura: questi gate non equivalgono alla Full CI manuale EVM/Anvil/Adapter della `cumulative-refactoring-offline.yml`, che resta separata.
+
+**R419 — retirement fisico del transport HTTP duplicato.**
+Il solo consumatore eseguibile osservato di
+`authority-adapter-transport.ts` era `authority-client.ts`.
+Le funzioni originali `postCredential`/`validateCommon`, la forma
+`AdapterClientConfig` e tutte le validazioni credential-status/HTTP sono
+**consolidate senza riscriverne la semantica** nel client storico
+`authority-client.ts`, ora unico modulo per la parte HTTP root issue/revoke.
+`authority-adapter-transport.ts` e' cancellato dal tree; R6 e R385.17
+provano assenza e zero static/dynamic/configured caller. La fixture MCP
+storica importa solo il **tipo** neutrale di configurazione dal client
+HTTP, non dal selettore Rust. I test esistenti
+`authority-client.test.ts` (grant exact, no escalation, revoca
+con ricevuta terminale) rimangono intatti; R3850 registra l'assenza
+dello split. Il client HTTP restante conserva due consumer dinamici
+Engineer's legacy fixture e historical Runner, piu' due fixture EVM
+test-only. Non cancellarlo senza aver sostituito la copertura e
+ottenuto Full CI EVM. Non si puo' dichiarare R419 validato prima di
+Fast + Security CI sulla nuova SHA; divieto merge e Gemini a pagamento
+invariato.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

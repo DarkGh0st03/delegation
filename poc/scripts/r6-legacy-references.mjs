@@ -84,6 +84,8 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
 export const R6_RETIRED_TARGETS=Object.freeze([
+  // R419: historical Adapter transport merged into its sole HTTP issuer.
+  "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
   // R413: true historical Signed-DAG wrapper retirement; core Owner modules remain.
   "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts",
   "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",

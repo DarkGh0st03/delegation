@@ -124,6 +124,10 @@ test("R385.17 real tracked graph retains every private MCP module; not deletion 
  assert.equal(r.status,"R38517_MIGRATION_GATE_PASS",
   JSON.stringify([...r.routes.issues,...r.callers.issues]));
  assert.equal(r.callers.modules.length,5);
+ assert.ok(r.callers.modules.find(x=>
+  x.path==="poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts"&&
+  x.present===false&&x.callerCount===0),
+  "R419 former Adapter transport must be absent and have zero active callers");
  assert.equal(r.callers.privateMcp.length,4);
  assert.ok(r.callers.privateMcp.every(m=>m.present));
  assert.ok(r.callers.modules.filter(m=>/trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)\.ts$/u.test(m.path)).every(m=>!m.present));
@@ -164,7 +168,7 @@ test("R385.18 deny any new runtime or script importer of a historical HTTP/DAG m
  const fake={
   status:"INVENTORY_PROVENANCE_OK",
   legacyModules:rows.map(([path,allowed])=>({
-   path,present:!/(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller)\.ts$/u.test(path),
+   path,present:!/(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller|authority-adapter-transport)\.ts$/u.test(path),
    staticImporters:[],
    runtimeHints:allowed.map(source=>({source,kind:"dynamic-import"})),
    configuredCallers:[]

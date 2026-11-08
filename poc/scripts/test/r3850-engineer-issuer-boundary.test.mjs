@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
@@ -104,4 +104,20 @@ test("R418 historical EVM scripts do not eagerly load the old HTTP root issuer",
   const imports=[...src.matchAll(/await import\(\s*["'][^"']*\/authority-client\.ts["']\s*\)/gu)];
   assert.equal(imports.length,1,file+" must have exactly one test-only lazy importer");
  }
+});
+
+test("R419 legacy Adapter transport is physically retired into the tested HTTP issuer",()=>{
+ const deleted="poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts";
+ assert.equal(existsSync(new URL("../../../"+deleted,import.meta.url)),false,
+  "the old transport split must stay absent");
+ const issuer=read("poc/packages/orchestrator-runtime/src/authority-client.ts");
+ const legacy=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts");
+ assert.match(issuer,/export interface AdapterClientConfig/u);
+ assert.match(issuer,/function validateCommon\(/u);
+ assert.match(issuer,/async function postCredential\(/u);
+ assert.match(issuer,/Adapter root issuance response differs from exact trusted permissions/u);
+ assert.match(issuer,/Adapter root DC revocation not confirmed/u);
+ assert.doesNotMatch(issuer,/from "\.\/authority-adapter-transport\.ts"/u);
+ assert.match(legacy,/import type \{AdapterClientConfig\}\s+from "\.\/authority-client\.ts"/u);
+ assert.doesNotMatch(legacy,/from "\.\/authority-adapter-transport\.ts"/u);
 });

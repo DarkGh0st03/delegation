@@ -138,7 +138,7 @@ test("R412 R385.17 disallows static regression even from exact allowed legacy fi
  const inventory={
   status:"INVENTORY_PROVENANCE_OK",
   legacyModules:entries.map(([name,allowed])=>({
-   path:name,present:!/(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller)\.ts$/u.test(name),staticImporters:[],
+   path:name,present:!/(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller|authority-adapter-transport)\.ts$/u.test(name),staticImporters:[],
    runtimeHints:allowed.map(source=>({source,kind:"dynamic-import"})),
    configuredCallers:[]
   })),

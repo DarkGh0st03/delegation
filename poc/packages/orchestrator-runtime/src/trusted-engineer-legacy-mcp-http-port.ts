@@ -10,7 +10,7 @@ import {createOwnerPrivateCryptographicMcpSession}
 import {assertLegacyEngineerHttpFixtureAllowed}
  from "./trusted-engineer-legacy-fixture-gate.ts";
 import type {AdapterClientConfig}
- from "./authority-adapter-transport.ts";
+ from "./authority-client.ts";
 import type {EngineerCredentialPort,RootParameters}
  from "./trusted-engineer-authority.ts";
 import type {DelegatedPermission}
