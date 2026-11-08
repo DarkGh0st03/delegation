@@ -265,11 +265,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const signedTask=context.trusted_gateway_task_id!==undefined&&
       context.subtask.approved_file_permissions!==undefined;
     const taskRef=signedTask?safeSignedTaskRef(context.trusted_gateway_task_id):null;
-    // Older prebound scripted test fixtures do not send this new hint;
-    // their Gateway still enforces the signed run_tests grant. An explicit
-    // false from the current trusted dispatcher MUST hide and deny Runner.
+    // R385.15: a Task with signed file grants receives Runner ONLY when
+    // the original owner explicitly attested run_tests. An omitted flag
+    // cannot create model-visible authority; historical unsigned fixtures
+    // keep the compatibility behavior and Gateway remains authoritative.
     const mayRunTests=context.role==="test"&&
-      (!signedTask||context.subtask.approved_run_tests!==false);
+      (!signedTask||context.subtask.approved_run_tests===true);
     const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
       (durationMs, inputTokens, outputTokens, thinkingTokens, turn, responseShape) => {
         process.stdout.write(JSON.stringify({
