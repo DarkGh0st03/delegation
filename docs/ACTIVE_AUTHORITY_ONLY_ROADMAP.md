@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.3 cleanup legacy in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.4 audit dei caller legacy in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -19,9 +19,31 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 native SUCCESS su `81ad3fdd` (run #42423327568); Fast CI SUCCESS sulla SHA successiva `f236a4dd` (run #42423579107). Non sono due gate verdi sulla stessa HEAD. Ripetere validazione completa dopo il cleanup.** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.3: workflow Gemini storici disabilitati; consumer OIDC HMAC, contratti credenziali e preflight A2A separati dai legacy DAG/HTTP. R385.2 Fast CI PASS `fc182b94` (#42435700888). R385.3 carica il vecchio repair planner solo dopo Test FAIL autentico e il controller solo dopo Gateway epoch ammessa: Fast CI finale da verificare. Audit reachability e native E2E post-cleanup ancora aperti.** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: gateway/Engineer Rust diretto isolato dal client HTTP legacy; DAG/recovery legacy caricati solo da owner storici con gate. R385.3 Fast CI PASS `08bcf45` (#42437036503). R385.4 introduce un inventario *bloccante* degli ultimi tre target, con whitelist esatta static/dynamic e comandi 0; Fast CI finale R385.4 e native E2E post-cleanup ancora da attestare.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.4 — Closure audit esatto dei tre moduli Signed DAG ancora conservati
+
+Il report [`R3854_SIGNED_DAG_REACHABILITY_CLOSURE_AUDIT.md`](./R3854_SIGNED_DAG_REACHABILITY_CLOSURE_AUDIT.md)
+identifica con provenienza specifica i caller del DAG review (3 import
+statici solo test, 3 import dinamici dagli handoff owner), del repair
+planner (2 statici test, 1 import dinamico owner) e del repair DAG
+controller (2 statici test/E2E, 1 dinamico owner). Non risultano
+comandi configurati diretti ai tre moduli sull'ultima SHA R385.3.
+
+Il nuovo `poc/scripts/r3854-legacy-dag-closure-audit.mjs` rende
+**bloccante in Fast CI** la lista esatta dei caller: qualsiasi nuovo
+import statico, nuovo loader dinamico, `require`, workflow configurato
+o rimozione inattesa di una regressione provoca FAIL. I test sintetici
+controllano esplicitamente il comportamento fail-closed.
+
+La scansione R6 ha ancora **115 indirections runtime irrisolte** in
+tutta la repository: il numero non è prova che raggiungano i tre
+moduli né prova della loro eliminabilità. Il report espone
+sempre `deletionAuthorized: false`. **R385.4 non è PASS fino al
+SUCCESS della Fast CI sulla sua SHA finale**; la native E2E
+end-to-end resta obbligatoria dopo il cleanup prima del pilot.
 
 ### R385.3 — Repair planner e controller DAG storici non caricati dall'owner all'avvio
 
@@ -40,8 +62,7 @@ della stessa Root Rust originale, prima del successivo effetto.
 
 Fast CI include il test mirato R385.3 e alcune regressioni
 R123/R124/R138 su owner, Root revocata, Gitea SHA e scope.
-**R385.3 richiede SUCCESS sulla SHA finale** prima di essere
-considerato verificato. E2E native Rust/EVM/OPA/Gitea/Docker/MCP
+**R385.3 Fast CI SUCCESS** sulla SHA `08bcf45` (run #42437036503). E2E native Rust/EVM/OPA/Gitea/Docker/MCP
 post-cleanup resta obbligatorio; nessuna chiamata Gemini a pagamento.
 
 ### R385.2 — Preflight A2A separato e controller DAG storico caricato solo all'attivazione
