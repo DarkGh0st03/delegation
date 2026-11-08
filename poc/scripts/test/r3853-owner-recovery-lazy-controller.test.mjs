@@ -12,23 +12,13 @@ const read=p=>readFileSync(new URL(p,root),"utf8");
 const path="poc/packages/orchestrator-runtime/src/";
 const owner=read(path+"trusted-owner-operational-repair-handoff.ts");
 
-test("R385.3 owner imports repair planner and DAG controller only as erased TypeScript types",()=>{
- const names=[
-  ["TrustedOperationalRepairPlanner","trusted-operational-repair-planner.ts"],
-  ["executeTrustedAdmittedRepairDag","trusted-repair-dag-controller.ts"]
- ];
- for(const [symbol,filename] of names){
-  assert.doesNotMatch(owner,new RegExp(
-   String.raw`import\\s*\\{\\s*`+symbol+String.raw`\\b[\\s\\S]*?from\\s*["']\\./`+filename.replaceAll(".",String.raw`\.`)),
-   symbol+" must not be imported as runtime eager code");
-  assert.match(owner,new RegExp(String.raw`import type \\{`+
-   (symbol==="TrustedOperationalRepairPlanner"?"TrustedRepairModelInput":symbol)+
-   String.raw`\\}\\s*from ["']\\./`+filename.replaceAll(".",String.raw`\.`)),
-   symbol+" must retain exact compile-time contracts");
-  assert.match(owner,new RegExp(String.raw`await import\\(\\s*["']\\./`+
-   filename.replaceAll(".",String.raw`\.`)+String.raw`["']\\s*\\)`),
-   symbol+" must be loaded only within the owner callback");
- }
+test("R385.3 owner has no static runtime import of the old planner or DAG controller",()=>{
+ assert.doesNotMatch(owner,/^import \{TrustedOperationalRepairPlanner,/mu);
+ assert.doesNotMatch(owner,/^import \{executeTrustedAdmittedRepairDag\}/mu);
+ assert.match(owner,/import type \{TrustedRepairModelInput\}\s*from "\.\/trusted-operational-repair-planner\.ts"/u);
+ assert.match(owner,/import type \{executeTrustedAdmittedRepairDag\}\s*from "\.\/trusted-repair-dag-controller\.ts"/u);
+ assert.match(owner,/await import\(\s*"\.\/trusted-operational-repair-planner\.ts"\)/u);
+ assert.match(owner,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u);
 });
 
 test("R385.3 planner is reachable only after independently verified finalized Test FAIL",()=>{
