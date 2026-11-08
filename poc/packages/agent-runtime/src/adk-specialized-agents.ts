@@ -158,6 +158,11 @@ export function createAdkSpecializedAgent(
   );
   if(grant&&grant.size!==permissions!.length)
     throw Error("Duplicate signed Task file operation");
+  // R385.15: a Runner task must be independently authorized, never
+  // combined with another signed Test file effect.
+  if(signedTask&&config.role==="test"&&
+     config.trustedRunTestsAllowed===true&&permissions!.length!==0)
+    throw Error("Signed Test Runner cannot combine file grants");
   const hasGrant=(operation:ApprovedTaskFilePermission["operation"],path:string)=>
     !grant||grant.has(operation+"\0"+path);
   const filterPaths=(paths:readonly string[]):readonly string[]=>
@@ -226,7 +231,9 @@ export function createAdkSpecializedAgent(
         "A failed run_tests ends THIS signed Test Task. Do not retry Docker or claim PASS within it. The trusted Orchestrator may admit a NEW Task with a fresh child under the original Rust root if its permission scope suffices; otherwise obtain a fresh Engineer approval.",
         "TypeScript error locations do not grant file read or update permissions."
       ]:[]),
-      ...(config.role==="test"&&config.trustedRunTestsAllowed===false
+      ...(config.role==="test"&&
+          (config.trustedRunTestsAllowed===false||
+           (signedTask&&config.trustedRunTestsAllowed!==true))
         ? ["This Task may prepare test files but cannot invoke run_tests; do not claim tests passed."]
         : config.role==="test"
           ? ["Use run_tests only for the approved Task and controlled profile; report failing tests."]
@@ -279,7 +286,9 @@ export function createAdkSpecializedAgent(
     // reads/writes. No empty enum can turn into a broad string schema.
     .filter(definition=>!scoped ||
       (definition.name==="run_tests"&&
-        config.trustedRunTestsAllowed!==false) ||
+        // In signed Tasks, absent is NOT a Runner grant.
+        (signedTask?config.trustedRunTestsAllowed===true:
+          config.trustedRunTestsAllowed!==false)) ||
       (definition.name==="read_file"&&readablePaths.length>0) ||
       (definition.name==="update_file"&&writable.length>0) ||
       (definition.name==="create_file"&&creatable.length>0))
