@@ -29,7 +29,10 @@ test("R240 signed Child and repaired D1 use the same native Rust issuer with no 
  const issuer=read("poc/packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts");
  const dispatcher=read("poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts");
  const repairChild=read("poc/packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts");
- const repairDag=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
+ const repairDag=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts");
+ const compatibilityDag=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
+ assert.match(compatibilityDag,/export \{executeTrustedAdmittedRepairDag\}[\s\S]*?from "\.\/trusted-owner-repair-dag-execution\.ts"/u,
+  "Original native-EVM and test imports must resolve to the same Owner DAG code");
  assert.match(child,/adapterBaseUrl\?:string/u);
  assert.match(child,/createNativeRustChildCryptographyPort/u);
  assert.match(child,/Canonical signed Child DC requires native Rust issuer socket/u);
@@ -42,7 +45,7 @@ test("R240 signed Child and repaired D1 use the same native Rust issuer with no 
  assert.match(neutralRepairDag,/adapterBaseUrl\?:string/u,
   "Native repair DAG optional Adapter URL remains an explicitly typed owner port");
  assert.match(repairDag,/config:TrustedAdmittedRepairDagConfig/u,
-  "Historical controller must consume exactly the neutral port shape");
+  "Owner DAG controller must consume exactly the neutral port shape");
 });
 
 test("R240 native Gitea/Docker Account Suspension E2E does not pass unused HTTP URLs to any native issuer",()=>{
