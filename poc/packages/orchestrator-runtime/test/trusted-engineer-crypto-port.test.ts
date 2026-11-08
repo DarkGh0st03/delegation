@@ -160,6 +160,77 @@ test("R385.0 lazy historical fixture pins approved grants before async module lo
   [{resource:uri,operation:"read_repository"}]);
 });
 
+test("R385.1 authority-only mode rejects public and direct legacy HTTP Root ports",async()=>{
+ const mode=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ const native=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ const direct=process.env.ENGINEER_CORE_NATIVE_MODE;
+ const socket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ let calls=0;
+ try{
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  const config={
+   adapterBaseUrl:"http://fixture.invalid",bearerToken:"PRIVATE_ENGINEER_BEARER",
+   fetchFn:async()=>{calls++;throw Error("Must never reach HTTP");}
+  };
+  assert.throws(()=>createOwnerPrivateMcpEngineerCredentialPort(config),
+   /Historical Engineer HTTP fixture unavailable in native authority-only mode/u);
+  assert.throws(()=>createTrustedEngineerCredentialPort(config),
+   /Historical Engineer HTTP fixture unavailable in native authority-only mode/u);
+  const {createLegacyOwnerPrivateMcpEngineerCredentialPort}=await import(
+   "../src/trusted-engineer-legacy-mcp-http-port.ts");
+  assert.throws(()=>createLegacyOwnerPrivateMcpEngineerCredentialPort(config),
+   /Historical Engineer HTTP fixture unavailable in native authority-only mode/u);
+  assert.equal(calls,0);
+ }finally{
+  if(mode===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=mode;
+  if(native===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=native;
+  if(direct===undefined)delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  else process.env.ENGINEER_CORE_NATIVE_MODE=direct;
+  if(socket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socket;
+ }
+});
+
+test("R385.1 legacy port cannot issue or revoke after mode changes to native",async()=>{
+ const mode=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ const native=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ const direct=process.env.ENGINEER_CORE_NATIVE_MODE;
+ const socket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ let calls=0;
+ try{
+  delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  const legacy=createOwnerPrivateMcpEngineerCredentialPort({
+   adapterBaseUrl:"http://fixture.invalid",bearerToken:"PRIVATE_ENGINEER_BEARER",
+   fetchFn:async()=>{calls++;throw Error("Must never reach HTTP");}
+  });
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+  const request={...root("urn:r3851:root","992",600),
+   permissions:[{resource:uri,operation:"read_repository" as const}]};
+  await assert.rejects(legacy.issueScopedOrchestratorRoot(request),
+   /Historical Engineer HTTP fixture unavailable in native authority-only mode/u);
+  await assert.rejects(legacy.revokeRoot(request.credential_id),
+   /Historical Engineer HTTP fixture unavailable in native authority-only mode/u);
+  assert.equal(calls,0);
+ }finally{
+  if(mode===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=mode;
+  if(native===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=native;
+  if(direct===undefined)delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  else process.env.ENGINEER_CORE_NATIVE_MODE=direct;
+  if(socket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socket;
+ }
+});
+
 test("R218 canonical root and child DC fail closed without a native Rust socket",()=>{
  const previousFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
  const previousSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
