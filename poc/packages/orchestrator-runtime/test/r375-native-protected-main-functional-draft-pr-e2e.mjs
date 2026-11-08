@@ -1428,20 +1428,20 @@ const tool=record?.request?.tool,role=record?.agent_role;
   const report=workflow.adaptive;
   assert.equal(report.status,"owner_adaptive_work_ready_for_pr");
   assert.equal(report.pr_created,false);
-  assert.equal(report.executed_tasks,13+Number(sourceObservationMode));
+  assert.equal(report.executed_tasks,strictFullRecovery?23:13+Number(sourceObservationMode));
   assert.equal(report.source_test_task_id,retestTaskId);
   assert.match(report.source_test_runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
   assert.equal(branchModel.calls,1);
   assert.equal(branchPostAttempts,1);
   assert.equal(privateBranchExecuteCalls,1);
-  assert.equal(controller.calls,15+decisionOffset);
+  assert.equal(controller.calls,strictFullRecovery?25:15+decisionOffset);
   assert.equal(controller.verifiedFailBeforeRepair,true);
-  assert.equal(childMetadataCount,14+decisionOffset);
-  assert.equal(issuedChildren,14+decisionOffset,
+  assert.equal(childMetadataCount,strictFullRecovery?24:14+decisionOffset);
+  assert.equal(issuedChildren,strictFullRecovery?24:14+decisionOffset,
    "original root PR must never create an agent Child");
-  assert.equal(registeredTaskCount(),16+decisionOffset);
+  assert.equal(registeredTaskCount(),strictFullRecovery?26:16+decisionOffset);
   // The failed Test and any authenticated specialist stop remain incomplete.
-  assert.equal(gate.stagedCompletedTaskCount,15+Number(sourceObservationMode),
+  assert.equal(gate.stagedCompletedTaskCount,strictFullRecovery?25:15+Number(sourceObservationMode),
    "only independently completed Tasks and the root PR count");
   if(specialistStop){
    const prefix="execute_"+diagnosticRole+"_";
@@ -1455,16 +1455,21 @@ const tool=record?.request?.tool,role=record?.agent_role;
    .filter(name=>name.endsWith(".runner-fail.json")).length,1);
   assert.equal((await readdir(path("runner-receipts")))
    .filter(name=>name.endsWith(".runner.json")).length,1);
-  assert.equal(models.backend.stageIndex,7+backendDiagnostic);
-  assert.equal(models.frontend.stageIndex,5-decisionOffset+frontendDiagnostic);
-  assert.equal(models.backend.requests.length,21+2*backendDiagnostic);
-  assert.equal(models.frontend.requests.length,15-3*decisionOffset+2*frontendDiagnostic);
-  assert.equal(models.test.requests.length,4+3*decisionOffset);
+  assert.equal(models.backend.stageIndex,strictFullRecovery?9:7+backendDiagnostic);
+  assert.equal(models.frontend.stageIndex,strictFullRecovery?7:5-decisionOffset+frontendDiagnostic);
+  assert.equal(models.backend.requests.length,strictFullRecovery?23:21+2*backendDiagnostic);
+  assert.equal(models.frontend.requests.length,strictFullRecovery?18:15-3*decisionOffset+2*frontendDiagnostic);
+  assert.equal(models.test.requests.length,strictFullRecovery?19:4+3*decisionOffset);
   assert.deepEqual(events.filter(event=>event.startsWith("execute_test_")),
-   diagnosticMode?["execute_test_run_tests","execute_test_read_file",
+   strictFullRecovery?[
+    "execute_test_run_tests",
+    ...sourceTasks.filter(row=>row.agent_id==="test").flatMap(()=>
+     ["execute_test_read_file","execute_test_read_file","execute_test_update_file"]),
+    "execute_test_run_tests"
+   ]:diagnosticMode?["execute_test_run_tests","execute_test_read_file",
     "execute_test_update_file","execute_test_run_tests"]:
     ["execute_test_run_tests","execute_test_run_tests"]);
-  if(testRepairWriter)assert.equal(testRepairWriter.stageIndex,1);
+  if(testRepairWriter)assert.equal(testRepairWriter.stageIndex,strictFullRecovery?6:1);
   assert.equal(legacyWriteCalls,0);
   const latest=(await independentClient.getBranchMetadata(branch)).commit_sha;
   assert.equal(latest,report.tested_commit_sha);
@@ -1488,7 +1493,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
   assert.equal(draftPrCreateAttempts,1);
   assert.equal(workflow.source_test_task_id,retestTaskId);
   assert.equal(workflow.pull_request_task_id,"r375-gitea-draft-pr");
-  assert.equal(workflow.completed_work_tasks,13+Number(sourceObservationMode));
+  assert.equal(workflow.completed_work_tasks,strictFullRecovery?23:13+Number(sourceObservationMode));
   assert.match(privatePrFlight?.request?.task_id??"",/^dispatch_[A-Za-z0-9_-]{22}$/u);
   if(execution)assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(
    workflow.pull_request_task_id,coordinator));
@@ -1523,16 +1528,25 @@ const tool=record?.request?.tool,role=record?.agent_role;
   }
   nativeE2eResultEmitted=true;
   process.stdout.write(JSON.stringify({
-   event:specialistStop?"r377_specialist_no_change_native_docker_pass_draft_pr":
+   event:strictFullRecovery?"r38513_native_ten_signed_reads_ten_cas_docker_pass_draft_pr":
+    specialistStop?"r377_specialist_no_change_native_docker_pass_draft_pr":
     diagnosticMode?"r376_authenticated_diagnostic_read_native_docker_pass_draft_pr":
     "r375_original_protected_main_functional_native_docker_pass_draft_pr",
-   authenticated_diagnostic_source_seen_by_decider:sourceObservationMode,
-   authenticated_source_seen_before_first_write:sourceObservationMode,
-   signed_read_only_diagnostic_tasks:Number(sourceObservationMode),
+   authenticated_diagnostic_source_seen_by_decider:sourceObservationMode||strictFullRecovery,
+   authenticated_source_seen_before_first_write:sourceObservationMode||strictFullRecovery,
+   signed_read_only_diagnostic_tasks:strictFullRecovery?10:Number(sourceObservationMode),
    authenticated_specialist_no_change_recoveries:Number(specialistStop),
    ...(specialistStop?{authenticated_specialist_no_change_role:diagnosticRole}:{}),
-   attested_test_agent_project_test_repairs:decisionOffset,
+   attested_test_agent_project_test_repairs:strictFullRecovery?3:decisionOffset,
    status:"pass",
+   ...(strictFullRecovery?{
+    strict_postfail_diagnostic_read_count:10,
+    individually_signed_repair_tasks:10,
+    original_owner_adaptive_decisions:25,
+    native_child_count:24,
+    latest_test_pass_same_head:true,
+    no_extra_child_for_terminal_decision:true
+   }:{}),
    original_main_immutable:true,
    feature_branch_created_from_original_root:true,
    independent_branch_get:true,
