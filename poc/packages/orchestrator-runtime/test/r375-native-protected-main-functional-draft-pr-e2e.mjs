@@ -144,6 +144,10 @@ const sourceObservationMode=diagnosticMode&&!specialistStop;
 const strictReadProbe=process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1";
 const secondReadProbe=process.env.R3859_NATIVE_SECOND_REPAIR_PROBE==="1";
 const testAgentProbe=process.env.R38512_NATIVE_TEST_AGENT_SOURCE_PROBE==="1";
+const strictFullRecovery=process.env.R38513_NATIVE_STRICT_FULL_RECOVERY==="1";
+assert.ok(!strictFullRecovery||(strictReadProbe&&testAgentProbe&&
+ !secondReadProbe&&!diagnosticMode&&!specialistStop),
+ "R385.13 requires isolated native strict signed Test Agent mode");
 assert.ok(!testAgentProbe||(strictReadProbe&&!secondReadProbe&&!diagnosticMode),
  "R385.12 requires isolated strict post-FAIL Test Agent mode");
 assert.ok(!secondReadProbe||strictReadProbe,"R385.9 requires signed post-FAIL mode");
@@ -604,7 +608,8 @@ try{
   approvedFiles;
  const sourceTasks=sourceOrder.map((file,index)=>Object.freeze({
   file,task_id:"r375-functional-file-"+(index+1),
-  agent_id:file===testRepairPath?"test":
+  agent_id:strictFullRecovery&&file.startsWith("tests/")?"test":
+   file===testRepairPath?"test":
    file.startsWith("apps/frontend/")||file.startsWith("tests/frontend/")?"frontend":"backend",
   permissions:permissionsFor(file)
  }));
@@ -711,34 +716,60 @@ try{
    path:file,previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[file],
    replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
   }));
+ const strictReferenceByPath=new Map([
+  {path:sharedPath,previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
+   replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]},
+  ...backendReferenceFiles,...frontendReferenceFiles,
+  ...backendTestReferenceFiles,...frontendTestReferenceFiles
+ ].map(row=>[row.path,row]));
+ const strictStagesFor=role=>sourceTasks.filter(task=>task.agent_id===role)
+  .flatMap(task=>{
+   const ref=strictReferenceByPath.get(task.file);
+   assert.ok(ref,"R385.13 missing exact source fixture for "+task.file);
+   return [{readOnly:true,files:[{path:task.file,previous:ref.previous}]},
+    {files:[ref]}];
+  });
  const testRepairWriter=testRepairPath?new ScriptedScopedReferenceWriter(branch,"test",[
-  ...(testAgentProbe?[{readOnly:true,files:[{path:testRepairPath,
-   previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[testRepairPath]}]}]:[]),
-  {files:frontendTestReferenceFiles.filter(file=>file.path===testRepairPath)}
+  ...(strictFullRecovery?strictStagesFor("test"):
+   [...(testAgentProbe?[{readOnly:true,files:[{path:testRepairPath,
+    previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[testRepairPath]}]}]:[]),
+    {files:frontendTestReferenceFiles.filter(file=>file.path===testRepairPath)}])
  ]):undefined;
  if(testRepairWriter)assert.equal(testRepairWriter.stages[0].files.length,1);
+ const r38513DiagnosticReadId=index=>
+  index===0?postFailReadTaskId:"r38513-postfail-read-"+(index+1);
  const diagnosticStage={readOnly:true,files:[{path:diagnosticPath,
   previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[diagnosticPath]}]};
  const backendDiagnostic=Number(diagnosticMode&&diagnosticRole==="backend");
  const frontendDiagnostic=Number(diagnosticMode&&diagnosticRole==="frontend");
  const models={
   backend:new ScriptedScopedReferenceWriter(branch,"backend",[
-   ...(backendDiagnostic?[diagnosticStage]:[]),
-   {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
-   ...(strictReadProbe?[{readOnly:true,files:[{path:sharedPath,
-    previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath]}]}]:[]),
-   {files:[{path:sharedPath,
-     previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
-     replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
-   ...(secondReadProbe?[{readOnly:true,files:[{path:backendPath,previous:backendNewContent}]}]:[]),
-   ...backendReferenceFiles.map(file=>({files:[file]})),
-   ...backendTestReferenceFiles.map(file=>({files:[file]}))
+   ...(strictFullRecovery?[
+    {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
+    ...strictStagesFor("backend")
+   ]:[
+    ...(backendDiagnostic?[diagnosticStage]:[]),
+    {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
+    ...(strictReadProbe?[{readOnly:true,files:[{path:sharedPath,
+     previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath]}]}]:[]),
+    {files:[{path:sharedPath,
+      previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
+      replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
+    ...(secondReadProbe?[{readOnly:true,files:[{path:backendPath,previous:backendNewContent}]}]:[]),
+    ...backendReferenceFiles.map(file=>({files:[file]})),
+    ...backendTestReferenceFiles.map(file=>({files:[file]}))
+   ])
   ]),
   frontend:new ScriptedScopedReferenceWriter(branch,"frontend",[
-   ...(frontendDiagnostic?[diagnosticStage]:[]),
-   {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
-   ...frontendReferenceFiles.map(file=>({files:[file]})),
-   ...frontendTestReferenceFiles.filter(file=>file.path!==testRepairPath).map(file=>({files:[file]}))
+   ...(strictFullRecovery?[
+    {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
+    ...strictStagesFor("frontend")
+   ]:[
+    ...(frontendDiagnostic?[diagnosticStage]:[]),
+    {files:[{path:mutationPath,previous:oldContent,replacement:newContent}]},
+    ...frontendReferenceFiles.map(file=>({files:[file]})),
+    ...frontendTestReferenceFiles.filter(file=>file.path!==testRepairPath).map(file=>({files:[file]}))
+   ])
   ]),
   test:new ScriptedNativeDockerTest(branch,testRepairWriter)
  };
