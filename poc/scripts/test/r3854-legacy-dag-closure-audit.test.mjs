@@ -34,18 +34,22 @@ test("R385.4 new static production importer is blocked despite existing tests",(
  assert.match(report.issues.join("\n"),/unexpected static ESM import from poc\/apps\/orchestrator\/src\/canonical-owner-deployment\.mjs/u);
 });
 
-test("R385.4 dynamic owner import changes and alternate loaders are blocked",()=>{
+test("R385.4 R409 forbids reintroduced dynamic legacy owner imports and alternate loaders",()=>{
  const inventory=copyInventory();
  const row=inventory.candidates[1];
- row.runtimeIndirectionHints[0].source=
-  "poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs";
+ assert.equal(row.runtimeIndirectionHints.length,0,
+  "migrated historical Planner requires ZERO remaining runtime owner loaders");
+ row.runtimeIndirectionHints.push({
+  source:"poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs",
+  kind:"dynamic-import",specifier:"./trusted-operational-repair-planner.ts"
+ });
  row.runtimeIndirectionHints.push({source:"poc/apps/gateway/src/runtime.ts",
   kind:"commonjs-require",specifier:"./legacy.ts"});
  const result=auditR3854DagClosure(inventory);
  assert.equal(result.status,"BOUNDARY_PROVENANCE_FAIL");
  assert.match(result.issues.join("\n"),/unexpected literal dynamic import/u);
- assert.match(result.issues.join("\n"),/expected literal dynamic import absent/u);
  assert.match(result.issues.join("\n"),/unexpected runtime indirection commonjs-require/u);
+ assert.equal(result.deletionAuthorized,false);
 });
 
 test("R385.4 cannot silently convert historical DAG module into CLI workflow",()=>{
@@ -63,9 +67,11 @@ test("R385.4 removed module, missing test importer or duplicate edges fail close
  const inventory=copyInventory();
  inventory.candidates[0].staticImporters.pop();
  inventory.candidates[1].exists=false;
- inventory.candidates[2].runtimeIndirectionHints.push({
-  ...inventory.candidates[2].runtimeIndirectionHints[0]
- });
+ const forbidden={
+  source:"poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts",
+  kind:"dynamic-import",specifier:"./trusted-repair-dag-controller.ts"
+ };
+ inventory.candidates[2].runtimeIndirectionHints.push(forbidden,{...forbidden});
  const result=auditR3854DagClosure(inventory);
  assert.equal(result.status,"BOUNDARY_PROVENANCE_FAIL");
  assert.match(result.issues.join("\n"),/expected static ESM import absent/u);
