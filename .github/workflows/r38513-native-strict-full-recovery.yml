@@ -72,7 +72,7 @@ jobs:
             --connect-timeout 20 --max-time 240 \
             --output "$archive" \
             'https://github.com/foundry-rs/foundry/releases/download/v1.8.4/foundry_v1.8.4_linux_amd64.tar.gz'
-          printf '%s  %s\\n' \
+          printf '%s  %s\n' \
             '699e2207a6a9b27ca17c48c81e56f1677ed9c58b623b59128b4e15ec9da0625e' \
             "$archive" | sha256sum --check --status
           test "$(stat -c '%s' "$archive")" -eq 117721507
