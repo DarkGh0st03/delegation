@@ -1,7 +1,7 @@
 {
   "checkpoint": "R385.12",
   "purpose": "Disposable, zero-paid-inference native Test Agent signed read-after-real-Docker-FAIL and first guarded test-source CAS; no final PASS, acceptance or PR claim",
-  "source_sha": "76f0da07a74077e2c9caeaaa9955352ceb8f46af",
+  "source_sha": "d1d7f036a559273cf5396ef940381c8c275ac7e4",
   "required_probes": [
     "native_rust_evm",
     "opa",
@@ -11,5 +11,7 @@
     "signed_test_source_cas",
     "no_false_pass_or_pr"
   ],
-  "paid_model_calls": 0
+  "paid_model_calls": 0,
+  "revision": 2,
+  "note": "R385.12 retest after trusted A2A owner signed Test read-only completion gate; original Runner FAIL remains uncompleted, no provider PASS or PR inference"
 }
