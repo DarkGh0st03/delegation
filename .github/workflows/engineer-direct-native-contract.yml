@@ -3,10 +3,6 @@
 name: Engineer Direct Rust Core - Native Node API (No AI Billing)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/engineer-core-request.json'
 permissions:
   contents: read
 concurrency:

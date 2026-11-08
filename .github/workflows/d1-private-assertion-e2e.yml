@@ -1,11 +1,6 @@
 # Narrow no-billing integration; deliberately excluded from the paid Full CI gate.
 name: D1 Private Assertions - Real Gitea Docker (No AI Billing)
 'on':
-  push:
-    branches:
-    - refactor/post-prof-plan-contracts-20261021
-    paths:
-    - .github/ci-checkpoints/d1-assertion-ci-request.json
   workflow_dispatch: {}
 permissions:
   contents: read

@@ -1,6 +1,0 @@
-{
-  "schema": "delegation-d1-assertion-checkpoint-v1",
-  "candidate_parent_sha": "b8e293b4791b2c9871517edfbbc359d63359a043",
-  "purpose": "Validate exact Runner-reference assertion context in both the scripted D1 proposer and protected Test-editor A2A instruction, filtered again by the admitted Task read grants; require signed edit, fresh Docker PASS and review-only draft PR. No paid inference.",
-  "paid_model_invocation": false
-}

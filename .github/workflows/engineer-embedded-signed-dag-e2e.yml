@@ -3,10 +3,6 @@
 # native Rust + real A2A, scripted ADK; NO API key, Gemini charge, or R5 GO.
 name: Engineer Embedded Rust - Signed Gitea Docker DAG (No AI Billing)
 on:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/engineer-full-dag-request.json'
   workflow_dispatch:
 permissions:
   contents: read

@@ -119,3 +119,25 @@ test('R384.7 canonical operational entrypoints cannot directly import historical
   assert.doesNotMatch(body,/(?:import|from)\s*['"][^'"]*(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller|authority-adapter-transport)/u);
  }
 });
+
+test('R422 old one-shot Engineer/D1 CI checkpoints are absent; the proof workflows are manual-only',()=>{
+ const cases=[
+  ['d1-assertion-ci-request.json','d1-private-assertion-e2e.yml'],
+  ['engineer-core-request.json','engineer-direct-native-contract.yml'],
+  ['engineer-evm-request.json','engineer-direct-native-evm-e2e.yml'],
+  ['engineer-d1-request.json','engineer-embedded-signed-d1-e2e.yml'],
+  ['engineer-full-dag-request.json','engineer-embedded-signed-dag-e2e.yml']
+ ];
+ for(const [checkpoint,workflow] of cases){
+  assert.equal(existsSync(path('.github/ci-checkpoints/'+checkpoint)),false,
+   'stale one-shot release checkpoint must remain absent: '+checkpoint);
+  const source=readFileSync(path('.github/workflows/'+workflow),'utf8');
+  const found=/^(?:on|'on'):\s*\n([\s\S]*?)^permissions:/mu.exec(source);
+  assert.ok(found,'historical signed-E2E workflow event block missing: '+workflow);
+  const events=[...found[1].matchAll(/^  ([A-Za-z][A-Za-z0-9_-]*):/gmu)].map(x=>x[1]);
+  assert.deepEqual(events,['workflow_dispatch'],
+   'historical E2E can only be triggered explicitly: '+workflow);
+  assert.match(source,/^jobs:\s*$/mu,
+   'preserve the native Rust/Engineer/OPA/Gitea/Docker test job: '+workflow);
+ }
+});

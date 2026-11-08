@@ -3,10 +3,6 @@
 name: Engineer Direct Rust Core - EVM VP Verification (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/engineer-evm-request.json'
 permissions:
   contents: read
 concurrency:
