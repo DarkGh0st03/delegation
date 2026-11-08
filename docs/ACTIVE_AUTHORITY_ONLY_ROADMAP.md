@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.13 native full scripted PASS; final post-cleanup E2E still required)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.14 native Test Card least-privilege + full E2E PASS; post-cleanup gates pending)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -16,12 +16,63 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori; Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL autentici. Negazioni di autorità ed effetti ambigui restano fail-closed | **E2E nativa scripted R385.13 SUCCESS** su `0e42cdf6`: dieci Task di lettura firmati, dieci Task di correzione CAS, Test Agent su tre file, Docker FAIL→PASS e Draft PR. Test ADK isolato R385.13 SUCCESS in Fast CI `5f4d9c5f`, senza ritenere il Test FAIL una dipendenza completata. **Ancora aperto:** dimostrare generalizzazione delle decisioni e comportamento generativo reale; la prova scripted non è autonomia Gemini |
-| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
+| **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; R385.14 allinea la Card nativa del Test Agent a read/update/run_tests e nega skill estranee e create_file non disponibile; FunctionTools sono ancora da consolidare rispetto a tutti i grant.** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi e negativi, Rust/EVM/OPA/Gitea/Docker/MCP e A2A sulla SHA finale dopo B/C e post-cleanup | **R385.13 Native Strict SUCCESS #42468353532**, SHA `0e42cdf6`: 1 Engineer approval, 24 Child native, 25 decisioni, 10 diagnosi post-FAIL, 10 repair CAS, 2 Docker (FAIL→PASS), researcher acceptance PASS e Draft PR indipendentemente verificata; zero AI a pagamento. **Fast CI SUCCESS #42468524528** su `5f4d9c5f` e **#42468834499** su `d43f1b3f` per i test aggiuntivi. Non attribuire questi PASS a un singolo SHA: il run nativo è su una SHA precedente. Mancano i gate gratuiti conclusivi **sulla stessa SHA post-cleanup** |
+| **D. Validazione gratuita** | Test positivi e negativi, Rust/EVM/OPA/Gitea/Docker/MCP e A2A sulla SHA finale dopo B/C e post-cleanup | **R385.13 Native Strict SUCCESS #42468353532**, SHA `0e42cdf6`: 1 Engineer approval, 24 Child native, 25 decisioni, 10 diagnosi post-FAIL, 10 repair CAS, 2 Docker (FAIL→PASS), researcher acceptance PASS e Draft PR indipendentemente verificata; zero AI a pagamento. **Fast CI SUCCESS #42468524528** su `5f4d9c5f` e **#42468834499** su `d43f1b3f` per i test aggiuntivi. Non attribuire questi PASS a un singolo SHA: il run nativo è su una SHA precedente. **R385.14 Fast CI #42469954220 e full Native #42469953971 entrambe SUCCESS sulla SHA `06afd1e0`**, incluso nuovo Test Card ceiling e Docker FAIL→PASS. Mancano i gate gratuiti conclusivi **sulla stessa SHA post-cleanup** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.14 — Card nativa e perimetro Test Agent: PASS su stessa SHA
+
+**Stato verificato:** [Fast CI #42469954220](https://github.com/DarkGh0st03/delegation/actions/runs/42469954220)
+(2/2 job SUCCESS) e [E2E nativa #42469953971](https://github.com/DarkGh0st03/delegation/actions/runs/42469953971)
+(SUCCESS) **entrambe sulla SHA `06afd1e0267223a943aa2f4f699b5e03a87a3d00`**.
+In precedenza la [Fast CI #42469690305](https://github.com/DarkGh0st03/delegation/actions/runs/42469690305)
+era SUCCESS sulla SHA del solo codice/test `29002470`.
+
+**Problema dimostrato nel codice:** il Test Agent della Card approvata
+pubblicizzava `create_file`, ma l'owner A2A canonico già vietava qualsiasi
+Task Test con `create_file`, e il Proposer non ammetteva tale operazione.
+Questa discrepanza generava una promessa di capacità mai eseguibile.
+
+**Intervento di minimo privilegio e regressioni:**
+- `APPROVED_SPECIALIZED_AGENT_PROFILES` continua a conservare il catalogo
+  generico utilizzato dalle fixture ADK **storiche**; nessun ampliamento di
+  Task/Root/Child o modifica dei moduli Rust.
+- Solo la Card creata con il **DID nativo firmatario** pubblica il perimetro
+  realmente ammesso dal proprietario authority-only:
+  Test = `read_file`, `update_file`, `run_tests`; Backend/Frontend
+  conservano `read_file`, `update_file`, `create_file`.
+- La verifica di startup verifica questa restrizione e pretende
+  **esattamente la skill prevista per ciascun ruolo**: Card con skill
+  addizionali, duplicate o Test `create_file` native sono rifiutate
+  prima di qualsiasi Task privato.
+- Il log Fast CI attesta il PASS del nuovo caso
+  `R385.14 native Agent Cards reflect the owner-enforced Test creation boundary`;
+  sono mantenuti i test contro Agent Card manipolate, DID scambiati,
+  capacità duplicate e endpoint non canonici.
+
+**E2E completa di regressione:** `r38513_native_ten_signed_reads_ten_cas_docker_pass_draft_pr`
+attesta `status:"pass"`, Rust/EVM/OPA e MCP native, **10 signed
+read e 10 repair CAS**, **24 Child**, **25 decisioni Owner**, 1 approvazione
+Engineer, Docker **FAIL→PASS**, researcher acceptance PASS su HEAD finale,
+Draft PR Gitea verificata e non mergiata, `main` invariato,
+`paid_model_calls:0`. Si tratta sempre di una prova **scripted**:
+`source_code_generated_autonomously_by_model:false`.
+
+**Confine per cleanup:** la directory storica `poc/mcp-shared` contiene
+anche il MCP crittografico **privato/stdio** utilizzato dal percorso nativo.
+Il cleanup non deve eliminare indiscriminatamente il package; prima serve
+tracciare gli entrypoint del vecchio Shared MCP Server, separare i caller
+obsoleti e conservare il catalogo privato effettivamente invocato.
+
+**Passo successivo:** consolidare il binding FunctionTools ↔ grants
+originali, le ulteriori invarianti Agent Card/Gateway e l'entrypoint
+canonico; completare threat model, Human Gate/Security CI e inventario
+reachability prima del cleanup selettivo. Ripetere il gate E2E **dopo
+il cleanup sulla medesima SHA della Fast CI**. Gemini reale richiede
+consenso esplicito ai costi. Nessun merge automatico.
 
 ### R385.13 — Recupero nativo completo scripted: PASS
 
