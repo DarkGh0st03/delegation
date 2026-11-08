@@ -2,11 +2,13 @@ name: Isolated Real Positive Security CI (No AI Billing)
 
 # Dedicated disposable integration verification of the trusted Docker Runner
 # and independent researcher acceptance. No Gemini/OpenAI keys are present.
-# Runs only for this feature branch and relevant files, or when explicitly
-# dispatched. Never touches persistent local Gitea.
+# R385.17: this positive, disposable, zero-AI Security CI follows the
+# authority-only feature branch (not the retired shared-MCP spike), for
+# relevant runner/acceptance changes or explicit manual dispatch.
+# Never touches persistent local Gitea or invokes a protected merge.
 on:
   push:
-    branches: [feat/shared-mcp-spike]
+    branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/isolated-positive-security-ci.yml'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
