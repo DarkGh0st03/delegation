@@ -778,8 +778,11 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
     completed_task_ids:["branch"],specialized_results:[]
   });
   assert.equal(dispatchLoads,1);
-  assert.equal(livenessChecks,6,
-    "admission, post-activation, pre-dispatch, Task, completion and final check");
+  // R385.2 verifies the original GitHub job again after the lazy signed-DAG
+  // module import. Keep that additional fail-closed liveness fence; the old
+  // six-check assertion predates the security hardening.
+  assert.equal(livenessChecks,7,
+    "admission, post-import, post-activation, pre-dispatch, Task, completion and final check");
   assert.equal(hostCloseCalls,1);
   await assert.rejects(bridge.executeApprovedDag({} as any),
     /one-shot; retry forbidden/);
