@@ -112,6 +112,16 @@ jobs:
           node --test poc/apps/test-runner-controller/test/signed-d1-gate-observation.test.mjs
           node --experimental-strip-types --test poc/apps/a2a-agent/test/mcp-tool-flags.test.ts poc/mcp-shared/test/profile.test.ts
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/check-local-imports.test.mjs poc/scripts/test/protected-gitea-bootstrap.test.mjs poc/scripts/test/single-disposable-gitea-workflows.test.mjs
+      - name: R404.4 Recovered offline Test, issuance and Engineer regressions (no models)
+        run: |
+          # These five tracked *.test.mjs files had no configured test command at R404.3.
+          # All use local fixtures; do not authorize paid inference or provider effects.
+          node --experimental-strip-types --test \
+            poc/apps/orchestrator/test/trusted-engineer-run-status.test.mjs \
+            poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs \
+            poc/apps/test-runner-controller/test/native-dag-result-diagnostic.test.mjs \
+            poc/packages/orchestrator-runtime/test/r401-trusted-test-profile-wiring.test.mjs \
+            poc/packages/orchestrator-runtime/test/trusted-child-issuance-journal.test.mjs
       - name: Authorization plan contracts and Gateway
         run: |
           node --test poc/packages/plan-contracts/test/*.test.mjs
