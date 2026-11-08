@@ -22,11 +22,7 @@ export const R3854_DAG_BOUNDARIES=Object.freeze([
    TEST+"trusted-reviewed-approved-dag.test.ts",
    "poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs"
   ]),
-  dynamicImporters:Object.freeze([
-   SRC+"trusted-admitted-github-handoff.ts",
-   SRC+"trusted-admitted-scripted-handoff.ts",
-   SRC+"trusted-fresh-repair-reviewed-dag.ts"
-  ])
+  dynamicImporters:Object.freeze([])
  }),
  Object.freeze({
   target:SRC+"trusted-operational-repair-planner.ts",

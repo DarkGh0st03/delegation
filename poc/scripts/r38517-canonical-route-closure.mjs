@@ -37,11 +37,7 @@ export const R38518_ALLOWED_NONTEST_LEGACY_CALLERS=Object.freeze({
  "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts":Object.freeze([
   "poc/packages/orchestrator-runtime/src/authority-client.ts"
  ]),
- "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts":Object.freeze([
-  "poc/packages/orchestrator-runtime/src/trusted-admitted-github-handoff.ts",
-  "poc/packages/orchestrator-runtime/src/trusted-admitted-scripted-handoff.ts",
-  "poc/packages/orchestrator-runtime/src/trusted-fresh-repair-reviewed-dag.ts"
- ]),
+ "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts":Object.freeze([]),
  "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts":Object.freeze([
   "poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts"
  ]),

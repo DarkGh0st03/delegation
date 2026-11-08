@@ -161,7 +161,7 @@ export async function startAdmittedGithubReviewedScriptedHandoff(input:{
   try{
     await checkNow();
     const {createReviewedApprovedDagExecution}=await import(
-      "./trusted-reviewed-approved-dag.ts");
+      "./trusted-owner-reviewed-dag-execution.ts");
     await checkNow(); // Import is an async boundary; revalidate run liveness.
     const approvedDag=createReviewedApprovedDagExecution({
       coordinator:input.coordinator,reviewGate:input.reviewGate,

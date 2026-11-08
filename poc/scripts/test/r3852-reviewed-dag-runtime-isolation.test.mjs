@@ -48,11 +48,11 @@ test("R385.2 only direct legacy invocation loads the reviewed DAG in each handof
  const github=read(pkg+"trusted-admitted-github-handoff.ts");
  const pins=read(pkg+"trusted-reviewed-agent-endpoint-pins.ts");
  for(const [name,src] of [["fresh",fresh],["scripted",scripted],["github",github]]){
-  assert.match(src,/await import\(\s*"\.\/trusted-reviewed-approved-dag\.ts"\s*\)/u,
+  assert.match(src,/await import\(\s*"\.\/trusted-owner-reviewed-dag-execution\.ts"\s*\)/u,
    name+" must lazy-load the historical dispatcher at the owner handoff");
-  // An actual ESM 'from' edge to the historical DAG is permitted only
-  // as the single erased TypeScript import type in fresh repair.
-  assert.equal((src.match(/from "\.\/trusted-reviewed-approved-dag\.ts";/gu)||[]).length,
+  // Fresh repair alone retains a type-erased reference to the new owner core.
+  // The legacy compatibility shim must not be imported by these handoffs.
+  assert.equal((src.match(/from "\.\/trusted-owner-reviewed-dag-execution\.ts";/gu)||[]).length,
    name==="fresh"?1:0,
    name+" must not add a runtime/static edge to the historical controller");
   assert.doesNotMatch(src,/^import \{createReviewedApprovedDagExecution/mu,
@@ -74,11 +74,11 @@ test("R385.2 every lazy import is covered by fail-closed liveness and root retir
  const github=read(pkg+"trusted-admitted-github-handoff.ts");
  const fresh=read(pkg+"trusted-fresh-repair-reviewed-dag.ts");
  assert.match(scripted,
-  /await import\(\s*"\.\/trusted-reviewed-approved-dag\.ts"\s*\);\s*await checkNow\(\)/u);
+  /await import\(\s*"\.\/trusted-owner-reviewed-dag-execution\.ts"\s*\);\s*await checkNow\(\)/u);
  assert.match(github,
-  /await import\(\s*"\.\/trusted-reviewed-approved-dag\.ts"\s*\);\s*await checkNow\(\)/u);
+  /await import\(\s*"\.\/trusted-owner-reviewed-dag-execution\.ts"\s*\);\s*await checkNow\(\)/u);
  assert.match(fresh,
-  /await import\(\s*"\.\/trusted-reviewed-approved-dag\.ts"\s*\);\s*await input\.verifyLiveRun\(\)/u);
+  /await import\(\s*"\.\/trusted-owner-reviewed-dag-execution\.ts"\s*\);\s*await input\.verifyLiveRun\(\)/u);
  assert.match(scripted,/\}catch\(error\)\{\s*await stop\(\)/u);
  assert.match(github,/\}catch\(error\)\{\s*await stop\(\)/u);
  assert.match(fresh,/if\(activated\)\{\s*try\{await shutdown\(\)/u);

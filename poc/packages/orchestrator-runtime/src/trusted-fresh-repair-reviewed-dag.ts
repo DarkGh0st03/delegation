@@ -24,7 +24,7 @@ import {beginTrustedFreshRepairApprovedExecution}
 import {pinTrustedReviewedAgentEndpoints}
   from "./trusted-reviewed-agent-endpoint-pins.ts";
 import type {createReviewedApprovedDagExecution}
-  from "./trusted-reviewed-approved-dag.ts";
+  from "./trusted-owner-reviewed-dag-execution.ts";
 import {createFreshTypecheckRepairIssueFence}
   from "./trusted-typecheck-repair-activation-fence.mjs";
 
@@ -115,11 +115,11 @@ export async function armTrustedFreshRepairReviewedDag(input:{
       await fence.pinBeforeOperationalActivation();
       await input.verifyLiveRun();
     }
-    // R385.2: load the historical dispatcher only when the original owner
+    // R408: load the owner-private reviewed DAG only when the original owner
     // actually arms a fresh repair. Fail before irreversible root issuance
     // if its module is missing, then re-check liveness after this await.
     const {createReviewedApprovedDagExecution}=await import(
-      "./trusted-reviewed-approved-dag.ts");
+      "./trusted-owner-reviewed-dag-execution.ts");
     await input.verifyLiveRun();
     // The existing beginExecution path reloads the SAME immutable signed
     // receipt before issuing the Rust operational root. The ReviewGate

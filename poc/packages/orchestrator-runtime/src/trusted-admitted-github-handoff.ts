@@ -297,7 +297,7 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       }):undefined;
     await checkNow();
     const {createReviewedApprovedDagExecution}=await import(
-      "./trusted-reviewed-approved-dag.ts");
+      "./trusted-owner-reviewed-dag-execution.ts");
     await checkNow(); // No live run -> close/revoke original root before DAG.
     approvedDag=createReviewedApprovedDagExecution({
       coordinator:input.coordinator,reviewGate:input.reviewGate,running,
