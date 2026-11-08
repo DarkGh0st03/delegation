@@ -32,11 +32,11 @@ function scope(resource) {
     v.includes("..")||v.includes("%")))return null;
  return {prefix,kind:p[5],path};
 }
-// Native Test repair is scoped to application test sources. Runner-owned
+// Application tests may use dotted filenames (user.service.test.ts) but never\n// empty/double-dot path components. Runner-owned
 // acceptance and execution configuration are outside this project scope.
 export function isProjectTestSource(path) {
  return typeof path==="string"&&
-  /^tests\/(backend|frontend)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.test\.tsx?$/u.test(path);
+  /^tests\/(backend|frontend)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.test\.tsx?$/u.test(path);
 }
 /** R383.0 — Test may investigate ONLY owner-scoped application test
  * sources in a dedicated read-only Child. This cannot authorize an edit,
