@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.2 cleanup legacy in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.3 cleanup legacy in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -19,9 +19,30 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 native SUCCESS su `81ad3fdd` (run #42423327568); Fast CI SUCCESS sulla SHA successiva `f236a4dd` (run #42423579107). Non sono due gate verdi sulla stessa HEAD. Ripetere validazione completa dopo il cleanup.** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.2: workflow Gemini storici disabilitati, consumer OIDC HMAC e contratti credenziali separati dal DAG/HTTP legacy. R385.1 Fast CI PASS `bcd874b` (#42434190119). R385.2 isola il preflight A2A e sposta il caricamento del controller DAG all'invocazione degli handoff: Fast CI su SHA finale da verificare; cleanup reachability e native E2E post-cleanup ancora aperti.** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.3: workflow Gemini storici disabilitati; consumer OIDC HMAC, contratti credenziali e preflight A2A separati dai legacy DAG/HTTP. R385.2 Fast CI PASS `fc182b94` (#42435700888). R385.3 carica il vecchio repair planner solo dopo Test FAIL autentico e il controller solo dopo Gateway epoch ammessa: Fast CI finale da verificare. Audit reachability e native E2E post-cleanup ancora aperti.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.3 — Repair planner e controller DAG storici non caricati dall'owner all'avvio
+
+Il report [`R3853_OWNER_REPAIR_PLANNER_AND_DAG_LAZY_BOUNDARY.md`](./R3853_OWNER_REPAIR_PLANNER_AND_DAG_LAZY_BOUNDARY.md)
+documenta la rimozione degli import runtime del vecchio
+`TrustedOperationalRepairPlanner` e di
+`executeTrustedAdmittedRepairDag` da
+`trusted-owner-operational-repair-handoff.ts`.
+Il planner si carica solo dopo **Test FAIL indipendentemente confermato
+dal Gateway** e verifica della storia firmata. Il controller DAG si
+carica solo quando richiesto esplicitamente dall'owner e **dopo**
+`gateway_epoch_admitted`, senza mai attribuire PASS Docker o PR
+dal risultato A2A. Ogni `await import()` è seguito dalla verifica
+di liveness GitHub (quando disponibile) e dall'identità/digest
+della stessa Root Rust originale, prima del successivo effetto.
+
+Fast CI include il test mirato R385.3 e alcune regressioni
+R123/R124/R138 su owner, Root revocata, Gitea SHA e scope.
+**R385.3 richiede SUCCESS sulla SHA finale** prima di essere
+considerato verificato. E2E native Rust/EVM/OPA/Gitea/Docker/MCP
+post-cleanup resta obbligatorio; nessuna chiamata Gemini a pagamento.
 
 ### R385.2 — Preflight A2A separato e controller DAG storico caricato solo all'attivazione
 
@@ -36,8 +57,7 @@ tre endpoint A2A precede la nuova Root operativa.
 
 Fast CI include nuove regressioni offline su pinning, mancata
 attivazione eager, ordine delle verifiche e lifecycle originario
-del controller Signed DAG. **R385.2 non è certificato prima della
-Fast CI SUCCESS sull'ultima SHA**. Moduli DAG e recovery storici
+del controller Signed DAG. **R385.2 Fast CI SUCCESS** sulla SHA `fc182b94` (run #42435700888). Moduli DAG e recovery storici
 restano presenti per gli importatori diretti: questa non è
 un'eliminazione di codice ancora necessario ai test.
 L'E2E nativo completo post-cleanup resta obbligatorio prima di
