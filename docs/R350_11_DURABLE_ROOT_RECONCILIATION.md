@@ -1,9 +1,0 @@
-# R350.11 — persisted operational-root intents and explicit orphan reconciliation
-
-The authority-only R349 review host now requires an original owner-provisioned `TrustedOperationalRecoveryStore` and `TrustedOperationalSessionStore`. Startup calls `assertFreshSession` **before** issuing a preliminary root or invoking ADK Planning, blocking an orphaned or previously reconciled operational root. After authenticated approval and before the irreversible Rust operational issuance, `activateOperational` records the exact root ID, session ID and source SHA durably.
-
-Normal private host shutdown first records the terminal Gateway session fence, independently revokes the Rust root, and marks the recovery intent reconciled **only when both steps succeed**. Even if Gateway retirement fails, it still attempts native revocation. Failed/ambiguous termination preserves the pending intent and blocks any new Planning. The operational Gateway admission must receive the original session-store object, not a second independently configured journal.
-
-A separate explicit owner-only `reconcileTrustedAuthorityOnlyReviewRoots` entry can attempt Gateway terminal fencing and Rust revocation for pending operational IDs after a crash. It never reissues a root or replays an Engineer receipt; the retired session ID cannot be reused. Tests verify normal finality, crash-blocked startup, recovery and failure-to-revoke. The recovery routine is not installed on HTTP/MCP/A2A endpoints.
-
-**Limits:** This is durable root identity/retirement integration, not a deployed persistent JSON-configured service CLI or a fully live native R349→Rust/OPA/Gitea/Docker end-to-end proof. The Gateway fence is the existing durable terminal store; active-process admission must still be fenced by the live root and owner shutdown. No paid inference, main change or merge.

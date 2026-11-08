@@ -11,7 +11,14 @@ import {gitTrackedFiles} from "./r6-legacy-references.mjs";
 const ROOT=fileURLToPath(new URL("../../",import.meta.url));
 const MILESTONE=/^docs\/R(?:35\d|36\d|37[0-5])(?:_|\.|-)[A-Za-z0-9_.-]+\.md$/u;
 const TEXT=/\.(?:md|txt|json|[cm]?js|jsx|tsx?|rs|toml|ya?ml|sh|html|css|svg|xml|sql|py|c|cpp|h|hpp)$/u;
+export const R403_ARCHITECTURE_ANCHORS=Object.freeze([
+ "docs/R351_0_ADK_DYNAMIC_TASK_DECISION.md",
+ "docs/R355_ADAPTIVE_OWNER_WORK_LOOP.md",
+ "docs/R370_CANONICAL_ORIGINAL_REVIEW_HOST_LAUNCHER.md",
+ "docs/R375_ORIGINAL_PROTECTED_MAIN_FUNCTIONAL_PASS_AND_DRAFT_PR.md"
+]);
 export const R403_PROTECTED_DOCUMENTS=Object.freeze([
+ ...R403_ARCHITECTURE_ANCHORS,
  "README.md","docs/ACTIVE_AUTHORITY_ONLY_ROADMAP.md",
  "docs/ARCHITECTURE_DECISIONS.md","docs/IMPLEMENTATION_STATE.md",
  "docs/REPRODUCIBILITY.md","docs/human-approved-gitea-merge.md",
@@ -55,7 +62,8 @@ export function classifyR403({tracked,read,requireProtected=false}){
   const incoming=refs.get(path).sort((a,b)=>a.source.localeCompare(b.source));
   const outside=incoming.filter(x=>x.kind!=="historical-batch-peer");
   // The whitelist is a REVIEW shortlist only: no path gets deletion approval.
-  const classification=outside.length?"BLOCKED_EXTERNAL_TRACKED_REFERENCE":
+  const classification=R403_ARCHITECTURE_ANCHORS.includes(path)?
+   "KEEP_ARCHITECTURE_EVIDENCE":outside.length?"BLOCKED_EXTERNAL_TRACKED_REFERENCE":
    incoming.length?"REVIEW_HISTORICAL_INTERLINK":"UNREFERENCED_INTERNAL_REVIEW";
   return {
    path,classification,
@@ -69,6 +77,7 @@ export function classifyR403({tracked,read,requireProtected=false}){
   tracked:unique.length,historicalMilestoneDocs:records.length,
   unreferencedReview:records.filter(x=>x.classification==="UNREFERENCED_INTERNAL_REVIEW").length,
   historicalInterlinked:records.filter(x=>x.classification==="REVIEW_HISTORICAL_INTERLINK").length,
+  retainedArchitectureAnchors:records.filter(x=>x.classification==="KEEP_ARCHITECTURE_EVIDENCE").length,
   blockedReferenced:records.filter(x=>x.classification==="BLOCKED_EXTERNAL_TRACKED_REFERENCE").length,
   omittedNonText:omitted.length,unreadableTextFiles:unreadable.length,
   missingProtectedDocuments:protectedMissing

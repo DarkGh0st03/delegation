@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {classifyR403,R403_PROTECTED_DOCUMENTS}
+import {classifyR403,R403_PROTECTED_DOCUMENTS,R403_ARCHITECTURE_ANCHORS}
  from "../r403-document-retirement-classifier.mjs";
 
 const fake=()=>({
@@ -13,6 +13,10 @@ const fake=()=>({
  "docs/human-approved-gitea-merge.md":"Human Gate",
  "docs/R401_PLANNER_CARD_AND_PROJECT_TEST_PROFILES.md":"Current",
  "docs/R402_REACHABILITY_COVERAGE_INVENTORY.md":"Current",
+ "docs/R351_0_ADK_DYNAMIC_TASK_DECISION.md":"# Kept architectural milestone",
+ "docs/R355_ADAPTIVE_OWNER_WORK_LOOP.md":"# Kept architectural milestone",
+ "docs/R370_CANONICAL_ORIGINAL_REVIEW_HOST_LAUNCHER.md":"# Kept architectural milestone",
+ "docs/R375_ORIGINAL_PROTECTED_MAIN_FUNCTIONAL_PASS_AND_DRAFT_PR.md":"# Kept architectural milestone",
  "docs/R350_1_UNUSED.md":"# Old milestone; historical evidence",
  "docs/R351_1_LINKED.md":"# Legacy Link",
  "docs/R352_1_PEER.md":"[linked](R351_1_LINKED.md)",
@@ -62,4 +66,16 @@ test("R403 refuses to infer safety from unreadable tracked text",()=>{
  assert.throws(()=>classifyR403({tracked:Object.keys(input),
   read:path=>{if(path==="poc/src/runtime.ts")throw Error("inaccessible");return input[path]},
   requireProtected:true}),/R403 source provenance incomplete/);
+});
+
+test("R403.1 preserves the four reviewed architectural milestone anchors",()=>{
+ const report=scan(fake());
+ const byPath=new Map(report.records.map(x=>[x.path,x]));
+ assert.equal(report.summary.retainedArchitectureAnchors,4);
+ assert.equal(R403_ARCHITECTURE_ANCHORS.length,4);
+ for(const path of R403_ARCHITECTURE_ANCHORS){
+  assert.equal(byPath.get(path)?.classification,"KEEP_ARCHITECTURE_EVIDENCE");
+  assert.equal(byPath.get(path)?.deletionAuthorized,false);
+  assert.ok(R403_PROTECTED_DOCUMENTS.includes(path));
+ }
 });

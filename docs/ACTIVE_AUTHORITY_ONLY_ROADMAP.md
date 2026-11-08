@@ -4,6 +4,8 @@
 
 > Questa pagina è la **fonte operativa sintetica**: obiettivi, stato verificato e lavoro residuo. I resoconti R282–R345 di fase esplorativa sono stati rimossi dal **tree attivo** per ridurne la dimensione; rimangono recuperabili dalla cronologia Git fino alla SHA `8bf19fd59e042b7e4f189f9a543aa8933a169680`. I documenti recenti di architettura e sicurezza restano tracciati. La riduzione del tree **non** riscrive la storia Git né dimostra che le dipendenze legacy siano tutte eliminate.
 
+**Checkpoint R403.1 — 8 novembre 2026.** La [Fast CI R403 #42507357533](https://github.com/DarkGh0st03/delegation/actions/runs/42507357533) ha validato la classificazione di 50 report storici R350–R375 senza riferimenti interni testuali osservati. In un commit successivo di cleanup documentale sono ritirati dal tree 46 resoconti incrementali; sono mantenuti R351.0, R355, R370 e R375 come evidenze architetturali. Tutti i 46 file rimangono recuperabili dal commit `6b84c4bb`; non sono state toccate sorgenti, test, workflow o componenti MCP privati. La Fast CI **post-rimozione** deve ancora essere verificata: nessuna dichiarazione anticipata di gate finale. L'analisi R402 continua a censire 226 indizi di indirezione non risolti, quindi il cleanup runtime resta bloccato fino alla review dei caller.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.
