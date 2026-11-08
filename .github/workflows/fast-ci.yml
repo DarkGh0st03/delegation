@@ -42,6 +42,10 @@ jobs:
           node --test poc/packages/agent-runtime/test/r238-scenario-fixture-isolation.test.mjs
           node --test poc/scripts/test/r239-canonical-agent-no-adapter-url.test.mjs
           node --test poc/scripts/test/r240-direct-rust-issuer-config.test.mjs
+          # R385.0: legacy MCP/HTTP Engineer path is lazy; native direct Rust path stays first.
+          node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-native-port.test.ts
           node --experimental-strip-types --test poc/packages/agent-runtime/test/native-agent-card-signer-binding.test.ts poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-owner-bootstrap.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
