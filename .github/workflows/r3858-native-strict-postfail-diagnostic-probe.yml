@@ -166,13 +166,36 @@ jobs:
           fi
           test ! -e /tmp/native-evm-adapter.pid
       - name: Native owner signed post-FAIL diagnostic read and first guarded CAS (stop before PR)
+        # This mode belongs to the original private owner STEP only, never
+        # to the legacy Adapter process checked above. Prevent downgrade.
+        env:
+          DELEGATION_GATEWAY_ARCHITECTURE: authority-only
         run: |
+          set -euo pipefail
+          test "$R3818_CANONICAL_NATIVE_MCP" = "1"
+          test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
           set -a
           source poc/infra/runtime/gateway.env
           source poc/infra/runtime/runner.env
           set +a
+          test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
+          test "${R3818_CANONICAL_NATIVE_MCP:-}" = "1"
+          test "${APPROVED_RUNNER_NATIVE_MCP:-}" = "1"
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
-          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
+          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs | tee "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"event":"canonical_signed_handoff_native"' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"event":"r3858_strict_native_postfail_read_and_first_repair_no_false_pass"' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"first_docker_status":"fail"' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"signed_read_only_diagnostic_tasks":1' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"gateway_cas_writes":3' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"further_tests_proven_pass":false' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"pr_created":false' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"original_root_retired":true' "$RUNNER_TEMP/r3858-proof.jsonl"
+          grep -Fq '"paid_model_calls":0' "$RUNNER_TEMP/r3858-proof.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only
