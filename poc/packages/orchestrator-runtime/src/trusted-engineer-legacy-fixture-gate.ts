@@ -11,4 +11,10 @@ export function assertLegacyEngineerHttpFixtureAllowed():void{
     process.env.ENGINEER_CORE_NATIVE_MODE==="1"||
     process.env.ADAPTER_ENGINEER_NATIVE_SOCKET!==undefined)
   throw Error("Historical Engineer HTTP fixture unavailable in native authority-only mode");
+ // R385.19: absence is never affirmative authority to resurrect HTTP.
+ // The fixture selector is a locally provisioned host option only; no
+ // delegated Task/Agent/Model data may supply it. Canonical native flags
+ // above always override an explicit legacy opt-in.
+ if(process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE!=="1")
+  throw Error("Historical Engineer HTTP fixture requires explicit opt-in");
 }
