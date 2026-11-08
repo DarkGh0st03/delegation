@@ -104,10 +104,28 @@ async function fixture(t,source,{forgery=null}={}){
   test:{capabilities:["run_tests"]}};
  const model=new SourceDrivenDecider();
  async function runIndependentTest(){
-  let ok=true,out="";
-  try{const result=await exec(process.execPath,["--test",testFile],
-   {cwd:dir,timeout:10000});out=result.stdout;}
-  catch(error){ok=false;out=String(error.stdout??"")+String(error.stderr??"");}
+  // Node's parent test runner injects NODE_TEST_CONTEXT=child-v8.
+  // If inherited, a nested 'node --test' silently runs ZERO tests and
+  // exits 0. Remove that internal variable and require authentic TAP
+  // counts: otherwise a fake green subprocess would authorize a PR.
+  const env={...process.env};
+  delete env.NODE_TEST_CONTEXT;
+  let ok=false,out="";
+  try{
+   const result=await exec(process.execPath,["--test",testFile],
+    {cwd:dir,timeout:10000,env});
+   out=String(result.stdout??"");
+   if(!/^# tests 1$/mu.test(out)||!/^# pass 1$/mu.test(out)||
+      !out.includes("suspendUser state transition"))
+    throw Error("R385.7 independent Node PASS has no complete TAP receipt");
+   ok=true;
+  }catch(error){
+   if(error.code!==1||!/^# tests 1$/mu.test(String(error.stdout??""))||
+      !/^# fail 1$/mu.test(String(error.stdout??""))||
+      !String(error.stdout??"").includes("suspendUser state transition"))
+    throw Error("R385.7 unverifiable nested Node test result",{cause:error});
+   out=String(error.stdout??"");
+  }
   actualRunnerResults.push(ok?"pass":"fail");
   return {ok,proof:digest("independent-node-runner|"+originalHead+"|"+(ok?"pass":"fail")),
    output:out};
