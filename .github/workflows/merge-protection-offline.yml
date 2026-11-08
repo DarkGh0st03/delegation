@@ -83,7 +83,12 @@ jobs:
             assert.match(body,/^    if: \$\{\{ false \}\}$/m,
              "archived billed job must remain unconditional SKIP: "+name);
           }
-          assert.match(text,/inputs\.authorization == 'I AUTHORIZE GEMINI API CHARGES'/);
+          // Even though both jobs are disabled, preserve the archived
+          // explicit consent, exact-SHA and spend-acknowledgement inputs.
+          assert.match(text,/^      authorization:\s*$/m);
+          assert.match(text,/I AUTHORIZE GEMINI API CHARGES/);
+          assert.match(text,/^      pinned_commit_sha:\s*$/m);
+          assert.match(text,/^      billing_cap_acknowledgement:\s*$/m);
           const consent=fs.readFileSync("poc/scripts/signed-gemini-pilot-consent.mjs","utf8");
           const gate=fs.readFileSync("poc/scripts/signed-gemini-pilot-ci-gate.mjs","utf8");
           assert.match(consent,/GITHUB_EVENT_NAME!=="workflow_dispatch"/);
