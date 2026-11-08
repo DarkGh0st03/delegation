@@ -32,17 +32,19 @@ test("R385.1 legacy HTTP issuer gate is shared by selector and direct compatibil
  assert.match(gate,/ADAPTER_ENGINEER_NATIVE_SOCKET!==undefined/u);
 });
 
-test("R385.0 canonical selector still gives direct Rust priority and denies implicit HTTP fallback",()=>{
+test("R415 canonical selector is native-only and has no legacy HTTP fallback",()=>{
  const selector=read("poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts");
  const first=selector.indexOf('if(direct==="1"){');
  const socket=selector.indexOf("if(path!==undefined){",first);
- const fail=selector.indexOf('if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")',socket);
- const legacy=selector.indexOf("return createOwnerPrivateMcpEngineerCredentialPort",fail);
- assert.ok(first>=0&&socket>first&&fail>socket&&legacy>fail,
-  "Engineer's owner-only direct Rust path must precede any fixture fallback");
+ const fail=selector.indexOf('throw Error("Canonical Engineer root requires native Rust issuer socket");',socket);
+ assert.ok(first>=0&&socket>first&&fail>socket,
+  "Native direct and local-socket routes must precede mandatory fail-closed");
+ const canonical=selector.slice(selector.indexOf("export function createTrustedEngineerCredentialPort("));
+ assert.doesNotMatch(canonical,/createOwnerPrivateMcpEngineerCredentialPort|adapterBaseUrl|fetchFn/u,
+  "Canonical selector cannot be configured to use or return historical HTTP");
  assert.match(selector,/return createDirectRustEngineerCredentialPort\(config\)/u);
+ assert.match(selector,/return createNativeRustEngineerCredentialPort\(/u);
  assert.match(selector,/Canonical Engineer root requires native Rust issuer socket/u);
- assert.match(selector,/Legacy HTTP Engineer fixture requires explicit Adapter URL/u);
  const direct=read("poc/packages/orchestrator-runtime/src/trusted-engineer-direct-core-port.ts");
  assert.doesNotMatch(direct,/createOwnerPrivateMcpEngineerCredentialPort|postCredential\(/u);
  assert.match(direct,/loadDirectRustEngineerCore\(/u);

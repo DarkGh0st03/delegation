@@ -73,8 +73,7 @@ export function createOwnerPrivateMcpEngineerCredentialPort(
  * native failure. Historical offline fixtures may still use MCP -> Adapter.
  */
 export function createTrustedEngineerCredentialPort(
- config:TrustedEngineerCoreConfig&
-  {adapterBaseUrl?:string;fetchFn?:typeof fetch}
+ config:TrustedEngineerCoreConfig
 ):EngineerCredentialPort{
  const path=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  const direct=process.env.ENGINEER_CORE_NATIVE_MODE;
@@ -93,16 +92,7 @@ export function createTrustedEngineerCredentialPort(
    ...config,nativeSocketPath:path
   });
  }
- // A canonical signed DAG must never downgrade root issuance/revocation
- // to the HTTP Adapter just because its trusted native socket is missing.
- // Historical HTTP fixtures require exact locally provisioned opt-in.
- if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
-  throw Error("Canonical Engineer root requires native Rust issuer socket");
- // The legacy function is not an escape hatch for an authority-only host.
- assertLegacyEngineerHttpFixtureAllowed();
- if(!config.adapterBaseUrl?.trim())
-  throw Error("Legacy HTTP Engineer fixture requires explicit Adapter URL");
- return createOwnerPrivateMcpEngineerCredentialPort({
-  ...config,adapterBaseUrl:config.adapterBaseUrl
- });
+ // R415: fail closed even when the separately exported historical HTTP
+ // fixture has an explicit opt-in. No canonical HTTP transport fallback.
+ throw Error("Canonical Engineer root requires native Rust issuer socket");
 }

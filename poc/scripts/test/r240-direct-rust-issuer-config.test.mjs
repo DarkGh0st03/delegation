@@ -11,7 +11,10 @@ test("R240 Engineer root + native Orchestrator VP use no implicit HTTP Adapter c
  const transport=read("poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts");
  assert.match(direct,/Pick<TrustedEngineerCoreConfig,"bearerToken">/u);
  assert.doesNotMatch(direct,/from "\.\/authority-client\.ts"|from "\.\/authority-adapter-transport\.ts"/u);
- assert.match(owner,/adapterBaseUrl\?:string/u);
+ assert.match(owner,/type HistoricalEngineerHttpConfig=TrustedEngineerCoreConfig/u);
+ const canonical=owner.slice(owner.indexOf("export function createTrustedEngineerCredentialPort("));
+ assert.doesNotMatch(canonical,/adapterBaseUrl|fetchFn|createOwnerPrivateMcpEngineerCredentialPort/u,
+  "native Engineer selector must be independent of fixture HTTP config");
  assert.match(owner,/Legacy HTTP Engineer fixture requires explicit Adapter URL/u);
  assert.match(planning,/adapterBaseUrl\?:string/u);
  assert.match(transport,/adapterBaseUrl\?: string/u);

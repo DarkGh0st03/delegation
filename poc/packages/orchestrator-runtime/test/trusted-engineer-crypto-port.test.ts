@@ -176,7 +176,7 @@ test("R385.19 legacy HTTP issuer refuses missing or inexact opt-in without side 
    assert.throws(()=>createOwnerPrivateMcpEngineerCredentialPort(cfg),
     /Historical Engineer HTTP fixture requires explicit opt-in/u);
    assert.throws(()=>createTrustedEngineerCredentialPort(cfg),
-    /Historical Engineer HTTP fixture requires explicit opt-in/u);
+    /Canonical Engineer root requires native Rust issuer socket/u);
   }
   process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
   assert.doesNotThrow(()=>createOwnerPrivateMcpEngineerCredentialPort(cfg),
@@ -187,6 +187,31 @@ test("R385.19 legacy HTTP issuer refuses missing or inexact opt-in without side 
  }
 });
 
+test("R415 exact legacy fixture consent cannot activate HTTP from canonical Engineer",()=>{
+ const flags=["DELEGATION_GATEWAY_ARCHITECTURE","ENGINEER_CORE_NATIVE_MODE",
+  "APPROVED_RUNNER_NATIVE_MCP","ADAPTER_ENGINEER_NATIVE_SOCKET",
+  "DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE"];
+ const before=Object.fromEntries(flags.map(k=>[k,process.env[k]]));
+ let calls=0;
+ try{
+  for(const key of flags)delete process.env[key];
+  process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
+  const config={
+   bearerToken:"PRIVATE_ENGINEER_BEARER",adapterBaseUrl:"http://historical.invalid",
+   fetchFn:async()=>{calls++;throw Error("Unexpected legacy HTTP call");}
+  };
+  assert.throws(()=>createTrustedEngineerCredentialPort(config),
+   /Canonical Engineer root requires native Rust issuer socket/u);
+  assert.equal(calls,0);
+  assert.doesNotThrow(()=>createOwnerPrivateMcpEngineerCredentialPort(config),
+   "explicit legacy fixture remains isolated");
+ }finally{
+  for(const key of flags){
+   if(before[key]===undefined)delete process.env[key];
+   else process.env[key]=before[key];
+  }
+ }
+});
 test("R385.19 previously constructed HTTP fixture cannot issue/revoke after opt-in removal",async()=>{
  const flag=process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
  let called=0;
@@ -229,7 +254,7 @@ test("R385.1 authority-only mode rejects public and direct legacy HTTP Root port
   assert.throws(()=>createOwnerPrivateMcpEngineerCredentialPort(config),
    /Historical Engineer HTTP fixture unavailable in native authority-only mode/u);
   assert.throws(()=>createTrustedEngineerCredentialPort(config),
-   /Historical Engineer HTTP fixture unavailable in native authority-only mode/u);
+   /Canonical Engineer root requires native Rust issuer socket/u);
   const {createLegacyOwnerPrivateMcpEngineerCredentialPort}=await import(
    "../src/trusted-engineer-legacy-mcp-http-port.ts");
   assert.throws(()=>createLegacyOwnerPrivateMcpEngineerCredentialPort(config),
@@ -383,7 +408,7 @@ test("R225 direct Engineer selector never silently downgrades when native addon 
  }
 });
 
-test("R240 legacy HTTP Engineer fixture needs explicit URL, native direct mode does not",()=>{
+test("R415 canonical Engineer never chooses HTTP, native direct still needs a socket",()=>{
  const priorMode=process.env.ENGINEER_CORE_NATIVE_MODE;
  const priorSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  const priorFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
@@ -393,7 +418,7 @@ test("R240 legacy HTTP Engineer fixture needs explicit URL, native direct mode d
   delete process.env.APPROVED_RUNNER_NATIVE_MCP;
   assert.throws(()=>createTrustedEngineerCredentialPort({
    bearerToken:"PRIVATE_ENGINEER_BEARER"
-  }),/Legacy HTTP Engineer fixture requires explicit Adapter URL/u);
+  }),/Canonical Engineer root requires native Rust issuer socket/u);
   process.env.ENGINEER_CORE_NATIVE_MODE="1";
   process.env.ADAPTER_ENGINEER_NATIVE_SOCKET="relative.sock";
   assert.throws(()=>createTrustedEngineerCredentialPort({
