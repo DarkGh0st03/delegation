@@ -6,6 +6,13 @@ on:
       - refactor/post-prof-plan-contracts-20261021
     paths:
       - "poc/packages/orchestrator-runtime/src/trusted-engineer-authority.ts"
+      # R385.19: all paths that can change native-vs-legacy Engineer
+      # selection or the isolated R49 historical review fixture.
+      - "poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-fixture-gate.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts"
       - "poc/packages/orchestrator-runtime/src/authority-client.ts"
       - "poc/packages/orchestrator-runtime/src/permission-templates.ts"
       - "poc/packages/orchestrator-runtime/src/index.ts"
