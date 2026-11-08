@@ -1,6 +1,8 @@
 # R233: REAL native Rust issuance + EVM trust + public-only Gateway verifier.
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Unsigned initial branch is absent; protected unsolved main is unchanged.
+# R399.2: the original Runner instance (not the ADK decision controller)
+# publishes a fresh independent security status on its OWN native Draft PR.
 # R385.13: native disposable full post-FAIL recovery through ten independently
 # signed source reads + ten same-file CAS, actual second Docker PASS and Draft PR.
 # One genuinely failed initial Test remains incomplete. No generative inference.

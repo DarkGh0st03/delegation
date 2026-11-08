@@ -642,6 +642,10 @@ try{
   acceptance_dir:fileURLToPath(
    new URL("../../../runner/acceptance/",import.meta.url))
  });
+ // Explicitly retain the authentic Docker executor. Later in this proof
+ // the original Planner also calls its local decision model "controller".
+ // CI must not silently take that shadowed model as a Runner.
+ const independentDockerRunner=controller;
  let runnerServer=createRunnerHttpServer({
   bind_host:"127.0.0.1",bind_port:0,gateway_token:runnerBearer,
   contract:{repository:"gitea://gitea.local/thesis/iam-console-poc",branch}
@@ -1574,7 +1578,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    const security=await proveNativeDraftPrSameHeadSecurityCi({
     giteaBaseUrl:process.env.GITEA_HOST_BASE_URL,
     readToken:process.env.GITEA_RUNNER_TOKEN,
-    runner:controller,number:workflow.pull_request_number,
+    runner:independentDockerRunner,number:workflow.pull_request_number,
     headSha:latest,mainSha:disposableMainHead
    });
    assert.equal(security.status,"pass");
