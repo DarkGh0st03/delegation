@@ -87,7 +87,7 @@ const goodResponse=()=>{
 function fixture(patch?:{
  row?:typeof row;child?:typeof child;root?:typeof root;
  receipt?:typeof receipt;signed?:typeof signed;
- response?:unknown;failBind?:boolean;mixedComplete?:boolean
+ response?:unknown;failBind?:boolean;mixedComplete?:boolean;readComplete?:boolean
  }){
  const calls:string[]=[];
  let takes=0,roots=0;
@@ -116,6 +116,7 @@ function fixture(patch?:{
   },
   attestTrustedTaskCompletion:async(task:string,rt:string)=>{
    calls.push("gateway_independent_observer");
+   if(patch?.readComplete===false)throw Error("missing independently verified project test read");
    assert.equal(task,taskId);assert.equal(rt,runtimeTaskId);
    return {status:"task_completion_observed_staged",task_id:task,
     runtime_task_id:rt,gateway_execution_authorized:false};
@@ -149,7 +150,7 @@ function fixture(patch?:{
   assert.equal(sent.subtask.branch,branch);
   const isMixed=patch?.row?.permissions.length===2&&
    patch.row.permissions.some(p=>p.operation==="read_file");
-  const runsTests=isTest&&!isMixed;
+  const runsTests=isTest&&!!patch?.row?.permissions.some(p=>p.operation==="run_tests");
   const target=isTest?"tests/backend/account.test.ts":file;
   assert.deepEqual(sent.subtask.relevant_paths,runsTests?[]:[target]);
   const isCreate=patch?.row?.permissions.length===1&&
@@ -157,7 +158,8 @@ function fixture(patch?:{
   assert.deepEqual(sent.subtask.approved_file_permissions,runsTests?[]:
    isMixed?[{path:target,operation:"read_file"},
     {path:target,operation:"update_file"}]:[{
-     path:target,operation:isCreate?"create_file":"update_file"
+     path:target,operation:isCreate?"create_file":
+     patch?.row?.permissions[0]?.operation==="read_file"?"read_file":"update_file"
     }]);
   assert.equal(sent.subtask.approved_run_tests,runsTests);
   assert.equal(sent.delegation_evidence.credential_id,id);
@@ -332,6 +334,72 @@ test("R334 Test FAIL report never reaches independent Gateway success observer",
  );
  assert.deepEqual(f.calls,["private_bind","a2a_send"]);
 });
+
+
+test("R385.12 Test read-only Child is not a Test PASS and needs independent Gateway evidence",async()=>{
+ const projectTest="tests/backend/account.test.ts";
+ const permission={resource:canonicalFileUri(repo,branch,projectTest),operation:"read_file"};
+ const payload={...artifact,role:"test",summary:"Investigated approved application test",
+  files_modified:[],files_created:[],test_outcome:"not_run",errors:[]};
+ const response=goodResponse();
+ response.task.artifacts[0]!.parts[0]!.content.value=payload;
+ const patch={root:{...root,root_permissions:[permission]},
+  row:{...row,agent_id:"test",permissions:[permission]},
+  child:{...child,agent_id:"test",permissions:[permission]},
+  receipt:{...receipt,agent_id:"test"},
+  signed:{...signed,credentialSubject:{sub:did,per:[permission]}},
+  response};
+ const ok=fixture(patch as never);
+ const report=await ok.owner.dispatchIssuedTask(request());
+ assert.equal(report.role,"test");
+ assert.equal(report.artifact.test_outcome,"not_run");
+ assert.equal(report.provider_completion_attested,false);
+ assert.deepEqual(ok.calls,["private_bind","a2a_send"]);
+ await ok.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId);
+ assert.deepEqual(ok.calls,["private_bind","a2a_send","gateway_independent_observer"]);
+ await assert.rejects(ok.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /closed or repeated independent completion attestation/u);
+
+ const missing=fixture({...patch,readComplete:false} as never);
+ await missing.owner.dispatchIssuedTask(request());
+ await assert.rejects(missing.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /missing independently verified project test read/u);
+ assert.deepEqual(missing.calls,["private_bind","a2a_send","gateway_independent_observer"]);
+ await assert.rejects(missing.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /closed or repeated independent completion attestation/u);
+});
+
+for(const mode of ["source-outside-tests","acceptance-source",
+ "claims-runner-pass","claims-runner-fail","claims-write"]){
+ test("R385.12 Test diagnostic rejects untrusted grant or claim: "+mode,async()=>{
+  const projectTest=mode==="source-outside-tests"?"apps/backend/src/users/account.ts":
+   mode==="acceptance-source"?"poc/runner/acceptance/account.test.ts":
+   "tests/backend/account.test.ts";
+  const permission={resource:canonicalFileUri(repo,branch,projectTest),operation:"read_file"};
+  const payload={...artifact,role:"test",summary:"Read a signed application test",
+   files_modified:mode==="claims-write"?[projectTest]:[],
+   files_created:[],errors:[],
+   test_outcome:mode==="claims-runner-pass"?"pass":
+    mode==="claims-runner-fail"?"fail":"not_run"};
+  const response=goodResponse();
+  response.task.artifacts[0]!.parts[0]!.content.value=payload;
+  const f=fixture({
+   root:{...root,root_permissions:[permission]},
+   row:{...row,agent_id:"test",permissions:[permission]},
+   child:{...child,agent_id:"test",permissions:[permission]},
+   receipt:{...receipt,agent_id:"test"},
+   signed:{...signed,credentialSubject:{sub:did,per:[permission]}},
+   response
+  } as never);
+  await assert.rejects(f.owner.dispatchIssuedTask(request()),
+   mode==="source-outside-tests"||mode==="acceptance-source"?
+    /Test read requires exact signed project test source/u:
+    mode==="claims-write"?/signed Test investigation cannot claim writes or failures/u:
+    /Signed Test preparation Artifact must report not_run/u);
+  assert.deepEqual(f.calls,
+   mode==="source-outside-tests"||mode==="acceptance-source"?[]:["private_bind","a2a_send"]);
+ });
+}
 
 for(const mode of ["two-updates","foreign-read-with-update",
  "update-with-foreign-read","runner-with-spare-read"]){
