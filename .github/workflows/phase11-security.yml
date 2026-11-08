@@ -1,9 +1,11 @@
-name: Phase 11 Security Experiments
+# HISTORICAL ONLY: the Phase 11 experiment starts the legacy HTTP
+# Adapter. Never execute it automatically on protected main. Keep as a
+# manually invoked, disposable regression until its unique kill-switch and
+# stale-SHA coverage has been migrated to native Rust/Gateway Security CI.
+# No AI inference, no automatic merge, no authority-only production use.
+name: Phase 11 Security Experiments (Manual Legacy Regression Only)
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
