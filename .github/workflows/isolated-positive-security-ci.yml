@@ -31,6 +31,7 @@ on:
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts'
       # R411: native EVM fixture must never silently regress onto a legacy shim.
+      - 'poc/apps/gateway/src/trusted-operational-feature-head.ts'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
       - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'
       - 'poc/scripts/test/r408-reviewed-dag-caller-migration.test.mjs'

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
 
@@ -30,9 +30,8 @@ test("R240 signed Child and repaired D1 use the same native Rust issuer with no 
  const dispatcher=read("poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts");
  const repairChild=read("poc/packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts");
  const repairDag=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts");
- const compatibilityDag=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
- assert.match(compatibilityDag,/export \{executeTrustedAdmittedRepairDag\}[\s\S]*?from "\.\/trusted-owner-repair-dag-execution\.ts"/u,
-  "Original native-EVM and test imports must resolve to the same Owner DAG code");
+ assert.equal(existsSync(new URL("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",root)),false,
+  "R413 historical repair DAG compatibility wrapper must stay deleted");
  assert.match(child,/adapterBaseUrl\?:string/u);
  assert.match(child,/createNativeRustChildCryptographyPort/u);
  assert.match(child,/Canonical signed Child DC requires native Rust issuer socket/u);
