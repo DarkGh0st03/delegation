@@ -142,6 +142,8 @@ const sourceObservationMode=diagnosticMode&&!specialistStop;
 // After an authentic Docker FAIL, require a separate signed Backend read
 // before one source-grounded repair. Stop before a false PASS/PR claim.
 const strictReadProbe=process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1";
+const secondReadProbe=process.env.R3859_NATIVE_SECOND_REPAIR_PROBE==="1";
+assert.ok(!secondReadProbe||strictReadProbe,"R385.9 requires signed post-FAIL mode");
 assert.ok(process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE===undefined||strictReadProbe);
 if(strictReadProbe){
  assert.equal(diagnosticMode,false,"R385.8 proof requires post-FAIL, not pre-FAIL read");
@@ -584,6 +586,7 @@ try{
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
  const diagnosticTaskId=specialistStop?"r377-"+diagnosticRole+"-no-change":"r376-authenticated-source-read";
  const postFailReadTaskId="r3858-postfail-backend-read";
+  const secondPostFailReadTaskId="r3859-postfail-backend-second-read";
  const diagnosticPath=diagnosticRole==="frontend"?mutationPath:sharedPath;
  const diagnosticPermissions=specialistStop?permissionsFor(diagnosticPath):[pair(diagnosticPath,"read_file")];
  const decisionOffset=diagnosticMode?1:0;
@@ -714,6 +717,7 @@ try{
    {files:[{path:sharedPath,
      previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
      replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
+   ...(secondReadProbe?[{readOnly:true,files:[{path:backendPath,previous:backendNewContent}]}]:[]),
    ...backendReferenceFiles.map(file=>({files:[file]})),
    ...backendTestReferenceFiles.map(file=>({files:[file]}))
   ]),
@@ -994,12 +998,22 @@ const tool=record?.request?.tool,role=record?.agent_role;
       depends_on:[taskId],permissions:[pair(sharedPath,"read_file")],
       instruction:"Read independently authorized post-FAIL account-status source"
      }};
-    }else if(strictReadProbe&&initialIndex===5){
+    }else if(secondReadProbe&&initialIndex===5){
+     assert.ok(context.includes(sourceTasks[0].task_id));
+     assert.doesNotMatch(context,/source_observations/u,"stale first read must expire after CAS");
+     choice={action:"delegate",task:{
+      task_id:secondPostFailReadTaskId,agent_id:"backend",
+      depends_on:[sourceTasks[0].task_id],
+      permissions:[pair(sourceTasks[1].file,"read_file")],
+      instruction:"Read second Backend source at new signed current Gitea HEAD"
+     }};
+    }else if(strictReadProbe&&initialIndex===(secondReadProbe?7:5)){
      assert.ok(context.includes(sourceTasks[0].task_id));
      choice={action:"blocked",
-      reason:"Only one authenticated post-FAIL read and one native repair are proven; project remains incomplete"};
+      reason:"Only bounded authenticated post-FAIL repairs are proven; no second Docker PASS or PR"};
     }else if(initialIndex<=12+Number(strictReadProbe)){
-     const j=initialIndex-3-Number(strictReadProbe),entry=sourceTasks[j];
+     const j=initialIndex-3-Number(strictReadProbe)-
+      Number(secondReadProbe&&initialIndex>=6),entry=sourceTasks[j];
      if(strictReadProbe&&j===0){
       assert.match(context,/source_observations/u);
       assert.match(context,/independent_runner_failure/u);
@@ -1024,7 +1038,8 @@ const tool=record?.request?.tool,role=record?.agent_role;
      }
      choice={action:"delegate",task:{
       task_id:entry.task_id,agent_id:entry.agent_id,
-      depends_on:[j===0?(strictReadProbe?postFailReadTaskId:taskId):sourceTasks[j-1].task_id],
+      depends_on:[j===0?(strictReadProbe?postFailReadTaskId:taskId):
+       secondReadProbe&&j===1?secondPostFailReadTaskId:sourceTasks[j-1].task_id],
       permissions:entry.permissions,
       instruction:"Read real Gitea "+entry.file+
        " then submit one authorized full-file CAS for Account Suspension"
@@ -1164,6 +1179,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r3858:child:postfail-source-read",29180,900);
      if(strictReadProbe&&epoch===6&&agent_id==="backend")
       return freshChildParams("urn:r3858:child:verified-first-repair",29181,900);
+      if(secondReadProbe&&epoch===7&&agent_id==="backend")
+       return freshChildParams("urn:r3859:child:second-postfail-read",29182,900);
+      if(secondReadProbe&&epoch===8&&agent_id==="backend")
+       return freshChildParams("urn:r3859:child:second-verified-repair",29183,900);
      if(epoch>=5+decisionOffset&&epoch<=14+decisionOffset){
       const entry=sourceTasks[epoch-5-decisionOffset];
       if(!entry||entry.agent_id!==agent_id)
@@ -1225,11 +1244,13 @@ const tool=record?.request?.tool,role=record?.agent_role;
    assert.equal(workflow.status,"owner_operational_work_finished_without_pr");
    assert.equal(workflow.adaptive_status,"owner_adaptive_work_blocked");
    assert.equal(workflow.pr_created,false);
-   assert.equal(controller.calls,6);
+   assert.equal(controller.calls,secondReadProbe?8:6);
    assert.equal(controller.verifiedFailBeforeRepair,true);
    assert.equal(runnerCalls,1,"first real Docker FAIL only; no unverified PASS");
-   assert.equal(gatewayCasWrites,3,"only the two D0 edits and the read-gated D1 edit");
-   assert.equal(models.backend.stageIndex,3,"D0, post-FAIL read, one real CAS repair");
+   assert.equal(gatewayCasWrites,secondReadProbe?4:3,
+     "two D0 edits plus independently signed post-FAIL repairs");
+   assert.equal(models.backend.stageIndex,secondReadProbe?5:3,
+     "D0, individually signed post-FAIL reads and CAS repairs");
    assert.equal(models.frontend.stageIndex,1);
    assert.ok(events.indexOf("execute_backend_read_file")>=0);
    assert.ok(events.lastIndexOf("execute_backend_update_file")>
@@ -1237,8 +1258,9 @@ const tool=record?.request?.tool,role=record?.agent_role;
     "native post-FAIL read must precede source-repair update");
    assert.equal(nativeMcpChildCalls,issuedChildren,
     "every original Child still issued via real task-local native MCP");
-   assert.equal(issuedChildren,5,"D0 backend, D0 frontend, failed Test, postfail read and repair");
-   assert.ok(nativeMcpVpByRole.backend>=3);
+   assert.equal(issuedChildren,secondReadProbe?7:5,
+     "separate native signed Child for each post-FAIL read and repair");
+   assert.ok(nativeMcpVpByRole.backend>=(secondReadProbe?5:3));
    assert.ok(nativeMcpVpByRole.frontend>=1);
    assert.ok(nativeMcpVpByRole.test>=1);
    assert.equal(draftPrCreateAttempts,0);
@@ -1253,11 +1275,13 @@ const tool=record?.request?.tool,role=record?.agent_role;
     name=>name.endsWith(".runner.json")).length,0);
    nativeE2eResultEmitted=true;
    process.stdout.write(JSON.stringify({
-    event:"r3858_strict_native_postfail_read_and_first_repair_no_false_pass",
+    event:secondReadProbe?
+      "r3859_native_sequential_postfail_two_read_two_cas_no_false_pass":
+      "r3858_strict_native_postfail_read_and_first_repair_no_false_pass",
     status:"pass",paid_model_calls:0,native_rust_evm:true,real_opa:true,
     private_native_mcp:true,first_docker_status:"fail",
     independently_attested_postfail_read:true,
-    signed_read_only_diagnostic_tasks:1,
+    signed_read_only_diagnostic_tasks:secondReadProbe?2:1,
     gateway_cas_writes:gatewayCasWrites,
     source_code_generated_autonomously_by_model:false,
     further_tests_proven_pass:false,original_main_immutable:true,
