@@ -799,9 +799,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          last.failed_task_id);
         const root=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
         if(closed||session.phase!=='operational'||gateway.phase!=='active'||
-           !failed||failed.agent_id!=='test'||failed.operation==='read_file'||
-           context.executionProgress?.current_head_sha!==last.tested_commit_sha&&
-            !/^[a-f0-9]{40}$/u.test(context.executionProgress?.current_head_sha??'')||
+           !failed||failed.agent_id!=='test'||
+           !/^[a-f0-9]{40}$/u.test(context.executionProgress?.current_head_sha??'')||
            root.root_credential_id!==original.root_credential_id||
            root.authority_digest!==original.authority_digest)
          deny('original signed Runner failure no longer owns repair investigation');
