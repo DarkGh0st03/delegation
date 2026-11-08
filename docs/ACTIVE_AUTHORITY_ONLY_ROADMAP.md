@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.9 native PASS; R385.10 budget owner-only in validazione)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.11 Test Agent offline PASS; R385.10 CI PASS)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,17 +15,50 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E nativo scripted completo PASS su `339a8b1`. R385.6 Fast CI PASS `de20619` (#42442299444). R385.7 Fast CI PASS `35e55faf` (#42443886839): vero Node FAIL→read→patch source-conditioned→Node PASS offline. R385.8 allestisce una probe nativa di Rust/EVM/OPA/Gitea/A2A/MCP/Docker autentico: Test FAIL→lettura Child post-FAIL→prima UPDATE D1 con gate rigoroso; prova nativa in attesa, esplicitamente senza falso PASS/PR. Autonomia generativa/Test Agent completo ancora aperti.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E nativo scripted completo PASS su `339a8b1`. R385.8–R385.9 probe nativa di letture post-FAIL con Child/OPA/MCP e CAS successivi PASS, ma arresto deliberato senza Docker PASS finale o PR. R385.10 Fast CI + Engineer Approval PASS `62bb5836`. R385.11 Test Agent source-grounded offline: 4/4 test PASS, vero Node TypeScript FAIL→read→CAS locale→Node PASS, Gate Gateway contraffatto NO-GO. Mancano ancora retest completo Docker nativo con Test Agent e autonomia generativa.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). Le successive modifiche R385.6 devono superare Fast CI sulla loro SHA: non attribuire loro automaticamente il vecchio E2E.** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). R385.9 Fast CI #42450891491 e probe nativa #42450891510 entrambe SUCCESS su `737ddbb3`, ma la probe non esegue il retest PASS. R385.11 Fast CI #42461266452 SUCCESS su `82e24631` (test Node reale ma Gateway/Child/Gitea simulati in quella nuova suite). E2E post-cleanup ancora richiesto.** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
 
+### R385.11 — Test Agent source-grounded offline, reale Node TypeScript FAIL/PASS
+
+**Stato: 4/4 test R385.11 PASS**, eseguiti nella [Fast CI #42461266452](https://github.com/DarkGh0st03/delegation/actions/runs/42461266452)
+sulla SHA [`82e24631`](https://github.com/DarkGh0st03/delegation/commit/82e2463163f2a372ba8f15cc7db95a07a908e8d4);
+anche il secondo job della Fast CI (evidenza Docker di regressione, distinta da R385.11) è SUCCESS.
+La suite `poc/packages/orchestrator-runtime/test/r38511-test-agent-source-grounded-recovery.test.mjs`
+usa l'**Execution Loop ADK reale** e un `BaseLlm` deterministico gratuito,
+con Root e registri Gateway **simulati** in una directory temporanea.
+
+- Due sorgenti `tests/backend/suspend.test.ts` differiscono nell'aspettativa errata
+  (`"ACTIVE"` oppure `"ENABLED"`), senza inizializzare il decider con il testo
+  del test. Un vero subprocess `node --experimental-strip-types --test`
+  deve fallire e produrre TAP verificabile (un test davvero eseguito).
+- Un Task `test/read_file` distinto dopo il FAIL alimenta l'osservazione
+  della sorgente; un successivo Task `test/read_file+update_file` sceglie
+  l'espressione da correggere in base al contenuto osservato, con HEAD CAS locale
+  e `requireVerifiedRepairDiagnostic:true`.
+- Il nuovo Test sulla HEAD modificata deve PASS con TAP verificato;
+  `ready_for_pr` non crea alcuna PR.
+- Una ricevuta Gateway contraffatta blocca l'UPDATE **prima** della scrittura
+  e ritira la Root simulata. Il test del catalogo limita i sorgenti Test Agent
+  ai soli file applicativi `tests/backend|frontend/*.test.ts(x)`, escludendo
+  Runner, acceptance, path traversal e configurazioni.
+
+**Limiti rigorosi:** la prova esercita il vero contratto di decisione ADK
+ma **non** include Gemini generativo, agenti A2A reali, Child Rust/MCP,
+Gitea CAS/MAC, Docker Runner applicativo, acceptance o Draft PR.
+Non generalizzare il PASS di R385.5 a questa nuova SHA.
+**Gate successivo:** R385.12, recovery rigoroso Test Agent su Gitea
+disposable e Docker reale con nuovo Test PASS e Draft PR verificati,
+solo con modelli gratuiti scripted; poi consolidamento e cleanup legacy.
+Nessuna esecuzione Gemini a pagamento senza consenso esplicito.
+
 ### R385.10 — Una decisione terminale senza Child dopo 24 Task firmati
 
-**Stato: modifica mirata in verifica Fast CI; non è un nuovo PASS Docker.**
+**Stato: Fast CI #42460396995 ed Engineer Approval #42460396997 SUCCESS sulla SHA `62bb5836`; non è un nuovo PASS Docker.**
 R385.9 ha già Fast CI #42450891491 e native sequential probe
 #42450891510 **SUCCESS sulla stessa SHA `737ddbb3`**. La probe
 conferma due letture post-FAIL indipendentemente firmate e quattro
