@@ -84,7 +84,7 @@ test("R385.13 full strict owner recovery reserves 24 distinct Children plus term
  assert.match(s,/native_child_count:24/u);
  assert.match(s,/original_owner_adaptive_decisions:25/u);
  assert.match(s,/requireVerifiedRepairDiagnostic:true/u);
- assert.match(s,/R38513 requires isolated native strict signed Test Agent mode/u);
+ assert.match(s,/R385\.13 requires isolated native strict signed Test Agent mode/u);
  assert.doesNotMatch(w,/DELEGATION_SIGNED_GEMINI_PILOT: "1"/u);
  assert.match(w,/test -z "\$\{GEMINI_API_KEY:-\}"/u);
 });
