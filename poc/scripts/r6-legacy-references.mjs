@@ -27,6 +27,7 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
   "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",
   "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
+  "poc/packages/orchestrator-runtime/src/authority-client.ts",
   "poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
@@ -690,6 +691,7 @@ function main(){
     "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
     "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",
     "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
+  "poc/packages/orchestrator-runtime/src/authority-client.ts",
     "poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs"
   ]);
   for(const candidate of result.candidates){
