@@ -297,13 +297,13 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       }
     }
     observe("d1_planner_preflight");
-    // R385.3: the historical planner is reachable only after the original
+    // R409: the Owner repair core is reachable only after the original
     // Gateway has independently attested a real finalized Test failure.
     // Recheck the original owner run, Root and immutable signed plan after
     // the async module-load boundary, before any model proposal.
     await config.verifyLiveRun?.();
     const {TrustedOperationalRepairPlanner}=await import(
-     "./trusted-operational-repair-planner.ts");
+     "./trusted-owner-repair-planning-core.ts");
     await config.verifyLiveRun?.();
     const beforePlanner=config.coordinator.trustedOperationalAuthority();
     if(config.coordinator.phase!=="execution"||
@@ -365,11 +365,11 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       fail("Gateway epoch admission did not match reserved signed DAG");
      if(config.planRepairEpoch!.executeAdmittedRepairDag){
       await config.verifyLiveRun!();
-      // The old DAG execution controller must not be loaded by owners
+      // The signed Owner DAG execution core must not be loaded by callers
       // performing only Gateway-confirmed feedback or repair preflight.
       // A remote Gateway epoch has already been admitted at this point.
       const {executeTrustedAdmittedRepairDag}=await import(
-       "./trusted-repair-dag-controller.ts");
+       "./trusted-owner-repair-dag-execution.ts");
       await config.verifyLiveRun!();
       const beforeDispatch=config.coordinator.trustedOperationalAuthority();
       if(config.coordinator.phase!=="execution"||

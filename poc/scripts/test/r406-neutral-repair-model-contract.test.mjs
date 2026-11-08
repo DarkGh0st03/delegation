@@ -27,12 +27,14 @@ test("R406 owner and ADK use neutral model input; old planner only reexports sha
  assert.match(read(adk),/import type \{TrustedRepairModelInput\} from "\.\/trusted-operational-repair-model-contracts\.ts"/u);
  assert.doesNotMatch(read(adk),/from "\.\/trusted-operational-repair-planner\.ts"/u);
  const old=read(planner);
- assert.match(old,/export type \{TrustedRepairPlanningObservation,TrustedRepairDiscoveryObservation,TrustedRepairDiagnosticSource,TrustedRepairModelInput\}/u);
- assert.match(old,/from "\.\/trusted-operational-repair-model-contracts\.ts"/u);
- assert.match(old,/export class TrustedOperationalRepairPlanner/u);
+ assert.match(old,/export \* from "\.\/trusted-owner-repair-planning-core\.ts"/u);
+ const core=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts");
+ assert.match(core,/export type \{TrustedRepairPlanningObservation,TrustedRepairDiscoveryObservation,TrustedRepairDiagnosticSource,TrustedRepairModelInput\}/u);
+ assert.match(core,/from "\.\/trusted-operational-repair-model-contracts\.ts"/u);
+ assert.match(core,/export class TrustedOperationalRepairPlanner/u);
 });
 test("R406 type-only extraction does not remove the original fail-closed authority checks",()=>{
- const old=read(planner),host=read(owner);
+ const old=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts"),host=read(owner);
  assert.match(old,/original.*root|signed.*root/iu);
  assert.match(old,/boundedTrustedRepairDiscoveryObservation/u);
  assert.match(old,/verifyTrustedRepairDiscoverySource/u);
@@ -55,12 +57,13 @@ test("R406.2 private owner repair DAG port contract has no executable legacy dep
  assert.match(source,/import type \{TrustedAdmittedRepairDagConfig\}[\s\S]*?from "\.\/trusted-repair-dag-contracts\.ts"/u);
  assert.match(source,/TrustedOwnerRepairDagPorts=Omit<[\s\S]*?TrustedAdmittedRepairDagConfig,/u);
  assert.doesNotMatch(source,/import type \{executeTrustedAdmittedRepairDag\}/u);
- const controller=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
+ const controller=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts");
  assert.match(controller,/executeTrustedAdmittedRepairDag\(config:TrustedAdmittedRepairDagConfig\)/u);
  assert.match(controller,/original Rust root retired or replaced/u);
  assert.match(controller,/Gateway/u);
- assert.match(source,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u,
-  "Dynamic historical DAG remains a real dependency and must not be deleted");
+ assert.match(source,/await import\(\s*"\.\/trusted-owner-repair-dag-execution\.ts"\)/u,
+  "Dynamic Owner DAG remains a real execution dependency; cannot be deleted");
+ assert.doesNotMatch(source,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u);
 });
 
 test("R406.4 native Engineer core and socket ports never import historical HTTP shapes",()=>{

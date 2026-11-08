@@ -30,9 +30,7 @@ export const R3854_DAG_BOUNDARIES=Object.freeze([
    GATEWAY_TEST,
    TEST+"trusted-verified-discovery-repair-input.test.ts"
   ]),
-  dynamicImporters:Object.freeze([
-   SRC+"trusted-owner-operational-repair-handoff.ts"
-  ])
+  dynamicImporters:Object.freeze([])
  }),
  Object.freeze({
   target:SRC+"trusted-repair-dag-controller.ts",
@@ -40,9 +38,7 @@ export const R3854_DAG_BOUNDARIES=Object.freeze([
    "poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs",
    GATEWAY_TEST
   ]),
-  dynamicImporters:Object.freeze([
-   SRC+"trusted-owner-operational-repair-handoff.ts"
-  ])
+  dynamicImporters:Object.freeze([])
  })
 ]);
 

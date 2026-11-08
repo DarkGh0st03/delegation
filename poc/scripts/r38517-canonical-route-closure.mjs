@@ -38,12 +38,8 @@ export const R38518_ALLOWED_NONTEST_LEGACY_CALLERS=Object.freeze({
   "poc/packages/orchestrator-runtime/src/authority-client.ts"
  ]),
  "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts":Object.freeze([]),
- "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts":Object.freeze([
-  "poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts"
- ]),
- "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts":Object.freeze([
-  "poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts"
- ])
+ "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts":Object.freeze([]),
+ "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts":Object.freeze([])
 });
 
 export function configuredWorkflowEvents(workflow){

@@ -21,8 +21,10 @@ test("R385.3 owner has no static runtime import of the old planner or DAG contro
  assert.match(owner,/import type \{TrustedAdmittedRepairDagConfig\}\s*from "\.\/trusted-repair-dag-contracts\.ts"/u);
  assert.doesNotMatch(owner,/import type \{executeTrustedAdmittedRepairDag\}\s*from "\.\/trusted-repair-dag-controller\.ts"/u,
   "Owner must not rely on executable historical DAG to describe trusted ports");
- assert.match(owner,/await import\(\s*"\.\/trusted-operational-repair-planner\.ts"\)/u);
- assert.match(owner,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u);
+ assert.match(owner,/await import\(\s*"\.\/trusted-owner-repair-planning-core\.ts"\)/u);
+ assert.doesNotMatch(owner,/await import\(\s*"\.\/trusted-operational-repair-planner\.ts"\)/u);
+ assert.match(owner,/await import\(\s*"\.\/trusted-owner-repair-dag-execution\.ts"\)/u);
+ assert.doesNotMatch(owner,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u);
 });
 
 test("R385.3 planner is reachable only after independently verified finalized Test FAIL",()=>{
