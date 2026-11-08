@@ -79,3 +79,25 @@ test("R382.3 native MCP A2A server rejects missing native Card DID before listen
   nativeSignerDid:did(2),mcpTaskSigning:undefined}),
   /original ADK Task host/u);
 });
+
+test("R385.14 native Agent Cards reflect the owner-enforced Test creation boundary",t=>{
+ nativeEnvironment(t);
+ for(const [index,role] of roles.entries()){
+  const card=createSpecializedAgentCard(role,"http://127.0.0.1:61001",{
+   nativeSignerDid:did(index+2),capabilityProfile:"approved-plan",
+   delegatedAuthorization:true
+  });
+  const advertised=card.capabilities.extensions?.[0]?.params?.taskCapabilities;
+  assert.deepEqual(advertised,role==="test"?
+   ["read_file","update_file","run_tests"]:
+   ["read_file","update_file","create_file"],role);
+  assert.equal(Object.hasOwn(card.capabilities.extensions?.[0]?.params??{},"root_permissions"),false,
+   "Agent Cards are not Task or Root grants");
+ }
+ const historical=createSpecializedAgentCard("test","http://127.0.0.1:61001",{
+  capabilityProfile:"approved-plan"
+ });
+ assert.deepEqual(historical.capabilities.extensions?.[0]?.params?.taskCapabilities,
+  ["read_file","update_file","create_file","run_tests"],
+  "historical generic ADK fixture retains its separately approved tool catalog");
+});
