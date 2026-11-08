@@ -635,8 +635,17 @@ try{
  });
  assert.deepEqual(runnerRow.depends_on,[taskId]);
  assert.deepEqual(runnerRow.permissions,[runnerPermission]);
- const runnerChild=await issuer.issueForRegisteredTask(
-  runnerTaskId,params("urn:r394:child:runner",29104,600));
+ // Runner Child starts NOW, not at the pre-Docker approval timestamp.
+ // Its expiration must sit strictly inside the existing Engineer root.
+ const rootRemainingSeconds=Math.floor(
+  (Date.parse(issuedAt)+operational.validity_seconds*1000-Date.now())/1000)-30;
+ assert.ok(rootRemainingSeconds>0,"operational root expired before runner issuance");
+ const runnerValidFrom=new Date().toISOString().replace(/\.\d{3}Z$/u,"Z");
+ const runnerChild=await issuer.issueForRegisteredTask(runnerTaskId,{
+  ...params("urn:r394:child:runner",29104,
+   Math.min(600,rootRemainingSeconds)),
+  valid_from:runnerValidFrom
+ });
  assert.notEqual(runnerChild.credential_id,child.credential_id);
  assert.deepEqual(runnerChild.permissions,[runnerPermission]);
  assert.equal(runnerChild.root_credential_id,operational.credential_id);
