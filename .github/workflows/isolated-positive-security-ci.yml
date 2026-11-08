@@ -48,6 +48,7 @@ jobs:
       - name: Preload disposable service and Runner Docker images
         run: |
           docker pull docker.gitea.com/gitea:28.0.0
+          docker pull openpolicyagent/opa:1.21.1
           docker pull node:22.15.0-bookworm
 
       - name: Run real positive acceptance with no external model
