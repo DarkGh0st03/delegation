@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.4 audit dei caller legacy in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.5 gate nativo post-isolamento in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -18,10 +18,38 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R384.4 E2E scripted FAIL→CREATE D1→CAS→Docker PASS e Draft PR attestata: esecuzione e sicurezza provate. Autonomia del codice generato da Gemini NON dimostrata. Budget e recovery generale da consolidare.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 native SUCCESS su `81ad3fdd` (run #42423327568); Fast CI SUCCESS sulla SHA successiva `f236a4dd` (run #42423579107). Non sono due gate verdi sulla stessa HEAD. Ripetere validazione completa dopo il cleanup.** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: gateway/Engineer Rust diretto isolato dal client HTTP legacy; DAG/recovery legacy caricati solo da owner storici con gate. R385.3 Fast CI PASS `08bcf45` (#42437036503). R385.4 introduce un inventario *bloccante* degli ultimi tre target, con whitelist esatta static/dynamic e comandi 0; Fast CI finale R385.4 e native E2E post-cleanup ancora da attestare.** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 nativo SUCCESS `81ad3fdd` (#42423327568), ma su vecchia SHA. R385.4 Fast CI SUCCESS `9911f3c` (#42438718252). R385.5 ripete E2E nativo completo + Fast CI sulla medesima nuova SHA dopo isolamento legacy; non dichiarare completo prima di entrambi i risultati.** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; consumer canonico non importa DAG/HTTP; gate R385.4 provenienza statica/dinamica PASS sulla SHA `9911f3c` (Fast CI #42438718252). I moduli storici con caller di test sono conservati: isolamento verificato, eliminazione fisica non dimostrata. R385.5 E2E nativo post-isolamento da attestare.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.5 — Retest nativo completo dopo isolamento Signed DAG/HTTP
+
+**Baseline:** R385.4 Fast CI SUCCESS sulla SHA `9911f3c`,
+run #42438718252. Per verificare sullo **stesso nuovo HEAD** la
+catena authority-only isolata, il solo workflow gratuito
+`.github/workflows/r3844-functional-create-d1-pass-native-e2e.yml`
+viene attivato tramite il checkpoint
+`.github/ci-checkpoints/r3844-functional-create-d1-pass-request.json`.
+Lo stesso commit scatena anche `fast-ci.yml`.
+
+**Condizioni per PASS R385.5:** entrambe le run terminate SUCCESS
+sulla **identica SHA**; workflow R384.4 con
+`ENGINEER_CORE_NATIVE_MODE=1`, `APPROVED_RUNNER_NATIVE_MCP=1`,
+`DELEGATION_GATEWAY_ARCHITECTURE=authority-only`, nessun Adapter
+HTTP, nessuna API Gemini/OpenAI, servizi Docker/Gitea/OPA/Anvil
+disponibili solo per il job, Root Rust Ed25519 e Child/VP
+MCP task-local, Test Docker FAIL autentico, D1 CREATE/UPDATE
+con CAS MAC, Docker PASS autenticato e PR Gitea Draft non
+mergeata. Tutte le evidenze devono appartenere alla stessa SHA.
+
+**Limitazioni:** il workflow usa decisioni scripted offline, non
+dimostra generazione autonoma del codice da parte di Gemini.
+Il suo passaggio non rende eliminabili i tre vecchi moduli DAG,
+non prova ogni alias/import computato (R6 ancora ne segnala
+115) e non completa da solo la GUI. Il pilot Gemini rimane
+vietato senza consenso esplicito ai costi. Non avviare Full CI
+ulteriori inutili o merge automatici.
 
 ### R385.4 — Closure audit esatto dei tre moduli Signed DAG ancora conservati
 
@@ -41,9 +69,7 @@ controllano esplicitamente il comportamento fail-closed.
 La scansione R6 ha ancora **115 indirections runtime irrisolte** in
 tutta la repository: il numero non è prova che raggiungano i tre
 moduli né prova della loro eliminabilità. Il report espone
-sempre `deletionAuthorized: false`. **R385.4 non è PASS fino al
-SUCCESS della Fast CI sulla sua SHA finale**; la native E2E
-end-to-end resta obbligatoria dopo il cleanup prima del pilot.
+sempre `deletionAuthorized: false`. **R385.4 Fast CI SUCCESS** sulla SHA `9911f3c` (run #42438718252). Il retest nativo post-isolamento è il successivo gate R385.5.
 
 ### R385.3 — Repair planner e controller DAG storici non caricati dall'owner all'avvio
 
