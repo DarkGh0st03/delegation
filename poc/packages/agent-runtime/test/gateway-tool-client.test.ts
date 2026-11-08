@@ -293,3 +293,64 @@ test("R359.5 mixed owner client stages and independently attests both provider e
  await assert.rejects(client.invoke("run_tests",{branch:"feature/account-suspension"}),
   /Mixed native Task supports only/u);
 });
+
+test("R391 Test CREATE invokes native owner stage and private VP only for exact test source",async()=>{
+ const oldArchitecture=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+ const oldNative=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+ process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+ try{
+  const branch="feature/account-suspension";
+  const source="tests/backend/new-account.test.ts";
+  const events:string[]=[];
+  const client=new GatewayControlledToolClient({
+   gatewayBaseUrl:"http://gateway.fixture.invalid",
+   agentRole:"test",taskId:"dispatch_"+"R".repeat(22),
+   evidenceHandler:evidenceHandler(),
+   trustedEffectStager:{stagedTool:"create_file",async stage(id){
+    assert.equal(id,"r391-prepared");events.push("owner_stage");
+    return {provider_write_authorized:false};
+   }},
+   cryptoPresentation:{async createSignedPresentation(p){
+    assert.equal(p.request_id,"r391-prepared");
+    events.push("private_vp");return "r391-signed-vp";
+   }},
+   fetchFn:async(url,init)=>{
+    const u=String(url),body=JSON.parse(String(init?.body));
+    if(u.endsWith("/prepare")){
+     events.push("prepare");
+     assert.equal(body.agent_role,"test");
+     assert.equal(body.tool,"create_file");
+     assert.equal(body.arguments.path,source);
+     return Response.json({request_id:"r391-prepared",
+      audience:"cloud-access-gateway",challenge:"nonce",
+      required_permission:{resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+source,operation:"create_file"},
+      expires_at:"2099-01-01T00:00:00Z"},{status:201});
+    }
+    events.push("execute");
+    assert.equal(body.signed_vp,"r391-signed-vp");
+    return Response.json({request_id:"r391-prepared",decision:"allow",execution:{
+     provider:"gitea",performed:true,tool:"create_file",branch,path:source,
+     revision:"a".repeat(40),commit_sha:"a".repeat(40),blob_sha:"b".repeat(40)
+    }});
+   }
+  });
+  const result=await client.invoke("create_file",{branch,path:source,content:"export {};\n"});
+  assert.deepEqual(events,["prepare","owner_stage","private_vp","execute"]);
+  assert.equal((result as {path:string}).path,source);
+  for(const path of ["apps/backend/unsafe.test.ts",
+    "tests/acceptance/unsafe.test.ts",
+    "tests/backend/config.ts",
+    "tests/backend/../outside.test.ts",
+    "tests/backend/unapproved.spec.ts"]){
+   await assert.rejects(client.invoke("create_file",{branch,path,content:"x"}),
+    /Authority-only CREATE requires original native Child\/Task and private MCP/u);
+  }
+  assert.deepEqual(events,["prepare","owner_stage","private_vp","execute"]);
+ }finally{
+  if(oldArchitecture===undefined)delete process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+  else process.env.DELEGATION_GATEWAY_ARCHITECTURE=oldArchitecture;
+  if(oldNative===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=oldNative;
+ }
+});

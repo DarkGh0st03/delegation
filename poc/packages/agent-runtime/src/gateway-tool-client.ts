@@ -1,4 +1,5 @@
 import {safeToolFailureReason} from "../../../mcp-shared/src/tool-failure-reason.ts";
+import {isProjectTestSource} from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import type { CryptoPresentationPort } from "./crypto-presentation-port.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
@@ -142,6 +143,12 @@ export class GatewayControlledToolClient {
     // native one-shot MCP presentation used by the original A2A Task must
     // be installed before Prepare. No unsigned/legacy presenter fallback.
     const ownerCreate=this.#trustedEffectStager?.stagedTool==="create_file";
+    // R391: Test CREATE is not an application-source capability. It needs
+    // the original native single-effect stager AND an exact test source,
+    // independently bound to the signed Task by Gateway/Rust/OPA.
+    const nativeCreateRoleAllowed=this.#agentRole==="backend"||
+      this.#agentRole==="frontend"||
+      (this.#agentRole==="test"&&isProjectTestSource(args.path));
     if(this.#trustedEffectStager?.stagedTool==="read_then_update"&&
        tool!=="read_file"&&tool!=="update_file")
       throw new ControlledToolError("authorization_denied",
@@ -153,7 +160,7 @@ export class GatewayControlledToolClient {
        (process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"||
         this.#trustedEffectStager!==undefined)&&
        (!ownerCreate||
-        (this.#agentRole!=="backend"&&this.#agentRole!=="frontend")||
+        !nativeCreateRoleAllowed||
         !this.#cryptoPresentation||
         process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
         process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"))
