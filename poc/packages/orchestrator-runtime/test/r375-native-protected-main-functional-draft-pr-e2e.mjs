@@ -1350,7 +1350,13 @@ const tool=record?.request?.tool,role=record?.agent_role;
        29300+(epoch-5),1200);
      }
      if(strictFullRecovery&&epoch===25&&agent_id==="test")
-      return freshChildParams("urn:r38513:child:final-docker-retest",29320,1500);
+      // R411.2: the immutable Engineer operational Root lasts 1800 s.
+      // This LAST Child is issued after many signed reads/CAS and real
+      // Docker FAIL. 1500 s once left only a 300 s root-age margin,
+      // rejecting a valid late retest under slow CI (correct fail-closed).
+      // Shorten only this one Child to 900 s. Never extend Root expiry,
+      // relax Child<=Root, reset signed scope, or retry on expiry.
+      return freshChildParams("urn:r38513:child:final-docker-retest",29320,900);
      if(strictReadProbe&&epoch===5&&agent_id===(testAgentProbe?"test":"backend"))
        return freshChildParams(testAgentProbe?"urn:r38512:child:test-read":
         "urn:r3858:child:postfail-source-read",29180,900);

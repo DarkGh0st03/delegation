@@ -12,6 +12,8 @@
 
 **R411 — Verifica wrapper e consumer.** Dal log R410: i tre vecchi moduli DAG hanno **3+2+2 import test/nativetest** e zero caller runtime nel grafo letterale. I due storici HTTP conservano 5+1 riferimenti (inclusi fixture EVM e caller esplicitamente gated). R411 migra anche l'import DAG dell'harness native EVM al vero Owner core e aggiunge test di identità effettiva ESM fra wrapper e core per preservare i consumer diretti. L'inventario resta non esaustivo (`118` indirection irrisolte): **non cancellare** i cinque moduli né i quattro MCP privati. La Fast CI e la Security CI nativa devono essere entrambe SUCCESS sulla nuova SHA R411.
 
+**R411.2 — correzione temporale fail-closed del fixture nativo.** Il primo tentativo Security CI R411 ha bloccato l'emissione dell'ultimo Child: Root 1800 s, retest Child 1500 s lasciavano solo 300 s per 25 task firmati e Docker FAIL; un `run_tests` reale di circa 202 s ha consumato il margine. Il **solo Child finale nel fixture** è ridotto a 900 s; Root, perimetro Ed25519, Gate Rust `Child<=Root`, test negativi e protocollo restano invariati. R411 non si dichiara validato prima di nuova Fast CI + Security CI native sulla stessa SHA.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

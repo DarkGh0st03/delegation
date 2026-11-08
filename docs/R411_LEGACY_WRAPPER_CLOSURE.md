@@ -26,3 +26,11 @@ The `118` unresolved R385.17 runtime-indirection hints across the whole reposito
 4. Both Fast CI and no-AI isolated native Security CI run the R411 test. The positive workflow watches the native EVM harness and R411 test files; thus changes retrigger the native Rust/OPA/A2A/Gitea/Docker gate on the same SHA.
 
 This is **not** an endorsement to delete source or tests. Static provenance and export-identity tests do not rule out external users or computed paths. After both CIs pass, any further migration must target the explicitly opted-in HTTP issuer/Runner with an equivalent **tested** native Rust lifecycle or close a specific dynamic dependency, without model billing, permission expansion, loss of negative tests or automatic merge.
+
+## R411.2 — Conservative terminal Child expiry margin correction
+
+The first R411 native Security CI on SHA `77e7d394` failed **closed** at the final Test Task's Child issuance: `Child cannot outlive current Engineer operational root`. The original operational Root TTL is 1800 s and the former final Test Child requested 1500 s **starting at the time of the last task**. Thus its timestamp could fit only if the 25-task recovery reached that final Child in the first 300 s of Root lifetime. A genuine initial `run_tests` failure took approximately 202 s and pushed the final task past that boundary.
+
+R411.2 changes the **disposable scripted fixture's final Test Child** validity from 1500 s to **900 s**; the signed operational Root remains 1800 s, its grants and scope are unchanged, and the issuer's `Child end <= both Root expiries` assertion remains intact. This tightens the final Child lifetime rather than extending any authority. Other Child credentials keep their original TTLs. The R385.8/R411.2 offline regression locks in the Root and Child lifetimes and rejects removal of the issuer's checks.
+
+If work still runs past the available Root lifetime, the workflow must fail closed and retire/reconcile; no increase of privileges, Root renewal, or authority bypass is authorized. This is a timing-robustness fixture change, not evidence of generative AI behavior.

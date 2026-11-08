@@ -93,3 +93,21 @@ test("R385.13 full strict owner recovery reserves 24 distinct Children plus term
  assert.doesNotMatch(w,/DELEGATION_SIGNED_GEMINI_PILOT: "1"/u);
  assert.match(w,/test -z "\$\{GEMINI_API_KEY:-\}"/u);
 });
+
+
+test("R411.2 final signed Docker retest Child cannot demand 1500 s after 10 reads and CAS",()=>{
+ const src=read("poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs");
+ const issuer=read("poc/packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts");
+ const branch=src.split('if(strictFullRecovery&&epoch===25&&agent_id==="test")')[1]
+  ?.split('if(strictReadProbe&&epoch===5')[0];
+ assert.ok(branch,"original signed final Test epoch 25 must remain bound to Test role");
+ assert.match(src,/const operational=params\("urn:r375:operational",29152,1800\)/u);
+ assert.match(branch,/freshChildParams\("urn:r38513:child:final-docker-retest",29320,900\)/u,
+  "final retest Child validity is strictly shorter; original Root scope/TTL unaltered");
+ assert.doesNotMatch(branch,/final-docker-retest",29320,1500/u,
+  "old Root-age 300s timing trap must not return");
+ assert.match(issuer,/end>Date\.parse\(root\.root_expires_at\)/u);
+ assert.match(issuer,/end>Date\.parse\(root\.expires_at\)/u);
+ assert.match(issuer,/fail\("Child cannot outlive current Engineer operational root"\)/u);
+ assert.doesNotMatch(src,/source_code_generated_autonomously_by_model:true/u);
+});
