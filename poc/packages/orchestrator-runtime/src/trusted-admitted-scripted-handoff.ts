@@ -18,8 +18,7 @@ import {SignedPlanningCheckpointFileStore}
   from "./trusted-planning-checkpoint-store.ts";
 import {startPersistedReviewedScriptedHandoff}
   from "./trusted-scripted-offline-handoff.ts";
-import {createReviewedApprovedDagExecution}
-  from "./trusted-reviewed-approved-dag.ts";
+// R385.2: historical DAG controller is loaded only after verified live-run admission.
 import type {RootParameters} from "./trusted-engineer-authority.ts";
 import type {DeterministicTaskHandler}
   from "../../agent-runtime/src/executor.ts";
@@ -161,6 +160,9 @@ export async function startAdmittedGithubReviewedScriptedHandoff(input:{
   },15_000);
   try{
     await checkNow();
+    const {createReviewedApprovedDagExecution}=await import(
+      "./trusted-reviewed-approved-dag.ts");
+    await checkNow(); // Import is an async boundary; revalidate run liveness.
     const approvedDag=createReviewedApprovedDagExecution({
       coordinator:input.coordinator,reviewGate:input.reviewGate,
       running,verifyLiveRun:checkNow,close:stop
