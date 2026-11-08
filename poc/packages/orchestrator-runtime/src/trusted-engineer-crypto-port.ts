@@ -9,6 +9,8 @@ import {createNativeRustEngineerCredentialPort}
  from "./trusted-engineer-native-port.ts";
 import {createDirectRustEngineerCredentialPort}
  from "./trusted-engineer-direct-core-port.ts";
+import {assertLegacyEngineerHttpFixtureAllowed}
+ from "./trusted-engineer-legacy-fixture-gate.ts";
 import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
 import type {EngineerCredentialPort,RootParameters}
  from "./trusted-engineer-authority.ts";
@@ -25,6 +27,7 @@ import type {DelegatedPermission} from "./delegated-permission.ts";
 export function createOwnerPrivateMcpEngineerCredentialPort(
  config:AdapterClientConfig
 ):EngineerCredentialPort{
+ assertLegacyEngineerHttpFixtureAllowed();
  // Retain the historical synchronous input validation (before any import).
  if(config.adapterBaseUrl.trim().length===0)
   throw Error("Delegation Adapter base URL cannot be empty");
@@ -40,12 +43,16 @@ export function createOwnerPrivateMcpEngineerCredentialPort(
   async issueScopedOrchestratorRoot(
    input:RootParameters&{permissions:readonly DelegatedPermission[]}
   ){
+   // Recheck at the operation boundary: a mode change after construction
+   // cannot resurrect the historical HTTP transport.
+   assertLegacyEngineerHttpFixtureAllowed();
    // Pin grants before the dynamic module-load await. Never allow a caller
    // to mutate a pending approval while the historical fixture loads.
    const pinned=structuredClone(input);
    return (await legacy()).issueScopedOrchestratorRoot(pinned);
   },
   async revokeRoot(credentialId:string){
+   assertLegacyEngineerHttpFixtureAllowed();
    return (await legacy()).revokeRoot(credentialId);
   }
  });
@@ -82,6 +89,8 @@ export function createTrustedEngineerCredentialPort(
  // Explicit historical fixtures without this flag retain their old route.
  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
   throw Error("Canonical Engineer root requires native Rust issuer socket");
+ // The legacy function is not an escape hatch for an authority-only host.
+ assertLegacyEngineerHttpFixtureAllowed();
  if(!config.adapterBaseUrl?.trim())
   throw Error("Legacy HTTP Engineer fixture requires explicit Adapter URL");
  return createOwnerPrivateMcpEngineerCredentialPort({
