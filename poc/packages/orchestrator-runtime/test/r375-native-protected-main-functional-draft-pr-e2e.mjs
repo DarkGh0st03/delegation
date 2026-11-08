@@ -998,7 +998,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    async *generateContentAsync(req){
     const n=this.calls++,context=JSON.stringify(req);
     this.requests.push(req);
-    assert.ok(n<15+decisionOffset,
+    assert.ok(n<(strictFullRecovery?25:15+decisionOffset),
      "native original owner adaptive loop exceeded bounded decisions");
     if(n===0)assert.match(context,/r375-original-root-branch/u);
     const initialIndex=n-decisionOffset;
@@ -1032,6 +1032,62 @@ const tool=record?.request?.tool,role=record?.agent_role;
         "Original source observations must expire after the first CAS");
      }
      choice=firstChoices[initialIndex];
+    }else if(strictFullRecovery&&initialIndex>=3&&initialIndex<=22){
+     // R385.13: ten exact same-file diagnostic read -> CAS pairs, each
+     // a separate registered Task/Child. One verified Test FAIL is the
+     // ONLY recovery trigger; no model text can replace Gateway evidence.
+     const j=Math.floor((initialIndex-3)/2);
+     const entry=sourceTasks[j],isDiagnostic=(initialIndex-3)%2===0;
+     assert.ok(entry&&j>=0&&j<10,"invalid strict recovery task index");
+     const diagnosticId=r38513DiagnosticReadId(j);
+     assert.match(context,/independent_runner_failure/u);
+     assert.match(context,/independently_verified_test_failures/u);
+     if(isDiagnostic){
+      assert.doesNotMatch(context,/source_observations/u,
+       "stale source must disappear after the independently confirmed CAS");
+      if(j>0)assert.ok(context.includes(sourceTasks[j-1].task_id),
+       "next diagnostic must follow the prior independently completed CAS");
+      else{
+       assert.ok(context.includes(testTaskId),
+        "first signed Test source read follows an original Runner FAIL");
+       this.verifiedFailBeforeRepair=true;
+      }
+      choice={action:"delegate",task:{
+       task_id:diagnosticId,agent_id:entry.agent_id,
+       depends_on:[j?sourceTasks[j-1].task_id:testTaskId],
+       permissions:[pair(entry.file,"read_file")],
+       instruction:"Read authorized source "+entry.file+
+        " at independently verified current Gitea HEAD after Runner FAIL"
+      }};
+     }else{
+      assert.match(context,/source_observations/u);
+      assert.match(context,/source_sha256/u);
+      assert.ok(context.includes(diagnosticId)&&context.includes(entry.file),
+       "repair must see the separately signed same-role diagnostic read");
+      assert.equal(this.verifiedFailBeforeRepair,true);
+      choice={action:"delegate",task:{
+       task_id:entry.task_id,agent_id:entry.agent_id,
+       depends_on:[diagnosticId],permissions:entry.permissions,
+       instruction:"Repair ONLY "+entry.file+
+        " from independently authenticated read and same-file Gitea CAS"
+      }};
+     }
+    }else if(strictFullRecovery&&initialIndex===23){
+     assert.ok(context.includes(sourceTasks.at(-1).task_id));
+     assert.match(context,/independent_runner_failure/u);
+     assert.doesNotMatch(context,/source_observations/u);
+     choice={action:"delegate",task:{
+      task_id:retestTaskId,agent_id:"test",
+      depends_on:[sourceTasks.at(-1).task_id],
+      permissions:[testPermission],
+      instruction:"New real Docker unit/build/researcher acceptance on independently verified final HEAD"
+     }};
+    }else if(strictFullRecovery&&initialIndex===24){
+     assert.ok(context.includes(retestTaskId));
+     assert.doesNotMatch(context,/source_observations/u);
+     choice={action:"ready_for_pr",
+      reason:"Independent Test PASS on the complete verified final HEAD; original owner decides PR"
+     };
     }else if(strictReadProbe&&initialIndex===3){
      assert.match(context,/independent_runner_failure/u);
      assert.match(context,/independently_verified_test_failures/u);
@@ -1210,7 +1266,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
     }
    },
    sdk:localWorkers.sdk,
-   adaptive:{model:controller,maxSteps:15+decisionOffset,
+   adaptive:{model:controller,maxSteps:strictFullRecovery?25:15+decisionOffset,
     ...(strictReadProbe?{requireVerifiedRepairDiagnostic:true}:{}),
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
@@ -1222,6 +1278,17 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r375:child:frontend-d0",29154,600);
      if(epoch===4+decisionOffset&&agent_id==="test")
       return freshChildParams("urn:r375:child:test-failed",29155,1200);
+     if(strictFullRecovery&&epoch>=5&&epoch<=24){
+      const j=Math.floor((epoch-5)/2);
+      const entry=sourceTasks[j];
+      if(!entry||agent_id!==entry.agent_id)
+       throw Error("R385.13 signed Child role differs from scripted file/Task");
+      const phase=(epoch-5)%2===0?"diagnostic":"repair";
+      return freshChildParams("urn:r38513:child:"+phase+"-"+(j+1),
+       29300+(epoch-5),1200);
+     }
+     if(strictFullRecovery&&epoch===25&&agent_id==="test")
+      return freshChildParams("urn:r38513:child:final-docker-retest",29320,1500);
      if(strictReadProbe&&epoch===5&&agent_id===(testAgentProbe?"test":"backend"))
        return freshChildParams(testAgentProbe?"urn:r38512:child:test-read":
         "urn:r3858:child:postfail-source-read",29180,900);
@@ -1243,7 +1310,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r375:child:retest-pass",29166,1200);
      throw Error("Original Host rejected unexpected model-selected Child");
     }},
-   ...(strictReadProbe?{}:{draftPullRequest:{
+   ...(strictReadProbe&&!strictFullRecovery?{}:{draftPullRequest:{
     model:prModel,headBranch:branch,baseBranch:"main",
     title:"Account Suspension — original protected-main native acceptance PASS",
     body:"Immutable Engineer grant; original root, three worker roles, independently attested Docker and researcher acceptance PASS",
@@ -1289,7 +1356,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    assertPrCannotBypassTest();
    workflow=await execution.runCanonicalOperationalWorkflow(workflowInput);
   }
-  if(strictReadProbe){
+  if(strictReadProbe&&!strictFullRecovery){
    assert.equal(workflow.status,"owner_operational_work_finished_without_pr");
    assert.equal(workflow.adaptive_status,"owner_adaptive_work_blocked");
    assert.equal(workflow.pr_created,false);
