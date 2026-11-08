@@ -58,7 +58,9 @@ viene attivato tramite il checkpoint
 `.github/ci-checkpoints/r3844-functional-create-d1-pass-request.json`.
 Lo stesso commit scatena anche `fast-ci.yml`.
 
-**PASS R385.5 confermato:** Fast CI #42440148395 e nativo completo #42440148389 terminati SUCCESS sul commit `339a8b1c6b4d5c8925995c5d795065bc62c6d222`. Evidenze: 15 Child native MCP, Test Docker FAIL verificato, una CREATE D1, 12 CAS, Docker PASS autenticato, Gitea PR Draft non unita, zero chiamate a pagamento. Nessuna generazione autonoma (fixture scripted). Main invariato, PR #38 Draft.\n\n**Condizioni di ammissione originali:** entrambe le run terminate SUCCESS
+**PASS R385.5 confermato:** Fast CI #42440148395 e nativo completo #42440148389 terminati SUCCESS sul commit `339a8b1c6b4d5c8925995c5d795065bc62c6d222`. Evidenze: 15 Child native MCP, Test Docker FAIL verificato, una CREATE D1, 12 CAS, Docker PASS autenticato, Gitea PR Draft non unita, zero chiamate a pagamento. Nessuna generazione autonoma (fixture scripted). Main invariato, PR #38 Draft.
+
+**Condizioni di ammissione originali:** entrambe le run terminate SUCCESS
 sulla **identica SHA**; workflow R384.4 con
 `ENGINEER_CORE_NATIVE_MODE=1`, `APPROVED_RUNNER_NATIVE_MCP=1`,
 `DELEGATION_GATEWAY_ARCHITECTURE=authority-only`, nessun Adapter
