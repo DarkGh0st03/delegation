@@ -134,6 +134,13 @@ deleted launcher records. Full R420 validation depends on Fast CI and
 Security CI on the new SHA; no Gemini, manual human approval bypass, or
 merge are authorized.
 
+**R421 — chiusura del PR synthetic-merge contro le riapparizioni dal main.**
+Il commit R420.2 `4288f09e` ha **Fast CI, Security CI Rust/Gitea/Docker e Protected Merge SUCCESS** sulla stessa SHA, ma il workflow PR `Current Delegation PoC Validation` ha fallito: il ref sintetico `refs/pull/38/merge` includeva due YAML presenti solo in `main`, assenti dalla feature branch:
+`.github/workflows/gemini-planner-manual-feasibility.yml` (potenziale generazione Gemini manuale) e
+`.github/workflows/recover-stuck-planner-run-40350899503.yml` (workflow di cancellazione storico con `actions: write`).
+Il confronto delle tree Git ha confermato che **non esistono altre differenze** fra la tree della feature e quella del PR merge: il merge automatico aggiunge solo questi due file. La soluzione proposta e' un merge **solo verso il branch di sviluppo** con `main` come secondo parent e la tree finale della feature (che li omette), senza alcuna modifica a `main` o ai moduli canonici.
+R6 registra come retired il recupero storico, in aggiunta agli altri tre workflow ritirati; il test R176 riconosce che entrambe le job legacy ancora archiviate hanno un gate incondizionato `if: ${{ false }}` e non richiede vecchie condizioni di runtime che non esistono piu'. Il gate atteso non e' il solo Fast/Native Security sulla SHA, ma anche il **Current Delegation PoC Validation sul synthetic merge** e il controllo dell'assenza fisica dei due YAML nel PR merge. Non avviare Gemini a pagamento, non promuovere o mergiare la PR, non introdurre mai un bypass delle approvazioni Ed25519/Exact SHA CAS/OPA/human gate.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

@@ -39,6 +39,8 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   // R420: previously disabled paid entrypoints are now absent entirely.
   ".github/workflows/gemini-real-gitea-planning-only.yml",
   ".github/workflows/gemini-planner-manual-feasibility.yml",
+  // R421: main-only historical one-run force-cancel Action must not resurrect in PR merge.
+  ".github/workflows/recover-stuck-planner-run-40350899503.yml",
   ".github/workflows/f1-paid-real-gitea-once.yml",
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml",
@@ -88,6 +90,8 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
 export const R6_RETIRED_TARGETS=Object.freeze([
+  // R421: prevent PR synthetic-merge resurrection of main-only Actions write workflow.
+  ".github/workflows/recover-stuck-planner-run-40350899503.yml",
   // R420: retired, previously non-executable paid launcher records.
   ".github/workflows/gemini-real-gitea-planning-only.yml",
   ".github/workflows/gemini-planner-manual-feasibility.yml",
