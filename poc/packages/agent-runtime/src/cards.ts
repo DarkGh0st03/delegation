@@ -12,7 +12,8 @@ import {
  LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_TAGS
 } from "./fixtures/account-suspension-agent-cards.ts";
 
-import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "./approved-specialized-profiles.ts";
+import {APPROVED_SPECIALIZED_AGENT_PROFILES,
+ nativeAuthorityOnlyAdvertisedCapabilities} from "./approved-specialized-profiles.ts";
 
 const ROLE_CONFIG = {
   backend:{name:"Backend Development Agent",did:"did:thesis:backend-agent"},
@@ -96,6 +97,13 @@ export function createSpecializedAgentCard(
   const skill = approved ? APPROVED_PLAN_SKILLS[role] : undefined;
   const legacy = !approved ? LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT[role] : undefined;
   const delegatedAuthorization = options.delegatedAuthorization ?? true;
+  // When the ORIGINAL native owner supplies a trusted Rust role DID, do
+  // not claim that the Test Agent can create files: the canonical A2A
+  // owner deliberately denies that effect. Historical standalone approved
+  // ADK fixtures still retain the generic Test create_file capability.
+  const advertisedTools=nativeDid!==undefined?
+    nativeAuthorityOnlyAdvertisedCapabilities(role):
+    APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools;
 
   return {
     name: config.name,
@@ -125,7 +133,7 @@ export function createSpecializedAgentCard(
               required: true,
               params: {
                 agentDid: signerDid,
-                ...(approved?{taskCapabilities:[...APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools]}:{}),
+                ...(approved?{taskCapabilities:[...advertisedTools]}:{}),
                 evidenceLocation: "message.metadata.delegation_evidence"
               }
             }
