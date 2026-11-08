@@ -47,6 +47,8 @@ import {makeApproval,planDigest} from
   "../../../packages/plan-contracts/src/plan.mjs";
 import {signEngineerApproval} from
   "../../../packages/plan-contracts/src/signed-approval.mjs";
+import {GiteaMergeReadinessVerifier,MergeReadinessDenied}
+ from "../../../packages/orchestrator-runtime/src/merge-readiness.ts";
 import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT,
   TRUSTED_PROJECT_PHASES} from "../src/trusted-security-ci.ts";
 import {getApprovedOfflineScenario} from
@@ -92,8 +94,11 @@ const adminPassword=process.env.GITEA_ADMIN_PASSWORD;
 if(!adminUser||!adminPassword)throw Error("Source poc/infra/.env first");
 const readerUser="ci-reader-"+suffix;
 const publisherUser="ci-publisher-"+suffix;
+const realHumanReadiness=process.env.APPROVED_RUNNER_REAL_GITEA_HUMAN_GATE==="1";
+const reviewerUser="fixture-human-reviewer-"+suffix;
 const readerPass=randomBytes(24).toString("hex");
 const publisherPass=randomBytes(24).toString("hex");
+const reviewerPass=randomBytes(24).toString("hex");
 let containerStarted=false,opaStarted=false;
 
 function docker(args,label){
@@ -265,6 +270,7 @@ async function bootstrap(base){
   createUser(adminUser,adminPassword,"administrator",true);
   createUser(readerUser,readerPass,"read");
   createUser(publisherUser,publisherPass,"security-ci");
+  if(realHumanReadiness)createUser(reviewerUser,reviewerPass,"human-reviewer");
   const admin=basic(adminUser,adminPassword);
   await api(base,"/api/v1/orgs",{authorization:admin,method:"POST",
     body:{username:"thesis",visibility:"private"},label:"create_org"});
@@ -274,7 +280,8 @@ async function bootstrap(base){
       default_branch:"main"}
   });
   for(const [name,permission] of [
-    [readerUser,"read"],[publisherUser,"write"]
+    [readerUser,"read"],[publisherUser,"write"],
+    ...(realHumanReadiness?[[reviewerUser,"write"]]:[])
   ]){
     await api(base,repository+"/collaborators/"+name,{
       authorization:admin,method:"PUT",expected:[204],
@@ -293,6 +300,33 @@ async function bootstrap(base){
       label:"create_publisher_pat"
     })
   ]);
+  let human=null,adminReadToken=null;
+  if(realHumanReadiness){
+    const [reviewer,adminReader]=await Promise.all([
+      api(base,"/api/v1/users/"+reviewerUser+"/tokens",{
+        authorization:basic(reviewerUser,reviewerPass),method:"POST",
+        body:{name:"human-reviewer-"+suffix,
+         scopes:["write:repository","read:user"]},
+        label:"r397_reviewer_pat"
+      }),
+      api(base,"/api/v1/users/"+adminUser+"/tokens",{
+        authorization:admin,method:"POST",
+        body:{name:"protection-reader-"+suffix,
+         scopes:["read:repository","read:user"]},
+        label:"r397_protection_reader_pat"
+      })
+    ]);
+    assert.match(reviewer.sha1??"",/^[a-f0-9]{40}$/u);
+    assert.match(adminReader.sha1??"",/^[a-f0-9]{40}$/u);
+    const reviewerActor=await api(base,"/api/v1/user",{
+      authorization:"token "+reviewer.sha1,label:"r397_human_actor_identity"
+    });
+    assert.equal(reviewerActor.login,reviewerUser);
+    assert.ok(Number.isSafeInteger(reviewerActor.id)&&reviewerActor.id>0);
+    human={actor:{id:reviewerActor.id,login:reviewerActor.login},
+     token:reviewer.sha1};
+    adminReadToken=adminReader.sha1;
+  }
   assert.ok(typeof reader.sha1==="string"&&reader.sha1.length>=20);
   assert.ok(typeof publisher.sha1==="string"&&publisher.sha1.length>=20);
   const actor=await api(base,"/api/v1/user",{
@@ -302,7 +336,8 @@ async function bootstrap(base){
   assert.ok(Number.isSafeInteger(actor.id)&&actor.id>0);
   return {
     admin,readToken:reader.sha1,statusToken:publisher.sha1,
-    actor:{id:actor.id,login:actor.login}
+    actor:{id:actor.id,login:actor.login},
+    ...(realHumanReadiness?{human,adminReadToken}:{})
   };
 }
 
@@ -742,6 +777,102 @@ async function verifyNativeReview(base,creds,fixture,main,prs,nativePrEvidence){
   assert.equal(main.commit.id,fixture.mainSha);
 }
 
+/** R397: same disposable REAL Gitea PR, original Security CI status,
+ * independent non-bot reviewer, real branch protection, read-only Gate.
+ * This never calls the merge API and cannot affect a persistent repository.
+ * The PR is a fixture on the CI-tested feature HEAD, NOT falsely described
+ * as the separate native-Rust generated Draft PR.
+ */
+async function verifyR397RealSecurityCiToHumanGate({
+ base,creds,mainSha,testedHead
+}){
+ assert.ok(realHumanReadiness&&creds.human?.actor&&creds.adminReadToken);
+ assert.notEqual(creds.human.actor.id,creds.actor.id,
+  "CI status author and human reviewer must be distinct");
+ const createdPr=await api(base,repository+"/pulls",{
+  authorization:"token "+creds.statusToken,method:"POST",
+  expected:[201],label:"r397_open_disposable_review_only_pr",
+  body:{
+   base:"main",head:branch,
+   title:"R397 disposable real CI -> protected human read-only gate",
+   body:"Fixture only; not a native ADK implementation, not merge authorization.",
+   draft:false
+  }
+ });
+ const number=createdPr.number;
+ assert.ok(Number.isSafeInteger(number)&&number>0);
+ let pr=null;
+ for(let i=0;i<35;i++){
+  pr=await api(base,repository+"/pulls/"+number,{
+   authorization:"token "+creds.readToken,
+   label:"r397_verify_actual_pr_mergeability"
+  });
+  if(pr.mergeable===true)break;
+  if(pr.mergeable===false)
+    throw Error("R397 Gitea PR reports conflicts before Human Gate");
+  await sleep(400);
+ }
+ assert.equal(pr?.mergeable,true);
+ assert.equal(pr.state,"open");
+ assert.equal(pr.merged,false);
+ assert.equal(pr.head?.ref,branch);
+ assert.equal(pr.head?.sha,testedHead);
+ assert.equal(pr.base?.sha,mainSha);
+ const gate=new GiteaMergeReadinessVerifier({
+  giteaBaseUrl:base,readToken:creds.readToken,
+  branchProtectionReadToken:creds.adminReadToken,
+  humanReviewer:creds.human.actor,
+  securityPipelineActor:creds.actor,
+  timeoutMs:20000
+ });
+ const input={pullRequestNumber:number,expectedHeadSha:testedHead};
+ await assert.rejects(gate.verify(input),
+  error=>error instanceof MergeReadinessDenied&&
+   error.reason==="human_approval_missing",
+  "Actual Security CI PASS must not bypass distinct human approval");
+ const approval=await api(base,repository+"/pulls/"+number+"/reviews",{
+  authorization:"token "+creds.human.token,method:"POST",
+  expected:[200,201],label:"r397_disposable_human_review_fixture",
+  body:{event:"APPROVED",
+   body:"Fixture human approval of the exact tested SHA only"}
+ });
+ assert.equal(approval.state,"APPROVED");
+ assert.equal(approval.commit_id,testedHead);
+ assert.equal(approval.user?.id,creds.human.actor.id);
+ const readiness=await gate.verify(input);
+ assert.equal(readiness.ready,true);
+ assert.equal(readiness.head_sha,testedHead);
+ assert.equal(readiness.base_sha,mainSha);
+ assert.equal(readiness.pipeline_actor_id,creds.actor.id);
+ assert.equal(readiness.reviewer_id,creds.human.actor.id);
+ assert.equal(readiness.approval_review_id,approval.id);
+ assert.ok(readiness.security_status_id>0);
+ await assert.rejects(gate.verify({
+  pullRequestNumber:number,expectedHeadSha:mainSha
+ }),error=>error instanceof MergeReadinessDenied&&
+   error.reason==="pr_revision_mismatch");
+ const finalPr=await api(base,repository+"/pulls/"+number,{
+  authorization:"token "+creds.readToken,
+  label:"r397_verify_pr_still_open_after_readiness"
+ });
+ const finalMain=await api(base,repository+"/branches/main",{
+  authorization:"token "+creds.readToken,
+  label:"r397_verify_main_still_immutable"
+ });
+ assert.equal(finalPr.state,"open");
+ assert.equal(finalPr.merged,false);
+ assert.equal(finalMain.commit.id,mainSha);
+ process.stdout.write(JSON.stringify({
+  event:"r397_real_gitea_security_ci_human_readonly_link",
+  status:"PASS",real_disposable_gitea:true,
+  one_actual_pr:true,same_tested_head:true,
+  independent_security_actor:true,independent_human_reviewer:true,
+  actual_branch_protection:true,security_pending_then_success:true,
+  denied_until_human_review:true,exact_sha_readiness:true,
+  no_merge:true,paid_model_calls:0
+ })+"\n");
+ return readiness;
+}
 async function main(){
   const acceptanceDir=fileURLToPath(new URL(
     "../../../runner/acceptance/",import.meta.url
@@ -1825,6 +1956,14 @@ async function main(){
       assert.deepEqual(prs,[],
         "Non-DAG security regression must not create a PR");
     }
+    if(realHumanReadiness){
+      assert.equal(signedDag,false,
+       "R397 fixture PR must not be mistaken for native DAG PR");
+      await stage("r397_real_pr_security_ci_then_human_readonly_gate",
+       ()=>verifyR397RealSecurityCiToHumanGate({
+        base,creds,mainSha:fixture.mainSha,testedHead:approvedFeatureSha
+       }),120000);
+    }
     if(process.env.APPROVED_RUNNER_REAL_REPAIR_TWO_SHA==="1"){
       // No ADK/Gemini: only this disposable independent provider contract.
       if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"||
@@ -1860,6 +1999,7 @@ async function main(){
         ? 4 : 0,
       approval_created:true,pr_created:signedDag,
       pr_source:signedDag?"native_signed_dag":null,merge_calls:0,
+      ...(realHumanReadiness?{r397_real_ci_human_gate:true}:{}),
       persistent_gitea_modified:false
     })+"\n");
   }finally{

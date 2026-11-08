@@ -76,6 +76,10 @@ jobs:
           GITEA_ADMIN_PASSWORD: local-ci-fixture-only-${{ github.run_id }}-${{ github.run_attempt }}
           GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
           TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          # R397: same disposable REAL Gitea feature PR / original CI status,
+          # distinct fixture reviewer and read-only merge-readiness gate.
+          # This performs NO merge or paid inference.
+          APPROVED_RUNNER_REAL_GITEA_HUMAN_GATE: "1"
         run: npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
 
       - name: Report any temporary containers after failure
