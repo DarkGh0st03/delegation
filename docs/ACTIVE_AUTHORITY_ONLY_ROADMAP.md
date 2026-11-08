@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.7 prova source-driven offline in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.8 probe nativa diagnostica post-FAIL in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,40 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E scripted nativo completo PASS su `339a8b1`. R385.6 Fast CI PASS `de20619` (#42442299444): gate opt-in per UPDATE dopo vero Test FAIL con lettura autentica. R385.7 aggiunge un test ADK offline source-driven con reale Node FAIL→read→scelta della patch→UPDATE→Node PASS (senza Rust/Gitea reali né LLM generativo), Fast CI da attestare. Restano Test Agent nativo e autonomia Gemini.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E nativo scripted completo PASS su `339a8b1`. R385.6 Fast CI PASS `de20619` (#42442299444). R385.7 Fast CI PASS `35e55faf` (#42443886839): vero Node FAIL→read→patch source-conditioned→Node PASS offline. R385.8 allestisce una probe nativa di Rust/EVM/OPA/Gitea/A2A/MCP/Docker autentico: Test FAIL→lettura Child post-FAIL→prima UPDATE D1 con gate rigoroso; prova nativa in attesa, esplicitamente senza falso PASS/PR. Autonomia generativa/Test Agent completo ancora aperti.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). Le successive modifiche R385.6 devono superare Fast CI sulla loro SHA: non attribuire loro automaticamente il vecchio E2E.** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.8 — Probe nativa Rust/MCP e Gitea di diagnostica dopo Docker FAIL
+
+Il documento [`R3858_NATIVE_STRICT_READ_AFTER_DOCKER_FAIL_PROBE.md`](./R3858_NATIVE_STRICT_READ_AFTER_DOCKER_FAIL_PROBE.md)
+specifica la nuova variante **solo CI disposable** della suite R375.
+Il flag `R3858_NATIVE_STRICT_POSTFAIL_PROBE=1` richiede anche
+`R3818_CANONICAL_NATIVE_MCP=1`, Root Engineer firmata,
+Gateway Rust/OPA e A2A protetto. Dopo il primo vero Runner
+Docker FAIL, l'ADK offline sceglie una lettura Backend
+con **Task e Child separati**. Il turno successivo riceve
+un estratto autenticato del vero Gitea HEAD; il gate
+`requireVerifiedRepairDiagnostic:true` deve accettare
+la prima UPDATE D1 solo con quella lettura successiva,
+confermata sullo stesso file e ruolo. La probe si ferma
+`blocked` subito dopo la prima modifica, ritirando
+la Root; una sola ricevuta FAIL, **zero Docker PASS e PR**
+sono obbligatori, perché il software è ancora incompleto.
+
+Il workflow
+`.github/workflows/r3858-native-strict-postfail-diagnostic-probe.yml`
+ha un checkpoint dedicato e non gira su ogni push ordinario.
+La Fast CI verifica sintassi e wiring senza sprecare suite
+native lunghe. **R385.8 è in attesa sia della Fast CI
+sulla sua SHA sia della probe nativa sulla stessa SHA.**
+Il codice D1 rimane scripted; i Test Agent autonomi,
+la correzione completa, il retest Docker PASS e la PR
+finale restano obiettivi distinti, non risultati impliciti.
 
 ### R385.7 — Integrazione ADK offline con sorgente osservato e Node FAIL/PASS reali
 
@@ -37,8 +64,7 @@ HEAD controllata, non un file finale precostruito. Il test Node
 successivo deve PASS; un'evidenza Gateway contraffatta impedisce
 l'UPDATE e ritira la Root simulata. La readiness non crea PR.
 
-**R385.7 non è attestato fino al SUCCESS della Fast CI sulla nuova
-SHA.** Non è una E2E nativa Rust/EVM/OPA/Gitea/MCP/A2A/Docker:
+**R385.7 Fast CI SUCCESS** sul commit `35e55faf` (run #42443886839), tre test nuovi PASS e Node test runner annidato con TAP verificato. Non è una E2E nativa Rust/EVM/OPA/Gitea/MCP/A2A/Docker:
 il modello, l'attestazione originale e il CAS sono fixture offline.
 Resta aperta una E2E nativa realmente source-grounded, poi
 Test Agent edit/retest e (solo previo consenso esplicito)
