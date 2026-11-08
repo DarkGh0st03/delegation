@@ -1,9 +1,0 @@
-{
-  "checkpoint": "R371.3",
-  "preceding_attempt": 42344836233,
-  "diagnosis": "Native signed Branch and protected SDK A2A Backend read/update already passed. Test assertion miscounted Gitea internal CAS staging ref POST /branches as duplicate authorized feature branch POST.",
-  "fix": "Distinguish exactly one approved feature/account-suspension root branch POST and exactly one private feature/r302-internal-* Gitea CAS staging ref POST. Reject any unknown branch creation in the native fixture.",
-  "expected": "main remains unchanged; 1 approved branch POST; 1 private staging branch POST; 1 Backend CAS; 2 authoritative Gateway completions; 1 native Child; zero Test/PR/paid calls",
-  "status": "pending native CI",
-  "no_paid_inference": true
-}
