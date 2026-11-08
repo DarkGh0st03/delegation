@@ -266,3 +266,38 @@ test("R383.8 a Test Agent cannot bind a CREATE source Task",async()=>{
  }),/original owner-only Child, HEAD and staging port/u);
  assert.deepEqual(f.calls,[]);
 });
+
+test("R389 original native Test Child can bind CREATE only for one exact project test source",async()=>{
+ const source="tests/backend/account.test.ts";
+ const grant={resource:canonicalFileUri(repo,branch,source),
+  operation:"create_file" as const};
+ const testDid="did:thesis:test-agent";
+ const f=fixture({
+  row:{...row,agent_id:"test",agent_did:testDid,permissions:[grant]} as never,
+  child:{...child,agent_id:"test",agent_did:testDid,permissions:[grant]} as never,
+  gateway:{...gatewayReceipt,agent_id:"test",agent_did:testDid} as never,
+  root:{...root,root_permissions:[grant]}
+ });
+ const writer=new GiteaClient({baseUrl:"http://gitea.local:3000",
+  owner:"thesis",repository:"iam-console-poc",token:"disposable"});
+ const preflight=new CreatePreflight({
+  admissions:f.gateway,giteaClient:writer,
+  journal:new CreateJournal("/tmp/r389-test-create-owner"),
+  repository:"thesis/iam-console-poc",branch
+ });
+ const stager=new CreateStager({
+  store:new InMemoryRequestStore(),admissions:f.gateway,
+  preflight,giteaClient:writer,repository:"thesis/iam-console-poc",
+  branch,planTaskId:taskId,runtimeTaskId,expectedHeadSha:"a".repeat(40)
+ });
+ const result=await f.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:stager
+ });
+ assert.equal(result.gateway_execution_authorized,false);
+ assert.equal(result.status,"owner_remote_effect_task_prebound_not_executed");
+ assert.deepEqual(JSON.parse(f.calls[1]!),{
+  runtimeTaskId,planTaskId:taskId,role:"test",
+  childCredentialId:credentialId,presenterId:testDid,branch,
+  operation:"create_file",path:source
+ });
+});

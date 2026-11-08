@@ -59,7 +59,8 @@ export class TrustedEffectStagingTaskRegistry {
      !["backend","frontend","test"].includes(input.role)||
      !["read_file","update_file","create_file","run_tests","read_then_update"].includes(input.operation)||
       (input.operation==="create_file"&&
-       (input.role==="test"||input.effectStager.stagedTool!=="create_file"))||
+       (input.effectStager.stagedTool!=="create_file"||
+        (input.role==="test"&&!isProjectTestSource(input.path))))||
      typeof input.effectStager?.stage!=="function"||
      (input.operation==="read_then_update"&&
       (input.effectStager.stagedTool!=="read_then_update"||

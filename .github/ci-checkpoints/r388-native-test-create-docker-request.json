@@ -8,6 +8,6 @@
   "signed_run_tests_child": false,
   "paid_model_calls_authorized": false,
   "merge_authorized": false,
-  "attempt": 2,
-  "reason": "fix Test DID pinning before issuing native Rust Child"
+  "attempt": 3,
+  "reason": "R389 unify Test create across original A2A owner, private role stage and native effect binding"
 }

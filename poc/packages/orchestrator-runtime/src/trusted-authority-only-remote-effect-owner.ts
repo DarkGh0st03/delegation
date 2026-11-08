@@ -26,7 +26,7 @@ import type {TrustedOwnerEffectStagingRegistry,
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 type AgentBinder=Awaited<ReturnType<typeof connectTrustedEffectAgentBindingClient>>;
-import {isProjectTestRepairGrant}
+import {isProjectTestRepairGrant,isProjectTestCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 type Role="backend"|"frontend"|"test";
 const ROLES=["backend","frontend","test"] as const;
@@ -137,7 +137,8 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
      !isProjectTestRepairGrant(row.permissions))
    deny("Test update requires an exact project test repair grant");
   if(effect.operation==="create_file"){
-   if(!["backend","frontend"].includes(row.agent_id)||
+   if(!(["backend","frontend"].includes(row.agent_id)||
+         (row.agent_id==="test"&&isProjectTestCreateGrant(row.permissions)))||
       row.permissions.length!==1||
       !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
        effectStager,this.#gateway,taskId,runtimeTaskId,

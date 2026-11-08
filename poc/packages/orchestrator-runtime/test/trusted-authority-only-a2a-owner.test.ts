@@ -499,15 +499,17 @@ for(const mode of ["project-test","application-source","acceptance","claims-pass
  });
 }
 
-function nativeCreateFixture(role:"backend"|"test"="backend"){
- const create={...effect,operation:"create_file" as const};
+function nativeCreateFixture(role:"backend"|"test"="backend",projectTestSource=false){
+ const createPath=projectTestSource?"tests/backend/account.test.ts":file;
+ const create={...effect,resource:canonicalFileUri(repo,branch,createPath),
+  operation:"create_file" as const};
  const agentDid=role==="backend"?did:"did:thesis:test-agent";
  const nativeRow={...row,agent_id:role,agent_did:agentDid,permissions:[create]};
  const nativeChild={...child,agent_id:role,agent_did:agentDid,permissions:[create]};
  const nativeSigned={...signed,credentialSubject:{sub:agentDid,per:[create]}};
  const nativeReceipt={...receipt,agent_id:role,agent_did:agentDid};
  const createdArtifact={...artifact,role,summary:"Created original signed source",
-  files_modified:[],files_created:[file]};
+  files_modified:[],files_created:[createPath]};
  const response={card:{name:"Backend Agent"},task:{
   id:"a2a-task-r3841",
   status:{state:TaskState.TASK_STATE_COMPLETED},
@@ -569,7 +571,27 @@ test("R384.1 original A2A owner rejects Test role CREATE even when Task and Chil
  await assert.rejects(f.owner.dispatchIssuedTask({
   taskId,runtimeTaskId,instruction:"create forbidden app source",
   effectStager:f.port
- }),/Test Agent cannot create native application files/u);
+ }),/Test CREATE requires one exact signed project-test source/u);
  assert.deepEqual(f.calls,[]);
  assert.equal(f.takes,0);
+});
+
+test("R389 Test CREATE is a signed test-source mutation, never a Runner PASS",async()=>{
+ const f=nativeCreateFixture("test",true);
+ const report=await f.owner.dispatchIssuedTask({
+  taskId,runtimeTaskId,instruction:"Create only tests/backend/account.test.ts",
+  effectStager:f.port
+ });
+ assert.equal(report.status,"a2a_report_not_gateway_completed");
+ assert.equal(report.role,"test");
+ assert.equal(report.artifact.test_outcome,"not_run");
+ assert.deepEqual(report.artifact.files_created,["tests/backend/account.test.ts"]);
+ assert.deepEqual(report.artifact.files_modified,[]);
+ assert.equal(f.takes,1);
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+ const observed=await f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId);
+ assert.equal(observed.status,"owner_gateway_completion_independently_observed");
+ assert.deepEqual(f.calls,["private_bind","a2a_send","gateway_independent_observer"]);
+ await assert.rejects(f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /closed or repeated independent completion/u);
 });

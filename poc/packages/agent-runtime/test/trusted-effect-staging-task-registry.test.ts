@@ -272,3 +272,35 @@ test("R383.8 A2A CREATE extra grants, extra paths and Runner claim are not autho
  }
  assert.deepEqual(f.calls,[]);
 });
+
+test("R389 signed Test CREATE binding rejects application paths, acceptance and Runner claims",async()=>{
+ const f=pins(),source="tests/backend/account.test.ts";
+ const binder={...f.binding,role:"test" as const,path:source,
+  operation:"create_file" as const,
+  presenterId:"did:thesis:test-agent",
+  childCredentialId:"urn:r389:test-child",
+  effectStager:{stagedTool:"create_file" as const,async stage(id:string){
+   f.calls.push(id);return {provider_write_authorized:false};
+  }}};
+ for(const path of ["apps/backend/user.test.ts",
+  "tests/acceptance/unsafe.test.ts","tests/backend/setup.ts"]){
+  const invalid=new TrustedEffectStagingTaskRegistry();
+  assert.throws(()=>invalid.bindTask({...binder,path}),
+   /one-shot effect port required/u);
+ }
+ const registry=new TrustedEffectStagingTaskRegistry();
+ registry.bindTask(binder);
+ const original=context();
+ const ctx:AgentTaskContext={...original,role:"test",
+  subtask:{...original.subtask,
+   relevant_paths:[source],approved_run_tests:false,
+   approved_file_permissions:[{path:source,operation:"create_file"}]},
+  delegation_evidence:{...original.delegation_evidence,
+   credential_id:binder.childCredentialId,presenter_id:binder.presenterId}
+ };
+ const selected=registry.selectFor(ctx);
+ assert.equal(selected.stagedTool,"create_file");
+ assert.deepEqual(await selected.stage("r389-create"),{provider_write_authorized:false});
+ await assert.rejects(selected.stage("r389-create"),/already consumed/u);
+ assert.deepEqual(f.calls,["r389-create"]);
+});
