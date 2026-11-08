@@ -53,6 +53,8 @@ jobs:
           node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
           # R406: neutral typed D1 proposal boundary, no runtime/credential activation.
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r406-neutral-repair-model-contract.test.mjs
+          # R407: historical Runner issuer is late-loaded only under gated legacy EVM fixture.
+          node --experimental-vm-modules --test poc/scripts/test/r407-historical-runner-issuer-isolation.test.mjs
           # R385.16: mock-only negative Human Gate, actor, review, protected branch and exact SHA tests. Never dispatch merge.
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts poc/packages/orchestrator-runtime/test/merge-readiness.test.ts poc/packages/orchestrator-runtime/test/trusted-security-ci-merge-readiness-link.test.ts poc/packages/orchestrator-runtime/test/trusted-merge.test.ts
           node --experimental-vm-modules --test poc/scripts/test/r6-configured-command.test.mjs

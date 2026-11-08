@@ -28,8 +28,8 @@ import {GatewayCorroboratedTaskAttestor} from
   "../../gateway/src/trusted-task-observation.ts";
 import {GatewayRuntime} from "../../gateway/src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../../gateway/src/direct-core-loader.ts";
-import {SoftwareEngineerAuthorityBootstrap} from
-  "../../../packages/orchestrator-runtime/src/authority-client.ts";
+import {assertHistoricalRunnerEvmIssuerAllowed} from
+  "./approved-runner-historical-issuer-gate.mjs";
 import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from
@@ -219,6 +219,12 @@ export async function beginApprovedRealRunnerSession({
     let activeRootId="urn:fixture:operational-root";
     const unique=randomBytes(7).toString("hex");
     if(native){
+      // R407: only this explicit historical EVM fixture may load the old
+      // HTTP Adapter root issuer; the normal scripted fixture and canonical
+      // authority-only native Rust routes must never evaluate that module.
+      assertHistoricalRunnerEvmIssuerAllowed();
+      const {SoftwareEngineerAuthorityBootstrap}=await import(
+        "../../../packages/orchestrator-runtime/src/authority-client.ts");
       const credentials=new SoftwareEngineerAuthorityBootstrap({
         adapterBaseUrl:ADAPTER_BASE,
         bearerToken:nativeEnv("ADAPTER_CALLER_ENGINEER"),
