@@ -7,5 +7,7 @@
   "researcher_acceptance": false,
   "signed_run_tests_child": false,
   "paid_model_calls_authorized": false,
-  "merge_authorized": false
+  "merge_authorized": false,
+  "attempt": 2,
+  "reason": "fix Test DID pinning before issuing native Rust Child"
 }

@@ -91,11 +91,13 @@ const tokens=Object.fromEntries(["ENGINEER","ORCHESTRATOR","BACKEND","FRONTEND",
  return [role.toLowerCase(),token];
 }));
 const engineerDid=process.env.ADAPTER_ID_ENGINEER;
-const testDid=process.env.ADAPTER_ID_BACKEND;
+const testDid=process.env.ADAPTER_ID_TEST;
 assert.match(engineerDid??"",/^did:/u);
 for(const role of ["BACKEND","FRONTEND","TEST"])
  assert.match(process.env["ADAPTER_ID_"+role]??"",/^did:ethr:/u);
 assert.match(testDid??"",/^did:/u);
+assert.notEqual(testDid,process.env.ADAPTER_ID_BACKEND,
+ "Test Child must never bind the Backend DID");
 const sessionId="r388-authority-native-e2e";
 class ScriptedCreate extends BaseLlm {
  constructor(branch,path,content){
