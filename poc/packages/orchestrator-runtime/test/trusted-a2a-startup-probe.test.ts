@@ -177,15 +177,15 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
   assert.equal(readCount,3,"one role-pinned Card probe per specialist");
   for(const role of ROLES)
    assert.equal(profiles[role].did,identities[role]);
-  // R385.14: native owner denies Test create_file even if a forged
-  // otherwise-valid role Card advertises it. Backend/Frontend retain
-  // their actual signed, independently Gateway-fenced create support.
+  // R386: native Test cards publish create_file as discovery metadata,
+  // but actual creation remains restricted to signed project-test sources
+  // through the original Gateway/owner. Card forgery cannot expand scope.
   const nativeTestCard=createSpecializedAgentCard("test",endpoints.test,{
    nativeSignerDid:identities.test,capabilityProfile:"approved-plan",
    delegatedAuthorization:true
   });
   assert.deepEqual(nativeTestCard.capabilities.extensions?.[0]?.params?.taskCapabilities,
-   ["read_file","update_file","run_tests"]);
+   ["read_file","update_file","create_file","run_tests"]);
   for(const role of ["backend","frontend"] as const){
    const card=createSpecializedAgentCard(role,endpoints[role],{
     nativeSignerDid:identities[role],capabilityProfile:"approved-plan"
@@ -201,7 +201,7 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
     });
     if(role==="test")
      card.capabilities.extensions[0]!.params.taskCapabilities=
-      ["read_file","update_file","create_file","run_tests"];
+      ["read_file","update_file","run_tests"];
     return Response.json(card);
    }) as typeof fetch
   }),/pinned localhost role-card verification denied/u);

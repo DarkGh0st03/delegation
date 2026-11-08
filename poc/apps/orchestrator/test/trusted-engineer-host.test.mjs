@@ -42,6 +42,17 @@ import {createProtectedGeminiOwnerDispatch}
 import {assertR5AuthenticSignedReviewReady}
   from "../src/trusted-r5-scripted-review-readiness.mjs";
 
+/** Only the two explicit historical HTTP fixtures opt in. Native runtime
+ * precedence in trusted-engineer-legacy-fixture-gate.ts remains unchanged. */
+function enableHistoricalEngineerHttpForFixture(t){
+  const previous=process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+  process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
+  t.after(()=>{
+    if(previous===undefined)
+      delete process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+    else process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE=previous;
+  });
+}
 const repository="DarkGh0st03/delegation";
 const ref="refs/heads/refactor/post-prof-plan-contracts-20261021";
 const workflow=".github/workflows/trusted-gemini-dispatch-preflight.yml";
@@ -421,6 +432,7 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
 
 
 test("strict Engineer bootstrap completes real private IPC + Adapter recovery before listeners and forbids reused sessions",async t=>{
+  enableHistoricalEngineerHttpForFixture(t);
   const f=await fixture(t);
   const home=await mkdtemp(join(tmpdir(),"engineer-real-bootstrap-"));
   t.after(()=>rm(home,{recursive:true,force:true}));
@@ -940,6 +952,7 @@ test("same-process live Planning host preserves provisional root for review then
 
 
 test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gateway planning and operational fences",async t=>{
+  enableHistoricalEngineerHttpForFixture(t);
   const f=await fixture(t);
   const base=await mkdtemp(join(tmpdir(),"live-real-engineer-ipc-"));
   t.after(()=>rm(base,{recursive:true,force:true}));
