@@ -65,7 +65,11 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  // No implicit CREATE enablement from an environment variable or agent payload:
  // only the already protected 0600 owner deployment manifest may opt in.
  const nativeCreateEnabled=c?.enableNativeCreateFile===true;
+ // Only an explicit protected 0600 owner manifest may request the
+ // post-failure authenticated diagnostic-read-before-UPDATE policy.
+ const requireVerifiedRepairDiagnostic=c?.requireVerifiedRepairDiagnostic===true;
  const optionalKeys=[...(nativeCreateEnabled?["enableNativeCreateFile"]:[]),
+  ...(requireVerifiedRepairDiagnostic?["requireVerifiedRepairDiagnostic"]:[]),
   ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[])];
  if(!exact(c,[...standardKeys,...optionalKeys])||
     typeof c.directory!=="string"||!c.directory.startsWith("/")||
@@ -170,7 +174,9 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   workflow:{
    createBranch:{model:model(),branch,baseBranch:"main",permission:{resource,operation:"create_branch"}},
    adaptive:{model:model(),maxSteps:executionBudget.maxDecisions,
-    maxVerifiedFailures:executionBudget.maxVerifiedFailures,async nextChildParameters(){
+    maxVerifiedFailures:executionBudget.maxVerifiedFailures,
+    ...(requireVerifiedRepairDiagnostic?{requireVerifiedRepairDiagnostic:true}:{}),
+    async nextChildParameters(){
     const index=c.childIndices[nextIndex++];
     if(index===undefined)deny();
     const credential_id="urn:operational-child:"+randomUUID();
