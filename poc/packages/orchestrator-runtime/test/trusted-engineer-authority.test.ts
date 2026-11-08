@@ -10,7 +10,7 @@ import {
 } from "../src/trusted-engineer-authority.ts";
 import type {
   IssuedDelegationCredential
-} from "../src/authority-client.ts";
+} from "../src/trusted-credential-contracts.ts";
 import type {DelegatedPermission} from "../src/delegated-permission.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
