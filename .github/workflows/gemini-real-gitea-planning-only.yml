@@ -1,3 +1,4 @@
+# R384.7 RETIRED: historical Gemini entrypoint disabled; no billable execution.
 # ONE manual and potentially billed Planner attempt. No paid push or schedule.
 # This job shares the real-Gitea F1 preliminary host with the full D0 pilot
 # but stops before Engineer approval, operational root, Agent A2A and PR.
@@ -62,14 +63,9 @@ jobs:
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
   real-planner:
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.repository == 'DarkGh0st03/delegation' &&
-      github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' &&
-      github.run_attempt == 1 &&
-      inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' &&
-      inputs.billing_cap_acknowledgement == 'I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES' &&
-      inputs.pinned_commit_sha == github.sha
+    # R384.7 — retired: the canonical authority-only owner must be used.
+    # Never enter Gemini, even when manually dispatched with historical consent.
+    if: ${{ false }}
     name: One signed preliminary ADK Planner, no approval (potentially billed)
     runs-on: ubuntu-latest
     timeout-minutes: 65
