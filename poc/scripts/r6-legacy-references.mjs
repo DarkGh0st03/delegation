@@ -683,6 +683,26 @@ function main(){
       "runtime indirection hints="+candidate.runtimeIndirectionHints.length
     ].join(" | "));
   }
+  // R384.7: source-level reachability for migration planning.
+  // Importer counts alone are not deletion approval; retain provenance.
+  const cleanupTargets=new Set([
+    "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts",
+    "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
+    "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",
+    "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
+    "poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs"
+  ]);
+  for(const candidate of result.candidates){
+    if(!cleanupTargets.has(candidate.target))continue;
+    for(const edge of candidate.staticImporters)
+      console.log("R384.7 static importer | "+candidate.target+" <- "+edge.source);
+    for(const edge of candidate.runtimeIndirectionHints)
+      console.log("R384.7 dynamic hint | "+candidate.target+" <- "+edge.source+
+        " ("+edge.kind+")");
+    for(const edge of candidate.configuredCallers)
+      console.log("R384.7 configured caller | "+candidate.target+" <- "+edge.source+
+        " ("+edge.kind+")");
+  }
   console.log("Unresolved runtime indirections="+
     result.unresolvedRuntimeIndirections.length);
   const retiredSet=new Set(R6_RETIRED_TARGETS);
