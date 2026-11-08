@@ -65,7 +65,7 @@ test("R385.17 native Rust/MCP route must never fall back to HTTP Adapter",()=>{
   /native E2E legacy Adapter must be only an expected-failure guard/u);
  reject({native:base.native+"\n        run: cargo run --features legacy-http\n"},
   /native E2E legacy Adapter must be only an expected-failure guard/u);
- reject({bootstrap:base.bootstrap.replace(
+ reject({bootstrap:base.bootstrap.replaceAll(
   "createNativeRustChildCryptographyPort","removedNativeRustPort")},
   /canonical owner must directly compose native Rust Child/u);
 });
