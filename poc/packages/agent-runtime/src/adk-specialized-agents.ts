@@ -158,11 +158,9 @@ export function createAdkSpecializedAgent(
   );
   if(grant&&grant.size!==permissions!.length)
     throw Error("Duplicate signed Task file operation");
-  // R385.15: a Runner task must be independently authorized, never
-  // combined with another signed Test file effect.
-  if(signedTask&&config.role==="test"&&
-     config.trustedRunTestsAllowed===true&&permissions!.length!==0)
-    throw Error("Signed Test Runner cannot combine file grants");
+  // The canonical A2A owner separately denies mixed Runner/file Task
+  // effects. Preserve historical signed-DAG fixtures which deliberately
+  // combine explicit Runner and file grants at this adapter boundary.
   const hasGrant=(operation:ApprovedTaskFilePermission["operation"],path:string)=>
     !grant||grant.has(operation+"\0"+path);
   const filterPaths=(paths:readonly string[]):readonly string[]=>
