@@ -42,6 +42,27 @@ const prConfig=()=>({
  prepare:()=>{throw Error('provider should not be called');},
  execute:()=>{throw Error('provider should not be called');}
 });
+test('R385.6 strict authenticated repair read flag reaches only the private original owner',async()=>{
+ const {owner,events}=fakeOwner();
+ const original=owner.runAdaptiveWorkLoop;
+ owner.runAdaptiveWorkLoop=async config=>{
+  assert.equal(config.requireVerifiedRepairDiagnostic,true);
+  return original(config);
+ };
+ const input=canonicalConfig(owner);
+ input.adaptive.requireVerifiedRepairDiagnostic=true;
+ const result=await launch(input);
+ assert.equal(result.status,'owner_operational_ready_for_review_not_pr_authorized');
+ assert.deepEqual(events,['a2a','adaptive']);
+});
+test('R385.6 client cannot inject a false, arbitrary or model-shaped diagnostic policy',async()=>{
+ for(const invalid of [false,'true',0,{},null]){
+  const {owner,events}=fakeOwner(),input=canonicalConfig(owner);
+  input.adaptive.requireVerifiedRepairDiagnostic=invalid;
+  await assert.rejects(launch(input),/trusted owner, protected A2A and bounded adaptive model required/u);
+  assert.deepEqual(events,[]);
+ }
+});
 test('R384.5 owner forwards bounded recovery budget without changing PR authority',async()=>{
  const {owner,events}=fakeOwner();
  const original=owner.runAdaptiveWorkLoop;
