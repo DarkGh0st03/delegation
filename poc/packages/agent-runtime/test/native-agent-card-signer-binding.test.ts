@@ -80,7 +80,7 @@ test("R382.3 native MCP A2A server rejects missing native Card DID before listen
   /original ADK Task host/u);
 });
 
-test("R385.14 native Agent Cards reflect the owner-enforced Test creation boundary",t=>{
+test("R386 native Agent Cards advertise Test CREATE as non-authorizing capability",t=>{
  nativeEnvironment(t);
  for(const [index,role] of roles.entries()){
   const card=createSpecializedAgentCard(role,"http://127.0.0.1:61001",{
@@ -89,7 +89,7 @@ test("R385.14 native Agent Cards reflect the owner-enforced Test creation bounda
   });
   const advertised=card.capabilities.extensions?.[0]?.params?.taskCapabilities;
   assert.deepEqual(advertised,role==="test"?
-   ["read_file","update_file","run_tests"]:
+   ["read_file","update_file","create_file","run_tests"]:
    ["read_file","update_file","create_file"],role);
   assert.equal(Object.hasOwn(card.capabilities.extensions?.[0]?.params??{},"root_permissions"),false,
    "Agent Cards are not Task or Root grants");

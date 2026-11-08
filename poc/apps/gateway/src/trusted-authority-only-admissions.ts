@@ -1,4 +1,4 @@
-import {giteaPermissionCovers,isProjectTestRepairGrant,isProjectTestReadGrant,isProjectTestSource}
+import {giteaPermissionCovers,isProjectTestRepairGrant,isProjectTestReadGrant,isProjectTestCreateGrant,isProjectTestSource}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R287 — opt-in, in-process Gateway admission of permission-only Engineer
@@ -1759,7 +1759,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const child=this.#enrolledChildren.get(record.task_id);
   const taskId=bound?.row.task_id;
   if(!bound||!child||!taskId||
-     !["backend","frontend"].includes(bound.row.agent_id)||
+     !(["backend","frontend"].includes(bound.row.agent_id)||
+       (bound.row.agent_id==="test"&&
+        isProjectTestCreateGrant(bound.row.permissions)))||
      bound.row.agent_id!==record.agent_role||
      bound.row.permissions.length!==1||
      bound.row.permissions[0].operation!=="create_file"||
@@ -1826,7 +1828,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  ):Readonly<TrustedCompletionExpectation>{
   const bound=record&&this.#tasks.get(record.task_id);
   if(!bound||record.request.tool!=="create_file"||
-     !["backend","frontend"].includes(bound.row.agent_id)||
+     !(["backend","frontend"].includes(bound.row.agent_id)||
+       (bound.row.agent_id==="test"&&
+        isProjectTestCreateGrant(bound.row.permissions)))||
      bound.row.permissions.length!==1||
      pair(bound.row.permissions[0])!==pair(record.required_permission)||
      record.required_permission.operation!=="create_file"||

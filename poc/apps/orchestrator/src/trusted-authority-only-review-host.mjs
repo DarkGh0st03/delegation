@@ -43,7 +43,7 @@ import {AuthenticatedGiteaMutationCompletionObserver}
 import {AuthenticatedGiteaReadCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
-import {isProjectTestReadGrant,isProjectTestSource}
+import {isProjectTestReadGrant,isProjectTestCreateGrant,isProjectTestSource}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
@@ -1241,8 +1241,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       ?(()=>{
        if(!nativeEffectBinding.create||
           !nativeEffectBinding.createObserver||
-          !['backend','frontend'].includes(pin.agent_id))
-        deny('original CREATE owner has no independent native preflight/observer');
+          !(['backend','frontend'].includes(pin.agent_id)||
+           (pin.agent_id==='test'&&isProjectTestCreateGrant(
+            operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions))))
+        deny('original CREATE owner has no exact scoped Task or native preflight/observer');
        return new TrustedAuthorityOnlyCreateEffectStager({
         store:nativeEffectBinding.store,admissions:gateway,
         preflight:nativeEffectBinding.create,

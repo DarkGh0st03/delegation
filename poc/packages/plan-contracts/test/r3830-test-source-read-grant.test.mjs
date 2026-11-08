@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {isProjectTestReadGrant,isProjectTestRepairGrant,isProjectTestSource}
+import {isProjectTestReadGrant,isProjectTestRepairGrant,isProjectTestCreateGrant,isProjectTestSource}
  from "../src/gitea-permission-containment.mjs";
 
 const prefix="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";
@@ -69,4 +69,24 @@ test("R385.13 dotted project test filenames stay exact and fail closed on aliase
   assert.equal(isProjectTestRepairGrant([permission("read_file",rejected),
    permission("update_file",rejected)]),false,rejected);
  }
+});
+
+test("R386 Test CREATE requires one exact project test source, no extra grants",()=>{
+ for(const path of ["tests/backend/new.test.ts",
+  "tests/frontend/pages/SuspensionForm.test.tsx",
+  "tests/backend/user.service.test.ts"])
+  assert.equal(isProjectTestCreateGrant([permission("create_file",path)]),true,path);
+ for(const path of ["apps/backend.ts","tests/acceptance/account.test.ts",
+  "tests/backend/setup.ts","tests/frontend/account.spec.ts",
+  "tests/backend/../runner.test.ts","tests/backend/user..name.test.ts",
+  "tests/backend/account.test.ts/../config.ts",
+  "poc/runner/acceptance/user.test.ts"])
+  assert.equal(isProjectTestCreateGrant([permission("create_file",path)]),false,path);
+ assert.equal(isProjectTestCreateGrant([{operation:"create_file",
+  resource:prefix+"/directories/tests/backend"}]),false);
+ assert.equal(isProjectTestCreateGrant([permission("update_file","tests/backend/new.test.ts")]),false);
+ assert.equal(isProjectTestCreateGrant([permission("create_file","tests/backend/new.test.ts"),
+  permission("read_file","tests/backend/new.test.ts")]),false);
+ assert.equal(isProjectTestCreateGrant([]),false);
+ assert.equal(isProjectTestCreateGrant([null]),false);
 });

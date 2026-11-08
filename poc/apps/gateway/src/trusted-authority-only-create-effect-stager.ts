@@ -13,6 +13,8 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
 import {TrustedAuthorityOnlyGiteaCreatePreflight}
  from "./trusted-authority-only-create-preflight.ts";
 import {GiteaClient} from "./gitea-client.ts";
+import {isProjectTestCreateGrant}
+ from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import type {TrustedEffectStagingPort}
  from "../../../packages/agent-runtime/src/gateway-tool-client.ts";
 
@@ -90,7 +92,9 @@ export class TrustedAuthorityOnlyCreateEffectStager implements TrustedEffectStag
      record.task_id!==this.#runtimeTaskId||
      record.authority_only_plan_task_id!==this.#planTaskId||
      record.request.tool!=="create_file"||
-     !["backend","frontend"].includes(record.agent_role)||
+     !(["backend","frontend"].includes(record.agent_role)||
+       (record.agent_role==="test"&&
+        isProjectTestCreateGrant([record.required_permission])))||
      record.consumed!==false||
      !Number.isSafeInteger(record.expires_at_ms)||
      record.expires_at_ms<=Date.now())

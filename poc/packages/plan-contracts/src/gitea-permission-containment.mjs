@@ -47,6 +47,14 @@ export function isProjectTestReadGrant(permissions) {
  const file=scope(permissions[0].resource);
  return file?.kind==="files"&&isProjectTestSource(file.path.join("/"));
 }
+/** Test CREATE is restricted to one exact project test source. This is a
+ * grant-shape check only; native Rust, OPA, absence and CAS remain required. */
+export function isProjectTestCreateGrant(permissions) {
+ if(!Array.isArray(permissions)||permissions.length!==1||
+    permissions[0]?.operation!=="create_file")return false;
+ const file=scope(permissions[0].resource);
+ return file?.kind==="files"&&isProjectTestSource(file.path.join("/"));
+}
 export function isProjectTestRepairGrant(permissions) {
  const read=permissions.find(p=>p.operation==="read_file");
  const update=permissions.find(p=>p.operation==="update_file");

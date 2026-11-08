@@ -1095,3 +1095,33 @@ test('R384.3 adaptive CREATE selected after independently authenticated Test FAI
  assert.equal(prompts.includes('A2A Test FAILED: untrusted error'),false);
  assert.equal(f.retired,false);
 });
+
+/** R386 owner-hook simulation, not native provider evidence. Real CREATE
+ * still requires independent signed Root/Child, VP/OPA, absent file and CAS. */
+test('R386 adaptive Test CREATE uses one exact project-test source Task then retests',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const create={operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/tests/backend/new-account.test.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(create);
+  ctx.agents.test.capabilities.push('create_file');
+  return ctx;
+ };
+ const model=new Decisions([
+  candidate('test',0,[create]),candidate('test',1),
+  {action:'ready_for_pr',reason:'Exact new test source independently tested'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.equal(result.source_test_task_id,'task-1');
+ assert.equal(result.pr_created,false);
+ assert.deepEqual(f.done.map(t=>t.permissions[0].operation),['create_file','run_tests']);
+ assert.deepEqual(f.events.filter(t=>t.startsWith('gateway_attested:')),
+  ['gateway_attested:task-0','gateway_attested:task-1']);
+ assert.equal(f.retired,false);
+});

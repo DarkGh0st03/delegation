@@ -97,10 +97,9 @@ export function createSpecializedAgentCard(
   const skill = approved ? APPROVED_PLAN_SKILLS[role] : undefined;
   const legacy = !approved ? LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT[role] : undefined;
   const delegatedAuthorization = options.delegatedAuthorization ?? true;
-  // When the ORIGINAL native owner supplies a trusted Rust role DID, do
-  // not claim that the Test Agent can create files: the canonical A2A
-  // owner deliberately denies that effect. Historical standalone approved
-  // ADK fixtures still retain the generic Test create_file capability.
+  // Native role discovery uses the original owner-approved capability
+  // catalog. Test CREATE remains restricted to exact project test sources
+  // under independently signed Root/Child, VP/OPA and CAS.
   const advertisedTools=nativeDid!==undefined?
     nativeAuthorityOnlyAdvertisedCapabilities(role):
     APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools;
