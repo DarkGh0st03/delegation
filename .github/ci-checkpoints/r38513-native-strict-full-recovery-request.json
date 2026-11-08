@@ -1,6 +1,6 @@
 {
   "checkpoint": "R385.13",
-  "source_sha": "5a469e4ed9fe55a7a2fbddf1628ae4debd9fe4ac",
+  "source_sha": "f2964da3962374c80d0d1aacada6e8801860010f",
   "mode": "disposable_original_authority_only_full_strict_postfail_recovery",
   "required": {
     "signed_engineer_approvals": 1,
@@ -17,6 +17,6 @@
     "paid_model_inference": 0
   },
   "scope": "CI fixture only; no remote paid inference; no merge to main; failures must remain fail-closed",
-  "attempt_note": "R385.15 direct native regression after signed Test FunctionTool gating: absent/false approved_run_tests no longer exposes Runner, explicit true does; historical signed-DAG mixed fixture preserved, canonical owner still blocks mixed effects. Fast CI #42471733456 SUCCESS 2/2 on exact SHA, no Gemini calls, no main merge; prove 24 Child, 25 decisions, signed read/CAS, Docker FAIL→PASS, Draft PR.",
-  "retry_sequence": 11
+  "attempt_note": "R385.19 Engineer legacy HTTP route now requires exact local opt-in and must remain denied in authority-only/native mode. Neutral Engineer/repair credential types decoupled; scoped R49 historical fixture regression. Fast CI #42478682882 and Engineer Authority #42478682804 SUCCESS on source SHA. Verify original Engineer direct Rust, 24 signed Child, ten authenticated read/CAS pairs, real Docker FAIL then PASS, acceptance and Gitea Draft PR. Zero model calls or main merge.",
+  "retry_sequence": 12
 }
