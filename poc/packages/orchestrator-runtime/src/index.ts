@@ -44,7 +44,12 @@ export * from "./trusted-github-oidc.ts";
 export * from "./trusted-github-oidc-replay-store.ts";
 export * from "./trusted-github-oidc-intake.ts";
 export * from "./trusted-github-admission-store.ts";
-export * from "./trusted-admitted-github-handoff.ts";
+// R384.8: expose only authenticated, one-use OIDC admission. Never expose
+// a historical signed-DAG executor via the canonical runtime package API.
+export {consumePinnedGithubAdmission}
+  from "./trusted-github-admission-consumer.ts";
+export type {PinnedGithubAdmissionForSession,PinnedGithubAdmittedManual}
+  from "./trusted-github-admission-consumer.ts";
 export * from "./trusted-operational-recovery-store.ts";
 export * from "./trusted-planning-recovery-store.ts";
 export * from "./trusted-github-oidc-submit.ts";
