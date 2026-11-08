@@ -25,19 +25,82 @@ import {preliminaryReadPermissions,trustedPlanningSourceBranch,
 import {TrustedPlanningDiscoveryLedger}
   from "./trusted-planning-discovery-ledger.ts";
 
-type Role="backend"|"frontend"|"test";
+type Role=string;
 type ReadTool="read_repository"|"list_directory"|"read_file";
 type Op="create_branch"|"create_pull_request"|"read_file"|
   "update_file"|"create_file"|"run_tests";
 const operations=new Set<string>(RUST_OPERATIONS);
 const sha=/^[a-f0-9]{40}$/u;
 const id=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const roleOps:Record<Role|"orchestrator",Set<Op>>={
+const roleOps:Readonly<Record<string,ReadonlySet<Op>>>={
   orchestrator:new Set(["create_branch","create_pull_request"]),
   backend:new Set(["read_file","update_file","create_file"]),
   frontend:new Set(["read_file","update_file","create_file"]),
   test:new Set(["read_file","update_file","create_file","run_tests"])
 };
+/**
+ * A registered specialist may expose a host-pinned Agent Card and operations.
+ * The PoC roles retain their historical defaults for older offline tests.
+ * New role IDs require BOTH an explicit capability list and trusted Card
+ * metadata; the model is never permitted to define or discover a DID/URL.
+ */
+export interface TrustedPlanningAgentPin {
+ readonly did:string;
+ readonly card_ref:string;
+ readonly capabilities?:readonly Op[];
+ readonly card?:{
+  readonly name:string;readonly description:string;
+  readonly skills:readonly {id:string;name:string;description:string}[];
+ };
+}
+const specialistOperations:ReadonlySet<Op>=new Set([
+ "read_file","update_file","create_file","run_tests"
+]);
+function validatedPlannerRegistry(agents:Readonly<Record<Role,TrustedPlanningAgentPin>>):{
+ roles:Role[];capabilities:Map<Role,ReadonlySet<Op>>
+}{
+ if(!agents||typeof agents!=="object"||Array.isArray(agents))fail("invalid trusted Agent registry");
+ const roles=Object.keys(agents);
+ if(!roles.length||roles.length>16)fail("invalid trusted Agent registry");
+ const capabilities=new Map<Role,ReadonlySet<Op>>();
+ for(const role of roles){
+  const pin=agents[role],defaults=roleOps[role];
+  if(!id.test(role)||role==="orchestrator"||!pin||
+     typeof pin.did!=="string"||!pin.did.startsWith("did:")||
+     pin.did.length>256||/[\x00-\x1f\x7f]/u.test(pin.did)||
+     typeof pin.card_ref!=="string"||!pin.card_ref.trim()||
+     pin.card_ref.length>256||
+     Object.keys(pin).some(k=>!["did","card_ref","capabilities","card"].includes(k)))
+    fail("invalid trusted Agent registry");
+  const selected=pin.capabilities??(defaults?[...defaults]:undefined);
+  if(!selected||!Array.isArray(selected)||!selected.length||
+     selected.length>specialistOperations.size||
+     new Set(selected).size!==selected.length||
+     selected.some(operation=>!specialistOperations.has(operation)||
+       (defaults&&!defaults.has(operation))))
+    fail("unsupported trusted Agent capabilities");
+  if(!defaults&&!pin.card)fail("unverified registered Agent Card");
+  if(pin.card){
+   const card=pin.card;
+   if(typeof card!=="object"||Array.isArray(card)||
+      Object.keys(card).sort().join(",")!=="description,name,skills"||
+      typeof card.name!=="string"||!card.name.trim()||
+      card.name.length>160||
+      typeof card.description!=="string"||!card.description.trim()||
+      card.description.length>800||
+      !Array.isArray(card.skills)||!card.skills.length||card.skills.length>8||
+      card.skills.some(skill=>!skill||typeof skill!=="object"||
+        Object.keys(skill).sort().join(",")!=="description,id,name"||
+        !id.test(skill.id)||typeof skill.name!=="string"||
+        !skill.name.trim()||skill.name.length>160||
+        typeof skill.description!=="string"||
+        !skill.description.trim()||skill.description.length>800))
+    fail("unverified registered Agent Card");
+  }
+  capabilities.set(role,new Set(selected));
+ }
+ return {roles,capabilities};
+}
 export interface PlanningReadPort {
   invoke(tool:ReadTool,args:Record<string,unknown>,
     signal?:AbortSignal):Promise<unknown>;
@@ -75,7 +138,7 @@ export interface TrustedAdkPlannerConfig {
   requirement:string;
   planId:string;
   workBranch:string;
-  agents:Readonly<Record<Role,{did:string;card_ref:string}>>;
+  agents:Readonly<Record<Role,TrustedPlanningAgentPin>>;
   /** Trusted Gateway-backed read port; never a direct model-controlled provider. */
   readPort:PlanningReadPort;
   /** Trusted-host-owned evidence sink. Must NOT log model text or credentials.
@@ -322,6 +385,7 @@ export function compilePlanningProposal(
   if(!id.test(cfg.planId)||!cfg.requirement?.trim()||
      cfg.requirement.length>8000)fail("invalid trusted plan settings");
   const branch=validatePrivateApprovedBranch(cfg.workBranch);
+  const trustedAgents=validatedPlannerRegistry(cfg.agents);
   const draft=obj(raw,"proposal");keys(draft,["tasks","assumptions","uncertainties"],"proposal");
   const assumptions=uniqueStrings(draft.assumptions,16,"proposal").map(s=>str(s,400,"proposal"));
   const uncertainties=uniqueStrings(draft.uncertainties,16,"proposal").map(s=>str(s,400,"proposal"));
@@ -337,8 +401,9 @@ export function compilePlanningProposal(
     keys(task,["id","agent_id","title","description","depends_on","permissions"],"task");
     const taskId=str(task.id,128,"task");
     if(!id.test(taskId))fail("invalid Task id");
-    const role=str(task.agent_id,16,"task") as Role|"orchestrator";
-    if(!Object.hasOwn(roleOps,role))fail("unsupported Agent role");
+    const role=str(task.agent_id,128,"task") as Role|"orchestrator";
+    if(role!=="orchestrator"&&!trustedAgents.capabilities.has(role))
+      fail("unsupported Agent role");
     if(role!=="orchestrator")roles.add(role);
     const depends_on=uniqueStrings(task.depends_on,12,"task");
     if(depends_on.some(d=>!id.test(d)))fail("invalid dependency");
@@ -348,7 +413,9 @@ export function compilePlanningProposal(
     for(const candidate of task.permissions){
       const p=obj(candidate,"permission");keys(p,["operation","path","reason"],"permission");
       const operation=str(p.operation,64,"permission") as Op;
-      if(!operations.has(operation)||!roleOps[role].has(operation))
+      if(!operations.has(operation)||
+         !(role==="orchestrator"?roleOps.orchestrator:
+           trustedAgents.capabilities.get(role))?.has(operation))
         fail("tool is not supported for proposed Agent role");
       let resource:string;
       if(operation==="create_branch"||operation==="create_pull_request"){
@@ -610,6 +677,7 @@ export class TrustedAdkReadOnlyPlanner {
   constructor(config:TrustedAdkPlannerConfig){
     preliminaryReadPermissions(config.snapshot);
     validatePrivateApprovedBranch(config.workBranch);
+    validatedPlannerRegistry(config.agents);
     if(!config.model||!config.readPort||
        typeof config.readPort.invoke!=="function"||
        !sha.test(config.snapshot.base_revision)||
@@ -648,6 +716,7 @@ export class TrustedAdkReadOnlyPlanner {
     if(this.#attempted)fail("Planning proposal already attempted");
     this.#attempted=true;
     const cfg=this.config,sp=cfg.snapshot;
+    const trustedAgents=validatedPlannerRegistry(cfg.agents);
     // The total session limit starts before any ADK setup or provider read.
     // Late responses are never accepted even when an upstream ignores abort.
     const planningDeadline=AbortSignal.timeout(cfg.maxPlanningMs??900000);
@@ -790,21 +859,25 @@ export class TrustedAdkReadOnlyPlanner {
       new FunctionTool({
         name:"read_agent_card",
         description:"Read a registered A2A Agent Card's specialist skills; this never grants authority.",
-        parameters:z.object({role:z.enum(["backend","frontend","test"])}).strict(),
+        parameters:z.object({role:z.enum(trustedAgents.roles as [string,...string[]])}).strict(),
         execute:async(args)=>{
           if(planningDeadline.aborted)return {ok:false,error:"planning_deadline"};
           if(++cardReadCount>6)return {ok:false,error:"agent_card_budget"};
           const role=args.role as Role;
           const registered=cfg.agents[role];
-          if(!registered||!registered.did?.startsWith("did:")||
-             !registered.card_ref||registered.card_ref.length>256)
+          const capabilities=trustedAgents.capabilities.get(role);
+          if(!registered||!capabilities)
             return {ok:false,error:"unregistered_agent_card"};
-          const card=createSpecializedAgentCard(role,"http://127.0.0.1",{
-            capabilityProfile:"approved-plan"
-          });
+          // Unknown roles must carry a trusted owner-supplied Card; no model
+          // URL fetching and no synthetic fallback into a different role.
+          const card=registered.card??createSpecializedAgentCard(
+            role as "backend"|"frontend"|"test","http://127.0.0.1",{
+              capabilityProfile:"approved-plan"
+            });
           return {
             ok:true,role,card_ref:registered.card_ref,
             name:card.name,description:card.description,
+            capabilities:[...capabilities],
             skills:card.skills.map(skill=>({
               id:skill.id,name:skill.name,description:skill.description
             }))
@@ -874,7 +947,7 @@ export class TrustedAdkReadOnlyPlanner {
         "Each permission has: operation, path, reason.",
         "File operations need a path string; repository/test operations use path:null.",
         "Only orchestrator can create_branch/create_pull_request.",
-        "Backend/Frontend: read_file/update_file/create_file. Test: read_file/update_file/create_file/run_tests. Every action still needs an exact signed permission.",
+        "Use only the operations advertised by the registered Agent Cards. Every action still needs an exact signed permission independently verified by the Gateway.",
         "Before assigning specialist work, inspect the trusted read_agent_card skill descriptions. Cards describe capabilities, not permissions; never infer a grant or DID from a Card.",
         ...TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,
         ...(cfg.pilotFullDag?TRUSTED_BOUNDED_PILOT_GUIDANCE:[]),
@@ -895,7 +968,7 @@ export class TrustedAdkReadOnlyPlanner {
     const firstMessage={role:"user" as const,parts:[{text:JSON.stringify({
       requirement:cfg.requirement,repository:sp.repository,
       base_revision:sp.base_revision,work_branch:cfg.workBranch,
-      roles:["backend","frontend","test"],
+      roles:trustedAgents.roles,
       directories:sp.directories,files:sp.files,
       ...(discovery.enabled?{dynamic_discovery_roots:sp.dynamic_discovery_roots}:{})
     })}]};

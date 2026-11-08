@@ -124,11 +124,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  const configuredProfiles=Object.fromEntries(Object.entries(configuredAgents)
   .map(([id,p])=>[id,{capabilities:p.capabilities}]));
  let verifiedProfiles;
- const agents=Object.fromEntries(['backend','frontend','test'].map(role=>{
-  const pin=options.trustedAgentRegistry?.[role];
-  if(!pin)deny('three trusted agent card pins required');
-  return [role,{did:pin.did,card_ref:pin.card_ref}];
- }));
+ // Planning role discovery originates from the SAME trusted registry as
+ // Coordinator execution. The PoC bootstrap still provisions three agents,
+ // but no model-visible Planner schema can manufacture a fourth role.
+ const agents=Object.fromEntries(Object.entries(options.trustedAgentRegistry)
+  .filter(([role])=>role!=='orchestrator')
+  .map(([role,pin])=>[role,{
+   did:pin.did,card_ref:pin.card_ref,capabilities:[...pin.capabilities]
+  }]));
+ if(!Object.keys(agents).length)deny('no trusted specialist Agent Cards');
  let server,attempted=false,closed=false,closing,activationFlight;
  let operationalRootId;
  let operationalCoordinator,executionAdmissionAttempted=false,executionAdmissionFlight;

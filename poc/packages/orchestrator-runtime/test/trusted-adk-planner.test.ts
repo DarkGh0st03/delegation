@@ -1050,3 +1050,75 @@ test("R282 Planner really uses a host-only published approved-plan Agent Card Fu
  assert.ok(next.includes(AGENTS.backend.card_ref));
  assert.ok(!next.includes("private_key"));
 });
+
+test("R401.2 Planner compiles dynamically registered Agent Cards but never creates authority",()=>{
+ const docs={
+  did:"did:thesis:docs",card_ref:"trusted:docs",
+  capabilities:["read_file"] as const,
+  card:{name:"Documentation specialist",description:"Read authorized API docs",
+   skills:[{id:"documentation-review",name:"Review docs",
+    description:"Inspect the approved source"}]}
+ };
+ const d=draft();
+ d.tasks[1]={id:"docs",agent_id:"docs",title:"Review invoice interface",
+  description:"Inspect the approved source only",depends_on:["branch"],
+  permissions:[{operation:"read_file",path:FILE,reason:"Review contract"}]};
+ const result=compilePlanningProposal(d,{...cfg,agents:{docs}});
+ assert.deepEqual(result.plan.candidate_agents,[{
+  agent_id:"docs",did:docs.did,card_ref:docs.card_ref
+ }]);
+ assert.equal(result.plan.requested_permissions[1]?.operation,"read_file");
+ assert.equal("authority" in result,false);
+ const escalated=draft();
+ escalated.tasks[1].agent_id="docs";
+ assert.throws(()=>compilePlanningProposal(escalated,{...cfg,agents:{docs}}),
+  /tool is not supported for proposed Agent role/u);
+ assert.throws(()=>compilePlanningProposal(d,{...cfg,agents:{
+  docs:{did:docs.did,card_ref:docs.card_ref,capabilities:["read_file"] as const}
+ }}),/unverified registered Agent Card/u);
+});
+
+test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async()=>{
+ const docs={did:"did:thesis:docs",card_ref:"trusted:docs",
+  capabilities:["read_file"] as const,
+  card:{name:"Documentation specialist",description:"Inspect authorized source",
+   skills:[{id:"docs-review",name:"Review docs",description:"Inspect approved source"}]}
+ };
+ const proposal=draft();
+ proposal.tasks[1]={id:"docs",agent_id:"docs",title:"Review existing API",
+  description:"Read the pinned source",depends_on:["branch"],
+  permissions:[{operation:"read_file",path:FILE,reason:"Review existing contract"}]};
+ class CardFirst extends BaseLlm {
+  calls=0;requests:LlmRequest[]=[];
+  constructor(){super({model:"r401-offline-card-discovery"});}
+  override async *generateContentAsync(req:LlmRequest):AsyncGenerator<LlmResponse,void>{
+   this.requests.push(req);
+   if(++this.calls===1){
+    yield {content:{role:"model",parts:[{functionCall:{
+     id:"registered-docs-card",name:"read_agent_card",args:{role:"docs"}
+    }}]}};return;
+   }
+   if(this.calls===2){
+    yield {content:{role:"model",parts:[{functionCall:{
+     id:"read-pinned-source",name:"read_file",args:{branch:"main",path:FILE}
+    }}]}};return;
+   }
+   yield {content:{role:"model",parts:[{text:JSON.stringify(proposal)}]}};
+  }
+  override connect(_r:LlmRequest):Promise<BaseLlmConnection>{
+   return Promise.reject(Error("No model network"));
+  }
+ }
+ const model=new CardFirst();
+ let readCount=0;
+ const result=await new TrustedAdkReadOnlyPlanner({...cfg,agents:{docs},model,
+  readPort:{async invoke(tool:string){
+   assert.equal(tool,"read_file");readCount++;
+   return {provider:"gitea",performed:true,tool,branch:"main",
+    path:FILE,revision:SNAPSHOT.base_revision,content:"export const sample = true;"};
+  }}
+ }).propose();
+ assert.equal(readCount,1);
+ assert.equal(result.plan.candidate_agents[0]?.agent_id,"docs");
+ assert.ok(JSON.stringify(model.requests[0]?.config?.tools??[]).includes("docs"));
+});
