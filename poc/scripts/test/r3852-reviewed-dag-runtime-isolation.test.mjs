@@ -48,10 +48,10 @@ test("R385.2 only direct legacy invocation loads the reviewed DAG in each handof
    name+" must lazy-load the historical dispatcher at the owner handoff");
   // An actual ESM 'from' edge to the historical DAG is permitted only
   // as the single erased TypeScript import type in fresh repair.
-  assert.equal((src.match(/from "\\.\\/trusted-reviewed-approved-dag\\.ts";/gu)||[]).length,
+  assert.equal((src.match(/from "\.\/trusted-reviewed-approved-dag\.ts";/gu)||[]).length,
    name==="fresh"?1:0,
    name+" must not add a runtime/static edge to the historical controller");
-  assert.doesNotMatch(src,/^import \\{createReviewedApprovedDagExecution/mu,
+  assert.doesNotMatch(src,/^import \{createReviewedApprovedDagExecution/mu,
    name+" must never eagerly load the legacy controller");
  }
  assert.match(fresh,/import type \{createReviewedApprovedDagExecution\}/u);
