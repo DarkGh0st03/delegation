@@ -77,8 +77,19 @@ export function auditR38517WorkflowRoutes({
  demand(native.includes('R38513_NATIVE_STRICT_FULL_RECOVERY: "1"')&&
   native.includes('R3818_CANONICAL_NATIVE_MCP: "1"'),
   "native E2E must retain trusted Rust/MCP strict recovery route");
- demand(!/(cargo run .*--features legacy-http|gemini-paid-shared-mcp-final)/u.test(native),
-  "native E2E cannot start legacy HTTP Adapter or paid Shared MCP");
+ // A deliberately NEGATIVE "if cargo run ... legacy-http; then exit 1"
+ // is an important security regression. Distinguish it from an actual
+ // unguarded launch; deleting the negative guard would weaken the gate.
+ const activeNativeLines=native.split(/\r?\n/u)
+  .filter(line=>!line.trim().startsWith("#"));
+ const legacyCommands=activeNativeLines.filter(line=>
+  /cargo run .*--features legacy-http/u.test(line));
+ demand(legacyCommands.length===1&&
+  /^\s*if cargo run .*--features legacy-http.*; then\s*$/u.test(legacyCommands[0])&&
+  native.includes("Legacy Adapter HTTP cannot start with direct Engineer Core enabled"),
+  "native E2E legacy Adapter must be only an expected-failure guard");
+ demand(!activeNativeLines.some(line=>/gemini-paid-shared-mcp-final/u.test(line)),
+  "native E2E cannot invoke paid Shared MCP");
  demand(bootstrap.includes("createNativeRustChildCryptographyPort")&&
   bootstrap.includes("assembleTrustedAuthorityOnlyNativeEffects"),
   "canonical owner must directly compose native Rust Child and effects");
