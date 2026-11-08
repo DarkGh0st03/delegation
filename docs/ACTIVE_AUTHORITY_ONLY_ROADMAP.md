@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R384.4 native FAIL→PASS, scripted)
+## Piano attivo — aggiornato all'8 novembre 2026 (R384.7 cleanup legacy in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -19,9 +19,36 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 native SUCCESS su `81ad3fdd` (run #42423327568); Fast CI SUCCESS sulla SHA successiva `f236a4dd` (run #42423579107). Non sono due gate verdi sulla stessa HEAD. Ripetere validazione completa dopo il cleanup.** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **Gate obbligatorio prima del pilot pagato** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R384.7: workflow Gemini storici disabilitati, R6 mostra importatori effettivi e confini canonici protetti. Fast CI R384.7 PASS su `311cda33`; migrazione moduli DAG/Adapter e native E2E post-cleanup ancora aperti.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R384.7 — Workflow storici e importer graph R6 (cleanup, ancora aperto)
+
+Il report [`R3847_LEGACY_REACHABILITY_AND_RETIREMENT.md`](./R3847_LEGACY_REACHABILITY_AND_RETIREMENT.md)
+registra la reachability sorgente degli importatori. Oltre ai due job
+D0/F1 archiviati in R384.6 sono disabilitati anche il job real-planner
+di `gemini-real-gitea-planning-only.yml` e l'unico job di
+`gemini-planner-manual-feasibility.yml`: nessun percorso di questi
+workflow storici e' piu' utilizzabile per inferenza Gemini.
+La Fast CI gratuita
+[run #42428657867](https://github.com/DarkGh0st03/delegation/actions/runs/42428657867)
+e' **SUCCESS** su `311cda3387b7cffa652b33bfc46b2bdcc92b326e`.
+
+L'inventario R6 ha rivelato importatori **source** del vecchio
+`trusted-reviewed-approved-dag.ts`, del planner/controller di recovery
+e del trasporto Adapter. In particolare, `authority-client.ts`
+continua a usare `authority-adapter-transport.ts`, ed e' riesportato
+dall'API pubblica del runtime. Pertanto una rimozione indiscriminata
+romperebbe dipendenze ancora presenti.
+Sono stati aggiunti controlli di regressione per vietare nuovi import
+**diretti** legacy negli entrypoint authority-only critici: non sono
+ancora un audit transitivo completo di package export e import dinamici.
+
+**Prossimo gate:** migrare gli handoff storici ancora raggiungibili,
+consolidare i workflow gratuiti, quindi ripetere Fast CI e un E2E
+nativo completo post-cleanup sulla **stessa SHA**. PR #38 Draft,
+`main` invariato; nessun Gemini a pagamento.
 
 ### R384.6 — Ritiro del vecchio Signed DAG billable (cleanup fase E, in corso)
 
@@ -35,7 +62,7 @@ disabilitati **entrambi** i job potenzialmente fatturabili, compreso
 il Planning-only, mediante `if: ${{ false }}`.
 Nuovi test offline verificano tali confini e vengono eseguiti da Fast CI.
 
-**Gate aperto:** attendere Fast CI della SHA finale di R384.6;
+**Gate R384.6 superato:** Fast CI #42427419495 SUCCESS su `c67233f2`;
 non considerare il cleanup concluso: la reachability dei moduli
 DAG/recovery storici e il consolidamento dei 91 workflow sono ancora da
 completare. Core Rust, MCP crittografico, approvazione Ed25519, OPA,
@@ -63,8 +90,7 @@ corrente e l'obbligo di approvazione prima di spese Gemini.
 
 Aggiunti test offline per tre FAIL verificati e retest conclusivo,
 venti modifiche multi-Task con Test finale, limiti invalidi e default.
-**I test sono scripted e le CI della nuova SHA devono ancora risultare
-PASS:** nessun E2E finale post-cleanup né pilot Gemini autorizzato.
+**Fast CI R384.5 e Authenticated Engineer Approval sono PASS sulla SHA `bf663547`**; sono test scripted, non un E2E generativo. Nessun E2E finale post-cleanup né pilot Gemini autorizzato.
 
 ### R384.4 — Esito nativo funzionale acquisito (8 novembre 2026; NO Gemini)
 
