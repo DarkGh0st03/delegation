@@ -1,0 +1,27 @@
+{
+  "checkpoint": "R385.8",
+  "requested": true,
+  "reason": "Verify strict owner post-authenticated Runner FAIL native read-only signed Child and first bound Gitea CAS without false PASS/PR",
+  "baseline_fast_ci_sha": "b413a95970a91699627314860f49b7e7f9198f3c",
+  "baseline_fast_ci_run": 42445146078,
+  "run_mode": "disposable-native-real-Rust-EVM-OPA-Gitea-private-cryptographic-MCP-A2A-and-Docker",
+  "model_mode": "scripted-offline-zero-billing",
+  "paid_model_calls_allowed": 0,
+  "require_verified_repair_diagnostic": true,
+  "require_native_private_mcp": true,
+  "expected_proof_event": "r3858_strict_native_postfail_read_and_first_repair_no_false_pass",
+  "expected_status": "pass",
+  "expected_first_docker_status": "fail",
+  "expected_signed_post_failure_read_count": 1,
+  "expected_gateway_cas_writes": 3,
+  "expected_pass_receipts": 0,
+  "expected_pr_created": false,
+  "expected_original_main_immutable": true,
+  "expected_original_root_retired": true,
+  "full_functional_retest_claimed": false,
+  "autonomous_generative_code_claimed": false,
+  "must_pass_on_same_commit": [
+    "Fast CI - Development",
+    "R385.8 Native Strict Signed Post-FAIL Read and First Repair (No AI)"
+  ]
+}
