@@ -775,23 +775,35 @@ async function strictRecoveringHost(config){
      JSON.stringify(verified.snapshot.repository)!==
        JSON.stringify(config.approval.repository))
     deny("backend-signed Planning checkpoint differs from pinned Engineer session");
+  // R416: select the historical fixture before deciding which recovery
+  // fields are mandatory; a native Engineer must not depend on an Adapter URL.
+  // No delegated Task/Agent/model data can opt into the old HTTP issuer.
+  const historicalFixture=
+    process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE==="1"&&
+    process.env.ENGINEER_CORE_NATIVE_MODE===undefined&&
+    process.env.ADAPTER_ENGINEER_NATIVE_SOCKET===undefined&&
+    process.env.APPROVED_RUNNER_NATIVE_MCP===undefined&&
+    (process.env.DELEGATION_GATEWAY_ARCHITECTURE===undefined||
+     process.env.DELEGATION_GATEWAY_ARCHITECTURE==="legacy-signed-dag");
   const recovery=config?.recovery;
   if(!recovery||typeof recovery.directory!=="string"||
      typeof recovery.planningDirectory!=="string"||
      recovery.planningDirectory===recovery.directory||
      typeof recovery.gatewaySocketPath!=="string"||
      typeof recovery.gatewaySecretFile!=="string"||
-     typeof recovery.adapterBaseUrl!=="string"||
-     typeof recovery.adapterToken!=="string"||!recovery.adapterToken.trim())
-    deny("complete trusted recovery IPC and Adapter configuration required");
-  let adapterUrl;
-  try{adapterUrl=new URL(recovery.adapterBaseUrl);}
-  catch{deny("invalid trusted Adapter URL");}
-  if(!((adapterUrl.protocol==="https:"&&!adapterUrl.username&&!adapterUrl.password)||
-       (adapterUrl.protocol==="http:"&&
-        adapterUrl.hostname==="127.0.0.1"&&
-        !adapterUrl.username&&!adapterUrl.password)))
-    deny("Adapter must use HTTPS or loopback HTTP");
+     typeof recovery.adapterToken!=="string"||!recovery.adapterToken.trim()||
+     (historicalFixture&&typeof recovery.adapterBaseUrl!=="string"))
+    deny("complete trusted recovery IPC and Engineer credential configuration required");
+  if(historicalFixture){
+    let adapterUrl;
+    try{adapterUrl=new URL(recovery.adapterBaseUrl);}
+    catch{deny("invalid trusted Adapter URL");}
+    if(!((adapterUrl.protocol==="https:"&&!adapterUrl.username&&!adapterUrl.password)||
+         (adapterUrl.protocol==="http:"&&
+          adapterUrl.hostname==="127.0.0.1"&&
+          !adapterUrl.username&&!adapterUrl.password)))
+      deny("Adapter must use HTTPS or loopback HTTP");
+  }
   await privateDirectory(recovery.planningDirectory);
   const gateway=await TrustedPlanIpcClient.connect({
     socketPath:recovery.gatewaySocketPath,
@@ -805,17 +817,8 @@ async function strictRecoveringHost(config){
     deny("private Gateway must expose actual Planning registry retirement");
   if(!gateway.planningRetirementDurableConfigured())
     deny("private Gateway must persist Planning retirement across restarts");
-  // R415.1: cold-recovery historical fixture explicitly opts into the
-  // old MCP/HTTP port. It can NEVER be selected by a native or authority-only
-  // Engineer host, or by malformed/unknown native mode settings.
-  // The canonical selector itself has no HTTP fallback.
-  const historicalFixture=
-    process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE==="1"&&
-    process.env.ENGINEER_CORE_NATIVE_MODE===undefined&&
-    process.env.ADAPTER_ENGINEER_NATIVE_SOCKET===undefined&&
-    process.env.APPROVED_RUNNER_NATIVE_MCP===undefined&&
-    (process.env.DELEGATION_GATEWAY_ARCHITECTURE===undefined||
-     process.env.DELEGATION_GATEWAY_ARCHITECTURE==="legacy-signed-dag");
+  // The historical HTTP fixture requires explicit consent and HTTP URL.
+  // All other profiles use the Rust-native-only canonical selector.
   const credentials=historicalFixture
     ?createOwnerPrivateMcpEngineerCredentialPort({
       adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken

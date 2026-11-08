@@ -68,3 +68,18 @@ test("R415.1 cold recovery chooses HTTP only as separately gated historical fixt
  assert.match(select,/:createTrustedEngineerCredentialPort\(\{bearerToken:recovery\.adapterToken\}\)/u);
  assert.doesNotMatch(host,/from "\.\.\/\.\.\/\.\.\/packages\/orchestrator-runtime\/src\/authority-client\.ts"/u);
 });
+
+test("R416 native cold recovery does not require historical HTTP Adapter URL",()=>{
+ const host=read("poc/apps/orchestrator/src/trusted-engineer-host.mjs");
+ const service=read("poc/apps/orchestrator/src/trusted-engineer-service.mjs");
+ assert.match(host,/\(historicalFixture&&typeof recovery\.adapterBaseUrl!=="string"\)/u);
+ assert.match(host,/if\(historicalFixture\)\{[\s\S]*?new URL\(recovery\.adapterBaseUrl\)/u);
+ assert.match(service,/\(recovery\.adapterBaseUrl!==undefined&&\s*typeof recovery\.adapterBaseUrl!=="string"\)/u);
+ const start=host.indexOf("const historicalFixture=");
+ const check=host.indexOf("if(historicalFixture){",start);
+ const credentials=host.indexOf("const credentials=historicalFixture",check);
+ assert.ok(start>=0&&check>start&&credentials>check,
+  "fixture scope must be decided before HTTP validation and root issuer construction");
+ const native=host.slice(credentials,credentials+350);
+ assert.match(native,/:createTrustedEngineerCredentialPort\(\{bearerToken:recovery\.adapterToken\}\)/u);
+});

@@ -593,6 +593,32 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   assert.equal(adapterCalls,0);
   assert.equal((await journal.pending()).length,1);
   advertisedOperationalDurability=true;
+  // R416: a native/authority-only cold recovery must not require an
+  // historical Adapter HTTP URL, even if the old fixture was opted into.
+  // Native Engineered Root issuance MUST still fail without a Rust socket;
+  // no journal or HTTP credential side effect is permitted.
+  const {adapterBaseUrl:unusedHistoricalUrl,...withoutHttp}=operationalConfig.recovery;
+  await assert.rejects(startTrustedEngineerRecoveringHost({
+    ...operationalConfig,recovery:withoutHttp
+  }),/complete trusted recovery IPC and Engineer credential configuration required/);
+  const nativeEnvKeys=["DELEGATION_GATEWAY_ARCHITECTURE",
+    "ENGINEER_CORE_NATIVE_MODE","ADAPTER_ENGINEER_NATIVE_SOCKET",
+    "APPROVED_RUNNER_NATIVE_MCP","DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE"];
+  const nativeBefore=Object.fromEntries(nativeEnvKeys.map(k=>[k,process.env[k]]));
+  try{
+    for(const key of nativeEnvKeys)delete process.env[key];
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+    await assert.rejects(startTrustedEngineerRecoveringHost({
+      ...operationalConfig,recovery:withoutHttp
+    }),/Canonical Engineer root requires native Rust issuer socket/);
+    assert.equal(adapterCalls,0);
+    assert.equal((await journal.pending()).length,1);
+  }finally{
+    for(const key of nativeEnvKeys){
+      if(nativeBefore[key]===undefined)delete process.env[key];
+      else process.env[key]=nativeBefore[key];
+    }
+  }
   // A production-like recovering host must NEVER silently fall back to
   // unauthenticated plaintext, even if the IPC and Adapter are configured.
   await assert.rejects(startTrustedEngineerRecoveringHost({

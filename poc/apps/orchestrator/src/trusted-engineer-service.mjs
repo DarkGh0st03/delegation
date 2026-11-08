@@ -216,7 +216,10 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
      !key.includes("BEGIN")||
      !/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u
        .test(oidc.tls.expectedClientFingerprint256??"")||
-     typeof recovery.adapterBaseUrl!=="string"||
+     // R416: native recovery never requires an HTTP Adapter endpoint.
+     // Historical fixture URL validation is performed by strictRecoveringHost.
+     (recovery.adapterBaseUrl!==undefined&&
+      typeof recovery.adapterBaseUrl!=="string")||
      typeof recovery.gatewaySocketPath!=="string"||
      !isAbsolute(recovery.gatewaySocketPath))
     denied();

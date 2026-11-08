@@ -40,6 +40,8 @@ on:
       # R414: native Engineer config must never type-import historical HTTP transport.
       # R415.1: Engineer cold-recovery history has an explicit fail-closed fixture gate.
       - 'poc/apps/orchestrator/src/trusted-engineer-host.mjs'
+      - 'poc/apps/orchestrator/src/trusted-engineer-service.mjs'
+      - 'poc/apps/orchestrator/test/trusted-engineer-host.test.mjs'
       - 'poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts'
       - 'poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts'
