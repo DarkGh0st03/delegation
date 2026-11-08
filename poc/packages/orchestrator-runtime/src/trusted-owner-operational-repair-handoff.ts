@@ -8,8 +8,7 @@
 import {randomBytes} from "node:crypto";
 import {TrustedOperationalEpochJournal}
  from "./trusted-operational-epoch-journal.mjs";
-import {TrustedOperationalRepairPlanner,
- type TrustedRepairModelInput}
+import type {TrustedRepairModelInput}
  from "./trusted-operational-repair-planner.ts";
 import {TrustedAdkOperationalRepairProposer}
  from "./trusted-adk-operational-repair-proposer.ts";
@@ -29,7 +28,7 @@ import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {TrustedExecutionCoordinator}
  from "./trusted-execution-coordinator.ts";
-import {executeTrustedAdmittedRepairDag}
+import type {executeTrustedAdmittedRepairDag}
  from "./trusted-repair-dag-controller.ts";
 import {completeTrustedRemoteDiscoveryForPlanning} from
  "./trusted-remote-discovery-planner-bridge.ts";
@@ -298,6 +297,19 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       }
     }
     observe("d1_planner_preflight");
+    // R385.3: the historical planner is reachable only after the original
+    // Gateway has independently attested a real finalized Test failure.
+    // Recheck the original owner run, Root and immutable signed plan after
+    // the async module-load boundary, before any model proposal.
+    await config.verifyLiveRun?.();
+    const {TrustedOperationalRepairPlanner}=await import(
+     "./trusted-operational-repair-planner.ts");
+    await config.verifyLiveRun?.();
+    const beforePlanner=config.coordinator.trustedOperationalAuthority();
+    if(config.coordinator.phase!=="execution"||
+       beforePlanner.credential_id!==root.credential_id||
+       beforePlanner.plan_digest!==r.plan_digest)
+     fail("original signed Rust root changed during repair planner load");
     const planner=new TrustedOperationalRepairPlanner({
      gateway:config.gateway,coordinator:config.coordinator,
      intake,sessionId:r.session_id,
@@ -353,6 +365,17 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       fail("Gateway epoch admission did not match reserved signed DAG");
      if(config.planRepairEpoch!.executeAdmittedRepairDag){
       await config.verifyLiveRun!();
+      // The old DAG execution controller must not be loaded by owners
+      // performing only Gateway-confirmed feedback or repair preflight.
+      // A remote Gateway epoch has already been admitted at this point.
+      const {executeTrustedAdmittedRepairDag}=await import(
+       "./trusted-repair-dag-controller.ts");
+      await config.verifyLiveRun!();
+      const beforeDispatch=config.coordinator.trustedOperationalAuthority();
+      if(config.coordinator.phase!=="execution"||
+         beforeDispatch.credential_id!==root.credential_id||
+         beforeDispatch.plan_digest!==r.plan_digest)
+       fail("original signed Rust root changed during repair DAG load");
       observe("d1_admitted_execution");
       const report=await executeTrustedAdmittedRepairDag({
        ...config.planRepairEpoch!.executeAdmittedRepairDag,
