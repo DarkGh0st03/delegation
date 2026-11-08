@@ -36,6 +36,9 @@ jobs:
           # R385.4: never add new production imports, computed loaders or configured launchers to retained signed-DAG modules.
           node --experimental-vm-modules poc/scripts/r3854-legacy-dag-closure-audit.mjs
           node --experimental-vm-modules --test poc/scripts/test/r3854-legacy-dag-closure-audit.test.mjs
+          # R385.16: read-only Human Gate and exact legacy edge inventory; never execute merge or models.
+          node --experimental-vm-modules poc/scripts/r38516-human-gate-and-legacy-reachability.mjs
+          node --experimental-vm-modules --test poc/scripts/test/r38516-human-gate-and-legacy-reachability.test.mjs
           node --experimental-vm-modules --test poc/scripts/test/r6-configured-command.test.mjs
           node --experimental-vm-modules --test poc/scripts/test/r243-private-gateway-transport-audit.test.mjs
           npm --prefix poc run audit:r6:types
