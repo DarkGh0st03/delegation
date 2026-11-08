@@ -1,7 +1,0 @@
-{
-  "revision": "R303.4c",
-  "scenario": "real native Rust/EVM/OPA Test Agent with Docker project and independent researcher acceptance after owner-only reference seeding",
-  "correction": "create previously absent acceptance test instead of updating absent path",
-  "paid_model_calls": 0,
-  "main_writes": false
-}

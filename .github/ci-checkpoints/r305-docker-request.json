@@ -1,9 +1,0 @@
-{
-  "revision": "R318",
-  "scenario": "Three canonical Gateway HTTP Tasks with owner-private CAS/Runner staging and fail-closed Agent tools",
-  "allowed_model_calls": 0,
-  "production_mutations": false,
-  "reference_implementation_provenance": "CI owner fixture, not LLM agents",
-  "approval": "no paid AI",
-  "regression_fix": "R315 Docker failure at stale duplicate-preflight EEXIST expectation; admitted Task flight now denies repeated preflight before durable journal; no provider write"
-}
