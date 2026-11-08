@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BaseLlm} from '@google/adk';
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../src/trusted-authority-only-adaptive-work-loop.mjs';
+import {selectTrustedRepairDiagnosticRead} from '../src/trusted-authority-only-repair-diagnostic-gate.mjs';
 const branch='feature/account-suspension',repo='gitea://gitea.local/thesis/iam-console-poc';
 const grant=role=>({operation:role==='test'?'run_tests':'update_file',
  resource:repo+'/branches/feature%2Faccount-suspension'+(role==='test'?'':'/files/apps/'+role+'.ts')});
@@ -314,6 +315,76 @@ test('R376.0 verified Runner FAIL admits bounded read-only diagnosis before repa
  assert.match(afterRead,/independently_gateway_completed_tasks/u);
  assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
 });
+test('R385.6 strict native D1 refuses repair UPDATE with no independently completed diagnostic read',async()=>{
+ const f=verifiedFailureFixture();
+ let called=0;
+ f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('original signed diagnostic read missing');};
+ const repair=candidate('backend',1);repair.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),repair]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true,maxSteps:4
+ }),/original signed diagnostic read missing/u);
+ assert.equal(called,1);
+ assert.equal(f.events.includes('dispatch:task-1'),false,
+  'an UPDATE cannot cause provider effects before signed diagnostic evidence');
+ assert.equal(f.retired,true,'ambiguous diagnostic source must retire the original root');
+});
+test('R385.6 strict native D1 accepts separate signed current-HEAD read before Backend correction',async()=>{
+ const f=verifiedFailureFixture();
+ const inspect=candidate('backend',1,[diagnosticRead()]);inspect.task.depends_on=[];
+ const repair=candidate('backend',2);repair.task.depends_on=['task-1'];
+ const retest=candidate('test',3);retest.task.depends_on=['task-2'];
+ const resource=grant('backend').resource;
+ let calls=0;
+ f.hooks.verifyRepairDiagnostic=async({task,context})=>{
+  calls++;
+  const read=f.done.find(p=>p.task_id==='task-1');
+  return selectTrustedRepairDiagnosticRead({
+   repairTask:task,failedEpoch:1,
+   currentHead:context.executionProgress.current_head_sha,
+   readRecords:read?[{
+    task_id:read.task_id,agent_id:read.agent_id,epoch:2,
+    revision:context.executionProgress.current_head_sha,resource,
+    signed_permissions:read.permissions,gateway_task_completed:true,
+    evidence_sha256:'c'.repeat(64),gateway_evidence_sha256:'c'.repeat(64)
+   }]:[]
+  });
+ };
+ const model=new Decisions([candidate('test',0),inspect,repair,retest,
+  {action:'ready_for_pr',reason:'Authenticated retest independently accepted'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:5,requireVerifiedRepairDiagnostic:true
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-1','task-2','task-3']);
+ assert.equal(calls,1);
+ assert.equal(f.retired,false);
+ assert.ok(f.events.indexOf('dispatch:task-1')<f.events.indexOf('dispatch:task-2'));
+});
+test('R385.6 missing owner verifier is rejected before first model or Child',async()=>{
+ const f=verifiedFailureFixture();
+ const model=new Decisions([candidate('test',0)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true
+ }),/invalid original owner loop configuration/u);
+ assert.equal(model.calls,0);
+ assert.equal(f.events.length,0);
+});
+test('R385.6 strict diagnostic policy does not invent a read requirement before the first failure',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ let called=0;
+ f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('not expected for D0');};
+ const model=new Decisions([candidate('backend',0),candidate('test',1),
+  {action:'ready_for_pr',reason:'Independently verified initial Test'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(called,0);
+ assert.equal(f.retired,false);
+});
+
 test('R376.2 independently attested source excerpt reaches next ADK repair decision only at current HEAD',async()=>{
  const f=verifiedFailureFixture();
  const read=f.hooks.readContext;
