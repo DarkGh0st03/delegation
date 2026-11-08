@@ -362,6 +362,27 @@ test('R385.6 strict native D1 accepts separate signed current-HEAD read before B
  assert.equal(f.retired,false);
  assert.ok(f.events.indexOf('dispatch:task-1')<f.events.indexOf('dispatch:task-2'));
 });
+test('R385.6 strict post-FAIL policy cannot be bypassed through CREATE',async()=>{
+ const f=verifiedFailureFixture();
+ let called=0;
+ f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('not applicable');};
+ const fresh=candidate('backend',1,[{operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/new-handler.ts'}]);
+ fresh.task.depends_on=[];
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{const x=await original();
+  x.rootPermissions.push(...fresh.task.permissions);
+  x.agents.backend.capabilities.push('create_file');
+  return x;
+ };
+ const model=new Decisions([candidate('test',0),fresh]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true
+ }),/strict post-FAIL CREATE needs a separate authenticated investigation policy/u);
+ assert.equal(called,0);
+ assert.equal(f.events.includes('dispatch:task-1'),false);
+ assert.equal(f.retired,true);
+});
 test('R385.6 missing owner verifier is rejected before first model or Child',async()=>{
  const f=verifiedFailureFixture();
  const model=new Decisions([candidate('test',0)]);
