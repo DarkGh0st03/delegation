@@ -1,9 +1,0 @@
-{
-  "revision": "R344",
-  "source_commit": "ea141119b12475d9833acecf25824f5a54eeff37",
-  "prerequisite_native_r343": 42179289530,
-  "prerequisite_result": "success",
-  "paid_ai": false,
-  "production_effects": false,
-  "request": "one native D1 ADK repair write; no retest PASS claim"
-}

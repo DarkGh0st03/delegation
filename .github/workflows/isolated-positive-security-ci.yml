@@ -16,6 +16,11 @@ on:
     paths:
       - '.github/workflows/isolated-positive-security-ci.yml'
       - '.github/workflows/r38513-native-strict-full-recovery.yml'
+      # R400: native PR, exact-SHA read-only Gate or its original E2E
+      # must automatically exercise the REAL native Security CI path.
+      - 'poc/packages/orchestrator-runtime/src/merge-readiness.ts'
+      - 'poc/packages/orchestrator-runtime/test/native-gitea-ci-human-gate-fixture.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/apps/test-runner-controller/fixtures/account-suspension-reference.mjs'
       - 'poc/apps/test-runner-controller/src/**'
