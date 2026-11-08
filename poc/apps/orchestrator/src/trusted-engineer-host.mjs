@@ -45,7 +45,7 @@ import {isTrustedOwnerRepairPlannerConfig}
   from "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
-import {createTrustedEngineerCredentialPort,createOwnerPrivateMcpEngineerCredentialPort}
+import {createTrustedEngineerCredentialPort}
   from "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {createAuthenticatedEngineerServer}
   from "./engineer-approval-server.mjs";
@@ -820,9 +820,10 @@ async function strictRecoveringHost(config){
   // The historical HTTP fixture requires explicit consent and HTTP URL.
   // All other profiles use the Rust-native-only canonical selector.
   const credentials=historicalFixture
-    ?createOwnerPrivateMcpEngineerCredentialPort({
-      adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
-    })
+    ?(await import("../../../packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts"))
+      .createLegacyOwnerPrivateMcpEngineerCredentialPort({
+        adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
+      })
     :createTrustedEngineerCredentialPort({bearerToken:recovery.adapterToken});
   return startTrustedEngineerLocalHost({
     ...config,recovery:{

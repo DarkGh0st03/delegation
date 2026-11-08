@@ -81,7 +81,9 @@ test("R406.4 native Engineer core and socket ports never import historical HTTP 
  assert.match(socket,/interface NativeConfig extends TrustedEngineerCoreConfig/u);
  // The HTTP compatibility fixture remains distinct and gated.
  const selector=read(base+"trusted-engineer-crypto-port.ts");
- assert.match(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
+ assert.doesNotMatch(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)|createOwnerPrivateMcpEngineerCredentialPort/u);
+ const legacy=read(base+"trusted-engineer-legacy-mcp-http-port.ts");
+ assert.match(legacy,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
  assert.match(selector,/createDirectRustEngineerCredentialPort\(config\)/u);
  assert.match(selector,/createNativeRustEngineerCredentialPort\(/u);
 });

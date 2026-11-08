@@ -1,77 +1,18 @@
 /**
- * R385.0: canonical Engineer Root DC issuance/revocation selector.
- * Engineer and Gateway use the native Rust Core directly under the
- * authority-only profile. The old MCP -> HTTP Adapter root issuer is loaded
- * lazily and ONLY for selected historical fixture operations.
- * No model, A2A agent or Gateway tool is allowed to select its authority.
+ * R417: canonical Software Engineer Root DC issuance/revocation is Rust only.
+ * The separately gated historical HTTP fixture is owned elsewhere and
+ * never imported here, whether statically, dynamically or as a type.
  */
 import {createNativeRustEngineerCredentialPort}
  from "./trusted-engineer-native-port.ts";
 import {createDirectRustEngineerCredentialPort}
  from "./trusted-engineer-direct-core-port.ts";
-import {assertLegacyEngineerHttpFixtureAllowed}
- from "./trusted-engineer-legacy-fixture-gate.ts";
-import type {TrustedEngineerCoreConfig} from "./trusted-credential-contracts.ts";
-import type {EngineerCredentialPort,RootParameters}
+import type {TrustedEngineerCoreConfig}
+ from "./trusted-credential-contracts.ts";
+import type {EngineerCredentialPort}
  from "./trusted-engineer-authority.ts";
-import type {DelegatedPermission} from "./delegated-permission.ts";
 
-/** R414: legacy HTTP settings stay a local, type-erased fixture shape.
- * Canonical Engineer source MUST NOT import even types from HTTP transport.
- * Native issuer settings come only from TrustedEngineerCoreConfig.
- */
-type HistoricalEngineerHttpConfig=TrustedEngineerCoreConfig&{
- adapterBaseUrl:string;
- fetchFn?:typeof fetch;
-};
-
-/**
- * Backwards-compatible *lazy* bridge for historical offline fixtures ONLY.
- *
- * Importing the owner selector or choosing the direct Rust path must NEVER
- * evaluate the legacy HTTP client or instantiate an in-process root MCP.
- * Old callers retain a synchronous EngineerCredentialPort constructor and
- * the same asynchronous, one-shot issuance and revocation operations.
- */
-export function createOwnerPrivateMcpEngineerCredentialPort(
- config:HistoricalEngineerHttpConfig
-):EngineerCredentialPort{
- assertLegacyEngineerHttpFixtureAllowed();
- // Retain the historical synchronous input validation (before any import).
- if(config.adapterBaseUrl.trim().length===0)
-  throw Error("Delegation Adapter base URL cannot be empty");
- if(config.bearerToken.trim().length===0)
-  throw Error("Engineer Adapter token cannot be empty");
- let loaded:Promise<EngineerCredentialPort>|undefined;
- const legacy=()=>{
-  loaded??=import("./trusted-engineer-legacy-mcp-http-port.ts")
-   .then(m=>m.createLegacyOwnerPrivateMcpEngineerCredentialPort(config));
-  return loaded;
- };
- return Object.freeze({
-  async issueScopedOrchestratorRoot(
-   input:RootParameters&{permissions:readonly DelegatedPermission[]}
-  ){
-   // Recheck at the operation boundary: a mode change after construction
-   // cannot resurrect the historical HTTP transport.
-   assertLegacyEngineerHttpFixtureAllowed();
-   // Pin grants before the dynamic module-load await. Never allow a caller
-   // to mutate a pending approval while the historical fixture loads.
-   const pinned=structuredClone(input);
-   return (await legacy()).issueScopedOrchestratorRoot(pinned);
-  },
-  async revokeRoot(credentialId:string){
-   assertLegacyEngineerHttpFixtureAllowed();
-   return (await legacy()).revokeRoot(credentialId);
-  }
- });
-}
-
-/**
- * Canonical trusted-owner selector. When the SAME Rust CryptoRuntime exposes
- * its root-only Unix socket, use it directly; never fall back to HTTP after a
- * native failure. Historical offline fixtures may still use MCP -> Adapter.
- */
+/** No Adapter URL, HTTP fetch, in-process private MCP, or legacy fallback. */
 export function createTrustedEngineerCredentialPort(
  config:TrustedEngineerCoreConfig
 ):EngineerCredentialPort{

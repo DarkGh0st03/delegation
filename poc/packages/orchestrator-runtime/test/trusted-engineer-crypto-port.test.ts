@@ -4,8 +4,10 @@ import test from "node:test";
 // environment. No production loader is permitted to infer this opt-in.
 process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
 import assert from "node:assert/strict";
-import {createOwnerPrivateMcpEngineerCredentialPort,createTrustedEngineerCredentialPort}
+import {createTrustedEngineerCredentialPort}
  from "../src/trusted-engineer-crypto-port.ts";
+import {createLegacyOwnerPrivateMcpEngineerCredentialPort as createOwnerPrivateMcpEngineerCredentialPort}
+ from "../src/trusted-engineer-legacy-mcp-http-port.ts";
 import {createOwnerPrivateMcpChildCryptographyPort}
  from "../src/trusted-child-crypto-port.ts";
 import {createDirectRustEngineerCredentialPort}

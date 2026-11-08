@@ -12,7 +12,7 @@ test("R385.0 owner selector has no eager HTTP Adapter bootstrap or owner-private
  assert.doesNotMatch(selector,/from ["']\.\/trusted-engineer-legacy-mcp-http-port\.ts["']/u);
  assert.doesNotMatch(selector,/from ["']\.\.\/\.\.\/\.\.\/mcp-shared\/src\/owner-private-child-mcp\.ts["']/u);
  assert.doesNotMatch(selector,/createOwnerPrivateCryptographicMcpSession\(/u);
- assert.match(selector,/loaded\?\?=import\("\.\/trusted-engineer-legacy-mcp-http-port\.ts"\)/u);
+ assert.doesNotMatch(selector,/trusted-engineer-legacy-mcp-http-port|createOwnerPrivateMcpEngineerCredentialPort|assertLegacyEngineerHttpFixtureAllowed/u);
  assert.match(legacy,/createLegacyOwnerPrivateMcpEngineerCredentialPort/u);
  assert.doesNotMatch(legacy,/import \{SoftwareEngineerAuthorityBootstrap\}/u);
  assert.match(legacy,/loaded\?\?=import\("\.\/authority-client\.ts"\)/u);
@@ -20,11 +20,11 @@ test("R385.0 owner selector has no eager HTTP Adapter bootstrap or owner-private
  assert.match(legacy,/createOwnerPrivateCryptographicMcpSession\(/u);
 });
 
-test("R385.1 legacy HTTP issuer gate is shared by selector and direct compatibility module",()=>{
+test("R417 historical HTTP opt-in gate belongs only to the legacy credential module",()=>{
  const selector=read("poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts");
  const legacy=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts");
  const gate=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-fixture-gate.ts");
- assert.match(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
+ assert.doesNotMatch(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
  assert.match(legacy,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
  assert.match(gate,/DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"/u);
  assert.match(gate,/APPROVED_RUNNER_NATIVE_MCP==="1"/u);
@@ -63,8 +63,9 @@ test("R415.1 cold recovery chooses HTTP only as separately gated historical fixt
   'APPROVED_RUNNER_NATIVE_MCP===undefined',
   'DELEGATION_GATEWAY_ARCHITECTURE===undefined'
  ])assert.ok(guard.includes(condition),"historical recovery guard missing "+condition);
- const select=host.slice(end,end+350);
- assert.match(select,/\?createOwnerPrivateMcpEngineerCredentialPort\(/u);
+ const select=host.slice(end,end+650);
+ assert.match(select,/\?\(await import\(".*trusted-engineer-legacy-mcp-http-port\.ts"\)\)/u);
+ assert.match(select,/\.createLegacyOwnerPrivateMcpEngineerCredentialPort\(/u);
  assert.match(select,/:createTrustedEngineerCredentialPort\(\{bearerToken:recovery\.adapterToken\}\)/u);
  assert.doesNotMatch(host,/from "\.\.\/\.\.\/\.\.\/packages\/orchestrator-runtime\/src\/authority-client\.ts"/u);
 });
@@ -80,6 +81,6 @@ test("R416 native cold recovery does not require historical HTTP Adapter URL",()
  const credentials=host.indexOf("const credentials=historicalFixture",check);
  assert.ok(start>=0&&check>start&&credentials>check,
   "fixture scope must be decided before HTTP validation and root issuer construction");
- const native=host.slice(credentials,credentials+350);
+ const native=host.slice(credentials,credentials+650);
  assert.match(native,/:createTrustedEngineerCredentialPort\(\{bearerToken:recovery\.adapterToken\}\)/u);
 });
