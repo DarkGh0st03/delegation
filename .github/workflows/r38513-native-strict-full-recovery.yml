@@ -54,9 +54,34 @@ jobs:
           node-version: "22.15.0"
           cache: npm
           cache-dependency-path: poc/package-lock.json
-      - uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: v1.8.4
+      # R385.13: GitHub's unversioned foundryup bootstrap returned repeated
+      # HTTP 504 before the E2E (never a functional failure). Install the
+      # IDENTICAL pinned Foundry v1.8.4 Linux amd64 release directly and
+      # verify its GitHub-release SHA-256 digest before executing any binary.
+      # Digest: https://api.github.com/repos/foundry-rs/foundry/releases/tags/v1.8.4
+      - name: Install verified immutable Foundry v1.8.4 binaries (no latest bootstrap)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)-$(uname -m)" = "Linux-x86_64"
+          archive="$RUNNER_TEMP/foundry_v1.8.4_linux_amd64.tar.gz"
+          bin="$RUNNER_TEMP/r38513-foundry-v1.8.4/bin"
+          mkdir -p "$bin"
+          curl --proto '=https' --tlsv1.2 --fail --location --show-error \
+            --retry 6 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 20 --max-time 240 \
+            --output "$archive" \
+            'https://github.com/foundry-rs/foundry/releases/download/v1.8.4/foundry_v1.8.4_linux_amd64.tar.gz'
+          printf '%s  %s\\n' \
+            '699e2207a6a9b27ca17c48c81e56f1677ed9c58b623b59128b4e15ec9da0625e' \
+            "$archive" | sha256sum --check --status
+          test "$(stat -c '%s' "$archive")" -eq 117721507
+          tar -xzf "$archive" -C "$bin" --no-same-owner
+          for tool in forge cast anvil; do
+            test -x "$bin/$tool"
+            "$bin/$tool" --version | grep -F '1.8.4'
+          done
+          echo "$bin" >> "$GITHUB_PATH"
       - name: Refuse paid model and competing Adapter startup
         run: |
           test -z "${GEMINI_API_KEY:-}"
