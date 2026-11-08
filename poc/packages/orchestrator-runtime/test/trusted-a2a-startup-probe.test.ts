@@ -201,7 +201,7 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
     });
     if(role==="test")
      card.capabilities.extensions[0]!.params.taskCapabilities=
-      ["read_file","update_file","run_tests"];
+      ["read_file","update_file","create_file","delete_file","run_tests"];
     return Response.json(card);
    }) as typeof fetch
   }),/pinned localhost role-card verification denied/u);

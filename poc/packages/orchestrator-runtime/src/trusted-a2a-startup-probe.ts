@@ -43,9 +43,9 @@ export function verifyTrustedApprovedAgentCard(role:Role,base:string,card:AgentC
   // The trusted role DID must agree with the original Rust signer in
   // authority-only mode. Historical Cards retain their fixed demonstration DID.
   const expectedDid=trustedSignerAgentDid(role);
-  // The native signer can only advertise effects implemented by this
-  // canonical owner. Test create_file exists in historical ADK fixtures but
-  // is intentionally NOT executable by the original authority-only owner.
+  // Native discovery advertises only owner-implemented operations.
+  // A Test CREATE is subsequently authorized only on an exact project-test
+  // source by the original signed Task, Rust/OPA and Gateway CAS.
   const nativeOwner=process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&
    process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only";
   const supported=new Set<string>(nativeOwner?
