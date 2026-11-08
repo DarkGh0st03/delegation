@@ -6,45 +6,12 @@ import type {DelegatedPermission} from "./delegated-permission.ts";
 import {postCredential,validateCommon} from "./authority-adapter-transport.ts";
 import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
 
-export interface CredentialStatusInput {
-  type: "BitstringStatusListEntry";
-  statusPurpose: "revocation";
-  statusListIndex: string;
-  statusListCredential: string;
-}
-
-export interface RootIssuanceInput {
-  credential_id: string;
-  valid_from: string;
-  validity_seconds: number;
-  credential_status: CredentialStatusInput;
-}
-
-export interface ChildIssuanceInput {
-  parent_credential_id: string;
-  credential_id: string;
-  valid_from: string;
-  validity_seconds: number;
-  credential_status: CredentialStatusInput;
-  selection: unknown;
-  /** Trusted signed plan Task ID; ignored by the unchanged legacy issuer. */
-  approved_task_id?:string;
-}
-
-export interface IssuedDelegationCredential {
-  "@context": string[];
-  type: string[];
-  id: string;
-  issuer: string;
-  validFrom: string;
-  credentialStatus?: CredentialStatusInput;
-  credentialSubject: {
-    sub: string;
-    per: DelegatedPermission[];
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
+// Compatibility: historical direct importers may still use these types.
+// The canonical public index imports them from a type-only module instead.
+import type {RootIssuanceInput,IssuedDelegationCredential}
+  from "./trusted-credential-contracts.ts";
+export type {CredentialStatusInput,RootIssuanceInput,ChildIssuanceInput,
+  IssuedDelegationCredential} from "./trusted-credential-contracts.ts";
 
 export class SoftwareEngineerAuthorityBootstrap {
   readonly #config: AdapterClientConfig;
