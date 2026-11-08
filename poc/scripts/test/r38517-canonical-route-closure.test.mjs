@@ -5,6 +5,7 @@ import {resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {
  auditR38517WorkflowRoutes,auditR38517CallerInventory,
+ R38518_ALLOWED_NONTEST_LEGACY_CALLERS,
  classifyCaller,configuredWorkflowEvents,scanR38517
 } from "../r38517-canonical-route-closure.mjs";
 import {r38516LegacyInventory,PRIVATE_MCP_KEEP}
@@ -151,4 +152,31 @@ test("R385.18 historical repair controller consumes neutral credential contracts
  assert.ok(issuer);
  assert.ok(!issuer.staticImporters.includes(
   "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts"));
+});
+
+test("R385.18 deny any new runtime or script importer of a historical HTTP/DAG module",()=>{
+ const rows=Object.entries(R38518_ALLOWED_NONTEST_LEGACY_CALLERS);
+ assert.equal(rows.length,5,"exact known historical migration targets");
+ const fake={
+  status:"INVENTORY_PROVENANCE_OK",
+  legacyModules:rows.map(([path,allowed])=>({
+   path,present:true,
+   staticImporters:allowed.slice(0,1),
+   runtimeHints:allowed.slice(1).map(source=>({source,kind:"dynamic-import"})),
+   configuredCallers:[]
+  })),
+  protectedModules:PRIVATE_MCP_KEEP.map(path=>({path,present:true})),
+  unresolvedRuntimeIndirections:117
+ };
+ const accepted=auditR38517CallerInventory(fake);
+ assert.equal(accepted.status,"CALLER_INVENTORY_OK",accepted.issues.join("\n"));
+ assert.equal(accepted.deletionAuthorized,false);
+ const suspicious="poc/packages/orchestrator-runtime/src/unreviewed-new-issuer.ts";
+ fake.legacyModules[0].staticImporters.push(suspicious);
+ const denied=auditR38517CallerInventory(fake);
+ assert.equal(denied.status,"CALLER_INVENTORY_FAIL");
+ assert.match(denied.issues.join("\n"),
+  /Unexpected new non-test legacy caller: .*authority-client\.ts/u);
+ assert.ok(denied.issues.some(x=>x.includes(suspicious)));
+ assert.equal(denied.deletionAuthorized,false);
 });
