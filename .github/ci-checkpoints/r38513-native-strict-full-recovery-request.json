@@ -1,6 +1,6 @@
 {
   "checkpoint": "R385.13",
-  "source_sha": "f2964da3962374c80d0d1aacada6e8801860010f",
+  "source_sha": "42fa549ab6511e3fa820718d351e2ab9a92de51f",
   "mode": "disposable_original_authority_only_full_strict_postfail_recovery",
   "required": {
     "signed_engineer_approvals": 1,
@@ -17,6 +17,6 @@
     "paid_model_inference": 0
   },
   "scope": "CI fixture only; no remote paid inference; no merge to main; failures must remain fail-closed",
-  "attempt_note": "R385.19 Engineer legacy HTTP route now requires exact local opt-in and must remain denied in authority-only/native mode. Neutral Engineer/repair credential types decoupled; scoped R49 historical fixture regression. Fast CI #42478682882 and Engineer Authority #42478682804 SUCCESS on source SHA. Verify original Engineer direct Rust, 24 signed Child, ten authenticated read/CAS pairs, real Docker FAIL then PASS, acceptance and Gitea Draft PR. Zero model calls or main merge.",
-  "retry_sequence": 12
+  "attempt_note": "Free post-cleanup same-SHA validation: 69 historic R282-R345 docs and seven obsolete positive E2E workflow/payload pairs physically removed, compact canonical roadmap/README/implementation/ADR updated, all source tests and native crypto-MCP retained. Fast CI #42480582050 2/2 SUCCESS on source SHA. Verify original Engineer direct Rust, 24 Child, 10 independent signed read/CAS, Docker FAIL→PASS, acceptance and disposable Gitea Draft PR. Zero paid model inference, no merge.",
+  "retry_sequence": 13
 }
