@@ -46,9 +46,13 @@ function declaredEvents(workflow){
 function includesRequiredInput(wf,name){
  const start=wf.indexOf("      "+name+":");
  if(start===-1)return false;
- const next=wf.indexOf("\n      ",start+6);
- const value=wf.slice(start,next<0?undefined:next);
- return /^\s*required:\s*true\s*$/mu.test(value);
+ // Match the NEXT sibling input at exactly six spaces, not the
+ // eight-space description/type children. A plain substring matches their
+ // first six spaces and would incorrectly truncate every required field.
+ const tail=wf.slice(start+("      "+name+":").length);
+ const next=tail.search(/^ {6}[a-zA-Z_][a-zA-Z0-9_-]*:/mu);
+ const value=next<0?tail:tail.slice(0,next);
+ return /^ {8}required: true\s*$/mu.test(value);
 }
 function must(issues,condition,reason){
  if(!condition)issues.push(reason);
