@@ -51,6 +51,33 @@ La firma del selector canonico `createTrustedEngineerCredentialPort` accetta ora
 
 **R417 — selettore canonico completamente separato dal bridge HTTP.** Eliminata la funzione `createOwnerPrivateMcpEngineerCredentialPort` e i relativi import/contratti legacy da `trusted-engineer-crypto-port.ts`. Il modulo canonico esporta soltanto `createTrustedEngineerCredentialPort` su Core Rust diretto/socket, senza import statici, type-only o dinamici della fixture HTTP. I consumer storici legittimi usano la factory gia' presente in `trusted-engineer-legacy-mcp-http-port.ts`: host recovering con import **dinamico solo nel ramo opt-in**, test HTTP espliciti in module alias. I test R240/R3850/R406/R412 verificano indipendenza nativa, fail-closed, import lazy e assenza di fallback; Security CI controlla i file modificati. Non eliminare ancora `authority-client.ts` e `authority-adapter-transport.ts` finche' le fixture Runner EVM/Engineer li richiedono. Fast, Engineer e Security CI **sulla SHA R417** ancora da verificare; no paid Gemini e no merge.
 
+**R417 validato (8 novembre 2026).** Quattro CI gratuite **SUCCESS sulla stessa SHA**
+`85d9c0276703c7e1cb5b1bd894bdc6b4f1166133`:
+[Fast #42529948702](https://github.com/DarkGh0st03/delegation/actions/runs/42529948702) 2/2,
+[Engineer Approval #42529948700](https://github.com/DarkGh0st03/delegation/actions/runs/42529948700),
+[Two-Root #42529948630](https://github.com/DarkGh0st03/delegation/actions/runs/42529948630),
+[Security Rust/Gitea/Docker #42529948626](https://github.com/DarkGh0st03/delegation/actions/runs/42529948626) 2/2.
+Il selector Rust canonico non contiene più il bridge HTTP; le fixture
+storiche opt-in rimangono separate.
+
+**R418 — Isolamento test-only degli import HTTP EVM storici (8 novembre 2026).**
+Le due fixture non pagate `native-approved-three-adk-evm-e2e.mjs` e
+`native-r110-repair-discovery-evm-e2e.mjs` non caricano più
+`SoftwareEngineerAuthorityBootstrap` mediante import statico: l'import
+e' ora dinamico nel corpo dell'esecuzione, **dopo** il controllo del profilo
+`ADAPTER_TRUST_PROFILE=evm` e dei bearer Engineer/Agent. Rimangono
+test storici di emissione Root/Child e VP con Adapter, **non** la
+rotta canonica authority-only Rust e non una ragione sufficiente a cancellare
+`authority-client.ts`. R3850 protegge le due frontiere;
+R412 mantiene esattamente due consumer dinamici di runtime già autorizzati
+(Engineer fixture e Runner), più le due fixture EVM ora dinamiche,
+e respinge la reintroduzione degli import statici. Security CI verifica
+anche la sintassi dei due script; la loro esecuzione EVM completa richiede
+il relativo setup Anvil/Adapter e **non** viene sostituita dal controllo sintattico.
+La revoca, i contratti Ed25519, OPA, Gateway e test E2E nativi restano protetti.
+Nessun Gemini a pagamento, nessun merge, nessuna cancellazione prematura:
+Fast + Security CI devono avere esito positivo **sulla SHA R418**.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

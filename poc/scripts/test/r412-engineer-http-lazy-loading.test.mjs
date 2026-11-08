@@ -121,7 +121,14 @@ test("R412 tracked HTTP issuer graph now has only two literal historical dynamic
  assert.ok(!entry.staticImporters.some(x=>x.source===path||x.source===runner));
  const dynamic=entry.runtimeIndirectionHints
   .filter(x=>x.kind==="dynamic-import").map(x=>x.source).sort();
- assert.deepEqual(dynamic,[path,runner].sort());
+ const historicalEvm=[
+  "poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs",
+  "poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs"
+ ];
+ assert.deepEqual(dynamic,[path,runner,...historicalEvm].sort(),
+  "Only the two gated non-test callers and two historical EVM tests load the old issuer");
+ assert.deepEqual(entry.staticImporters.filter(x=>historicalEvm.includes(x.source)),[],
+  "EVM fixture import must not re-enter the module graph eagerly");
  assert.equal(entry.configuredCallers.length,0);
  assert.ok(inv.unresolvedRuntimeIndirections.length>0,
   "other computed/external callers remain unproven, so no deletion");

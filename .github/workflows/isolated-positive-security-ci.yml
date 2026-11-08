@@ -33,6 +33,9 @@ on:
       # R411: native EVM fixture must never silently regress onto a legacy shim.
       - 'poc/apps/gateway/src/trusted-operational-feature-head.ts'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
+      # R418: old EVM fixtures may load HTTP only lazily after EVM identity guards.
+      - 'poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs'
+      - 'poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs'
       - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'
       - 'poc/scripts/test/r408-reviewed-dag-caller-migration.test.mjs'
       - 'poc/scripts/r38517-canonical-route-closure.mjs'
@@ -112,6 +115,8 @@ jobs:
           node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
+          node --check poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs
+          node --check poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r406-neutral-repair-model-contract.test.mjs
 
       - name: Preload disposable service and Runner Docker images

@@ -17,8 +17,7 @@ import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {SignedEngineerApprovalFileStore} from
   "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
-import {SoftwareEngineerAuthorityBootstrap} from
-  "../../../packages/orchestrator-runtime/src/authority-client.ts";
+
 import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from
@@ -155,6 +154,11 @@ try{
    public_key_pem:keys.publicKey.export({format:"pem",type:"spki"}).toString()
   }}
  });
+ // R418: historical EVM repair regression only. The HTTP issuer is
+ // lazily imported after explicit EVM/Gateway identity and bearer guards;
+ // the canonical Owner/Gateway executable must never load it.
+ const {SoftwareEngineerAuthorityBootstrap}=await import(
+   "../../../packages/orchestrator-runtime/src/authority-client.ts");
  const credentials=new SoftwareEngineerAuthorityBootstrap({
   adapterBaseUrl:adapter,bearerToken:tokens.engineer,timeoutMs:25_000
  });

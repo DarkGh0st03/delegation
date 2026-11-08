@@ -20,7 +20,7 @@ import {GatewayCorroboratedTaskAttestor} from "../src/trusted-task-observation.t
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {OpaPolicyClient} from "../src/policy-client.ts";
-import {SoftwareEngineerAuthorityBootstrap} from "../../../packages/orchestrator-runtime/src/authority-client.ts";
+
 import {TrustedEngineerAuthoritySession} from "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {TrustedApprovedA2ADispatcher} from "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
@@ -146,6 +146,11 @@ async function executeScenario({wrongBackend=false,seed}){
       trustedKeys:{[keyId]:{engineer_did:did.engineer,
         public_key_pem:publicKey.export({format:"pem",type:"spki"}).toString()}}
     });
+    // R418: historical real-EVM regression only. Keep the HTTP issuer out
+    // of the module graph until the EVM DID/bearer/trust profile has
+    // already been checked; never expose it to canonical native owners.
+    const {SoftwareEngineerAuthorityBootstrap}=await import(
+      "../../../packages/orchestrator-runtime/src/authority-client.ts");
     authorityClient=new SoftwareEngineerAuthorityBootstrap({
       adapterBaseUrl:adapter,bearerToken:process.env.ADAPTER_CALLER_ENGINEER,
       timeoutMs:30_000
