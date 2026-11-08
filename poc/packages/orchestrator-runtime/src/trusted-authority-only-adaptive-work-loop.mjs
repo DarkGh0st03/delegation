@@ -64,6 +64,9 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
    // Gateway-completed diagnostic read of that *same* source and HEAD.
    // No model excerpt, permission claim or A2A result can satisfy this gate.
    if(requireVerifiedRepairDiagnostic&&before.verifiedFailureHistory?.length&&
+      decision.task.permissions.some(p=>p.operation==='create_file'))
+    deny('strict post-FAIL CREATE needs a separate authenticated investigation policy');
+   if(requireVerifiedRepairDiagnostic&&before.verifiedFailureHistory?.length&&
       decision.task.permissions.some(p=>p.operation==='update_file')){
     const binding=await hooks.verifyRepairDiagnostic(Object.freeze({
      task:decision.task,context:before
