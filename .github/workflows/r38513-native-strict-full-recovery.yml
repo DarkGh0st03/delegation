@@ -57,22 +57,26 @@ jobs:
       # R385.13: GitHub's release-asset CDN returned repeated 504 for both
       # unversioned foundryup and the versioned tarball. Prefer the official
       # versioned GHCR image; extract only three binaries into RUNNER_TEMP.
-      # The fallback remains the official pinned v1.8.4 release with the
-      # SHA-256 recorded in the GitHub release API. No latest, no paid AI.
-      - name: Install official Foundry v1.8.4 via GHCR (SHA-256 release fallback)
+      # Require GitHub's publisher-signed OCI attestation for GHCR; the
+      # fallback remains the official pinned v1.8.4 release with the
+      # SHA-256 recorded in the GitHub release API. No latest or paid AI.
+      - name: Install verified Foundry v1.8.4 (signed GHCR or SHA-256 release)
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$(uname -s)-$(uname -m)" = "Linux-x86_64"
           bin="$RUNNER_TEMP/r38513-foundry-v1.8.4/bin"
           mkdir -p "$bin"
           image='ghcr.io/foundry-rs/foundry:v1.8.4'
-          if docker pull --platform linux/amd64 "$image"; then
-            # Pull is restricted to the publisher's versioned GHCR image.
-            # Do not accept a local image with another repository digest.
+          if docker pull --platform linux/amd64 "$image" &&
+             gh attestation verify "oci://$image" --repo foundry-rs/foundry; then
+            # A matching versioned tag is insufficient: verify the
+            # publisher's signed OCI build attestation before extraction.
             docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' \
               "$image" | grep -F 'ghcr.io/foundry-rs/foundry@sha256:'
-            cid="$(docker create --platform linux/amd64 "$image" true)"
+            cid="$(docker create --platform linux/amd64 --entrypoint /bin/true "$image")"
             trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
             for tool in forge cast anvil; do
               docker cp "$cid:/usr/local/bin/$tool" "$bin/$tool"
