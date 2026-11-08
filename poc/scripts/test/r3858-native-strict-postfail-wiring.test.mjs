@@ -3,7 +3,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {fileURLToPath} from "node:url";
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
 test("R385.8 native workflow must use real Rust MCP, postfail root and zero inference",()=>{
@@ -14,6 +13,15 @@ test("R385.8 native workflow must use real Rust MCP, postfail root and zero infe
  assert.match(w,/APPROVED_RUNNER_NATIVE_MCP: "1"/u);
  assert.match(w,/GATEWAY_VERIFIER_MODE: core-rust/u);
  assert.match(w,/R233_NATIVE_EVM: "1"/u);
+ // R385.8 initially failed BEFORE the owner run because the inherited
+ // old workflow lacked this private step-local architecture mode.
+ const step=w.split("- name: Native owner signed post-FAIL diagnostic read and first guarded CAS (stop before PR)")[1]?.split("- name: Validate native Gateway root read")[0];
+ assert.ok(step,"original native owner step must exist");
+ assert.match(step,/env:\n\s+DELEGATION_GATEWAY_ARCHITECTURE: authority-only/u);
+ assert.match(step,/test "\$\{DELEGATION_GATEWAY_ARCHITECTURE:-\}" = "authority-only"/u);
+ assert.match(step,/grep -Fq .*r3858_strict_native_postfail_read_and_first_repair_no_false_pass/u);
+ assert.equal(w.split("DELEGATION_GATEWAY_ARCHITECTURE: authority-only").length,2,
+  "authority-only must be on the owner step, not globally on legacy Adapter");
  assert.match(w,/test -z "\$\{GEMINI_API_KEY:-\}"/u);
  assert.doesNotMatch(w,/R376_NATIVE_DIAGNOSIS: "1"|R377_NATIVE_SPECIALIST_STOP_ROLE/u);
  assert.match(w,/r3858-native-strict-postfail-probe-request\.json/u);
