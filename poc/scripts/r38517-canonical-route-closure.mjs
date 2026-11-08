@@ -174,6 +174,10 @@ function main(){
   native_crypto_mcp_retained:scan.callers.privateMcp.filter(x=>x.present).length,
   legacy_module_callers:scan.callers.modules.map(x=>({
    path:x.path,count:x.callerCount,
+   // R385.18: paths only, not secrets or source. Exact importer provenance
+   // makes any further migration independently reviewable.
+   callers:x.callers.map(c=>({source:c.source,edge:c.edge,
+    classification:c.classification})),
    classification_counts:Object.fromEntries(
     [...new Set(x.callers.map(c=>c.classification))].map(label=>[
      label,x.callers.filter(c=>c.classification===label).length
