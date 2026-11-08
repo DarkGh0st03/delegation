@@ -104,6 +104,8 @@ jobs:
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-adaptive-work-loop.test.mjs
           # R385.7: real local Node FAIL/PASS, source-conditioned offline ADK edit and authenticated read gate (no Gemini, no native Rust claim).
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/r3857-source-grounded-adaptive-repair.test.mjs
+          # R385.11: Test Agent investigates a real failing project .test.ts, uses source-conditioned ADK correction and reruns the real Node test; signed reads simulated (free).
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/r38511-test-agent-source-grounded-recovery.test.mjs
           # R385.8: parse only (do not launch Gitea/Rust/Docker full E2E on every push).
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
           node --test poc/scripts/test/r3858-native-strict-postfail-wiring.test.mjs
