@@ -29,4 +29,4 @@ The [R404.3 Fast CI #42509077171](https://github.com/DarkGh0st03/delegation/acti
 
 The five sources now have explicit `node --experimental-strip-types --test` invocations in the Fast CI workflow; this is a **coverage promotion**, not a source deletion. The change deliberately does not run the two larger Engineer HTTP/host suites, which still need independent environment and assertion review.
 
-The post-change Fast CI must pass on its own SHA before this promotion is called verified. Automatic deletion remains forbidden.
+[Fast CI #42509494405](https://github.com/DarkGh0st03/delegation/actions/runs/42509494405) **SUCCESS 2/2** on commit `1f1445fe`; the new R404.4 offline test step succeeded, and the independent Docker evidence job succeeded. The audit now observes 351 configured test files of 353; the only remaining two are Engineer UI/host scripts with syntax-only configuration. Automatic deletion remains forbidden; native Security CI still needs the final post-cleanup SHA.
