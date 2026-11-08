@@ -2,17 +2,19 @@
 
 **Updated:** 8 November 2026. This is the current architecture; the historical 15 October shared-MCP PoC is explicitly separated in [README](../README.md).
 
+**R402 verified:** [Fast CI #42506638774](https://github.com/DarkGh0st03/delegation/actions/runs/42506638774) SUCCESS on SHA `5a7f88cc`. The conservative audit observed 4,692 source/configuration edges, 226 unresolved indirections, 5 guarded legacy modules and 4 protected private MCP components. No runtime source was authorized for deletion. R403 classifies historical documents separately, with explicit safeguards.
+
 ## Implemented and tested
 
 | Layer | Implementation | Evidence and remaining limit |
 | --- | --- | --- |
 | Rust crypto and authorization | Engineer root issuance/revocation directly in Rust; Gateway verifies DC/VP directly in Rust, with OPA | Native E2E successful; legacy HTTP never canonical |
 | Approval and trust boundary | Engineer signs immutable permissions; preliminary read-only Root is revoked before operational Root | Task DAG is dynamic and **not** the signed authority |
-| Planning and execution | ADK planner/decision proposer, bounded read-first recovery, A2A Backend/Frontend/Test | Scripted end-to-end PASS; **real Gemini autonomy not yet proven** |
-| AgentCards / FunctionTools | Role-checked startup and signed grant visibility | Native Test Agent currently cannot `create_file`; implementing signed test-only create remains open |
+| Planning and execution | ADK planner/decision proposer, bounded read-first recovery, dynamic trusted Agent Card registry R401, A2A Backend/Frontend/Test | Scripted end-to-end PASS; extra Planner roles need separately provisioned A2A/signer; **real Gemini autonomy not yet proven** |
+| AgentCards / FunctionTools | Role-checked startup and signed grant visibility; R387/R388 Test `create_file` and R395 Test `run_tests` through independent signed Child | The canonical PoC still provisions Backend/Frontend/Test; R401 makes Planner role/skill selection registry-derived but does not deploy a new specialist |
 | Task cryptography | Task-local private/stdin-stdout MCP for Child DC and VP | **Retain** `poc/mcp-shared/src/owner-private-*`; no shared HTTP MCP as canonical route |
 | Provider execution | Gitea real pinned reads / atomic HEAD CAS, controlled Docker Runner, researcher-owned acceptance | Tests are pinned to actual revisions and receipts |
-| PR and security | Disposable Gitea Draft PR from verified PASS, separate Security CI | Separate jobs do not yet prove status on the **same PR** |
+| PR and security | R399.2 links separate Security CI status to the **same native Draft PR HEAD**; Human Gate denies its Draft status | Disposable Gitea and scripted model; real GitHub branch protection/reviewers remain externally unverified |
 | Human merge | `workflow_dispatch` with independent operator and approval verification | Live GitHub Environment reviewers and Gitea admin protection are not proven by offline tests |
 | Legacy isolation | HTTP Engineer fixture exact opt-in, denied in authority-only; legacy DAG/workflows pinned and under review | Runtime caller inventory still has unknown/indirect references |
 
