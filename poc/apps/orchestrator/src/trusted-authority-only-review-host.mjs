@@ -1,6 +1,7 @@
 import {ProtectedA2ATaskFailedError} from '../../../packages/agent-runtime/src/orchestrator.ts';
 import {randomBytes} from 'node:crypto';
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs';
+import {selectTrustedRepairDiagnosticRead} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-repair-diagnostic-gate.mjs';
 import {runTrustedAuthorityOnlyOperationalWorkflow}
  from './trusted-authority-only-operational-launcher.mjs';
 import {createTrustedAuthorityOnlyReviewedCanonicalHandoff}
@@ -717,7 +718,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         taskStageFailed||dispatchFailed||completionFailed||adaptiveLoopAttempted||
         adaptiveLoopFlight||taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
         pullRequestAdmissionAttempted||!nativeEffectBinding||
-        !fields(input,['model','nextChildParameters','maxSteps','maxVerifiedFailures','signal'])||
+        !fields(input,['model','nextChildParameters','maxSteps','maxVerifiedFailures','signal','requireVerifiedRepairDiagnostic'])||
+        (input.requireVerifiedRepairDiagnostic!==undefined&&
+         typeof input.requireVerifiedRepairDiagnostic!=='boolean')||
         typeof input.nextChildParameters!=='function'||
         (input.maxVerifiedFailures!==undefined&&
          (!Number.isSafeInteger(input.maxVerifiedFailures)||
@@ -784,7 +787,47 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      };
      adaptiveLoopFlight=runTrustedAuthorityOnlyAdaptiveWorkLoop({
       model:input.model,maxSteps:input.maxSteps,signal:input.signal,
+      // Private original owner opt-in; scripted historical tests remain in
+      // legacy mode, and the model cannot change this policy mid-flight.
+      requireVerifiedRepairDiagnostic:input.requireVerifiedRepairDiagnostic===true,
       hooks:{readContext,
+       verifyRepairDiagnostic:async({task,context})=>{
+        if(!nativeEffectBinding?.readObserver||!adaptiveVerifiedFailures.length)
+         deny('authenticated repair read must follow an original Runner FAIL');
+        const last=adaptiveVerifiedFailures.at(-1);
+        const failed=operationalCoordinator.assertTrustedGatewayRegisteredTask(
+         last.failed_task_id);
+        const root=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+        if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+           !failed||failed.agent_id!=='test'||failed.operation==='read_file'||
+           context.executionProgress?.current_head_sha!==last.tested_commit_sha&&
+            !/^[a-f0-9]{40}$/u.test(context.executionProgress?.current_head_sha??'')||
+           root.root_credential_id!==original.root_credential_id||
+           root.authority_digest!==original.authority_digest)
+         deny('original signed Runner failure no longer owns repair investigation');
+        const readRecords=[...adaptiveSourceObservations.values()].map(observation=>{
+         const flight=[...stagedTaskIds.entries()].find(([,row])=>
+          row.task_id===observation.task_id&&
+          row.agent_id===observation.agent_id&&row.operation==='read_file');
+         if(!flight)deny('signed diagnostic read has no original Gateway Task');
+         const signed=operationalCoordinator.assertTrustedGatewayRegisteredTask(
+          observation.task_id);
+         const bound=gateway.assertTrustedCompletedReadObservationBinding(
+          observation.task_id,flight[0]);
+         return {task_id:observation.task_id,agent_id:observation.agent_id,
+          epoch:signed.epoch,revision:observation.revision,
+          resource:bound.permission_resource,
+          signed_permissions:signed.permissions,
+          gateway_task_completed:gatewayAttestedTaskIds.has(observation.task_id),
+          evidence_sha256:observation.evidence_sha256,
+          gateway_evidence_sha256:bound.evidence_sha256};
+        });
+        return selectTrustedRepairDiagnosticRead({
+         repairTask:task,failedEpoch:failed.epoch,
+         currentHead:context.executionProgress.current_head_sha,
+         readRecords
+        });
+       },
        beforeDecision:async()=>{
         if(decisionFlight||++adaptiveDecisionCalls>Math.min(input.maxSteps??8,24))
          deny('adaptive loop exceeds original owner decision budget');
