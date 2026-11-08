@@ -21,7 +21,7 @@ import {assertApprovedPlanScope,planDigest}
   from "../../../packages/plan-contracts/src/plan.mjs";
 import type {
   CredentialStatusInput, IssuedDelegationCredential,
-} from "./authority-client.ts";
+} from "./trusted-credential-contracts.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
 
 export interface TrustedPlanningSnapshot {
