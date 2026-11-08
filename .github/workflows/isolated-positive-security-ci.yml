@@ -38,6 +38,9 @@ on:
       - 'poc/scripts/r38517-canonical-route-closure.mjs'
       # R412: historical Engineer issuer dynamic-only import boundary.
       # R414: native Engineer config must never type-import historical HTTP transport.
+      # R415.1: Engineer cold-recovery history has an explicit fail-closed fixture gate.
+      - 'poc/apps/orchestrator/src/trusted-engineer-host.mjs'
+      - 'poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts'
       - 'poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts'
@@ -94,6 +97,8 @@ jobs:
           node --experimental-vm-modules poc/scripts/r38517-canonical-route-closure.mjs
           node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
+          node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
+          node --check poc/apps/orchestrator/src/trusted-engineer-host.mjs
 
       - name: R410 Owner-only recovery source and fail-closed audit gates
         run: |

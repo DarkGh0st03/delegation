@@ -15,7 +15,7 @@ test("R240 Engineer root + native Orchestrator VP use no implicit HTTP Adapter c
  const canonical=owner.slice(owner.indexOf("export function createTrustedEngineerCredentialPort("));
  assert.doesNotMatch(canonical,/adapterBaseUrl|fetchFn|createOwnerPrivateMcpEngineerCredentialPort/u,
   "native Engineer selector must be independent of fixture HTTP config");
- assert.match(owner,/Legacy HTTP Engineer fixture requires explicit Adapter URL/u);
+ assert.match(owner,/Canonical Engineer root requires native Rust issuer socket/u);
  assert.match(planning,/adapterBaseUrl\?:string/u);
  assert.match(transport,/adapterBaseUrl\?: string/u);
  assert.match(transport,/Historical Orchestrator HTTP signing requires explicit Adapter URL/u);

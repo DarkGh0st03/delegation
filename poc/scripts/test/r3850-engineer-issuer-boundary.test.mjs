@@ -49,3 +49,22 @@ test("R415 canonical selector is native-only and has no legacy HTTP fallback",()
  assert.doesNotMatch(direct,/createOwnerPrivateMcpEngineerCredentialPort|postCredential\(/u);
  assert.match(direct,/loadDirectRustEngineerCore\(/u);
 });
+
+test("R415.1 cold recovery chooses HTTP only as separately gated historical fixture",()=>{
+ const host=read("poc/apps/orchestrator/src/trusted-engineer-host.mjs");
+ const start=host.indexOf("const historicalFixture=");
+ const end=host.indexOf("const credentials=historicalFixture",start);
+ assert.ok(start>0&&end>start,"missing explicit fixture-only choice");
+ const guard=host.slice(start,end);
+ for(const condition of [
+  'DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE==="1"',
+  'ENGINEER_CORE_NATIVE_MODE===undefined',
+  'ADAPTER_ENGINEER_NATIVE_SOCKET===undefined',
+  'APPROVED_RUNNER_NATIVE_MCP===undefined',
+  'DELEGATION_GATEWAY_ARCHITECTURE===undefined'
+ ])assert.ok(guard.includes(condition),"historical recovery guard missing "+condition);
+ const select=host.slice(end,end+350);
+ assert.match(select,/\?createOwnerPrivateMcpEngineerCredentialPort\(/u);
+ assert.match(select,/:createTrustedEngineerCredentialPort\(\{bearerToken:recovery\.adapterToken\}\)/u);
+ assert.doesNotMatch(host,/from "\.\.\/\.\.\/\.\.\/packages\/orchestrator-runtime\/src\/authority-client\.ts"/u);
+});

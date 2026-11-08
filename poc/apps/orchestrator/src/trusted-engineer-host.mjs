@@ -45,7 +45,7 @@ import {isTrustedOwnerRepairPlannerConfig}
   from "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
-import {createTrustedEngineerCredentialPort}
+import {createTrustedEngineerCredentialPort,createOwnerPrivateMcpEngineerCredentialPort}
   from "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {createAuthenticatedEngineerServer}
   from "./engineer-approval-server.mjs";
@@ -805,9 +805,22 @@ async function strictRecoveringHost(config){
     deny("private Gateway must expose actual Planning registry retirement");
   if(!gateway.planningRetirementDurableConfigured())
     deny("private Gateway must persist Planning retirement across restarts");
-  const credentials=createTrustedEngineerCredentialPort({
-    adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
-  });
+  // R415.1: cold-recovery historical fixture explicitly opts into the
+  // old MCP/HTTP port. It can NEVER be selected by a native or authority-only
+  // Engineer host, or by malformed/unknown native mode settings.
+  // The canonical selector itself has no HTTP fallback.
+  const historicalFixture=
+    process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE==="1"&&
+    process.env.ENGINEER_CORE_NATIVE_MODE===undefined&&
+    process.env.ADAPTER_ENGINEER_NATIVE_SOCKET===undefined&&
+    process.env.APPROVED_RUNNER_NATIVE_MCP===undefined&&
+    (process.env.DELEGATION_GATEWAY_ARCHITECTURE===undefined||
+     process.env.DELEGATION_GATEWAY_ARCHITECTURE==="legacy-signed-dag");
+  const credentials=historicalFixture
+    ?createOwnerPrivateMcpEngineerCredentialPort({
+      adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
+    })
+    :createTrustedEngineerCredentialPort({bearerToken:recovery.adapterToken});
   return startTrustedEngineerLocalHost({
     ...config,recovery:{
       directory:recovery.directory,gateway,credentials,
