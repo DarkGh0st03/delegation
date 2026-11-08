@@ -166,8 +166,8 @@ test("R385.18 deny any new runtime or script importer of a historical HTTP/DAG m
   status:"INVENTORY_PROVENANCE_OK",
   legacyModules:rows.map(([path,allowed])=>({
    path,present:true,
-   staticImporters:allowed.slice(0,1),
-   runtimeHints:allowed.slice(1).map(source=>({source,kind:"dynamic-import"})),
+   staticImporters:[],
+   runtimeHints:allowed.map(source=>({source,kind:"dynamic-import"})),
    configuredCallers:[]
   })),
   protectedModules:PRIVATE_MCP_KEEP.map(path=>({path,present:true})),

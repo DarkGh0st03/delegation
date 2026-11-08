@@ -14,6 +14,8 @@
 
 **R411.2 — correzione temporale fail-closed del fixture nativo.** Il primo tentativo Security CI R411 ha bloccato l'emissione dell'ultimo Child: Root 1800 s, retest Child 1500 s lasciavano solo 300 s per 25 task firmati e Docker FAIL; un `run_tests` reale di circa 202 s ha consumato il margine. Il **solo Child finale nel fixture** è ridotto a 900 s; Root, perimetro Ed25519, Gate Rust `Child<=Root`, test negativi e protocollo restano invariati. R411 non si dichiara validato prima di nuova Fast CI + Security CI native sulla stessa SHA.
 
+**Checkpoint R411.2 validato — 8 novembre 2026.** [Fast CI #42519208693](https://github.com/DarkGh0st03/delegation/actions/runs/42519208693) e [Security CI nativa #42519208790](https://github.com/DarkGh0st03/delegation/actions/runs/42519208790) sono **entrambe SUCCESS 2/2** sulla SHA `00ba57c3`. L'ultimo Child del fixture E2E ha validità 900 s sotto Root invariata 1800 s, senza espansione permessi o fallback, con `paid_model_calls=0`. R412 rimuove l'import **statico** di `authority-client.ts` nel modulo Engineer MCP/HTTP storico. Rimangono due import dinamici da fixture selezionate (Engineer e Runner), senza cancellazioni. Le due CI native/fast sulla SHA R412 devono essere ancora validate.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

@@ -179,6 +179,14 @@ export function auditR38517CallerInventory(legacy){
    if(!allowed.includes(caller.source))
     issues.push("Unexpected new non-test legacy caller: "+
      module.path+" <- "+caller.source);
+   // R412: allowlisted historical issuers must still have a checked
+   // lazy dynamic boundary; a static import is not equivalent.
+   if(module.path==="poc/packages/orchestrator-runtime/src/authority-client.ts"&&
+      (caller.source==="poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts"||
+       caller.source==="poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs")&&
+      caller.edge!=="dynamic-import")
+    issues.push("Historical Engineer HTTP issuer requires lazy gated dynamic import: "+
+     caller.source);
   }
  }
  return Object.freeze({

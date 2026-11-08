@@ -14,7 +14,9 @@ test("R385.0 owner selector has no eager HTTP Adapter bootstrap or owner-private
  assert.doesNotMatch(selector,/createOwnerPrivateCryptographicMcpSession\(/u);
  assert.match(selector,/loaded\?\?=import\("\.\/trusted-engineer-legacy-mcp-http-port\.ts"\)/u);
  assert.match(legacy,/createLegacyOwnerPrivateMcpEngineerCredentialPort/u);
- assert.match(legacy,/import \{SoftwareEngineerAuthorityBootstrap\}/u);
+ assert.doesNotMatch(legacy,/import \{SoftwareEngineerAuthorityBootstrap\}/u);
+ assert.match(legacy,/loaded\?\?=import\("\.\/authority-client\.ts"\)/u);
+ assert.match(legacy,/new m\.SoftwareEngineerAuthorityBootstrap\(config\)/u);
  assert.match(legacy,/createOwnerPrivateCryptographicMcpSession\(/u);
 });
 

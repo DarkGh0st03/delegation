@@ -38,6 +38,9 @@ on:
       - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'
       - 'poc/scripts/test/r408-reviewed-dag-caller-migration.test.mjs'
       - 'poc/scripts/r38517-canonical-route-closure.mjs'
+      # R412: historical Engineer issuer dynamic-only import boundary.
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts'
+      - 'poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs'
       - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
       - 'poc/scripts/test/r409-owner-repair-core-migration.test.mjs'
       - 'poc/apps/test-runner-controller/src/**'
@@ -89,6 +92,7 @@ jobs:
         run: |
           node --experimental-vm-modules poc/scripts/r38517-canonical-route-closure.mjs
           node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
 
       - name: R410 Owner-only recovery source and fail-closed audit gates
         run: |

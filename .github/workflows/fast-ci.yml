@@ -75,6 +75,8 @@ jobs:
           node --test poc/scripts/test/r240-direct-rust-issuer-config.test.mjs
           # R385.0: legacy MCP/HTTP Engineer path is lazy; native direct Rust path stays first.
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
+          # R412: no eager legacy HTTP issuer even when historical MCP port is imported.
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
           # R385.2: pure endpoint preflight, lazy DAG import and original root-retirement safety.
           node --experimental-strip-types --test poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs
           # R385.3: lazy historical repair planner + DAG only under verified Test FAIL.
