@@ -40,7 +40,7 @@ test("R385.8 first real native post-failure READ precedes strict owner repair; n
  assert.match(s,/further_tests_proven_pass:false/u);
  assert.match(s,/source_code_generated_autonomously_by_model:false/u);
  assert.match(s,/original_root_retired:true/u);
- assert.match(s,/strictReadProbe\?\{\}:\{draftPullRequest:/u);
+ assert.match(s,/strictReadProbe&&!strictFullRecovery\?\{\}:\{draftPullRequest:/u);
 });
 
 test("R385.12 Test Agent post-failure mode is exclusive and cannot impersonate a PASS",()=>{
