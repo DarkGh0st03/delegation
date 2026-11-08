@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.6 recovery diagnostico rigoroso in sviluppo)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.7 prova source-driven offline in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,35 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E scripted completo PASS sulla SHA `339a8b1` con Fast CI; recovery realistica FAIL→CREATE D1→CAS→Docker PASS e Draft PR attestata, NON autonoma. R385.6 aggiunge un gate opt-in per UPDATE post-FAIL con lettura diagnostica Gateway/Child firmata, test offline da certificare; autonomia modello e Test Agent E2E ancora aperti.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E scripted nativo completo PASS su `339a8b1`. R385.6 Fast CI PASS `de20619` (#42442299444): gate opt-in per UPDATE dopo vero Test FAIL con lettura autentica. R385.7 aggiunge un test ADK offline source-driven con reale Node FAIL→read→scelta della patch→UPDATE→Node PASS (senza Rust/Gitea reali né LLM generativo), Fast CI da attestare. Restano Test Agent nativo e autonomia Gemini.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). Le successive modifiche R385.6 devono superare Fast CI sulla loro SHA: non attribuire loro automaticamente il vecchio E2E.** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.7 — Integrazione ADK offline con sorgente osservato e Node FAIL/PASS reali
+
+Il report [`R3857_SOURCE_GROUNDED_OFFLINE_ADK_REPAIR.md`](./R3857_SOURCE_GROUNDED_OFFLINE_ADK_REPAIR.md)
+aggiunge un test di integrazione che usa il vero adaptive loop
+ADK ma un `BaseLlm` deterministico senza inferenza fatturabile.
+Il test genera due sorgenti diversi in directory disposable,
+esegue un vero subprocess `node --test` che fallisce, simula
+l'owner/Gateway con Task read-only distinto, passa alla scelta ADK
+i byte effettivi letti, e richiede una patch **diversa per ciascun
+sorgente**. La modifica è un match univoco sul file corrente con
+HEAD controllata, non un file finale precostruito. Il test Node
+successivo deve PASS; un'evidenza Gateway contraffatta impedisce
+l'UPDATE e ritira la Root simulata. La readiness non crea PR.
+
+**R385.7 non è attestato fino al SUCCESS della Fast CI sulla nuova
+SHA.** Non è una E2E nativa Rust/EVM/OPA/Gitea/MCP/A2A/Docker:
+il modello, l'attestazione originale e il CAS sono fixture offline.
+Resta aperta una E2E nativa realmente source-grounded, poi
+Test Agent edit/retest e (solo previo consenso esplicito)
+la prova generativa Gemini. Non ripetere full suite generiche
+a ogni commit.
 
 ### R385.6 — Fonte diagnostica firmata prima di UPDATE dopo Test FAIL (opt-in)
 
@@ -43,7 +65,7 @@ la Root. I test offline coprono letture stantie, falsificate,
 fuori ruolo e HEAD cambiata, oltre alla continuazione con una
 lettura autentica, e la conservazione del D0 legacy.
 
-**Fast CI R385.6 sulla SHA finale ancora da verificare**.
+**R385.6 Fast CI SUCCESS** sulla SHA `de206196` (run #42442299444), inclusi 11 test R385.6 e Docker evidence.
 Questo step non dimostra autonomia Gemini, non avvia un pilot,
 non attesta un vero Test Agent editor E2E, e non riusa la prova
 nativa R385.5 per dichiarare PASS sulla nuova SHA.
