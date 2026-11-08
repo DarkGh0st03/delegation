@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  SoftwareEngineerAuthorityBootstrap,
-  type IssuedDelegationCredential
-} from "../src/index.ts";
+import {SoftwareEngineerAuthorityBootstrap}
+  from "../src/authority-client.ts";
+import type {IssuedDelegationCredential}
+  from "../src/index.ts";
 import * as canonicalOrchestratorApi from "../src/index.ts";
 
 function vc(id: string, sub: string, permissions: unknown[]): IssuedDelegationCredential {
@@ -123,8 +123,11 @@ test("R173 canonical Engineer exports no legacy static root or child authority",
     "DeterministicOrchestratorAuthorityIssuer"),false);
   assert.equal(Object.hasOwn(canonicalOrchestratorApi,
     "LegacySoftwareEngineerAuthorityBootstrap"),false);
-  assert.equal(canonicalOrchestratorApi.SoftwareEngineerAuthorityBootstrap,
-    SoftwareEngineerAuthorityBootstrap);
+  assert.equal(Object.hasOwn(canonicalOrchestratorApi,
+    "SoftwareEngineerAuthorityBootstrap"),false,
+    "R384.9: historical HTTP Adapter client must never be exported");
+  assert.equal(Object.hasOwn(canonicalOrchestratorApi,
+    "postCredential"),false);
   assert.equal("issueOrchestratorRoot" in
     SoftwareEngineerAuthorityBootstrap.prototype,false);
   assert.equal(typeof SoftwareEngineerAuthorityBootstrap.prototype.issueScopedOrchestratorRoot,
