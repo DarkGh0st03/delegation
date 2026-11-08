@@ -1888,6 +1888,11 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
     const positiveHome=await mkdtemp(join(tmpdir(),"r49-live-review-"));
     const positiveDecisionDir=await mkdtemp(join(tmpdir(),"r49-disposition-"));
     let positiveHost:any,privateIpc:any;
+    // R385.19: ONLY this historical offline R49 Engineer UI fixture
+    // opts into its legacy HTTP issuer. Production/default and native
+    // authority-only code must not inherit this permission.
+    const previousLegacyOptIn=process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+    process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
     try{
       const {configPath,protectedConfig,credentialFiles}=
         await makeProtectedOwnerServiceConfig(positive,positiveHome,"fresh_repair");
@@ -2030,12 +2035,18 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
       assert.equal(positive.observed.revoked,1);
       await positive.planningRecovery.assertClean();
     }finally{
-      try{await positiveHost?.close();}finally{
-        try{await privateIpc?.close();}finally{
-          await rm(positiveHome,{recursive:true,force:true});
-          await rm(positiveDecisionDir,{recursive:true,force:true});
-          await positive.cleanup();
+      try{
+        try{await positiveHost?.close();}finally{
+          try{await privateIpc?.close();}finally{
+            await rm(positiveHome,{recursive:true,force:true});
+            await rm(positiveDecisionDir,{recursive:true,force:true});
+            await positive.cleanup();
+          }
         }
+      }finally{
+        if(previousLegacyOptIn===undefined)
+          delete process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+        else process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE=previousLegacyOptIn;
       }
     }
   }finally{
