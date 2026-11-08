@@ -1,46 +1,52 @@
 /**
- * R164: trusted Engineer-only Root DC and revocation transport.
- *
- * The Engineer session decides exact preliminary vs operational grants from
- * trusted Gitea pins + authenticated signed approval, NOT from an MCP call.
- * Each operation uses one in-process MCP SDK exchange with a random opaque
- * ref; the existing Rust Adapter remains the ONLY issuer/status registry.
- * Neither root permission lists, credential IDs, bearer tokens nor DCs are
- * MCP tool parameters or results. No ADK/A2A accessible listener exists.
+ * R385.0: canonical Engineer Root DC issuance/revocation selector.
+ * Engineer and Gateway use the native Rust Core directly under the
+ * authority-only profile. The old MCP -> HTTP Adapter root issuer is loaded
+ * lazily and ONLY for selected historical fixture operations.
+ * No model, A2A agent or Gateway tool is allowed to select its authority.
  */
-import {createOwnerPrivateCryptographicMcpSession}
- from "../../../mcp-shared/src/owner-private-child-mcp.ts";
 import {createNativeRustEngineerCredentialPort}
  from "./trusted-engineer-native-port.ts";
 import {createDirectRustEngineerCredentialPort}
  from "./trusted-engineer-direct-core-port.ts";
-import {SoftwareEngineerAuthorityBootstrap}
- from "./authority-client.ts";
 import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
 import type {EngineerCredentialPort,RootParameters}
  from "./trusted-engineer-authority.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
 
+/**
+ * Backwards-compatible *lazy* bridge for historical offline fixtures ONLY.
+ *
+ * Importing the owner selector or choosing the direct Rust path must NEVER
+ * evaluate the legacy HTTP client or instantiate an in-process root MCP.
+ * Old callers retain a synchronous EngineerCredentialPort constructor and
+ * the same asynchronous, one-shot issuance and revocation operations.
+ */
 export function createOwnerPrivateMcpEngineerCredentialPort(
  config:AdapterClientConfig
 ):EngineerCredentialPort{
- const rust=new SoftwareEngineerAuthorityBootstrap(config);
+ // Retain the historical synchronous input validation (before any import).
+ if(config.adapterBaseUrl.trim().length===0)
+  throw Error("Delegation Adapter base URL cannot be empty");
+ if(config.bearerToken.trim().length===0)
+  throw Error("Engineer Adapter token cannot be empty");
+ let loaded:Promise<EngineerCredentialPort>|undefined;
+ const legacy=()=>{
+  loaded??=import("./trusted-engineer-legacy-mcp-http-port.ts")
+   .then(m=>m.createLegacyOwnerPrivateMcpEngineerCredentialPort(config));
+  return loaded;
+ };
  return Object.freeze({
   async issueScopedOrchestratorRoot(
    input:RootParameters&{permissions:readonly DelegatedPermission[]}
   ){
-   // Snapshot before the first async boundary: a mutable caller cannot
-   // change the root ID or grants while a private MCP session initializes.
+   // Pin grants before the dynamic module-load await. Never allow a caller
+   // to mutate a pending approval while the historical fixture loads.
    const pinned=structuredClone(input);
-   return createOwnerPrivateCryptographicMcpSession(
-    "root_issue",()=>rust.issueScopedOrchestratorRoot(pinned)
-   ).invokeOnce();
+   return (await legacy()).issueScopedOrchestratorRoot(pinned);
   },
   async revokeRoot(credentialId:string){
-   // Credential IDs and Rust revocation bearer stay inside the owner.
-   return createOwnerPrivateCryptographicMcpSession(
-    "root_revoke",()=>rust.revokeRoot(credentialId)
-   ).invokeOnce();
+   return (await legacy()).revokeRoot(credentialId);
   }
  });
 }
