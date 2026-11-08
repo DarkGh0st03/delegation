@@ -754,8 +754,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        deny('adaptive next decision requires independent completion or an authenticated failure');
       const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
-      const sourceObservations=[...adaptiveSourceObservations.values()]
-       .filter(o=>o.revision===head.commit_sha);
+      // Original Gateway retains every signed Task/receipt. This map is
+      // ONLY the bounded model-visible current-HEAD observation window:
+      // a completed CAS invalidates an earlier source excerpt. Evict stale
+      // entries after independently reading HEAD, not on a model assertion.
+      for(const [taskId,observation] of adaptiveSourceObservations){
+       if(observation.revision!==head.commit_sha)
+        adaptiveSourceObservations.delete(taskId);
+      }
+      const sourceObservations=[...adaptiveSourceObservations.values()];
       return {
        requirement,branch,rootPermissions:live.root_permissions,
        maxVerifiedFailures:adaptiveMaxVerifiedFailures,
@@ -828,7 +835,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         });
        },
        beforeDecision:async()=>{
-        if(decisionFlight||++adaptiveDecisionCalls>Math.min(input.maxSteps??8,24))
+        if(decisionFlight||++adaptiveDecisionCalls>Math.min(input.maxSteps??8,25))
          deny('adaptive loop exceeds original owner decision budget');
        },
        runDecision:async decide=>{

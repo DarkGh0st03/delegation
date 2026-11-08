@@ -40,9 +40,13 @@ impediva l'ultimo turno pur lasciando invariato il budget crittografico.
 
 R385.10 conserva **24 Child come massimo assoluto** e il default
 dell'owner, ma consente esplicitamente nel manifest 0600 un budget
-`maxDecisions <= min(25, childCount+1)`. Il Work Loop rimane
+`maxDecisions <= min(25, childCount+1)`. Il Work Loop e il Review Host rimangono
 fail-closed a 25 turni anche con una scelta incompleta; il modello
-non può modificare i budget né le permission. Una regressione ADK
+non può modificare i budget né le permission. La finestra delle
+osservazioni diagnostiche è limitata ai quattro read correnti per
+la stessa HEAD: dopo un CAS la nuova HEAD verificata fa scadere
+solo le vecchie osservazioni modello-visibili, senza cancellare
+i Task, le Child o le evidenze firmate dei registri Gateway. Una regressione ADK
 offline prova il venticinquesimo turno `ready_for_pr` senza nuova
 Child, ma **non** prova la PR Gitea né l'E2E nativa completa.
 Successivo gate: test gratuito source-grounded Test Agent e
