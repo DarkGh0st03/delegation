@@ -43,7 +43,7 @@ jobs:
           node --experimental-vm-modules poc/scripts/r38517-canonical-route-closure.mjs
           node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
           # R385.16: mock-only negative Human Gate, actor, review, protected branch and exact SHA tests. Never dispatch merge.
-          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts poc/packages/orchestrator-runtime/test/merge-readiness.test.ts poc/packages/orchestrator-runtime/test/trusted-merge.test.ts
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts poc/packages/orchestrator-runtime/test/merge-readiness.test.ts poc/packages/orchestrator-runtime/test/trusted-security-ci-merge-readiness-link.test.ts poc/packages/orchestrator-runtime/test/trusted-merge.test.ts
           node --experimental-vm-modules --test poc/scripts/test/r6-configured-command.test.mjs
           node --experimental-vm-modules --test poc/scripts/test/r243-private-gateway-transport-audit.test.mjs
           npm --prefix poc run audit:r6:types
