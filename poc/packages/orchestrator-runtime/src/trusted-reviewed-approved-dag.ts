@@ -21,6 +21,10 @@ import {TrustedOperationalEpochIntake}
   from "./trusted-operational-epoch-intake.ts";
 import type {TrustedRepairFeedbackSignal}
   from "./trusted-validation-repair-feedback.ts";
+import {pinTrustedReviewedAgentEndpoints}
+  from "./trusted-reviewed-agent-endpoint-pins.ts";
+export {pinTrustedReviewedAgentEndpoints}
+  from "./trusted-reviewed-agent-endpoint-pins.ts";
 // Both independently approved paid and nonbillable scripted executions
 // present the same immutable, authority-relevant facts. Neither model
 // budgets nor charge-consent fields can be used by the DAG dispatcher.
@@ -46,24 +50,8 @@ type ExecutorInput=Pick<DispatcherInput,
 const SHA=/^[a-f0-9]{40}$/u;
 const DIGEST=/^[a-f0-9]{64}$/u;
 const SESSION=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const ROLES=["backend","frontend","test"] as const;
-const LOOPBACK=/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/?$/u;
 function fail(reason:string):never{
   throw Error("Reviewed Gemini DAG bridge: "+reason);
-}
-
-/** Shared owner-side A2A endpoint preflight. Run this BEFORE any new
- * operational root issuance and freeze a defensive copy across awaits. */
-export function pinTrustedReviewedAgentEndpoints(
-  endpoints:Readonly<Record<"backend"|"frontend"|"test",string>>
-):Readonly<Record<"backend"|"frontend"|"test",string>>{
-  const pinnedUrls=ROLES.map(role=>endpoints?.[role]);
-  if(pinnedUrls.some(url=>typeof url!=="string"||!LOOPBACK.test(url))||
-     new Set(pinnedUrls).size!==ROLES.length)
-    fail("Gemini A2A endpoints must be three distinct localhost servers");
-  return Object.freeze({
-    backend:pinnedUrls[0]!,frontend:pinnedUrls[1]!,test:pinnedUrls[2]!
-  });
 }
 
 export function createReviewedApprovedDagExecution(input:{
