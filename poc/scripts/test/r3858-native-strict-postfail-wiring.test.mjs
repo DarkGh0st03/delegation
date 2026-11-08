@@ -31,8 +31,8 @@ test("R385.8 first real native post-failure READ precedes strict owner repair; n
  const s=read("poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs");
  assert.match(s,/const strictReadProbe=process\.env\.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1"/u);
  assert.match(s,/strictReadProbe\?\{requireVerifiedRepairDiagnostic:true\}:\{\}/u);
- assert.match(s,/postFailReadTaskId="r3858-postfail-backend-read"/u);
- assert.match(s,/permissions:\[pair\(sharedPath,"read_file"\)\]/u);
+ assert.match(s,/postFailReadTaskId=testAgentProbe\?"r38512-postfail-test-read":"r3858-postfail-backend-read"/u);
+ assert.match(s,/permissions:\[pair\(testAgentProbe\?testRepairPath:sharedPath,"read_file"\)\]/u);
  assert.match(s,/assert\.match\(context,\/independent_runner_failure\/u\)/u);
  assert.match(s,/assert\.match\(context,\/source_observations\/u\)/u);
  assert.match(s,/assert\.equal\(runnerCalls,1,"first real Docker FAIL only; no unverified PASS"\)/u);
@@ -41,4 +41,20 @@ test("R385.8 first real native post-failure READ precedes strict owner repair; n
  assert.match(s,/source_code_generated_autonomously_by_model:false/u);
  assert.match(s,/original_root_retired:true/u);
  assert.match(s,/strictReadProbe\?\{\}:\{draftPullRequest:/u);
+});
+
+test("R385.12 Test Agent post-failure mode is exclusive and cannot impersonate a PASS",()=>{
+ const s=read("poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs");
+ const w=read(".github/workflows/r38512-native-test-agent-postfail-probe.yml");
+ assert.match(s,/R38512_NATIVE_TEST_AGENT_SOURCE_PROBE==="1"/u);
+ assert.match(s,/strictReadProbe&&!secondReadProbe&&!diagnosticMode/u);
+ assert.match(s,/testAgentProbe\?"test":"backend"/u);
+ assert.match(s,/test_agent_signed_project_test_cas:true/u);
+ assert.match(w,/R38512_NATIVE_TEST_AGENT_SOURCE_PROBE: "1"/u);
+ assert.match(w,/R3858_NATIVE_STRICT_POSTFAIL_PROBE: "1"/u);
+ assert.doesNotMatch(w,/R3859_NATIVE_SECOND_REPAIR_PROBE: "1"/u);
+ assert.match(w,/r38512_native_test_agent_signed_postfail_read_cas_no_false_pass/u);
+ assert.match(w,/further_tests_proven_pass/u);
+ assert.match(w,/original_root_retired/u);
+ assert.match(w,/paid_model_calls/u);
 });
