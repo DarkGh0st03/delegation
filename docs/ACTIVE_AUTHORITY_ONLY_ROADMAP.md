@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R384.8 cleanup legacy in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R384.9 cleanup legacy in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -19,9 +19,27 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 native SUCCESS su `81ad3fdd` (run #42423327568); Fast CI SUCCESS sulla SHA successiva `f236a4dd` (run #42423579107). Non sono due gate verdi sulla stessa HEAD. Ripetere validazione completa dopo il cleanup.** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R384.8: workflow Gemini storici disabilitati, R6 mostra importatori effettivi. L'API pubblica runtime non esporta piu' il vecchio handoff DAG; il consumer OIDC HMAC e' separato. Fast CI R384.7 PASS su `7871899c`; CI R384.8 e native E2E post-cleanup ancora da certificare.** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R384.9: workflow Gemini storici disabilitati; OIDC HMAC e credenziali neutre separati da DAG e vecchio Adapter HTTP. Fast CI R384.8 PASS sulla SHA `f3eaa68` (#42430511297); Fast CI R384.9 e native E2E post-cleanup ancora da certificare.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R384.9 — Contratti di credenziale neutrali, vecchio HTTP Adapter non pubblico
+
+Il rapporto [`R3849_LEGACY_ADAPTER_PUBLIC_API_ISOLATION.md`](./R3849_LEGACY_ADAPTER_PUBLIC_API_ISOLATION.md)
+documenta il nuovo modulo `trusted-credential-contracts.ts` con tipi
+senza richieste HTTP né dipendenze dall'Adapter. Il public index
+`@thesis/orchestrator-runtime` esporta solo i tipi e **non più**
+`SoftwareEngineerAuthorityBootstrap`. Il client storico sopravvive
+solo come import diretto con regressioni di emissione limitata e
+revoca: `authority-adapter-transport.ts` usa ora direttamente i tipi
+neutrali, senza riferimento ciclico al client.
+
+Fast CI comprende ora i test espliciti del vecchio client e un vincolo
+statico sull'API. L'inventario R6 registra i suoi importatori diretti.
+**R384.9 non è concluso fino al SUCCESS della Fast CI sulla nuova SHA.**
+Resta il lavoro di reachability sui caller dei handoff/recovery storici.
+E2E completo post-cleanup obbligatorio prima di qualunque pilot Gemini.
+Nessun costo Gemini né merge.
 
 ### R384.8 — Scissione API OIDC dal DAG legacy (cleanup in corso)
 
@@ -36,8 +54,7 @@ ma non viene piu' caricato **attraverso questa re-export dell'index**.
 
 Il contract HMAC, la verifica dei pin e l'unicita' di consumo non
 sono stati indeboliti. Fast CI include ora test specifici per il
-nuovo isolamento e per il consumo one-shot. **R384.8 non e' PASS finche'
-la CI sulla relativa SHA non termina con SUCCESS.** Restano da
+nuovo isolamento e per il consumo one-shot. **R384.8 ha Fast CI SUCCESS su `f3eaa683` (run #42430511297).** Restano da
 migrare/ritirare i consumer legacy diretti, il trasporto Adapter
 esportato tramite authority-client e altri workflow gratuiti storici.
 Il native E2E completo post-cleanup e' ancora obbligatorio.
