@@ -39,7 +39,9 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
  if(!exact(input,["execution","sdk","adaptive","draftPullRequest","createBranch"])||
     !input?.execution||!exact(input.sdk,
      ["agentBaseUrls","stageChannels","agentBindingChannels","a2aPolling"])||
-    !exact(input.adaptive,["model","nextChildParameters","maxSteps","maxVerifiedFailures","signal"])||
+    !exact(input.adaptive,["model","nextChildParameters","maxSteps","maxVerifiedFailures","signal","requireVerifiedRepairDiagnostic"])||
+    (input.adaptive?.requireVerifiedRepairDiagnostic!==undefined&&
+     input.adaptive.requireVerifiedRepairDiagnostic!==true)||
     typeof input.adaptive.nextChildParameters!=="function"||
     (input.adaptive.maxSteps!==undefined&&
      (!Number.isSafeInteger(input.adaptive.maxSteps)||
