@@ -34,33 +34,88 @@ function scope(resource) {
 }
 // Application tests may use dotted filenames (user.service.test.ts) but never\n// empty/double-dot path components. Runner-owned
 // acceptance and execution configuration are outside this project scope.
-export function isProjectTestSource(path) {
- return typeof path==="string"&&
-  /^tests\/(backend|frontend)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.test\.tsx?$/u.test(path);
+/**
+ * Repository-owned application-test source policy. Constructed ONLY by a
+ * trusted provisioner, never from ADK tool arguments or A2A/model output.
+ * The default profile preserves IAM Console's existing project-test scope.
+ * This describes eligible test sources, NOT a DC, VP or permission grant.
+ */
+const TRUSTED_TEST_PROFILES=new WeakSet();
+const ROOT_PART=/^[A-Za-z0-9_-]+$/u;
+const FILE_STEM=/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/u;
+const TEST_SUFFIX=/^\.(?:test|spec)\.(?:[cm]?js|tsx?|jsx?)$/u;
+const FORBIDDEN_TEST_ROOT_SEGMENTS=new Set([
+ "acceptance","researcher_acceptance","runner",".github","node_modules"
+]);
+export function createTrustedProjectTestSourceProfile(value) {
+ const valid=value&&typeof value==="object"&&!Array.isArray(value)&&
+  Object.getPrototypeOf(value)===Object.prototype&&
+  Object.keys(value).sort().join(",")==="roots,suffixes";
+ if(!valid||!Array.isArray(value.roots)||!Array.isArray(value.suffixes)||
+    value.roots.length<1||value.roots.length>16||
+    value.suffixes.length<1||value.suffixes.length>8||
+    new Set(value.roots).size!==value.roots.length||
+    new Set(value.suffixes).size!==value.suffixes.length)
+  throw Error("Invalid trusted project-test profile");
+ for(const root of value.roots){
+  if(typeof root!=="string"||root.length>160||
+     root.split("/").some(s=>!ROOT_PART.test(s)||
+       FORBIDDEN_TEST_ROOT_SEGMENTS.has(s.toLowerCase())))
+   throw Error("Invalid trusted project-test root");
+ }
+ if(value.suffixes.some(s=>typeof s!=="string"||!TEST_SUFFIX.test(s)))
+  throw Error("Invalid trusted project-test suffix");
+ const profile=Object.freeze({
+  roots:Object.freeze([...value.roots]),
+  suffixes:Object.freeze([...value.suffixes])
+ });
+ TRUSTED_TEST_PROFILES.add(profile);
+ return profile;
+}
+export const IAM_CONSOLE_PROJECT_TEST_PROFILE=createTrustedProjectTestSourceProfile({
+ roots:["tests/backend","tests/frontend"],
+ suffixes:[".test.ts",".test.tsx"]
+});
+export function isTrustedProjectTestSourceProfile(value) {
+ return !!value&&typeof value==="object"&&TRUSTED_TEST_PROFILES.has(value);
+}
+export function isProjectTestSource(path,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+ if(!isTrustedProjectTestSourceProfile(profile)||typeof path!=="string"||
+    path.length>240||path.includes("%")||path.includes("\\")||
+    /[\x00-\x1f\x7f]/u.test(path))return false;
+ const root=profile.roots.find(root=>path.startsWith(root+"/"));
+ if(!root)return false;
+ const segments=path.slice(root.length+1).split("/");
+ if(!segments.length||segments.slice(0,-1).some(s=>!ROOT_PART.test(s)))return false;
+ const filename=segments.at(-1);
+ return profile.suffixes.some(suffix=>
+  filename.endsWith(suffix)&&
+  FILE_STEM.test(filename.slice(0,-suffix.length)));
 }
 /** R383.0 — Test may investigate ONLY owner-scoped application test
  * sources in a dedicated read-only Child. This cannot authorize an edit,
  * Docker acceptance changes, Runner PASS or a broader directory grant. */
-export function isProjectTestReadGrant(permissions) {
+export function isProjectTestReadGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
  if(!Array.isArray(permissions)||permissions.length!==1||
     permissions[0]?.operation!=="read_file")return false;
  const file=scope(permissions[0].resource);
- return file?.kind==="files"&&isProjectTestSource(file.path.join("/"));
+ return file?.kind==="files"&&isProjectTestSource(file.path.join("/"),profile);
 }
 /** Test CREATE is restricted to one exact project test source. This is a
  * grant-shape check only; native Rust, OPA, absence and CAS remain required. */
-export function isProjectTestCreateGrant(permissions) {
+export function isProjectTestCreateGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
  if(!Array.isArray(permissions)||permissions.length!==1||
     permissions[0]?.operation!=="create_file")return false;
  const file=scope(permissions[0].resource);
- return file?.kind==="files"&&isProjectTestSource(file.path.join("/"));
+ return file?.kind==="files"&&isProjectTestSource(file.path.join("/"),profile);
 }
-export function isProjectTestRepairGrant(permissions) {
+export function isProjectTestRepairGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+ if(!Array.isArray(permissions))return false;
  const read=permissions.find(p=>p.operation==="read_file");
  const update=permissions.find(p=>p.operation==="update_file");
  if(permissions.length!==2||!read||read.resource!==update?.resource)return false;
  const file=scope(read.resource);
- return file?.kind==="files"&&isProjectTestSource(file.path.join("/"));
+ return file?.kind==="files"&&isProjectTestSource(file.path.join("/"),profile);
 }
 export function giteaPermissionCovers(parent,required) {
  if(!parent||!required||typeof parent!=="object"||
