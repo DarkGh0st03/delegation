@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.8 probe nativa diagnostica post-FAIL in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.9 native PASS; R385.10 budget owner-only in validazione)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -22,6 +22,31 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.10 — Una decisione terminale senza Child dopo 24 Task firmati
+
+**Stato: modifica mirata in verifica Fast CI; non è un nuovo PASS Docker.**
+R385.9 ha già Fast CI #42450891491 e native sequential probe
+#42450891510 **SUCCESS sulla stessa SHA `737ddbb3`**. La probe
+conferma due letture post-FAIL indipendentemente firmate e quattro
+scritture CAS in totale, ma si ferma deliberatamente prima di
+un secondo Docker PASS, acceptance e Draft PR.
+
+Il percorso con rigorosa diagnosi per *ciascuno* dei dieci file residui
+può richiedere 24 Task/Child effettivi (D0, Test FAIL, read+UPDATE
+ripetuti e retest) **più** la venticinquesima decisione terminale.
+Quest'ultima non richiede una Child: il vecchio `maxDecisions <= childCount`
+impediva l'ultimo turno pur lasciando invariato il budget crittografico.
+
+R385.10 conserva **24 Child come massimo assoluto** e il default
+dell'owner, ma consente esplicitamente nel manifest 0600 un budget
+`maxDecisions <= min(25, childCount+1)`. Il Work Loop rimane
+fail-closed a 25 turni anche con una scelta incompleta; il modello
+non può modificare i budget né le permission. Una regressione ADK
+offline prova il venticinquesimo turno `ready_for_pr` senza nuova
+Child, ma **non** prova la PR Gitea né l'E2E nativa completa.
+Successivo gate: test gratuito source-grounded Test Agent e
+retest Docker nativo su nuova SHA, non pilot Gemini.
 
 ### R385.8 — Probe nativa Rust/MCP e Gitea di diagnostica dopo Docker FAIL
 

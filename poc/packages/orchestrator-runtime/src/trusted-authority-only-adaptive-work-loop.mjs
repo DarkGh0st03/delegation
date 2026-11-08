@@ -4,10 +4,11 @@ import {BaseLlm} from '@google/adk';
 import {TrustedAuthorityOnlyAdkDecisionProposer} from './trusted-authority-only-adk-decision-proposer.mjs';
 // An Engineer-signed source change may span several individually verified
 // file Tasks; each keeps its own native Child, same-file read/CAS journal and
-// exact original root permissions. 24 is a hard owner-only decision ceiling.
+// exact original root permissions. At most 24 Child-consuming Tasks plus
+// one terminal (no-Child) decision; 25 is the hard owner-only turn ceiling.
 const deny=s=>{throw Error('Authority-only adaptive work loop: '+s);};
 export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false}){
- if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>24||
+ if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>25||
     !hooks||['readContext','beforeDecision','executeTask','confirmReady','retire']
      .some(k=>typeof hooks[k]!=='function')||
     (hooks.runDecision!==undefined&&typeof hooks.runDecision!=='function')||

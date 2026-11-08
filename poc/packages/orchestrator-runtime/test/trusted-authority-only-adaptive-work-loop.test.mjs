@@ -833,11 +833,26 @@ test('R384.5 owner can allocate twenty separate changes plus final Test and read
  assert.equal(f.verified.length,21);
  assert.equal(f.retired,false);
 });
-test('R384.5 original adaptive owner rejects unbounded 25th decision',async()=>{
+test('R385.10 original owner admits 24 signed Tasks then a separate terminal readiness decision',async()=>{
+ const f=fixture();
+ const sequence=[...Array.from({length:23},(_,i)=>candidate('backend',i)),
+  candidate('test',23),
+  {action:'ready_for_pr',reason:'Only the original owner verifies current Test HEAD'}];
+ const model=new Decisions(sequence);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:25});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,24);
+ assert.equal(result.pr_created,false);
+ assert.equal(result.source_test_task_id,'task-23');
+ assert.equal(model.calls,25);
+ assert.equal(f.verified.length,24);
+ assert.equal(f.retired,false);
+});
+test('R385.10 original adaptive owner rejects unbudgeted 26th decision',async()=>{
  const f=fixture();
  const model=new Decisions([candidate('backend',0)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
-  model,hooks:f.hooks,maxSteps:25
+  model,hooks:f.hooks,maxSteps:26
  }),/invalid original owner loop configuration/u);
  assert.equal(model.calls,0);
  assert.equal(f.verified.length,0);

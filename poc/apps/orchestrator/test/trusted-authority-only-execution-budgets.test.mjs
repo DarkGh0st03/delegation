@@ -14,12 +14,20 @@ test('R384.5 trusted owner may select 24 decisions and 4 verified FAILs',()=>{
  assert.deepEqual(resolve({childCount:1,ownerBudget:{maxDecisions:1,maxVerifiedFailures:0}}),
   {maxDecisions:1,maxVerifiedFailures:0});
 });
+test('R385.10 one terminal no-Child decision may follow 24 separately admitted Tasks',()=>{
+ assert.deepEqual(resolve({childCount:24,ownerBudget:{maxDecisions:25,maxVerifiedFailures:4}}),
+  {maxDecisions:25,maxVerifiedFailures:4});
+ assert.deepEqual(resolve({childCount:16,ownerBudget:{maxDecisions:17,maxVerifiedFailures:2}}),
+  {maxDecisions:17,maxVerifiedFailures:2});
+ // Existing default still reserves no extra turn without protected owner opt-in.
+ assert.deepEqual(resolve({childCount:24}),{maxDecisions:24,maxVerifiedFailures:2});
+});
 test('R384.5 owner budget rejects overrun, injection and malformed settings',()=>{
  const invalid=[
   {childCount:0},{childCount:25},{childCount:1.5},
-  {childCount:1,ownerBudget:{maxDecisions:2,maxVerifiedFailures:1}},
-  {childCount:16,ownerBudget:{maxDecisions:17,maxVerifiedFailures:2}},
-  {childCount:24,ownerBudget:{maxDecisions:25,maxVerifiedFailures:2}},
+  {childCount:1,ownerBudget:{maxDecisions:3,maxVerifiedFailures:1}},
+  {childCount:16,ownerBudget:{maxDecisions:18,maxVerifiedFailures:2}},
+  {childCount:24,ownerBudget:{maxDecisions:26,maxVerifiedFailures:2}},
   {childCount:24,ownerBudget:{maxDecisions:24,maxVerifiedFailures:5}},
   {childCount:24,ownerBudget:{maxDecisions:24,maxVerifiedFailures:-1}},
   {childCount:24,ownerBudget:{maxDecisions:2,maxVerifiedFailures:3}},
