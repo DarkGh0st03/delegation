@@ -11,6 +11,8 @@ import {dirname,resolve} from "node:path";
 import {loadTrustedPlanIpcSecret} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
 import {TrustedEffectStagingTaskRegistry,
  type TrustedEffectTaskOwnerPins} from "./trusted-effect-staging-task-registry.ts";
+import {isProjectTestSource}
+ from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import type {TrustedEffectStagingPort} from "./gateway-tool-client.ts";
 
 type Channel="bind"|"stage";
@@ -201,7 +203,8 @@ function validPins(value:unknown):value is PublicPins{
     typeof v.branch!=="string"||
     !["backend","frontend","test"].includes(v.role as string)||
     !["read_file","update_file","create_file","run_tests","read_then_update"].includes(v.operation as string)||
-     (v.operation==="create_file"&&v.role==="test"))
+     (v.operation==="create_file"&&v.role==="test"&&
+       (typeof v.path!=="string"||!isProjectTestSource(v.path))))
   return false;
  return v.operation==="run_tests" ? !("path" in v)
   :typeof v.path==="string";
@@ -404,8 +407,9 @@ export async function createTrustedEffectAgentBindingServer(config:{
           await config.ownerStageClient.attest!(pins.runtimeTaskId,requestId,tool);
          }}:{}),
       ...(pins.operation==="create_file"?{
-       // The private owner may prebind CREATE, but the controlled ADK
-       // FunctionTool remains denied pending native E2E.
+       // The private owner may prebind exactly one CREATE. For Test, the
+       // immutable owner Task pins must be a canonical project test source;
+       // this discovery hint does not grant Gateway/Rust/OPA authority.
        stagedTool:"create_file" as const
       }:{}),
       stage:async requestId=>{

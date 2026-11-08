@@ -32,7 +32,7 @@ const task=():AgentTaskContext=>({
  delegation_evidence:{credential:"PRIVATE_CHILD_DC",
   credential_id:pins.childCredentialId,presenter_id:pins.presenterId}
 });
-async function fixtures(expectedRole?:"backend"){
+async function fixtures(expectedRole?:"backend"|"test"){
  const dir=await mkdtemp(join(tmpdir(),"r322-"));
  const bindSecret=join(dir,"bind.hex"),stageSecret=join(dir,"stage.hex"),
   foreignSecret=join(dir,"foreign.hex");
@@ -302,7 +302,7 @@ test("R383.8 private CREATE Task pins travel through HMAC Unix bind and one-use 
   assert.deepEqual(calls,["r3838-create-1"]);
  }finally{await x.close();}
 });
-test("R383.8 Test Agent cannot bind create_file through authenticated IPC",async()=>{
+test("R390 authenticated Test CREATE rejects application source before IPC",async()=>{
  const x=await fixtures();
  try{
   // The authenticated private client rejects invalid role/task pins
@@ -310,5 +310,43 @@ test("R383.8 Test Agent cannot bind create_file through authenticated IPC",async
   await assert.rejects(x.client.bindTask({
    ...pins,role:"test",operation:"create_file"
   }),/malformed owner Task pins/u);
+ }finally{await x.close();}
+});
+
+test("R390 Test CREATE exact source binds through private HMAC and stages once",async()=>{
+ const x=await fixtures("test");
+ const testPath="tests/backend/authorized-new.test.ts";
+ const testPins={...pins,role:"test" as const,path:testPath,
+  operation:"create_file" as const,
+  presenterId:"did:thesis:test-agent",
+  childCredentialId:"urn:r390:test-child"};
+ try{
+  const calls:string[]=[];
+  x.owner.bindTask(runtime,{
+   stagedTool:"create_file" as const,
+   async stage(id:string){calls.push(id);return {provider_write_authorized:false};}
+  },"test");
+  await x.client.bindTask(testPins);
+  const base=task();
+  const delegated:AgentTaskContext={...base,role:"test",
+   subtask:{...base.subtask,relevant_paths:[testPath],
+    approved_file_permissions:[{path:testPath,operation:"create_file"}],
+    approved_run_tests:false},
+   delegation_evidence:{...base.delegation_evidence,
+    credential_id:testPins.childCredentialId,presenter_id:testPins.presenterId}
+  };
+  const port=x.agent.selectFor(delegated);
+  assert.equal(port.stagedTool,"create_file");
+  assert.deepEqual(await port.stage("r390-test-create-1"),
+   {provider_write_authorized:false});
+  assert.deepEqual(calls,["r390-test-create-1"]);
+  await assert.rejects(port.stage("r390-test-create-2"),/consumed or retired/u);
+  for(const path of ["apps/backend/application.test.ts",
+   "tests/acceptance/runner.test.ts",
+   "tests/backend/runner-config.ts","tests/backend/../admin.test.ts"]){
+   await assert.rejects(x.client.bindTask({...testPins,path}),
+    /malformed owner Task pins/u);
+  }
+  assert.deepEqual(calls,["r390-test-create-1"]);
  }finally{await x.close();}
 });
