@@ -78,6 +78,34 @@ test('R384.5 owner forwards bounded recovery budget without changing PR authorit
  assert.equal(outcome.status,'owner_operational_ready_for_review_not_pr_authorized');
  assert.deepEqual(events,['a2a','adaptive']);
 });
+test('R385.13 original operational launcher allows 25 owner-only decisions without creating a 25th Child',async()=>{
+ const {owner,events}=fakeOwner();
+ const original=owner.runAdaptiveWorkLoop;
+ owner.runAdaptiveWorkLoop=async budget=>{
+  assert.equal(budget.maxSteps,25);
+  assert.equal(budget.maxVerifiedFailures,4);
+  assert.equal(budget.requireVerifiedRepairDiagnostic,true);
+  return original(budget);
+ };
+ const cfg=canonicalConfig(owner);
+ cfg.adaptive.maxSteps=25;
+ cfg.adaptive.maxVerifiedFailures=4;
+ cfg.adaptive.requireVerifiedRepairDiagnostic=true;
+ const outcome=await launch(cfg);
+ assert.equal(outcome.status,'owner_operational_ready_for_review_not_pr_authorized');
+ assert.equal(outcome.pr_created,false);
+ assert.deepEqual(events,['a2a','adaptive']);
+});
+test('R385.13 original launcher still rejects 26+ or malformed decisions before SDK or Child',async()=>{
+ for(const invalid of [0,-1,26,30,1.5,NaN,Infinity,'25',null]){
+  const {owner,events}=fakeOwner();
+  const cfg=canonicalConfig(owner);
+  cfg.adaptive.maxSteps=invalid;
+  await assert.rejects(launch(cfg),
+   /trusted owner, protected A2A and bounded adaptive model required/u);
+  assert.deepEqual(events,[]);
+ }
+});
 test('R384.5 unbounded or malformed recovery budgets rejected before A2A startup',async()=>{
  for(const invalid of [-1,5,1.5,NaN,'4']){
   const {owner,events}=fakeOwner();
