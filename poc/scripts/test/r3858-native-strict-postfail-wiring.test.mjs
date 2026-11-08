@@ -58,3 +58,33 @@ test("R385.12 Test Agent post-failure mode is exclusive and cannot impersonate a
  assert.match(w,/original_root_retired/u);
  assert.match(w,/paid_model_calls/u);
 });
+
+test("R385.13 full strict owner recovery reserves 24 distinct Children plus terminal decision",()=>{
+ const w=read(".github/workflows/r38513-native-strict-full-recovery.yml");
+ const s=read("poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs");
+ assert.match(w,/R38513_NATIVE_STRICT_FULL_RECOVERY: "1"/u);
+ assert.match(w,/R38512_NATIVE_TEST_AGENT_SOURCE_PROBE: "1"/u);
+ assert.match(w,/R3858_NATIVE_STRICT_POSTFAIL_PROBE: "1"/u);
+ assert.match(w,/R3818_CANONICAL_NATIVE_MCP: "1"/u);
+ assert.match(w,/ENGINEER_CORE_NATIVE_MODE: "1"/u);
+ assert.match(w,/DELEGATION_GATEWAY_ARCHITECTURE: authority-only/u);
+ assert.match(w,/r38513_native_ten_signed_reads_ten_cas_docker_pass_draft_pr/u);
+ for(const proof of ["strict_postfail_diagnostic_read_count","individually_signed_repair_tasks",
+  "native_child_count","original_owner_adaptive_decisions","second_docker_status",
+  "researcher_acceptance_pass","independent_pr_get","original_main_immutable","paid_model_calls"])
+  assert.ok(w.includes(proof),"R385.13 must gate: "+proof);
+ assert.match(s,/strictFullRecovery\?25:15\+decisionOffset/u);
+ assert.match(s,/strictFullRecovery&&initialIndex>=3&&initialIndex<=22/u);
+ assert.match(s,/strictFullRecovery&&initialIndex===23/u);
+ assert.match(s,/strictFullRecovery&&initialIndex===24/u);
+ assert.match(s,/strictFullRecovery&&epoch>=5&&epoch<=24/u);
+ assert.match(s,/strictFullRecovery&&epoch===25&&agent_id==="test"/u);
+ assert.match(s,/strictReadProbe&&!strictFullRecovery\?\{\}:\{draftPullRequest:/u);
+ assert.match(s,/strict_postfail_diagnostic_read_count:10/u);
+ assert.match(s,/native_child_count:24/u);
+ assert.match(s,/original_owner_adaptive_decisions:25/u);
+ assert.match(s,/requireVerifiedRepairDiagnostic:true/u);
+ assert.match(s,/R38513 requires isolated native strict signed Test Agent mode/u);
+ assert.doesNotMatch(w,/DELEGATION_SIGNED_GEMINI_PILOT: "1"/u);
+ assert.match(w,/test -z "\$\{GEMINI_API_KEY:-\}"/u);
+});
