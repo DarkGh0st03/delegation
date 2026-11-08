@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.11 Test Agent offline PASS; R385.10 CI PASS)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.12 Test Agent native PASS, cleanup e full retest ancora aperti)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,67 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E nativo scripted completo PASS su `339a8b1`. R385.8–R385.9 probe nativa di letture post-FAIL con Child/OPA/MCP e CAS successivi PASS, ma arresto deliberato senza Docker PASS finale o PR. R385.10 Fast CI + Engineer Approval PASS `62bb5836`. R385.11 Test Agent source-grounded offline: 4/4 test PASS, vero Node TypeScript FAIL→read→CAS locale→Node PASS, Gate Gateway contraffatto NO-GO. Mancano ancora retest completo Docker nativo con Test Agent e autonomia generativa.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E nativo scripted completo PASS su `339a8b1`. R385.8–R385.9 probe nativa di letture post-FAIL con Child/OPA/MCP e CAS successivi PASS, ma arresto deliberato senza Docker PASS finale o PR. R385.10 Fast CI + Engineer Approval PASS `62bb5836`. R385.11 Test Agent source-grounded offline 4/4 PASS. **R385.12 Fast CI e native Test Agent proof SUCCESS sulla stessa SHA `0abe17df`**: vero Docker FAIL → Task Test read-only firmato → lettura indipendente Gitea/Gateway → UPDATE Test con Child/MCP e CAS verificato; nessun falso PASS/PR. Mancano ancora il retest completo su HEAD finale, PR, cleanup e autonomia generativa.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). R385.9 Fast CI #42450891491 e probe nativa #42450891510 entrambe SUCCESS su `737ddbb3`, ma la probe non esegue il retest PASS. R385.11 Fast CI #42461266452 SUCCESS su `82e24631` (test Node reale ma Gateway/Child/Gitea simulati in quella nuova suite). E2E post-cleanup ancora richiesto.** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). R385.9 Fast CI #42450891491 e probe nativa #42450891510 entrambe SUCCESS su `737ddbb3`, ma la probe non esegue il retest PASS. R385.11 Fast CI #42461266452 SUCCESS su `82e24631` (test Node reale, Gateway/Child/Gitea simulati). **R385.12 Fast CI #42463171339 e native probe #42463171293 SUCCESS su `0abe17df`**, inclusi Rust/EVM, OPA, MCP, Gitea, primo Docker FAIL e Test Agent signed read/CAS; **nessun** secondo Docker PASS, acceptance finale o PR. E2E post-cleanup ancora richiesto.** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.12 — Native signed Test Agent read-after-Docker-FAIL + CAS: SUCCESS
+
+**Stato verificato:** [Fast CI #42463171339](https://github.com/DarkGh0st03/delegation/actions/runs/42463171339)
+e [Native R385.12 #42463171293](https://github.com/DarkGh0st03/delegation/actions/runs/42463171293)
+sono entrambi **SUCCESS sulla stessa SHA `0abe17df075cc8c5edf49a221bb0ab10cd9d2cba`**.
+Il log della run nativa contiene l'evento
+`r38512_native_test_agent_signed_postfail_read_cas_no_false_pass`
+con `status:"pass"`, `paid_model_calls:0`, `native_rust_evm:true`,
+`real_opa:true` e `private_native_mcp:true`.
+
+La modalità **opt-in solo CI disposable** `R38512_NATIVE_TEST_AGENT_SOURCE_PROBE=1`
+estende la suite nativa R375 senza sostituire il percorso R385.8/R385.9.
+Con una sola firma Engineer e la Root originale:
+- Il vero Docker Runner riceve la D0 incompleta e restituisce un FAIL
+  indipendentemente osservato (project tests PASS, researcher acceptance FAIL).
+  Il Task Test iniziale rimane **registrato ma non completato**.
+- Il Test Agent propone un **Task `read_file` distinto**, sottoposto a Child
+  Rust/MCP, A2A protetto, Gateway/OPA e lettura effettiva di Gitea su
+  `tests/frontend/UserDetailPage.test.tsx`. L'owner attesta il read indipendente;
+  il rapporto A2A `test_outcome:not_run` non è un Docker PASS.
+- La successiva decisione ADK, ancora scripted e non generativa, propone
+  un Task Test `read_file+update_file` sullo stesso file e HEAD,
+  soggetto al vincolo `requireVerifiedRepairDiagnostic:true`.
+  Il Gateway verifica una nuova Child e il CAS reale.
+- L'owner confronta i byte riletti dal Gitea HEAD contro la soluzione
+  scripted attesa. Totale: **1 lettura Test diagnostic separata, 3 CAS**
+  (due D0 più uno Test), una ricevuta FAIL, **zero** ricevute PASS,
+  **zero** Draft PR, nessun merge e `main` invariato.
+  La Root viene ritirata dopo l'arresto deliberato `blocked`.
+
+**Incidente corretto durante il gate:** [prima native run #42462441952](https://github.com/DarkGh0st03/delegation/actions/runs/42462441952)
+era FAIL dopo la vera lettura Test perché il proprietario A2A trattava
+qualsiasi `test_outcome:not_run` del ruolo Test come Test FAIL.
+Il fix [`c3365fc5`](https://github.com/DarkGh0st03/delegation/commit/c3365fc5b5e1a1a6ed4176006c5e43aafcb0258b)
+distingue **soltanto** un Task Test read-only con grant firmato
+`isProjectTestReadGrant` da `run_tests`: impone `not_run`,
+nessuna modifica dichiarata, nessun Runner verdict, e fa dipendere
+il completamento dalla **ricevuta indipendente Gateway**.
+I test negativi negano sorgenti non di test, acceptance,
+PASS/FAIL A2A falsificati e read senza ricevuta Gateway.
+Il ramo `run_tests` fallito resta fail-closed.
+
+**Limite:** R385.12 attesta l'infrastruttura nativa del Test Agent,
+non la soluzione autonoma Account Suspension o il secondo Docker PASS.
+Non è stato eseguito un modello generativo a pagamento.
+
+**Gate successivo R385.13:** svolgere il resto delle dieci correzioni
+sotto Root invariata, con letture post-FAIL firmate/HEAD coerenti prima
+di ogni UPDATE, Test Agent incluso; nuovo Runner Docker reale su HEAD
+finale, researcher acceptance PASS e Draft PR attestata.
+Il budget owner-only R385.10 può arrivare a 24 Child + una decisione
+terminale; non si devono inventare PASS o avviare Gemini.
+Poi B/C, cleanup E e validazione definitiva post-cleanup.
 
 ### R385.11 — Test Agent source-grounded offline, reale Node TypeScript FAIL/PASS
 
@@ -51,9 +105,7 @@ con Root e registri Gateway **simulati** in una directory temporanea.
 ma **non** include Gemini generativo, agenti A2A reali, Child Rust/MCP,
 Gitea CAS/MAC, Docker Runner applicativo, acceptance o Draft PR.
 Non generalizzare il PASS di R385.5 a questa nuova SHA.
-**Gate successivo:** R385.12, recovery rigoroso Test Agent su Gitea
-disposable e Docker reale con nuovo Test PASS e Draft PR verificati,
-solo con modelli gratuiti scripted; poi consolidamento e cleanup legacy.
+**Gate successivo:** R385.12 nativo Test Agent read+CAS (ora attestato), poi R385.13 full strict read→UPDATE→Docker PASS→acceptance→Draft PR; soltanto dopo consolidamento e cleanup legacy.
 Nessuna esecuzione Gemini a pagamento senza consenso esplicito.
 
 ### R385.10 — Una decisione terminale senza Child dopo 24 Task firmati
