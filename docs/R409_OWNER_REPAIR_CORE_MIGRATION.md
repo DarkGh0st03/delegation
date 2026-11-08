@@ -17,3 +17,9 @@ R385.4 now **forbids any literal dynamic importer** of either historical Planner
 This reduces two old runtime import edges and moves the executable logic to Owner-only modules. It does **not** prove the old wrappers can be deleted: historical tests, native EVM fixtures, computed paths and unverified external consumers still exist. Four private cryptographic MCP modules remain protected. The two remaining historical HTTP issuer modules are still required for explicitly gated fixtures, and the reviewed-DAG old wrapper from R408 also remains compatible.
 
 A successful Fast CI is required on the post-change SHA; the complete native Rust/OPA/VP/Gitea/Docker Security CI and independently approved paid Gemini pilot remain separate future gates. No Main merge or paid inference.
+
+## R409.3 post-migration verification
+
+[Fast CI #42515924937](https://github.com/DarkGh0st03/delegation/actions/runs/42515924937) completed **SUCCESS 2/2** on commit `c0afc055`, including all four new R409 source-boundary tests, the historical R385.3/R385.4/R385.17 and R240/R406 negative guard expectations, and the no-AI Docker job. Some test sources had to be redirected from the old export shim to the unchanged new core: this is an evidence-location correction, **not a relaxation** of Root, Child, Gateway or HTTP-fallback assertions.
+
+R410 ensures future edits to these migration surfaces automatically run the **positive, independent native Rust full Security CI** on the exact SHA. Its separate positive-smoke job also executes the R409/R385.3/R406 source guards. This second CI gate is still to be verified on R410 HEAD, not inferred from Fast CI.

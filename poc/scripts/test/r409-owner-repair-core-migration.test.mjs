@@ -115,3 +115,24 @@ test("R409 tracked graph has zero old executable callers and one Owner caller pe
  assert.ok(refs.unresolvedRuntimeIndirections.length>0,
   "uncertain computed imports remain a deletion blocker");
 });
+
+test("R410 no-AI positive Security CI watches migrated owner runtime boundaries",()=>{
+ const wf=read(".github/workflows/isolated-positive-security-ci.yml");
+ const paths=[
+  "poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs",
+  "poc/packages/orchestrator-runtime/src/trusted-owner-reviewed-dag-execution.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts"
+ ];
+ for(const file of paths)assert.ok(wf.includes("      - '"+file+"'"),
+  "positive native Security CI must trigger on: "+file);
+ assert.match(wf,/uses: \.\/\.github\/workflows\/r38513-native-strict-full-recovery\.yml/u,
+  "native Rust/OPA/private MCP/Docker full recovery must remain reusable");
+ assert.match(wf,/node --experimental-vm-modules --experimental-strip-types --test poc\/scripts\/test\/r409-owner-repair-core-migration\.test\.mjs/u,
+  "Security CI must run R409 no-AI Owner gate before Docker");
+ assert.doesNotMatch(wf,/^\s+(?:GEMINI_API_KEY|OPENAI_API_KEY):/mu,
+  "positive no-AI workflow must never accept model secrets");
+});
