@@ -15,13 +15,13 @@ function fixture(options:{
   writerAdmin?:boolean;writerId?:number;writerBot?:boolean;
   staleOnSecondCheck?:boolean;staleDuringMerge?:boolean;
   mergeResponse?:number;ignoreMerge?:boolean;
-  reviewerDismissed?:boolean;
+  reviewerDismissed?:boolean;draft?:boolean;
 }={}){
   const seen:Array<{path:string;method:string;auth:string;body:unknown}>=[];
   let pulls=0,accepted=false;
   const pr=(merged=false)=>({
     number:3,state:merged?"closed":"open",merged,
-    mergeable:!merged,
+    draft:options.draft??false,mergeable:!merged,
     head:{ref:"feature/account-suspension",sha:head,
       repo:{full_name:"thesis/iam-console-poc"}},
     base:{ref:"main",sha:base,
@@ -123,6 +123,13 @@ test("missing, withdrawn or revised human approval prohibits merge",async()=>{
         e.reason==="human_approval_missing");
     assert.deepEqual(x.writes(),[]);
   }
+});
+test("R399: a protected, CI-green Draft PR cannot be merged",async()=>{
+  const x=fixture({draft:true});
+  await assert.rejects(x.run(),
+    (e:unknown)=>e instanceof MergeReadinessDenied&&
+      e.reason==="pr_is_draft");
+  assert.deepEqual(x.writes(),[]);
 });
 test("CI pending blocks merge even if human approved",async()=>{
   const x=fixture({ciSuccess:false});
