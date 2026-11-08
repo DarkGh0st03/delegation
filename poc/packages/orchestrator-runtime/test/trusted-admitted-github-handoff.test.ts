@@ -5,7 +5,10 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {TrustedGithubAdmissionReceiptStore}
   from "../src/trusted-github-admission-store.ts";
-import {consumePinnedGithubAdmission,startAdmittedGithubReviewedGeminiHandoff}
+import {consumePinnedGithubAdmission}
+  from "../src/trusted-github-admission-consumer.ts";
+import {consumePinnedGithubAdmission as legacyConsumePinnedGithubAdmission,
+  startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
 import {verifyGithubManualGeminiDispatch}
   from "../src/trusted-manual-github-dispatch.ts";
@@ -46,6 +49,10 @@ async function fixture(){
   await intake.record({dispatch,job});
   return {directory,host:new TrustedGithubAdmissionReceiptStore(config)};
 }
+
+test("R384.8 pure OIDC admission consumer preserves the prior direct-hand-off export",()=>{
+ assert.equal(legacyConsumePinnedGithubAdmission,consumePinnedGithubAdmission);
+});
 
 test("HMAC-bound OIDC admission supplies only capped inputs and is one-use across restarts",async()=>{
   const {directory,host}=await fixture();
