@@ -25,6 +25,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # R385.18: the historical HTTP Runner positive smoke is still preserved
+  # below, but can no longer be mistaken for native Rust/Child/VP coverage.
+  # This reusable workflow runs the full original Engineer/OPA/Gitea/
+  # task-local MCP/A2A/Docker FAIL->PASS/independent Draft PR regression
+  # on the SAME calling workflow SHA. It has no billable AI or merge path.
+  authority-only-native-rust-positive:
+    name: Canonical native Rust + private MCP + Docker FAIL to PASS (No AI)
+    uses: ./.github/workflows/r38513-native-strict-full-recovery.yml
+    permissions:
+      contents: read
+
   real-positive-exact-sha:
     name: Disposable Gitea + Real Docker Runner + Researcher Acceptance
     runs-on: ubuntu-latest
