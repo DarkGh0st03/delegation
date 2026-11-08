@@ -1054,7 +1054,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
       }
       choice={action:"delegate",task:{
        task_id:diagnosticId,agent_id:entry.agent_id,
-       depends_on:[j?sourceTasks[j-1].task_id:testTaskId],
+       // Failed Test never receives a Gateway completion receipt: its
+       // independent FAIL proof authorizes recovery, not a depends_on edge.
+       // Anchor the first signed diagnostic to the LAST independently
+       // completed D0 Frontend Task; later reads depend on the prior CAS.
+       depends_on:[j?sourceTasks[j-1].task_id:taskId],
        permissions:[pair(entry.file,"read_file")],
        instruction:"Read authorized source "+entry.file+
         " at independently verified current Gitea HEAD after Runner FAIL"
