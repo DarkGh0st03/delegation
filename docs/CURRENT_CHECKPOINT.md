@@ -1,4 +1,6 @@
-# Current integration checkpoint — 15 October 2026
+# Historical integration checkpoint — 15 October 2026
+
+> **Archived research context, not the current branch status.** The canonical post-prof authority-only architecture, verified workflow statuses and cleanup priorities are maintained in [ACTIVE_AUTHORITY_ONLY_ROADMAP.md](ACTIVE_AUTHORITY_ONLY_ROADMAP.md) and [IMPLEMENTATION_STATE.md](IMPLEMENTATION_STATE.md). The original results below apply to their historic SHAs; they are not a basis for launching the old billable workflow.
 
 > **Current architecture notice — 24 October 2026, R6 refactoring branch.**
 > This document began as the **15 October historical Gemini baseline**

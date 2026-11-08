@@ -1,8 +1,8 @@
 # Architecture Decisions
 
-These decisions are frozen unless an implementation blocker requires a documented change.
+**Historical ADR series.** These decisions describe the October sequential/shared-MCP PoC unless a later authority-only decision expressly retains them. Statements that the sequential Orchestrator, HTTP Adapter or shared Streamable HTTP MCP are the **current canonical path are superseded**.
 
-The current execution path uses a deterministic TypeScript Orchestrator and three Google ADK/Gemini roles through A2A and one shared MCP server. References to implementation phases below explain the development order; they do not describe unfinished integration. See the [current implementation map](IMPLEMENTATION_STATE.md).
+The current architecture uses an independent Engineer signing **permission scope only**, direct Rust for Engineer/Gateway, dynamic ADK Planner/Executor, A2A agents and **private/stdio crypto MCP** for Child DC/VP. See the [current implementation map](IMPLEMENTATION_STATE.md) and [active roadmap](ACTIVE_AUTHORITY_ONLY_ROADMAP.md). Preserve the historical ADRs below for provenance; do not use them to re-enable retired runtime entrypoints or paid flows.
 
 ## ADR-001 — Keep the PoC integration in the delegation repository
 

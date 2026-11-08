@@ -1,36 +1,35 @@
-# Current implementation state — 15 October 2026
+# Delegation — implementation state (authority-only)
 
-The active thesis PoC runs **three Google ADK/Gemini roles**, protected A2A tasks, **one shared Streamable HTTP MCP server**, private task workers, deterministic Orchestrator, Gateway/Rust/OPA authorization, Gitea, exact-SHA Docker Runner, independent researcher acceptance, trusted CI and human merge gate.
+**Updated:** 8 November 2026. This is the current architecture; the historical 15 October shared-MCP PoC is explicitly separated in [README](../README.md).
 
-## Reference experiment
+## Implemented and tested
 
-- **Latest authoritative tested framework SHA:** `02c3395b9111a63ccc9f441ea2c91c81865d6673` — [live Gemini run #5 / 38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415), 15 October 2026: **PASS** on its first attempt after the single-disposable-Gitea fix.
-- Earlier historical live-Gemini pass: [run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) at framework SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` (13 October 2026).
-- Backend, Frontend and Test together produced 11 files on a disposable Gitea feature branch.
-- The latest run passed interface preflight, six actual Docker project phases, independent researcher acceptance and separately trusted exact-SHA CI; temporary Gitea main was unchanged.
-- PR opened but **no human approval and no merge** (`human_approval_missing`).
-- Historical measured checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a` is **not** a performance measurement of this code.
+| Layer | Implementation | Evidence and remaining limit |
+| --- | --- | --- |
+| Rust crypto and authorization | Engineer root issuance/revocation directly in Rust; Gateway verifies DC/VP directly in Rust, with OPA | Native E2E successful; legacy HTTP never canonical |
+| Approval and trust boundary | Engineer signs immutable permissions; preliminary read-only Root is revoked before operational Root | Task DAG is dynamic and **not** the signed authority |
+| Planning and execution | ADK planner/decision proposer, bounded read-first recovery, A2A Backend/Frontend/Test | Scripted end-to-end PASS; **real Gemini autonomy not yet proven** |
+| AgentCards / FunctionTools | Role-checked startup and signed grant visibility | Native Test Agent currently cannot `create_file`; implementing signed test-only create remains open |
+| Task cryptography | Task-local private/stdin-stdout MCP for Child DC and VP | **Retain** `poc/mcp-shared/src/owner-private-*`; no shared HTTP MCP as canonical route |
+| Provider execution | Gitea real pinned reads / atomic HEAD CAS, controlled Docker Runner, researcher-owned acceptance | Tests are pinned to actual revisions and receipts |
+| PR and security | Disposable Gitea Draft PR from verified PASS, separate Security CI | Separate jobs do not yet prove status on the **same PR** |
+| Human merge | `workflow_dispatch` with independent operator and approval verification | Live GitHub Environment reviewers and Gitea admin protection are not proven by offline tests |
+| Legacy isolation | HTTP Engineer fixture exact opt-in, denied in authority-only; legacy DAG/workflows pinned and under review | Runtime caller inventory still has unknown/indirect references |
 
-## Locate each part in source
+## Validated regression snapshots
 
-| What | Entry point |
-| --- | --- |
-| GitHub Actions | `.github/workflows/gemini-paid-shared-mcp-final.yml` |
-| Live orchestration/bootstrap | `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs` |
-| Coordinator and child DC templates | `poc/packages/orchestrator-runtime/src/sequential-coordinator.ts`, `permission-templates.ts` |
-| A2A/ADK | `poc/packages/agent-runtime/src/server.ts`, `executor.ts`, `adk-a2a-handler.ts` |
-| Task-specific tool Worker | `poc/packages/agent-runtime/src/private-mcp-task-registry.ts` |
-| Shared MCP | `poc/mcp-shared/src/http-server.ts`, `task-router.ts` |
-| Gateway | `poc/apps/gateway/src/prepare.ts`, `execute.ts`, `canonical.ts` |
-| Rust adapter and crypto | `services/delegation-adapter/src/http.rs`, `src/delegation/` |
-| OPA | `poc/opa/policy.rego` |
-| Controlled tests/CI | `poc/apps/test-runner-controller/src/isolated-executor.ts`, `trusted-security-ci.ts` |
-| Human gate | `poc/packages/orchestrator-runtime/src/merge-readiness.ts` |
+- **Full positive native chain + historical Runner regression:** [Security CI #42477209043](https://github.com/DarkGh0st03/delegation/actions/runs/42477209043), 2/2 SUCCESS, plus [Fast CI #42477209047](https://github.com/DarkGh0st03/delegation/actions/runs/42477209047), 2/2 SUCCESS; identical SHA `bbb60fa09d88b0f2949a5c6452f340aedbc33f54`.
+- **Engineer HTTP fail-closed change:** [R385.19 native full run #42478904754](https://github.com/DarkGh0st03/delegation/actions/runs/42478904754) SUCCESS and [Fast CI #42478904760](https://github.com/DarkGh0st03/delegation/actions/runs/42478904760) SUCCESS; exact SHA `8bf19fd59e042b7e4f189f9a543aa8933a169680`.
+- **Cleanup of milestone reports:** 69 Markdown reports deleted, [Fast CI #42479660224](https://github.com/DarkGh0st03/delegation/actions/runs/42479660224) SUCCESS on `c97bf3ef`.
+- **Follow-on workflow/checkpoint cleanup:** 7 historical positive workflows and 7 trigger JSONs removed, with all their source test scripts retained. [Fast CI #42480100756](https://github.com/DarkGh0st03/delegation/actions/runs/42480100756) SUCCESS on `b3b42eb3`. Full same-SHA native CI after all cleanup is the next integration gate.
 
-## Important boundaries and limitations
+## Direct pointers
 
-The Orchestrator, not MCP, calls `create_branch` and `create_pull_request` through the Gateway. Private DC evidence never enters Gemini's model-visible context; the Gateway derives the requested file/branch permission and requires both a valid Rust-delegation result and allow from OPA. The scenario, permission templates, policy, integration preflight and acceptance tests are intentionally specific to IAM Console, not generalized.
+- [Active roadmap and ordered remaining work](ACTIVE_AUTHORITY_ONLY_ROADMAP.md).
+- [Architecture decision history (with supersession notice)](ARCHITECTURE_DECISIONS.md).
+- [Human Gate / static reachability audit](R38516_HUMAN_GATE_AND_LEGACY_REACHABILITY.md).
+- [Workflow migration / caller inventory](R38517_WORKFLOW_AND_CALLER_MIGRATION.md).
+- [Native Security CI integration / caller pinning](R38518_NATIVE_SECURITY_CI_AND_LEGACY_CALLER_GATES.md).
+- [Reproducibility](REPRODUCIBILITY.md).
 
-The 15 October artifact's generated code has not received the separate source-level security review recorded for the 13 October output. **Do not** launch another paid Gemini run without explicit authorization. Read [current checkpoint](CURRENT_CHECKPOINT.md), [latest live run evidence](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-15.md), [earlier 13 October security review](GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md), [active workflows](ADK_MCP_ACTIONS_CATALOG.md) and [architecture decisions](ARCHITECTURE_DECISIONS.md).
-
-Old phase diaries are available by checking out the old Git commits rather than appearing among current source directories.
+The cleanup does not rewrite Git history. The 15 October Gemini PoC evidence is historical, **not** a current certified or autonomously generative system. No paid-model inference or automatic merge is allowed in the cleanup workflow.
