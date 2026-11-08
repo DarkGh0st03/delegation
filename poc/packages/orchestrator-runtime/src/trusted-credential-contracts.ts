@@ -46,3 +46,8 @@ export interface IssuedDelegationCredential {
   [key: string]: unknown;
 }
 
+/** Trusted native Engineer credential config; no HTTP transport dependency. */
+export interface TrustedEngineerCoreConfig {
+ readonly bearerToken:string;
+ readonly timeoutMs?:number;
+}

@@ -7,13 +7,13 @@
  * Never expose this module, its bearer or its socket path as ADK/A2A tools.
  */
 import {createConnection} from "node:net";
-import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
 import type {EngineerCredentialPort,RootParameters}
  from "./trusted-engineer-authority.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
-import type {IssuedDelegationCredential} from "./authority-client.ts";
+import type {IssuedDelegationCredential,TrustedEngineerCoreConfig}
+ from "./trusted-credential-contracts.ts";
 
-interface NativeConfig extends Pick<AdapterClientConfig,"bearerToken"|"timeoutMs"> {
+interface NativeConfig extends TrustedEngineerCoreConfig {
  nativeSocketPath:string;
 }
 const FAIL="Trusted Engineer native Rust issuer unavailable";

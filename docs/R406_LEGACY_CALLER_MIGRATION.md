@@ -31,3 +31,9 @@ The second static type dependency is now migrated. `trusted-owner-operational-re
 The R385.3 fail-closed regression is updated to require the neutral type path while still checking original-root retirement, bounded dynamic loading and no claimed Docker PASS or PR. The R406 offline test independently asserts the neutral DAG-port module cannot import the historical controller.
 
 **Still blocked:** owner recovery's `await import("./trusted-repair-dag-controller.ts")` and `await import("./trusted-operational-repair-planner.ts")` remain deliberately live behind Gateway and signed-root guards. This patch does **not** remove them or declare them dead. Retiring their executable paths requires a separate behavioral migration with equivalent signed Child/VP and native E2E attestation.
+
+## R406.4 — Native Engineer Rust port type isolation
+
+The native Node-API Engineer Core port and native Unix socket port previously used `import type` aliases from the old HTTP Adapter transport and `authority-client.ts`. Both now depend directly on the existing neutral `trusted-credential-contracts.ts` for `IssuedDelegationCredential` and `TrustedEngineerCoreConfig` (bearer and optional timeout). This removes those historical type couplings **without changing runtime code or the security contract**. R240 and the R406 offline guards now prove the canonical native ports cannot import the old HTTP sources. The legacy fixture selector and its separate explicit opt-in remain intact.
+
+The five historical runtime modules are **still present**: this isolates the native path, but is not proof that the opt-in HTTP issuer or the three signed-DAG execution routes may be deleted. No paid model call or merge is triggered.

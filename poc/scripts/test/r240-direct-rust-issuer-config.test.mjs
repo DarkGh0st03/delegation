@@ -9,7 +9,8 @@ test("R240 Engineer root + native Orchestrator VP use no implicit HTTP Adapter c
  const owner=read("poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts");
  const planning=read("poc/packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts");
  const transport=read("poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts");
- assert.match(direct,/Pick<AdapterClientConfig,"bearerToken">/u);
+ assert.match(direct,/Pick<TrustedEngineerCoreConfig,"bearerToken">/u);
+ assert.doesNotMatch(direct,/from "\.\/authority-client\.ts"|from "\.\/authority-adapter-transport\.ts"/u);
  assert.match(owner,/adapterBaseUrl\?:string/u);
  assert.match(owner,/Legacy HTTP Engineer fixture requires explicit Adapter URL/u);
  assert.match(planning,/adapterBaseUrl\?:string/u);

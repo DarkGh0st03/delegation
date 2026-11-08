@@ -11,10 +11,10 @@
  * request a preliminary/operational root and revocation.
  */
 import {createRequire} from "node:module";
-import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
 import type {EngineerCredentialPort,RootParameters}
  from "./trusted-engineer-authority.ts";
-import type {IssuedDelegationCredential} from "./authority-client.ts";
+import type {IssuedDelegationCredential,TrustedEngineerCoreConfig}
+ from "./trusted-credential-contracts.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
 
 const requireAddon=createRequire(import.meta.url);
@@ -56,7 +56,7 @@ export function loadDirectRustEngineerCore():EngineerRustCoreBinding{
 
 /** Injected binding is for OFFLINE tests only; production loads fixed addon. */
 export function createDirectRustEngineerCredentialPort(
- config:Pick<AdapterClientConfig,"bearerToken">, injectedBinding?:EngineerRustCoreBinding
+ config:Pick<TrustedEngineerCoreConfig,"bearerToken">, injectedBinding?:EngineerRustCoreBinding
 ):EngineerCredentialPort{
  const token=config.bearerToken;
  if(typeof token!=="string"||!token.trim())

@@ -62,3 +62,23 @@ test("R406.2 private owner repair DAG port contract has no executable legacy dep
  assert.match(source,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u,
   "Dynamic historical DAG remains a real dependency and must not be deleted");
 });
+
+test("R406.4 native Engineer core and socket ports never import historical HTTP shapes",()=>{
+ const base="poc/packages/orchestrator-runtime/src/";
+ const direct=read(base+"trusted-engineer-direct-core-port.ts");
+ const socket=read(base+"trusted-engineer-native-port.ts");
+ const contract=read(base+"trusted-credential-contracts.ts");
+ assert.match(contract,/export interface TrustedEngineerCoreConfig/u);
+ for(const source of [direct,socket]){
+  assert.doesNotMatch(source,/from "\.\/authority-client\.ts"|from "\.\/authority-adapter-transport\.ts"/u);
+  assert.match(source,/import type \{IssuedDelegationCredential,TrustedEngineerCoreConfig\}/u);
+  assert.match(source,/from "\.\/trusted-credential-contracts\.ts"/u);
+ }
+ assert.match(direct,/config:Pick<TrustedEngineerCoreConfig,"bearerToken">/u);
+ assert.match(socket,/interface NativeConfig extends TrustedEngineerCoreConfig/u);
+ // The HTTP compatibility fixture remains distinct and gated.
+ const selector=read(base+"trusted-engineer-crypto-port.ts");
+ assert.match(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
+ assert.match(selector,/createDirectRustEngineerCredentialPort\(config\)/u);
+ assert.match(selector,/createNativeRustEngineerCredentialPort\(/u);
+});
