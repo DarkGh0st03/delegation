@@ -51,6 +51,8 @@ jobs:
           node --experimental-strip-types --test poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs
           # R385.3: lazy historical repair planner + DAG only under verified Test FAIL.
           node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
+          # R385.6: signed diagnostic evidence for strict recovery UPDATE, with no provider or model.
+          node --test poc/packages/orchestrator-runtime/test/trusted-authority-only-repair-diagnostic-gate.test.mjs
           node --experimental-strip-types --test --test-name-pattern="R123 owner recovery arms|R124 live Engineer owner|R124 stale trusted Gitea|R124 malicious model grant|R124 root revoked mid-proposal|R138 owner-only repair" poc/apps/gateway/test/operational-epoch-gateway.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts
