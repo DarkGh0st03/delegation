@@ -2,8 +2,8 @@
   "checkpoint": "R385.8",
   "requested": true,
   "reason": "Verify strict owner post-authenticated Runner FAIL native read-only signed Child and first bound Gitea CAS without false PASS/PR",
-  "baseline_fast_ci_sha": "b413a95970a91699627314860f49b7e7f9198f3c",
-  "baseline_fast_ci_run": 42445146078,
+  "baseline_fast_ci_sha": "7805215ed42aca1e98bd455c9693e1245fa68a82",
+  "baseline_fast_ci_run": 42445318264,
   "run_mode": "disposable-native-real-Rust-EVM-OPA-Gitea-private-cryptographic-MCP-A2A-and-Docker",
   "model_mode": "scripted-offline-zero-billing",
   "paid_model_calls_allowed": 0,
@@ -23,5 +23,12 @@
   "must_pass_on_same_commit": [
     "Fast CI - Development",
     "R385.8 Native Strict Signed Post-FAIL Read and First Repair (No AI)"
-  ]
+  ],
+  "attempt": 2,
+  "previous_native_run": 42445318317,
+  "previous_native_outcome": "FAIL before original Review Host (missing step-local DELEGATION_GATEWAY_ARCHITECTURE)",
+  "retry_scope": "Same fully disposable zero-billing native test, corrected workflow mode on original owner step only",
+  "expected_step_local_architecture": "authority-only",
+  "require_no_downgrade_after_runtime_env_source": true,
+  "expected_proof_log": "r3858-proof.jsonl"
 }
