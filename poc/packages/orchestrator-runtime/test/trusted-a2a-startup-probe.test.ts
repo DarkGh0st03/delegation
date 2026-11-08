@@ -101,6 +101,8 @@ test("R5 role card profile and advertised private transport cannot be downgraded
     (v:any)=>{v.supportedInterfaces[0].url="http://localhost:9000/a2a/rest";},
     (v:any)=>{v.capabilities.extensions[0].params.agentDid="did:attacker";},
     (v:any)=>{v.skills[0].id="unsupported-tool";},
+    (v:any)=>{v.skills.push({...v.skills[0],id:"untrusted-extra-skill"});},
+    (v:any)=>{v.skills.push({...v.skills[0]});},
     (v:any)=>{v.capabilities.extensions[0].params.taskCapabilities=["run_tests"];},
     (v:any)=>{v.capabilities.extensions[0].params.taskCapabilities=["read_file","read_file"];},
     (v:any)=>{delete v.capabilities.extensions[0].params.taskCapabilities;},
@@ -175,6 +177,35 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
   assert.equal(readCount,3,"one role-pinned Card probe per specialist");
   for(const role of ROLES)
    assert.equal(profiles[role].did,identities[role]);
+  // R385.14: native owner denies Test create_file even if a forged
+  // otherwise-valid role Card advertises it. Backend/Frontend retain
+  // their actual signed, independently Gateway-fenced create support.
+  const nativeTestCard=createSpecializedAgentCard("test",endpoints.test,{
+   nativeSignerDid:identities.test,capabilityProfile:"approved-plan",
+   delegatedAuthorization:true
+  });
+  assert.deepEqual(nativeTestCard.capabilities.extensions?.[0]?.params?.taskCapabilities,
+   ["read_file","update_file","run_tests"]);
+  for(const role of ["backend","frontend"] as const){
+   const card=createSpecializedAgentCard(role,endpoints[role],{
+    nativeSignerDid:identities[role],capabilityProfile:"approved-plan"
+   });
+   assert.deepEqual(card.capabilities.extensions?.[0]?.params?.taskCapabilities,
+    ["read_file","update_file","create_file"]);
+  }
+  await assert.rejects(assertTrustedApprovedA2AStartup({
+   endpoints,fetchFn:(async(raw:string|URL|Request)=>{
+    const role=roleFor(String(raw));
+    const card=createSpecializedAgentCard(role,endpoints[role],{
+     nativeSignerDid:identities[role]
+    });
+    if(role==="test")
+     card.capabilities.extensions[0]!.params.taskCapabilities=
+      ["read_file","update_file","create_file","run_tests"];
+    return Response.json(card);
+   }) as typeof fetch
+  }),/pinned localhost role-card verification denied/u);
+
 
   // A historical synthetic Card is not an alternative identity in the
   // same canonical Rust session, even when skill/capabilities still match.
