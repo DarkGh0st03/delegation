@@ -9,7 +9,7 @@ import {randomBytes} from "node:crypto";
 import {TrustedOperationalEpochJournal}
  from "./trusted-operational-epoch-journal.mjs";
 import type {TrustedRepairModelInput}
- from "./trusted-operational-repair-planner.ts";
+ from "./trusted-operational-repair-model-contracts.ts";
 import {TrustedAdkOperationalRepairProposer}
  from "./trusted-adk-operational-repair-proposer.ts";
 import {TrustedOperationalFeatureHeadReader}

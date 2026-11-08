@@ -1,0 +1,25 @@
+# R406 — Gradual legacy caller migration: neutral D1 repair model contract
+
+**8 November 2026** — development branch `refactor/post-prof-plan-contracts-20261021`, PR #38 Draft, no merge, no paid inference.
+
+## Verified baseline and scope
+
+R405 validated the chained command scanner and separate Engineer approval suites on SHA `d5c409f60ab20184111337c044cb85bbe271f63e`: [Fast CI #42510634648](https://github.com/DarkGh0st03/delegation/actions/runs/42510634648) SUCCESS 2/2; [Engineer Approval CI #42510634639](https://github.com/DarkGh0st03/delegation/actions/runs/42510634639) SUCCESS. The R385.17 audit still identifies **five historical runtime modules with known non-test imports**; computed/indirect/external reachability is not cleared.
+
+This first R406 migration only removes a **type-level coupling**: `trusted-owner-operational-repair-handoff.ts` and `trusted-adk-operational-repair-proposer.ts` no longer depend on the historical `trusted-operational-repair-planner.ts` for the shape of `TrustedRepairModelInput`.
+
+The four exported interfaces `TrustedRepairPlanningObservation`, `TrustedRepairDiscoveryObservation`, `TrustedRepairDiagnosticSource` and `TrustedRepairModelInput` are extracted verbatim into `trusted-operational-repair-model-contracts.ts`. This file contains only types and an `import type` for pre-existing failure summaries. The historical executable Planner imports/reexports these types so its validation behavior and existing consumers are unchanged. The original runtime authority and its original sequence of authenticated Gateway reads, Rust-root scope checks, model preflight, epoch admission, Child issuance and A2A execution remain in their existing modules, *untouched*.
+
+A new Fast CI test checks that stripping TypeScript types from the neutral module yields **zero JavaScript module imports**, confirms the ADK and owner dependencies point to the neutral contract, and explicitly asserts that historical fail-closed planner and controller safeguards are **still present**.
+
+## Explicit remaining migration blockers
+
+- `authority-client.ts` and `authority-adapter-transport.ts` remain necessary for the opt-in HTTP fixture and the historical Runner scenario. Do not substitute them into the native Rust route.
+- Three old GitHub/scripted/fresh repair handoffs still load `trusted-reviewed-approved-dag.ts` dynamically after their owner gates.
+- `trusted-owner-operational-repair-handoff.ts` still dynamically loads the historical repair Planner and DAG controller after Gateway/failure preflight. This is a **real execution dependency**, unlike the type-only import removed here.
+- The four private `owner-private-*` crypto MCP modules must remain intact.
+- The strict R385.17 caller allowlist and R385.4 closure gate remain active. No runtime module is marked deletable by this patch.
+
+## Next gate
+
+Complete Fast CI and the relevant native Rust/Security CI on the R406 SHA before treating this isolated contract extraction as verified. Next, inspect historic handoff entry points against canonical authority-only execution and identify a caller whose *runtime* dependency can be migrated without weakening Engineer approval, Root retirement, Task/Child/VP boundaries, Gateway attestation, or negative tests. No model calls or automatic merge.

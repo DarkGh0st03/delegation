@@ -21,7 +21,7 @@ import {
  type LlmRequest,type LlmResponse,type BaseLlmConnection
 } from "@google/adk";
 import {Buffer} from "node:buffer";
-import type {TrustedRepairModelInput} from "./trusted-operational-repair-planner.ts";
+import type {TrustedRepairModelInput} from "./trusted-operational-repair-model-contracts.ts";
 import {TrustedOperationalRepairSourceReader} from "./trusted-operational-repair-source-reader.ts";
 import {z} from "zod";
 
