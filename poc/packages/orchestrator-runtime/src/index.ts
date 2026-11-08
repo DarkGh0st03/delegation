@@ -1,12 +1,12 @@
-// Canonical API exports the scoped trusted Engineer client and neutral
-// credential contracts, never the historical static-template child issuer.
-export {SoftwareEngineerAuthorityBootstrap} from "./authority-client.ts";
+// R384.9: canonical runtime exposes credential DATA contracts only.
+// The older HTTP Adapter Engineer bootstrap remains an explicit direct import;
+// it is not loaded or reachable through this package's public API.
 export type {
   CredentialStatusInput,
   RootIssuanceInput,
   ChildIssuanceInput,
   IssuedDelegationCredential
-} from "./authority-client.ts";
+} from "./trusted-credential-contracts.ts";
 export * from "./trusted-engineer-authority.ts";
 export * from "./signed-approval-store.ts";
 export * from "./trusted-execution-coordinator.ts";
