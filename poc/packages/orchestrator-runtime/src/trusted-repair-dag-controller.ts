@@ -1,5 +1,3 @@
-import {type TrustedRunnerTypecheckContext} from "./trusted-runner-typecheck-context.ts";
-import type {TrustedRunnerAssertionContext} from "./trusted-runner-assertion-context.ts";
 /**
  * R137 — trusted owner drives the CURRENT signed repair DAG in dependency
  * order, one Task at a time. This is not an ADK tool, A2A route or MCP API.
@@ -13,17 +11,16 @@ import type {TrustedRunnerAssertionContext} from "./trusted-runner-assertion-con
  * Docker PASS or authorize a PR. Final acceptance requires separate
  * Gateway/Runner attestation on the exact SHA after all tasks.
  */
-import type {ProtectedA2AClientPort} from "./a2a-workflow.ts";
 // Historical repair DAG consumes neutral types, never HTTP Adapter authority.
 import type {ChildIssuanceInput} from "./trusted-credential-contracts.ts";
+import type {TrustedAdmittedRepairDagConfig}
+ from "./trusted-repair-dag-contracts.ts";
 import {dispatchTrustedAdmittedRepairA2A,
  confirmTrustedAdmittedRepairA2A} from "./trusted-admitted-repair-a2a.ts";
 import {TrustedOperationalEpochIntake}
  from "./trusted-operational-epoch-intake.ts";
 import {TrustedPlanIpcClient}
  from "../../../apps/gateway/src/trusted-plan-ipc.ts";
-import type {TrustedExecutionCoordinator}
- from "./trusted-execution-coordinator.ts";
 import {TrustedChildIssuanceJournal}
  from "./trusted-child-issuance-journal.mjs";
 
@@ -39,41 +36,7 @@ const fail=(m:string):never=>{throw Error("R137 repair DAG NO-GO: "+m);};
 // restarts. This additional local lock rejects reentrancy in the owner.
 const ownerRuns=new WeakMap<object,Set<string>>();
 
-export async function executeTrustedAdmittedRepairDag(config:Readonly<{
- sessionId:string;epoch:number;planDigest:string;
- coordinator:Pick<TrustedExecutionCoordinator,
-  "phase"|"trustedOperationalAuthority">;
- intake:TrustedOperationalEpochIntake;
- gateway:TrustedPlanIpcClient;
- journal:TrustedChildIssuanceJournal;
- engineerDid:string;
- adapterBaseUrl?:string;orchestratorToken:string;
- fetchFn?:typeof fetch;
- agentBaseUrls:Readonly<Record<Role,string>>;
- a2a:ProtectedA2AClientPort;
- failureContext?:Readonly<{testedSha:string;loadForRole:(role:Role)=>Promise<TrustedRunnerAssertionContext|null>;loadTypecheckForRole?:(role:Role)=>Promise<TrustedRunnerTypecheckContext|null>}>;
- /** R138: independent original GitHub run check; never a model port. */
- verifyLiveRun?:()=>Promise<void>;
- /** Local trusted owner supplies unique native child ID/status per task;
-  * NO model or agent may supply or override these values. */
- credentialForTask:(task:Readonly<{id:string;role:Role;ordinal:number}>)
-  =>Credential;
- /** R151.10: trusted original owner may bind the just-issued native
-  * child to its already-running role Agent BEFORE protected A2A send.
-  * No plan or authority is accepted from the role/model callback. */
- beforeProtectedSend?:(issued:Readonly<{
-  task_id:string;role:Role;runtime_task_id:string;
-  credential_id:string;epoch:number
- }>)=>Promise<void>;
- /** R151.10: progress only after the same Gateway independently confirms
-  * signed VP/OPA and actual provider effects; owner can pin exact Gitea
-  * SHA for a subsequent signed Test. No completion may be inferred from
-  * the model or A2A result alone. */
- afterGatewayConfirmed?:(task:Readonly<{
-  task_id:string;role:Role;runtime_task_id:string;
-  credential_id:string;epoch:number
- }>)=>Promise<void>;
-}>):Promise<Readonly<{
+export async function executeTrustedAdmittedRepairDag(config:TrustedAdmittedRepairDagConfig):Promise<Readonly<{
  status:"repair_dag_gateway_confirmed_not_final_runner_verified";
  session_id:string;epoch:number;plan_digest:string;
  tasks:ReadonlyArray<Readonly<{

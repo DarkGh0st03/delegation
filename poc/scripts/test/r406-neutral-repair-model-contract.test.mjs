@@ -40,3 +40,25 @@ test("R406 type-only extraction does not remove the original fail-closed authori
  assert.match(host,/await import\(/u,
   "legacy recovery controller remains reachable; not authorized to delete it");
 });
+
+test("R406.2 private owner repair DAG port contract has no executable legacy dependency",()=>{
+ const module="poc/packages/orchestrator-runtime/src/trusted-repair-dag-contracts.ts";
+ const src=read(module);
+ const parsed=new SourceTextModule(stripTypeScriptTypes(src),{identifier:module});
+ assert.deepEqual(parsed.dependencySpecifiers,[],
+  "read-only owner port shape must not load legacy DAG, Gateway IPC, signer or A2A");
+ assert.match(src,/export type TrustedAdmittedRepairDagConfig=Readonly<\{/u);
+ assert.match(src,/credentialForTask:/u);
+ assert.match(src,/afterGatewayConfirmed\?:/u);
+ assert.doesNotMatch(src,/from "\.\/trusted-repair-dag-controller\.ts"|from "\.\/authority-client\.ts"/u);
+ const source=read(owner);
+ assert.match(source,/import type \{TrustedAdmittedRepairDagConfig\}[\s\S]*?from "\.\/trusted-repair-dag-contracts\.ts"/u);
+ assert.match(source,/TrustedOwnerRepairDagPorts=Omit<[\s\S]*?TrustedAdmittedRepairDagConfig,/u);
+ assert.doesNotMatch(source,/import type \{executeTrustedAdmittedRepairDag\}/u);
+ const controller=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
+ assert.match(controller,/executeTrustedAdmittedRepairDag\(config:TrustedAdmittedRepairDagConfig\)/u);
+ assert.match(controller,/original Rust root retired or replaced/u);
+ assert.match(controller,/Gateway/u);
+ assert.match(source,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u,
+  "Dynamic historical DAG remains a real dependency and must not be deleted");
+});

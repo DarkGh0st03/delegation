@@ -23,3 +23,11 @@ A new Fast CI test checks that stripping TypeScript types from the neutral modul
 ## Next gate
 
 Complete Fast CI and the relevant native Rust/Security CI on the R406 SHA before treating this isolated contract extraction as verified. Next, inspect historic handoff entry points against canonical authority-only execution and identify a caller whose *runtime* dependency can be migrated without weakening Engineer approval, Root retirement, Task/Child/VP boundaries, Gateway attestation, or negative tests. No model calls or automatic merge.
+
+## R406.2 — Neutral owner repair DAG port contract
+
+The second static type dependency is now migrated. `trusted-owner-operational-repair-handoff.ts` describes its trusted repair DAG ports through the new `trusted-repair-dag-contracts.ts` rather than `Parameters<typeof executeTrustedAdmittedRepairDag>` imported from the executable old controller. The original controller itself consumes **the same exact extracted Readonly configuration shape**. It still performs the existing live Root, signed epoch, Gateway-confirmed Task and A2A execution checks. The new contract has only `import type` dependencies and strips to zero runtime imports.
+
+The R385.3 fail-closed regression is updated to require the neutral type path while still checking original-root retirement, bounded dynamic loading and no claimed Docker PASS or PR. The R406 offline test independently asserts the neutral DAG-port module cannot import the historical controller.
+
+**Still blocked:** owner recovery's `await import("./trusted-repair-dag-controller.ts")` and `await import("./trusted-operational-repair-planner.ts")` remain deliberately live behind Gateway and signed-root guards. This patch does **not** remove them or declare them dead. Retiring their executable paths requires a separate behavioral migration with equivalent signed Child/VP and native E2E attestation.

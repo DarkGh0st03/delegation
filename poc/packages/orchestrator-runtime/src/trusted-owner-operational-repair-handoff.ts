@@ -28,8 +28,8 @@ import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {TrustedExecutionCoordinator}
  from "./trusted-execution-coordinator.ts";
-import type {executeTrustedAdmittedRepairDag}
- from "./trusted-repair-dag-controller.ts";
+import type {TrustedAdmittedRepairDagConfig}
+ from "./trusted-repair-dag-contracts.ts";
 import {completeTrustedRemoteDiscoveryForPlanning} from
  "./trusted-remote-discovery-planner-bridge.ts";
 import type {TrustedRemoteDiscoveryA2AHandoff} from
@@ -43,7 +43,7 @@ import {assembleTrustedRemoteDiscoveryOwner,type TrustedRemoteDiscoveryOwnerPort
 /** Local operator data ports only. Session/root/Gateway/epoch/Engineer
  * identity are derived exclusively from signed owner state. */
 export type TrustedOwnerRepairDagPorts=Omit<
- Parameters<typeof executeTrustedAdmittedRepairDag>[0],
+ TrustedAdmittedRepairDagConfig,
  "sessionId"|"epoch"|"planDigest"|"coordinator"|"intake"|"gateway"|"engineerDid"|"verifyLiveRun"
 >;
 const SHA=/^[0-9a-f]{40}$/u;
