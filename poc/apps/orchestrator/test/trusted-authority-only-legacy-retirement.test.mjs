@@ -74,6 +74,23 @@ test('R384.7 remaining historical paid workflows cannot execute any job',()=>{
  }
 });
 
+test('R384.9 public runtime cannot load historical HTTP Adapter Engineer authority',()=>{
+ const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
+ const neutral=readFileSync(
+  path('poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'),'utf8');
+ const adapter=readFileSync(
+  path('poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts'),'utf8');
+ const historic=readFileSync(
+  path('poc/packages/orchestrator-runtime/src/authority-client.ts'),'utf8');
+ assert.match(index,/export type \{[\s\S]*?\} from "\.\/trusted-credential-contracts\.ts"/u);
+ assert.doesNotMatch(index,/from "\.\/authority-client\.ts"/u);
+ assert.doesNotMatch(index,/SoftwareEngineerAuthorityBootstrap/u);
+ assert.doesNotMatch(neutral,/authority-client|authority-adapter-transport|postCredential|fetch\(/u);
+ assert.match(adapter,/from "\.\/trusted-credential-contracts\.ts"/u);
+ assert.doesNotMatch(adapter,/from "\.\/authority-client\.ts"/u);
+ assert.match(historic,/class SoftwareEngineerAuthorityBootstrap/u);
+});
+
 test('R384.8 public runtime API exposes OIDC admission but not historical DAG execution',()=>{
  const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
  const consumer=readFileSync(path('poc/packages/orchestrator-runtime/src/trusted-github-admission-consumer.ts'),'utf8');
