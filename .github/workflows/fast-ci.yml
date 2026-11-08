@@ -59,6 +59,9 @@ jobs:
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r408-reviewed-dag-caller-migration.test.mjs
           # R409: signed recovery Owner uses newly extracted Planner/DAG execution cores.
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r409-owner-repair-core-migration.test.mjs
+          # R411: real ESM wrapper/core export identity, exact importer migration + no-AI fixture syntax.
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs
+          node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           # R385.16: mock-only negative Human Gate, actor, review, protected branch and exact SHA tests. Never dispatch merge.
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts poc/packages/orchestrator-runtime/test/merge-readiness.test.ts poc/packages/orchestrator-runtime/test/trusted-security-ci-merge-readiness-link.test.ts poc/packages/orchestrator-runtime/test/trusted-merge.test.ts
           node --experimental-vm-modules --test poc/scripts/test/r6-configured-command.test.mjs

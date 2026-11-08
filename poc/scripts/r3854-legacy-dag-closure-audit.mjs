@@ -20,7 +20,8 @@ export const R3854_DAG_BOUNDARIES=Object.freeze([
   staticImporters:Object.freeze([
    TEST+"trusted-planning-review-gate.test.ts",
    TEST+"trusted-reviewed-approved-dag.test.ts",
-   "poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs"
+   "poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs",
+   "poc/scripts/test/r411-legacy-compatibility.test.mjs"
   ]),
   dynamicImporters:Object.freeze([])
  }),
@@ -28,15 +29,16 @@ export const R3854_DAG_BOUNDARIES=Object.freeze([
   target:SRC+"trusted-operational-repair-planner.ts",
   staticImporters:Object.freeze([
    GATEWAY_TEST,
-   TEST+"trusted-verified-discovery-repair-input.test.ts"
+   TEST+"trusted-verified-discovery-repair-input.test.ts",
+   "poc/scripts/test/r411-legacy-compatibility.test.mjs"
   ]),
   dynamicImporters:Object.freeze([])
  }),
  Object.freeze({
   target:SRC+"trusted-repair-dag-controller.ts",
   staticImporters:Object.freeze([
-   "poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs",
-   GATEWAY_TEST
+   GATEWAY_TEST,
+   "poc/scripts/test/r411-legacy-compatibility.test.mjs"
   ]),
   dynamicImporters:Object.freeze([])
  })

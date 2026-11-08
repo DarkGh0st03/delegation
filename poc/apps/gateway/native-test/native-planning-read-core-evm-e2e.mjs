@@ -42,7 +42,7 @@ import {TrustedAdkOperationalRepairProposer} from
 import {selectSignedNativeD1Tasks,selectSignedNativeMultiD1Tasks} from
   "./native-owner-d1-task-selection.mjs";
 import {executeTrustedAdmittedRepairDag} from
-  "../../../packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts";
+  "../../../packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts";
 import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {TrustedRetiredRepairAcceptanceWitness} from

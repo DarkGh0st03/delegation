@@ -33,6 +33,9 @@ on:
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts'
+      # R411: native EVM fixture must never silently regress onto a legacy shim.
+      - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
+      - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'
       - 'poc/scripts/r38517-canonical-route-closure.mjs'
       - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
       - 'poc/scripts/test/r409-owner-repair-core-migration.test.mjs'
@@ -91,6 +94,8 @@ jobs:
           # Source-only tests: do not sign roots, invoke Gemini, or run A2A.
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r409-owner-repair-core-migration.test.mjs
           node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs
+          node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r406-neutral-repair-model-contract.test.mjs
 
       - name: Preload disposable service and Runner Docker images

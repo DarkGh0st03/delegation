@@ -125,7 +125,8 @@ test("R410 no-AI positive Security CI watches migrated owner runtime boundaries"
   "poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts",
   "poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts",
   "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
-  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts"
+  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",
+  "poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs"
  ];
  for(const file of paths)assert.ok(wf.includes("      - '"+file+"'"),
   "positive native Security CI must trigger on: "+file);
