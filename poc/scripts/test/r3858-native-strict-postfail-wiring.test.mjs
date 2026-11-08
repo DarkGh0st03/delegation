@@ -78,8 +78,8 @@ test("R385.13 full strict owner recovery reserves 24 distinct Children plus term
  // R385.13: a verified Runner FAIL is NOT a Gateway-completed Task.
  // Read dependence must anchor to the last independently completed Frontend,
  // rather than laundering the failed Test as a successful dependency.
- assert.match(s,/depends_on:\\[j\\?sourceTasks\\[j-1\\]\\.task_id:taskId\\]/u);
- assert.doesNotMatch(s,/depends_on:\\[j\\?sourceTasks\\[j-1\\]\\.task_id:testTaskId\\]/u);
+ assert.ok(s.includes("depends_on:[j?sourceTasks[j-1].task_id:taskId]"));
+ assert.ok(!s.includes("depends_on:[j?sourceTasks[j-1].task_id:testTaskId]"));
  assert.match(s,/strictFullRecovery&&initialIndex===23/u);
  assert.match(s,/strictFullRecovery&&initialIndex===24/u);
  assert.match(s,/strictFullRecovery&&epoch>=5&&epoch<=24/u);
