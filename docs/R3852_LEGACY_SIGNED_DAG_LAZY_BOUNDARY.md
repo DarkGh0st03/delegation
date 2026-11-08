@@ -22,10 +22,10 @@ dell'emissione della nuova Root operativa.
 ## Modifiche implementate
 
 1. Aggiunto `src/trusted-reviewed-agent-endpoint-pins.ts`:
-   conserva la stessa logica di accettazione degli esatti tre
+   conserva i vincoli originari per gli esatti tre
    endpoint `backend/frontend/test`, solo
    `http://127.0.0.1:<porta>` con porte sintatticamente
-   limitate a cinque cifre, senza percorsi arbitrari, tutti
+   comprese tra 1 e 65535, senza percorsi arbitrari, tutti
    distinti; restituisce una copia `Object.freeze`. Non importa
    il DAG, l'ADK, un modello o il dispatcher A2A.
 2. `trusted-reviewed-approved-dag.ts` utilizza ora tale
@@ -63,6 +63,17 @@ GitHub successivo e con un percorso di revoca fail-closed.
 regressioni dell'originale controller su firma, Gateway,
 revoca e liveness. Entrambi i test sono gratuiti; **il loro
 esito richiede un SUCCESS sulla SHA finale R385.2**.
+
+## Diagnostica R385.2: controllo della porta TCP
+
+La prima Fast CI (run #42435573876) ha individuato un
+**difetto del validatore preesistente**, senza alcuna chiamata Gemini:
+la precedente regular expression ammetteva anche la porta
+`127.0.0.1:65536`, fuori intervallo TCP. Il nuovo test negativo
+ha fallito e il validatore puro è stato rafforzato per accettare
+solo porte 1–65535. Sono ora previsti casi limite positivi
+e negativi per 65535, 65536 e 99999.
+La nuova CI deve verificare l'intero checkpoint sulla SHA aggiornata.
 
 ## Limiti e prossimi gate
 
