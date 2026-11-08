@@ -39,7 +39,7 @@ import type {
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-import {isProjectTestRepairGrant}
+import {isProjectTestRepairGrant,isProjectTestReadGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 const ROLES=["backend","frontend","test"] as const;
 function deny(reason:string):never{
@@ -81,6 +81,8 @@ export class TrustedAuthorityOnlyA2AOwner {
  /** Actual owner dispatch reports, never A2A supplied evidence. */
  readonly #reported=new Map<string,OwnerA2AReport>();
  readonly #mixedReports=new Set<string>();
+ /** Original signed Test read-only Tasks; NEVER a Runner PASS. */
+ readonly #testReadReports=new Set<string>();
  readonly #attestAttempted=new Set<string>();
  #closed=false;
 
@@ -187,6 +189,8 @@ export class TrustedAuthorityOnlyA2AOwner {
     filePermissions.some(p=>p.operation==="update_file")&&
     filePermissions[0]?.path===filePermissions[1]?.path;
   const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
+  const signedTestRead=role==="test"&&!hasRunner&&!typedMixed&&
+    isProjectTestReadGrant(row.permissions);
   // R383.1: the native Task/Child must map to precisely one provider
   // operation, or the existing two-step read -> CAS of ONE exact file.
   // A spare grant in the signed Task must not be leaked as another
@@ -197,6 +201,11 @@ export class TrustedAuthorityOnlyA2AOwner {
      (!hasRunner&&!typedMixed&&
       (row.permissions.length!==1||filePermissions.length!==1)))
    deny("native A2A Task cannot combine unrelated read/write/Runner grants");
+  // R385.12: read-only investigation is supported for the Test Agent only
+  // on exact application test sources, never Runner/acceptance/config paths.
+  if(role==="test"&&filePermissions.length===1&&
+     filePermissions[0].operation==="read_file"&&!signedTestRead)
+   deny("Test read requires exact signed project test source");
   if(role==="test"&&filePermissions.some(p=>p.operation==="create_file"))
    deny("Test Agent cannot create native application files without a separately approved implementation");
   if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&
@@ -264,9 +273,12 @@ export class TrustedAuthorityOnlyA2AOwner {
      task.artifacts[0].parts[0].content.value,role,{
       expectedBranch:branch,
       // A2A Test FAIL is data for D1, not an independent PASS.
-      requireTestPass:false,requireTestNotRun:role==="test"&&typedMixed
+      requireTestPass:false,requireTestNotRun:role==="test"&&(typedMixed||signedTestRead)
      }
     );
+    if(signedTestRead&&(artifact.files_modified.length||
+       artifact.files_created.length||artifact.errors.length))
+     deny("signed Test investigation cannot claim writes or failures");
     // No A2A status/Artifact can unlock the next dependent Task.
     // Only the separately injected real Gateway completion observer
     // can attest the protected provider/Runner effect.
@@ -278,6 +290,7 @@ export class TrustedAuthorityOnlyA2AOwner {
     });
     this.#reported.set(input.runtimeTaskId,report);
     if(typedMixed)this.#mixedReports.add(input.runtimeTaskId);
+    if(signedTestRead)this.#testReadReports.add(input.runtimeTaskId);
     return report;
    }
   });
@@ -305,6 +318,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   // R334: Test FAIL is a D1 candidate, not a successful provider effect.
   // Reject before touching the success observer; D1 needs separate proof.
   if(reported.role==="test"&&!this.#mixedReports.has(runtimeTaskId)&&
+     !this.#testReadReports.has(runtimeTaskId)&&
      reported.artifact.test_outcome!=="pass")
    deny("nonpassing Test report needs independently verified D1 failure gate");
   this.#attestAttempted.add(runtimeTaskId); // before any async I/O
@@ -321,6 +335,7 @@ export class TrustedAuthorityOnlyA2AOwner {
    deny("independent Gateway completion receipt mismatches original Task");
   this.#reported.delete(runtimeTaskId);
   this.#mixedReports.delete(runtimeTaskId);
+  this.#testReadReports.delete(runtimeTaskId);
   return Object.freeze({
    status:"owner_gateway_completion_independently_observed" as const,
    task_id:taskId,runtime_task_id:runtimeTaskId,
@@ -330,12 +345,14 @@ export class TrustedAuthorityOnlyA2AOwner {
  cancelTask(runtimeTaskId:string){
   this.#reported.delete(runtimeTaskId);
   this.#mixedReports.delete(runtimeTaskId);
+  this.#testReadReports.delete(runtimeTaskId);
   return this.#bootstrap.cancelTask(runtimeTaskId);
  }
  close():Promise<void>{
   this.#closed=true;
   this.#reported.clear();
   this.#mixedReports.clear();
+  this.#testReadReports.clear();
   return this.#bootstrap.close();
  }
 }
