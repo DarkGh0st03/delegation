@@ -11,6 +11,7 @@ on:
     branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/isolated-positive-security-ci.yml'
+      - '.github/workflows/r38513-native-strict-full-recovery.yml'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/apps/test-runner-controller/fixtures/account-suspension-reference.mjs'
       - 'poc/apps/test-runner-controller/src/**'
