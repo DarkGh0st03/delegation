@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.13 Fast CI PASS; native bloccata da Foundry HTTP 504)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.13 native full scripted PASS; final post-cleanup E2E still required)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,60 +15,79 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E nativo scripted completo PASS su `339a8b1`. R385.8–R385.9 probe nativa di letture post-FAIL con Child/OPA/MCP e CAS successivi PASS, ma arresto deliberato senza Docker PASS finale o PR. R385.10 Fast CI + Engineer Approval PASS `62bb5836`. R385.11 Test Agent source-grounded offline 4/4 PASS. **R385.12 Fast CI e native Test Agent proof SUCCESS sulla stessa SHA `0abe17df`**: vero Docker FAIL → Task Test read-only firmato → lettura indipendente Gitea/Gateway → UPDATE Test con Child/MCP e CAS verificato; nessun falso PASS/PR. R385.13 ha collegato 10 read+10 CAS al retest/PR sulla stessa Root, con Fast CI verde su `982311b2`; la native run è **FAIL infrastrutturale pre-E2E** per download Foundry HTTP 504 (3 tentativi). Mancano attestazione full native, cleanup e autonomia generativa.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori; Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL autentici. Negazioni di autorità ed effetti ambigui restano fail-closed | **E2E nativa scripted R385.13 SUCCESS** su `0e42cdf6`: dieci Task di lettura firmati, dieci Task di correzione CAS, Test Agent su tre file, Docker FAIL→PASS e Draft PR. Test ADK isolato R385.13 SUCCESS in Fast CI `5f4d9c5f`, senza ritenere il Test FAIL una dipendenza completata. **Ancora aperto:** dimostrare generalizzazione delle decisioni e comportamento generativo reale; la prova scripted non è autonomia Gemini |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). R385.9 Fast CI #42450891491 e probe nativa #42450891510 entrambe SUCCESS su `737ddbb3`, ma la probe non esegue il retest PASS. R385.11 Fast CI #42461266452 SUCCESS su `82e24631` (test Node reale, Gateway/Child/Gitea simulati). **R385.12 Fast CI #42463171339 e native probe #42463171293 SUCCESS su `0abe17df`**, inclusi Rust/EVM, OPA, MCP, Gitea, primo Docker FAIL e Test Agent signed read/CAS; **nessun** secondo Docker PASS, acceptance finale o PR. **R385.13 Fast CI #42464341165 SUCCESS sulla SHA `982311b2`**, ma la native #42464341138 ha tre tentativi FAIL durante l'installazione Foundry (HTTP 504, prima di Anvil/Gitea/Docker): non costituisce una prova applicativa. E2E full R385.13 e post-cleanup ancora richieste.** |
+| **D. Validazione gratuita** | Test positivi e negativi, Rust/EVM/OPA/Gitea/Docker/MCP e A2A sulla SHA finale dopo B/C e post-cleanup | **R385.13 Native Strict SUCCESS #42468353532**, SHA `0e42cdf6`: 1 Engineer approval, 24 Child native, 25 decisioni, 10 diagnosi post-FAIL, 10 repair CAS, 2 Docker (FAIL→PASS), researcher acceptance PASS e Draft PR indipendentemente verificata; zero AI a pagamento. **Fast CI SUCCESS #42468524528** su `5f4d9c5f` e **#42468834499** su `d43f1b3f` per i test aggiuntivi. Non attribuire questi PASS a un singolo SHA: il run nativo è su una SHA precedente. Mancano i gate gratuiti conclusivi **sulla stessa SHA post-cleanup** |
 | **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
 
-### R385.13 — Recovery completo con 10 letture firmate, 10 CAS e Docker/PR (E2E bloccata da Foundry 504)
+### R385.13 — Recupero nativo completo scripted: PASS
 
-**Codice e Fast CI:** il ramo [`982311b2`](https://github.com/DarkGh0st03/delegation/commit/982311b2886d59593dc68ae8d164564003823885)
-ha [Fast CI #42464341165](https://github.com/DarkGh0st03/delegation/actions/runs/42464341165)
-**SUCCESS (2/2 job)**. Il test statico R385.13 passa e i contratti
-esistenti R385.8–R385.12 rimangono verdi. Non è una nuova prova nativa completa.
+**Evidenza verificata:** [R385.13 Native Strict #42468353532](https://github.com/DarkGh0st03/delegation/actions/runs/42468353532)
+**SUCCESS** sulla SHA `0e42cdf63c326ff1778b4675285ab7777150dc5f`.
+Nel log è presente `r38513_native_ten_signed_reads_ten_cas_docker_pass_draft_pr`
+con `status:"pass"`. Prima dell'attestazione si osservano due risultati
+indipendenti: `r375_runner_sanitized_result` **FAIL** con researcher
+acceptance FAIL sulla D0 e, successivamente, **PASS** su test di progetto
+e researcher acceptance riferiti alla **stessa HEAD finale**.
 
-La variante **soltanto per CI disposable** `R38513_NATIVE_STRICT_FULL_RECOVERY=1`
-è attiva solo insieme a `R3858_NATIVE_STRICT_POSTFAIL_PROBE=1` e
-`R38512_NATIVE_TEST_AGENT_SOURCE_PROBE=1`; conserva una firma Engineer,
-Root immutata, Gateway/OPA e Child Rust/MCP. Lo scripted ADK è
-gratuito e NON equivale a un modello generativo autonomo.
+La prova usa il **Review Host e launcher canonici** con un solo Engineer
+trusted, Root immutata, Rust/EVM, OPA, MCP stdio crittografico,
+Gateway, Gitea e agenti ADK/A2A:
+- **10 Task di lettura sorgente separati**, ciascuno con Child e attestazione
+  Gateway indipendente, dopo il primo FAIL verificato;
+- **10 Task di riparazione con read+CAS** su file e HEAD correnti,
+  includendo **3 file di test** modificati dal Test Agent;
+- **24 Child DC**, **25 decisioni Owner** (l'ultima
+  `ready_for_pr` non richiede Child), **12 CAS totali**
+  comprese le due D0 e **1 sola Engineer approval**;
+- **2 vere esecuzioni Docker**: la prima FAIL, la seconda PASS,
+  con researcher acceptance PASS e ricevuta autenticata sulla
+  revisione finale `958d002a5d0b7d02c3970a82c95dccc1deb012ef`;
+- nuova Draft PR Gitea **aperta/non mergiata**, GET indipendente,
+  branch `main` protetto e invariato, Root ritirata al termine.
 
-- Pianifica **3 Child D0** (Backend, Frontend, primo Test che deve fallire).
-- Dopo un vero FAIL autenticato, pianifica per **dieci file** un Task
-  `read_file` con Child firmata e un successivo Task `read_file+update_file`
-  sul medesimo ruolo, file e HEAD; le osservazioni diagnostiche precedenti
-  devono scadere dopo ogni CAS verificato. I tre file sotto `tests/`
-  sono assegnati al Test Agent, senza scritture al Runner o all'acceptance.
-- Completa con un nuovo `run_tests` del Test Agent sulla HEAD finale.
-  Budget: **24 Child complessive**, **25 decisioni ADK** (la
-  `ready_for_pr` terminale non emette Child). Non ampliare permessi,
-  non ammettere un Test FAIL/A2A testuale come PASS e non fare retry ambiguo.
-- Il percorso nativo deve verificare vero Docker FAIL→PASS,
-  researcher acceptance PASS, Gitea CAS delle dieci correzioni,
-  Draft PR indipendentemente attestata, `main` immutato e
-  `paid_model_calls:0`. Le asserzioni native nel test sono preparate,
-  ma NON ancora superate per R385.13.
+`paid_model_calls:0` e
+`source_code_generated_autonomously_by_model:false`: le patch applicative
+sono fornite da **fixture scripted**, non proposte generativamente da Gemini.
+La prova **non chiude l'autonomia generativa** e non autorizza la
+riattivazione del workflow Gemini legacy né la creazione automatica di merge.
 
-**Blocco infrastrutturale misurato, distinto dal software:**
-la [native run #42464341138](https://github.com/DarkGh0st03/delegation/actions/runs/42464341138)
-sulla **stessa SHA `982311b2`** è fallita in **tre tentativi**.
-Tutti si sono arrestati allo step `foundry-rs/foundry-toolchain@v1`
-durante i download GitHub Releases: Foundry `v1.8.4` attestation,
-oppure `foundryup_linux_amd64`, con **HTTP 504**.
-Nessun tentativo ha raggiunto Anvil, Gitea, Rust/MCP, Docker né
-l'Execution Loop. Non segnare R385.13 come PASS/FAIL funzionale;
-la semantica applicativa rimane *non attestata*. Non aggirare la
-verifica della distribuzione di Foundry per far risultare la CI verde.
+**Incidenti precedenti e difese conservate:** download Foundry HTTP 504,
+limite launcher a 24 decisioni invece di 25, dipendenza indebita dal
+Test fallito, scope insufficiente su nomi di test con punti. R385.13
+supera la prova dopo interventi circoscritti, senza ampliare la
+Root. Il Test FAIL rimane *registrato ma non completato* e la dipendenza
+della prima indagine resta un Task Frontend D0 con completamento attestato.
+Le letture e modifiche dei test restano limitate a sorgenti applicativi,
+non a Runner, acceptance o path traversal.
 
-**Prossimo gate:** rieseguire il **medesimo workflow R385.13**
-sulla stessa implementazione quando l'infrastruttura di download è
-funzionante. Se supera il preflight, diagnosticare eventuali errori
-del loop a partire dai log originali e verificare la Draft PR nativa;
-solo dopo A si passa a B/C, cleanup E e validazione gratuita post-cleanup.
-Nessun pilot Gemini a pagamento senza consenso esplicito.
+**Regressione aggiuntiva:** [Fast CI #42468524528](https://github.com/DarkGh0st03/delegation/actions/runs/42468524528)
+**SUCCESS** sulla SHA `5f4d9c5f`: il Proposer reale accetta il
+retest finale dipendente dall'ultima CAS Gateway-completata e nega
+dipendenze dal Test FAIL o da Task inesistenti.
+[Fast CI #42468834499](https://github.com/DarkGh0st03/delegation/actions/runs/42468834499)
+**SUCCESS** sulla SHA `d43f1b3f`: aggiunto il controllo diagnostico
+test-only per ispezionare, senza esporre credenziali o sorgente,
+lo stato realmente presentato al Proposer prima del retest.
+
+**Attenzione ai gate:** native full R385.13 e le Fast CI più recenti
+sono verdi, ma **non tutte sulla medesima SHA**, a causa di successive
+aggiunte di test e documentazione. La stessa-SHA finale è un requisito
+della **validazione post-cleanup**, non va falsamente dichiarata qui.
+La PR GitHub #38 rimane Draft e non mergiata.
+
+**Passo successivo della roadmap A→B→C→D→E→F→G:** audit del Decision
+Proposer e dell'Execution Loop con casi generalizzati (incluso
+`create_file` di test solo quando Agent Card, Root, Child e Gateway
+lo consentono); consolidamento di Rust diretto, MCP privato,
+Agent Card/FunctionTools, launcher canonico; threat model,
+Security CI/Human Gate; rimozione legacy basata su reachability;
+Fast CI + native E2E sulla stessa SHA **post-cleanup**.
+Un pilot Gemini generativo rimane vietato senza consenso esplicito
+ai costi e superamento di tali gate.
 
 ### R385.12 — Native signed Test Agent read-after-Docker-FAIL + CAS: SUCCESS
 
