@@ -24,7 +24,7 @@ test("R404 expands npm workspace scripts and test globs without executing tests"
  for(const p of ["a.test.ts","b.test.ts"]){
   assert.equal(row(report,p).kind,"TEST_CONFIGURED");
   assert.equal(row(report,p).executionAttested,false);
-  assert.ok(row(report,p).configuredTestCalls.some(x=>x.glob&&x.via.includes("@thesis/gateway")));
+  assert.ok(row(report,p).configuredTestCalls.some(x=>x.glob&&x.via.includes("poc/apps/gateway/package.json:test")));
  }
  assert.equal(report.summary.scriptsExpanded,2);
  assert.ok(report.reusableWorkflows.some(x=>x.present&&x.to===".github/workflows/fast-ci.yml"));
