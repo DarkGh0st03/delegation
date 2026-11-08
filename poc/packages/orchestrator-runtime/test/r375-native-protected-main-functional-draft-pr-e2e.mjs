@@ -1167,6 +1167,57 @@ const tool=record?.request?.tool,role=record?.agent_role;
       reason:"Await original owner re-attestation of the newest real Docker PASS on identical HEAD"
      };
     }
+    // Test-only diagnostic: independently constructed model context must
+    // describe the final CAS as completed, the first Docker FAIL as FAILED,
+    // and the retest as NOT previously registered. No credential or source
+    // bytes are emitted. Do not relax the production Proposer/Coordinator.
+    if(strictFullRecovery&&initialIndex===23){
+     const locate=(value,depth=0)=>{
+      if(depth>9||value===null||value===undefined)return null;
+      if(typeof value==="string"){
+       if(value.length>250000||!value.trim().startsWith("{"))return null;
+       try{return locate(JSON.parse(value),depth+1);}catch{return null;}
+      }
+      if(typeof value!=="object")return null;
+      if(Array.isArray(value)){
+       for(const v of value){const hit=locate(v,depth+1);if(hit)return hit;}
+       return null;
+      }
+      if(Array.isArray(value.independently_gateway_completed_tasks))
+       return value;
+      for(const v of Object.values(value)){
+       const hit=locate(v,depth+1);
+       if(hit)return hit;
+      }
+      return null;
+     };
+     const view=locate(req);
+     assert.ok(view,"R385.13 missing owner-built ADK decision context");
+     const completed=view.independently_gateway_completed_tasks;
+     const finalCas=sourceTasks.at(-1).task_id;
+     const lastCompleted=completed.some(row=>row.task_id===finalCas);
+     const failedAsCompleted=completed.some(row=>row.task_id===testTaskId);
+     const retestAlreadyCompleted=completed.some(row=>row.task_id===retestTaskId);
+     const failedHistory=view.independently_verified_test_failures;
+     const failureObserved=Array.isArray(failedHistory)&&
+      failedHistory.some(row=>row.failed_task_id===testTaskId);
+     console.log(JSON.stringify({event:"r38513_final_test_decision_preflight",
+      completed_count:completed.length,last_cas_completed:lastCompleted,
+      failed_test_misreported_completed:failedAsCompleted,
+      retest_already_completed:retestAlreadyCompleted,
+      initial_test_failure_attested:failureObserved,
+      proposed_depends_on_last_cas:choice.task.depends_on.length===1&&
+       choice.task.depends_on[0]===finalCas,
+      proposed_retest_id_new:choice.task.task_id===retestTaskId}));
+     assert.equal(lastCompleted,true,
+      "R385.13 final retest requires last CAS independently Gateway-completed");
+     assert.equal(failedAsCompleted,false,
+      "R385.13 failed Docker Test cannot count as completed");
+     assert.equal(retestAlreadyCompleted,false,
+      "R385.13 final retest cannot reuse a completed Task ID");
+     assert.equal(failureObserved,true,
+      "R385.13 signed original Docker FAIL must remain in verified history");
+    }
     yield {content:{role:"model",parts:[{text:JSON.stringify(choice)}]}};
    }
    connect(){throw Error("Paid provider inference forbidden in R375");}
