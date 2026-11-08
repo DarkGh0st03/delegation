@@ -1,4 +1,8 @@
 import test from "node:test";
+
+// This test module is the explicit, isolated historical HTTP fixture
+// environment. No production loader is permitted to infer this opt-in.
+process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
 import assert from "node:assert/strict";
 import {createOwnerPrivateMcpEngineerCredentialPort,createTrustedEngineerCredentialPort}
  from "../src/trusted-engineer-crypto-port.ts";
@@ -158,6 +162,53 @@ test("R385.0 lazy historical fixture pins approved grants before async module lo
  assert.equal(issued.id,"urn:r3850:pinned");
  assert.deepEqual((calls[0] as any).permissions,
   [{resource:uri,operation:"read_repository"}]);
+});
+
+test("R385.19 legacy HTTP issuer refuses missing or inexact opt-in without side effects",()=>{
+ const flag=process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+ const cfg={adapterBaseUrl:"http://fixture.invalid",
+  bearerToken:"PRIVATE_ENGINEER_BEARER",
+  fetchFn:async()=>{throw Error("HTTP must not be reached");}};
+ try{
+  for(const value of [undefined,"true","0","yes"," 1"]){
+   if(value===undefined)delete process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+   else process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE=value;
+   assert.throws(()=>createOwnerPrivateMcpEngineerCredentialPort(cfg),
+    /Historical Engineer HTTP fixture requires explicit opt-in/u);
+   assert.throws(()=>createTrustedEngineerCredentialPort(cfg),
+    /Historical Engineer HTTP fixture requires explicit opt-in/u);
+  }
+  process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
+  assert.doesNotThrow(()=>createOwnerPrivateMcpEngineerCredentialPort(cfg),
+   "only exact opt-in allows historical fixture construction");
+ }finally{
+  if(flag===undefined)delete process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+  else process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE=flag;
+ }
+});
+
+test("R385.19 previously constructed HTTP fixture cannot issue/revoke after opt-in removal",async()=>{
+ const flag=process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+ let called=0;
+ try{
+  process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
+  const port=createOwnerPrivateMcpEngineerCredentialPort({
+   adapterBaseUrl:"http://fixture.invalid",
+   bearerToken:"PRIVATE_ENGINEER_BEARER",
+   fetchFn:async()=>{called++;throw Error("Legacy HTTP must not be reached");}
+  });
+  delete process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+  const request={...root("urn:r38519:root","9921",600),
+   permissions:[{resource:uri,operation:"read_repository" as const}]};
+  await assert.rejects(port.issueScopedOrchestratorRoot(request),
+   /Historical Engineer HTTP fixture requires explicit opt-in/u);
+  await assert.rejects(port.revokeRoot(request.credential_id),
+   /Historical Engineer HTTP fixture requires explicit opt-in/u);
+  assert.equal(called,0);
+ }finally{
+  if(flag===undefined)delete process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
+  else process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE=flag;
+ }
 });
 
 test("R385.1 authority-only mode rejects public and direct legacy HTTP Root ports",async()=>{
