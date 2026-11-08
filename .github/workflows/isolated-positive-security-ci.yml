@@ -53,6 +53,7 @@ on:
       # R419.2: consolidated issuer and the source-audit tests must both rerun native Security CI.
       - 'poc/packages/orchestrator-runtime/src/authority-client.ts'
       - 'poc/scripts/test/r38517-canonical-route-closure.test.mjs'
+      - 'poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts'
       - 'poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs'
       - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
@@ -108,6 +109,7 @@ jobs:
           node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
           node --check poc/apps/orchestrator/src/trusted-engineer-host.mjs
 
       - name: R410 Owner-only recovery source and fail-closed audit gates

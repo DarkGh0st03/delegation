@@ -2,7 +2,7 @@
  * No model inference, GitHub dispatch, secret loading or provider I/O. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import {resolve,dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
@@ -78,17 +78,23 @@ test('R384.9 public runtime cannot load historical HTTP Adapter Engineer authori
  const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
  const neutral=readFileSync(
   path('poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'),'utf8');
- const adapter=readFileSync(
-  path('poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts'),'utf8');
+ // R419: the split Adapter transport was physically deleted. The
+ // legacy issuer keeps its original exact-permission and revocation checks.
+ const retiredTransport=path('poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts');
+ assert.equal(existsSync(retiredTransport),false,
+  'historical HTTP transport must not reappear as a compatibility shim');
  const historic=readFileSync(
   path('poc/packages/orchestrator-runtime/src/authority-client.ts'),'utf8');
  assert.match(index,/export type \{[\s\S]*?\} from "\.\/trusted-credential-contracts\.ts"/u);
  assert.doesNotMatch(index,/from "\.\/authority-client\.ts"/u);
  assert.doesNotMatch(index,/SoftwareEngineerAuthorityBootstrap/u);
  assert.doesNotMatch(neutral,/authority-client|authority-adapter-transport|postCredential|fetch\(/u);
- assert.match(adapter,/from "\.\/trusted-credential-contracts\.ts"/u);
- assert.doesNotMatch(adapter,/from "\.\/authority-client\.ts"/u);
+ assert.match(historic,/from "\.\/trusted-credential-contracts\.ts"/u);
+ assert.doesNotMatch(historic,/from "\.\/authority-adapter-transport\.ts"/u);
+ assert.match(historic,/export async function postCredential\(/u);
  assert.match(historic,/class SoftwareEngineerAuthorityBootstrap/u);
+ assert.match(historic,/Adapter root issuance response differs from exact trusted permissions/u);
+ assert.match(historic,/Adapter root DC revocation not confirmed/u);
 });
 
 test('R384.8 public runtime API exposes OIDC admission but not historical DAG execution',()=>{
