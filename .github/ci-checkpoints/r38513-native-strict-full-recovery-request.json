@@ -1,6 +1,6 @@
 {
   "checkpoint": "R385.13",
-  "source_sha": "90eceded939b991a633e704556e5a638ee2a7d99",
+  "source_sha": "29002470b64b7571abab268523a8ec9ce63aa8cb",
   "mode": "disposable_original_authority_only_full_strict_postfail_recovery",
   "required": {
     "signed_engineer_approvals": 1,
@@ -17,6 +17,6 @@
     "paid_model_inference": 0
   },
   "scope": "CI fixture only; no remote paid inference; no merge to main; failures must remain fail-closed",
-  "attempt_note": "R385.13 full native after 8 independently signed read-CAS pairs succeeded; fix isProjectTestSource for remaining dotted tests/backend/user.service.test.ts and user.routes.test.ts. Signed approval/Root and role/operation unchanged; Fast CI PASS; zero paid inference.",
-  "retry_sequence": 9
+  "attempt_note": "R385.14 native authority-only Test Agent Card advertises no create_file; one pinned skill and strict role evidence, while historical ADK fixture remains unchanged. Fast CI #42469690305 successful (2/2) on source SHA. Revalidate original one-signer Rust/EVM/OPA/Gitea/MCP/A2A and real Docker FAIL -> ten signed read/CAS -> PASS -> Draft PR, zero paid model calls, no main merge.",
+  "retry_sequence": 10
 }
