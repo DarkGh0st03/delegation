@@ -128,6 +128,38 @@ test("R164 rejected invalid preliminary privileges never reach MCP or Rust",asyn
  assert.equal(calls.length,0);
 });
 
+test("R385.0 lazy historical HTTP fixture preserves synchronous validation",()=>{
+ assert.throws(()=>createOwnerPrivateMcpEngineerCredentialPort({
+  adapterBaseUrl:"",bearerToken:"PRIVATE_ENGINEER_BEARER"
+ }),/Delegation Adapter base URL cannot be empty/u);
+ assert.throws(()=>createOwnerPrivateMcpEngineerCredentialPort({
+  adapterBaseUrl:"http://127.0.0.1:8090",bearerToken:""
+ }),/Engineer Adapter token cannot be empty/u);
+});
+
+test("R385.0 lazy historical fixture pins approved grants before async module load",async()=>{
+ const calls:unknown[]=[];
+ const adapter=createOwnerPrivateMcpEngineerCredentialPort({
+  adapterBaseUrl:"http://fixture.invalid",bearerToken:"PRIVATE_ENGINEER_BEARER",
+  fetchFn:async(_url,options)=>{
+   const body=JSON.parse(String(options?.body));
+   calls.push(body);
+   return new Response(JSON.stringify({
+    id:body.credential_id,issuer:"did:thesis:rust",
+    credentialSubject:{sub:"did:thesis:orchestrator",per:body.permissions}
+   }),{status:201});
+  }
+ });
+ const request={...root("urn:r3850:pinned","991",600),
+  permissions:[{resource:uri,operation:"read_repository"}]};
+ const pending=adapter.issueScopedOrchestratorRoot(request as never);
+ request.permissions[0]!.operation="create_branch";
+ const issued=await pending;
+ assert.equal(issued.id,"urn:r3850:pinned");
+ assert.deepEqual((calls[0] as any).permissions,
+  [{resource:uri,operation:"read_repository"}]);
+});
+
 test("R218 canonical root and child DC fail closed without a native Rust socket",()=>{
  const previousFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
  const previousSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
