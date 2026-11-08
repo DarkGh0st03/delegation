@@ -97,7 +97,7 @@ export function auditR38517WorkflowRoutes({
   "positive Security CI still refers to retired shared-MCP branch");
  demand(positive.includes("security-ci:isolated-positive-smoke"),
   "positive Security CI lost its disposable independent Runner test");
- demand(/^[ ]{4}authority-only-native-rust-positive:\s*$/mu.test(positive)&&
+ demand(/^[ ]{2}authority-only-native-rust-positive:\s*$/mu.test(positive)&&
   /^[ ]{4}uses: \.\/\.github\/workflows\/r38513-native-strict-full-recovery\.yml\s*$/mu.test(positive)&&
   positive.includes("contents: read"),
   "positive Security CI must invoke canonical no-AI Rust/Child/VP full E2E");
