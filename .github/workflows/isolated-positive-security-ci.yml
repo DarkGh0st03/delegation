@@ -50,7 +50,9 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts'
       - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
       - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
-      - 'poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts'
+      # R419.2: consolidated issuer and the source-audit tests must both rerun native Security CI.
+      - 'poc/packages/orchestrator-runtime/src/authority-client.ts'
+      - 'poc/scripts/test/r38517-canonical-route-closure.test.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts'
       - 'poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs'
       - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
