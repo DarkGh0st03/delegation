@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 import {resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {stripTypeScriptTypes} from "node:module";
@@ -22,12 +22,12 @@ test("R406 pure typed repair proposal contract has zero runtime dependencies",()
  assert.deepEqual(parsed.dependencySpecifiers,[],
    "type-only repair input must not transitively import executable legacy planner");
 });
-test("R406 owner and ADK use neutral model input; old planner only reexports shape",()=>{
+test("R413 Owner and ADK use neutral input; retired Planner wrapper remains absent",()=>{
  assert.match(read(owner),/import type \{TrustedRepairModelInput\}[\s\S]*?from "\.\/trusted-operational-repair-model-contracts\.ts"/u);
  assert.match(read(adk),/import type \{TrustedRepairModelInput\} from "\.\/trusted-operational-repair-model-contracts\.ts"/u);
  assert.doesNotMatch(read(adk),/from "\.\/trusted-operational-repair-planner\.ts"/u);
- const old=read(planner);
- assert.match(old,/export \* from "\.\/trusted-owner-repair-planning-core\.ts"/u);
+ assert.equal(existsSync(resolve(root,planner)),false,
+  "retired compatibility Planner must stay physically absent");
  const core=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts");
  assert.match(core,/export type \{TrustedRepairPlanningObservation,TrustedRepairDiscoveryObservation,TrustedRepairDiagnosticSource,TrustedRepairModelInput\}/u);
  assert.match(core,/from "\.\/trusted-operational-repair-model-contracts\.ts"/u);
