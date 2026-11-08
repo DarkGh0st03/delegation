@@ -9,7 +9,9 @@ const permission=(operation,path)=>({operation,resource:prefix+"/files/"+path});
 test("R383.0 Test agent may investigate a signed, exact application test file only",()=>{
  for(const path of [
   "tests/backend/account.test.ts","tests/frontend/account.test.tsx",
-  "tests/backend/auth/login.test.ts","tests/frontend/forms/suspend.test.tsx"
+  "tests/backend/auth/login.test.ts","tests/frontend/forms/suspend.test.tsx",
+  "tests/backend/user.service.test.ts","tests/backend/user.routes.test.ts",
+  "tests/frontend/Account.Status.test.tsx"
  ]){
   const read=permission("read_file",path);
   assert.equal(isProjectTestSource(path),true);
@@ -42,4 +44,29 @@ test("R383.0 project test read denies source files, acceptance tests, directory 
  ]),false);
  assert.equal(isProjectTestReadGrant([]),false);
  assert.equal(isProjectTestReadGrant([{resource:prefix+"/files/tests/backend/account.test.ts"}]),false);
+});
+
+test("R385.13 dotted project test filenames stay exact and fail closed on aliases",()=>{
+ for(const path of ["tests/backend/user.service.test.ts",
+  "tests/backend/user.routes.test.ts","tests/frontend/Account.Status.test.tsx"]){
+  const read=permission("read_file",path);
+  const update=permission("update_file",path);
+  assert.equal(isProjectTestSource(path),true,path);
+  assert.equal(isProjectTestReadGrant([read]),true,path);
+  assert.equal(isProjectTestRepairGrant([read,update]),true,path);
+  assert.equal(isProjectTestRepairGrant([read,permission("update_file",
+   "tests/backend/another.test.ts")]),false,"same exact file only");
+ }
+ for(const rejected of ["tests/backend/user..service.test.ts",
+  "tests/backend/.hidden.test.ts","tests/backend/user.service.spec.ts",
+  "tests/backend/../frontend/user.service.test.ts",
+  "tests/backend/user.service.test.ts/../runner.config.ts",
+  "tests/backend/user.service.test.ts?query",
+  "tests/acceptance/user.service.test.ts",
+  "poc/runner/acceptance/user.service.test.ts"]){
+  assert.equal(isProjectTestSource(rejected),false,rejected);
+  assert.equal(isProjectTestReadGrant([permission("read_file",rejected)]),false,rejected);
+  assert.equal(isProjectTestRepairGrant([permission("read_file",rejected),
+   permission("update_file",rejected)]),false,rejected);
+ }
 });
