@@ -5,6 +5,6 @@
   "proof": "signed Test project source CREATE, Gitea CAS and independently observed MAC",
   "paid_model_calls_authorized": false,
   "merge_authorized": false,
-  "attempt": 5,
-  "reason": "R391 fixes model-facing controlled tool gate for exact signed project test create"
+  "attempt": 6,
+  "reason": "R392 enables exact Test CREATE after native Rust and OPA in the Gateway execute authorization gate"
 }
