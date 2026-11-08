@@ -74,13 +74,15 @@ test('R384.7 remaining historical paid workflows cannot execute any job',()=>{
  }
 });
 
-test('R384.6 canonical production entrypoints never import historical reviewed DAG',()=>{
+test('R384.7 canonical operational entrypoints cannot directly import historical DAG, repair or Adapter paths',()=>{
  for(const file of [
   'poc/apps/orchestrator/src/canonical-owner-deployment.mjs',
   'poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs',
-  'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs'
+  'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs',
+  'poc/apps/orchestrator/src/trusted-authority-only-operational-launcher.mjs',
+  'poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs'
  ]){
   const body=readFileSync(path(file),'utf8');
-  assert.doesNotMatch(body,/(?:import|from)\s*['"][^'"]*(?:trusted-reviewed-approved-dag|trusted-repair-dag-controller)/u);
+  assert.doesNotMatch(body,/(?:import|from)\s*['"][^'"]*(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller|authority-adapter-transport)/u);
  }
 });
