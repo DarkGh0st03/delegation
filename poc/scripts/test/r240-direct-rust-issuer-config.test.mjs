@@ -37,7 +37,11 @@ test("R240 signed Child and repaired D1 use the same native Rust issuer with no 
  assert.match(dispatcher,/adapter:\{adapterBaseUrl\?:string/u);
  assert.match(repairChild,/adapterBaseUrl\?:string/u);
  assert.match(repairChild,/\(!config\.adapterBaseUrl&&!process\.env\.ADAPTER_ENGINEER_NATIVE_SOCKET\)/u);
- assert.match(repairDag,/adapterBaseUrl\?:string/u);
+ const neutralRepairDag=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-contracts.ts");
+ assert.match(neutralRepairDag,/adapterBaseUrl\?:string/u,
+  "Native repair DAG optional Adapter URL remains an explicitly typed owner port");
+ assert.match(repairDag,/config:TrustedAdmittedRepairDagConfig/u,
+  "Historical controller must consume exactly the neutral port shape");
 });
 
 test("R240 native Gitea/Docker Account Suspension E2E does not pass unused HTTP URLs to any native issuer",()=>{
