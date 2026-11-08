@@ -43,7 +43,8 @@ import {AuthenticatedGiteaMutationCompletionObserver}
 import {AuthenticatedGiteaReadCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
-import {isProjectTestReadGrant,isProjectTestCreateGrant,isProjectTestSource}
+import {isProjectTestReadGrant,isProjectTestCreateGrant,isProjectTestSource,
+ isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
@@ -84,6 +85,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     'maxProposalRevisions','thinkingLevel','maxModelCallMs','maxOutputTokens','maxPlanningMs'])||
   !fields(options.gateway,['gatewayBaseUrl','adapterBaseUrl','adapterToken','fetchFn','timeoutMs']))
   deny('explicit trusted dependencies required; legacy/context overrides forbidden');
+ const projectTestSourceProfile=options.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+ if(!isTrustedProjectTestSourceProfile(projectTestSourceProfile))
+  deny('trusted repository test-source profile required');
  const snapshot=structuredClone(options.snapshot),requirement=options.requirement,branch=options.workBranch;
  // Optional disposable feature-source Planning is a trusted snapshot pin,
  // not a second source branch that a client or model may substitute.
@@ -380,7 +384,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       const epoch=operationalCoordinator.registeredTaskCount+1;
       const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
-       model:input.model,requirement,branch:before.branch,
+       model:input.model,projectTestSourceProfile,requirement,branch:before.branch,
        rootPermissions:before.root_permissions,
        agents:verifiedProfiles??configuredProfiles,
        previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({
@@ -892,7 +896,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
             observation.evidence_sha256!==binding.evidence_sha256||
             observation.revision!==context.executionProgress.current_head_sha||
             binding.permission_resource!==choice.permissions[0].resource||
-            (choice.agent_id==='test'&&!isProjectTestSource(observation.path))||
+            (choice.agent_id==='test'&&!isProjectTestSource(observation.path,projectTestSourceProfile))||
             canonicalFileUri(snapshot.repository,branch,observation.path)!==
              binding.permission_resource)
           deny('diagnostic source differs from original signed read and current HEAD');
@@ -959,7 +963,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       deny('branch requires original Engineer grant and Orchestrator identity');
      branchAdmissionAttempted=true;
      if(++decisionCalls>8)deny('branch exceeds original decision budget');
-     const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({model:input.model,
+     const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({model:input.model,projectTestSourceProfile,
       requirement,branch:before.branch,rootPermissions:before.root_permissions,
       agents:{orchestrator:{capabilities:owner.capabilities}},previousTasks:[],
       nextEpoch:1,decisionKind:'branch'});
@@ -1077,7 +1081,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       deny('PR Task exceeds original owner decision budget');
      const epoch=operationalCoordinator.registeredTaskCount+1;
      const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
-      model:input.model,requirement,branch:before.branch,
+      model:input.model,projectTestSourceProfile,requirement,branch:before.branch,
       rootPermissions:before.root_permissions,decisionKind:'pull_request',
       agents:{orchestrator:{capabilities:owner.capabilities},
        ...Object.fromEntries(Object.entries(options.trustedAgentRegistry)
@@ -1243,7 +1247,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           !nativeEffectBinding.createObserver||
           !(['backend','frontend'].includes(pin.agent_id)||
            (pin.agent_id==='test'&&isProjectTestCreateGrant(
-            operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions))))
+            operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions,
+             projectTestSourceProfile))))
         deny('original CREATE owner has no exact scoped Task or native preflight/observer');
        return new TrustedAuthorityOnlyCreateEffectStager({
         store:nativeEffectBinding.store,admissions:gateway,
@@ -1340,7 +1345,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        adaptiveLoopFlight&&
        (['backend','frontend'].includes(pin.agent_id)||
         (pin.agent_id==='test'&&isProjectTestReadGrant(
-         operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions)))&&
+         operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions,
+          projectTestSourceProfile)))&&
        nativeEffectBinding?.readObserver instanceof AuthenticatedGiteaReadCompletionObserver;
       if(!pin||pin.task_id!==input.taskId||
          (!['update_file','create_file','run_tests'].includes(pin.operation)&&!diagnosticRead)||
@@ -1531,7 +1537,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const {proof,candidate}=d1VerifiedFailure;
       const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
-       model:input.model,requirement,branch:live.branch,
+       model:input.model,projectTestSourceProfile,requirement,branch:live.branch,
        rootPermissions:live.root_permissions,
        agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
         .map(([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}])),
@@ -1713,7 +1719,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const rootBefore=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       const epoch=operationalCoordinator.registeredTaskCount+1;
       const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
-       model:input.model,requirement,branch:rootBefore.branch,
+       model:input.model,projectTestSourceProfile,requirement,branch:rootBefore.branch,
        rootPermissions:rootBefore.root_permissions,
        agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
         .map(([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}])),
