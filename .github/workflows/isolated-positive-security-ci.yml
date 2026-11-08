@@ -1,7 +1,11 @@
 name: Isolated Real Positive Security CI (No AI Billing)
 
 # Dedicated disposable integration verification of the trusted Docker Runner
-# and independent researcher acceptance. No Gemini/OpenAI keys are present.
+# and independent researcher acceptance.
+# R397/R398: the historical positive job also proves on one real disposable
+# Gitea PR/HEAD that Security CI status and protected Human Gate read-only
+# use distinct actors. That PR is a fixture, NOT the native Rust-generated PR.
+# Never perform merge, production GitHub review or paid inference. No Gemini/OpenAI keys are present.
 # R385.17: this positive, disposable, zero-AI Security CI follows the
 # authority-only feature branch (not the retired shared-MCP spike), for
 # relevant runner/acceptance changes or explicit manual dispatch.
@@ -38,7 +42,7 @@ jobs:
       contents: read
 
   real-positive-exact-sha:
-    name: Disposable Gitea + Real Docker Runner + Researcher Acceptance
+    name: Disposable Gitea + Real Docker + CI/Human Gate same-PR readiness
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
