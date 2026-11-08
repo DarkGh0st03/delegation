@@ -41,7 +41,13 @@ senza attribuirle capacità che non ha.
   HEAD invariata e grant read/update già presenti nella
   Root di prova; la modifica è limitata al file osservato.
 - Il test `node --test` viene eseguito nuovamente su quel file
-  modificato e deve **PASS**. Il solo PASS corrente autorizza
+  modificato e deve **PASS**. Il subprocess non eredita
+  `NODE_TEST_CONTEXT` dal test runner padre: la prima CI ha
+  scoperto che un runner Node annidato poteva uscire con codice 0
+  senza eseguire alcun test. Ora un PASS richiede TAP `# tests 1`
+  e `# pass 1`, mentre il FAIL richiede `# tests 1` e `# fail 1`.
+  Un subprocess senza esecuzione effettiva è **NO-GO**.
+  Il solo PASS corrente autorizza
   la readiness `ready_for_pr`, **non** la creazione di una PR.
 - Due varianti di difetto e metadati diversi impediscono di
   scambiare la correzione con una patch completa preconfezionata.
