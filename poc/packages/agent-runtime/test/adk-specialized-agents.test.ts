@@ -863,10 +863,13 @@ test("R385.15 signed Test FunctionTools never infer Docker Runner grant from rol
   "a signed file Task cannot obtain Runner from generic role capability");
  const explicitRunner=signed([],true);
  assert.deepEqual(explicitRunner.agent.tools.map(tool=>tool.name),["run_tests"]);
- assert.throws(()=>signed(["read_file"],true),
-  /Signed Test Runner cannot combine file grants/u);
- assert.throws(()=>signed(["create_file"],true),
-  /Signed Test Runner cannot combine file grants/u);
+ // Historical signed-DAG fixtures may explicitly combine operations in
+ // this adapter. The canonical authority-only A2A owner forbids the mixed
+ // Task BEFORE private binding or provider dispatch.
+ assert.deepEqual(signed(["read_file"],true).agent.tools.map(t=>t.name),
+  ["read_file","run_tests"]);
+ assert.deepEqual(signed(["create_file"],true).agent.tools.map(t=>t.name),
+  ["create_file","run_tests"]);
  // Unsigned legacy fixtures remain separate and are still Gateway-gated.
  const legacy=createAdkSpecializedAgent({
   role:"test",model,gatewayClient,trustedBranch:BRANCH,trustedTaskPaths:[]
