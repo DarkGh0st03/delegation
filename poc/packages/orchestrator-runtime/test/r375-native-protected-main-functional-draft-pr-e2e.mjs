@@ -138,6 +138,16 @@ assert.ok(specialistStopRole===undefined||
 const specialistStop=specialistStopRole!==undefined;
 const diagnosticRole=specialistStopRole??"backend";
 const sourceObservationMode=diagnosticMode&&!specialistStop;
+// R385.8: disposable native integration probe, NOT the complete R375 E2E.
+// After an authentic Docker FAIL, require a separate signed Backend read
+// before one source-grounded repair. Stop before a false PASS/PR claim.
+const strictReadProbe=process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1";
+assert.ok(process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE===undefined||strictReadProbe);
+if(strictReadProbe){
+ assert.equal(diagnosticMode,false,"R385.8 proof requires post-FAIL, not pre-FAIL read");
+ assert.equal(specialistStop,false);
+ assert.equal(r3818NativeMcp,true,"R385.8 native private MCP is mandatory");
+}
 /**
  * SCRIPTED fixture, NOT a generative coding LLM. One Task holds only one
  * signer-authorized directory (or file) UPDATE permission; each effect reads
@@ -573,6 +583,7 @@ try{
  const backendTaskId="r375-backend-task";let backendRuntimeId="dispatch_"+"B".repeat(22);
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
  const diagnosticTaskId=specialistStop?"r377-"+diagnosticRole+"-no-change":"r376-authenticated-source-read";
+ const postFailReadTaskId="r3858-postfail-backend-read";
  const diagnosticPath=diagnosticRole==="frontend"?mutationPath:sharedPath;
  const diagnosticPermissions=specialistStop?permissionsFor(diagnosticPath):[pair(diagnosticPath,"read_file")];
  const decisionOffset=diagnosticMode?1:0;
@@ -646,7 +657,7 @@ try{
   const nativeEffects=assembleTrustedAuthorityOnlyNativeEffects({
    gateway:gate,store,giteaClient:client,independentGiteaClient:independentClient,
    runnerClient,runnerPassObserver:runnerObserver,
-   ...(sourceObservationMode?{readObserver}:{}),
+   ...(sourceObservationMode||strictReadProbe?{readObserver}:{}),
    repository:"thesis/iam-console-poc",branch,evidenceKey,nowMs,
    directories:{
     mutationIntent:path("intent"),giteaReceipts:path("receipts"),
@@ -698,6 +709,8 @@ try{
   backend:new ScriptedScopedReferenceWriter(branch,"backend",[
    ...(backendDiagnostic?[diagnosticStage]:[]),
    {files:[{path:backendPath,previous:backendOldContent,replacement:backendNewContent}]},
+   ...(strictReadProbe?[{readOnly:true,files:[{path:sharedPath,
+    previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath]}]}]:[]),
    {files:[{path:sharedPath,
      previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sharedPath],
      replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[sharedPath]}]},
@@ -971,8 +984,28 @@ const tool=record?.request?.tool,role=record?.agent_role;
         "Original source observations must expire after the first CAS");
      }
      choice=firstChoices[initialIndex];
-    }else if(initialIndex<=12){
-     const j=initialIndex-3,entry=sourceTasks[j];
+    }else if(strictReadProbe&&initialIndex===3){
+     assert.match(context,/independent_runner_failure/u);
+     assert.match(context,/independently_verified_test_failures/u);
+     assert.doesNotMatch(context,/source_observations/u);
+     this.verifiedFailBeforeRepair=true;
+     choice={action:"delegate",task:{
+      task_id:postFailReadTaskId,agent_id:"backend",
+      depends_on:[taskId],permissions:[pair(sharedPath,"read_file")],
+      instruction:"Read independently authorized post-FAIL account-status source"
+     }};
+    }else if(strictReadProbe&&initialIndex===5){
+     assert.ok(context.includes(sourceTasks[0].task_id));
+     choice={action:"blocked",
+      reason:"Only one authenticated post-FAIL read and one native repair are proven; project remains incomplete"};
+    }else if(initialIndex<=12+Number(strictReadProbe)){
+     const j=initialIndex-3-Number(strictReadProbe),entry=sourceTasks[j];
+     if(strictReadProbe&&j===0){
+      assert.match(context,/source_observations/u);
+      assert.match(context,/independent_runner_failure/u);
+      assert.match(context,/Baseline account states/u);
+      assert.ok(context.includes(postFailReadTaskId));
+     }
      if(j===0){
       assert.match(context,/independent_runner_failure/u);
       assert.match(context,/independently_verified_test_failures/u);
@@ -991,7 +1024,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
      }
      choice={action:"delegate",task:{
       task_id:entry.task_id,agent_id:entry.agent_id,
-      depends_on:[j===0?taskId:sourceTasks[j-1].task_id],
+      depends_on:[j===0?(strictReadProbe?postFailReadTaskId:taskId):sourceTasks[j-1].task_id],
       permissions:entry.permissions,
       instruction:"Read real Gitea "+entry.file+
        " then submit one authorized full-file CAS for Account Suspension"
@@ -1116,6 +1149,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    },
    sdk:localWorkers.sdk,
    adaptive:{model:controller,maxSteps:15+decisionOffset,
+    ...(strictReadProbe?{requireVerifiedRepairDiagnostic:true}:{}),
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
      if(diagnosticMode&&epoch===2&&agent_id===diagnosticRole)
@@ -1126,6 +1160,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r375:child:frontend-d0",29154,600);
      if(epoch===4+decisionOffset&&agent_id==="test")
       return freshChildParams("urn:r375:child:test-failed",29155,1200);
+     if(strictReadProbe&&epoch===5&&agent_id==="backend")
+      return freshChildParams("urn:r3858:child:postfail-source-read",29180,900);
+     if(strictReadProbe&&epoch===6&&agent_id==="backend")
+      return freshChildParams("urn:r3858:child:verified-first-repair",29181,900);
      if(epoch>=5+decisionOffset&&epoch<=14+decisionOffset){
       const entry=sourceTasks[epoch-5-decisionOffset];
       if(!entry||entry.agent_id!==agent_id)
@@ -1137,7 +1175,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r375:child:retest-pass",29166,1200);
      throw Error("Original Host rejected unexpected model-selected Child");
     }},
-   draftPullRequest:{
+   ...(strictReadProbe?{}:{draftPullRequest:{
     model:prModel,headBranch:branch,baseBranch:"main",
     title:"Account Suspension — original protected-main native acceptance PASS",
     body:"Immutable Engineer grant; original root, three worker roles, independently attested Docker and researcher acceptance PASS",
@@ -1162,7 +1200,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
       "original PR POST cannot precede durable one-shot staging");
      return prTransport.execute({request,prepared});
     }
-   }
+   }})
   };
   let workflow;
   if(r3818NativeMcp){
@@ -1183,6 +1221,49 @@ const tool=record?.request?.tool,role=record?.agent_role;
    assertPrCannotBypassTest();
    workflow=await execution.runCanonicalOperationalWorkflow(workflowInput);
   }
+  if(strictReadProbe){
+   assert.equal(workflow.status,"owner_operational_work_finished_without_pr");
+   assert.equal(workflow.adaptive_status,"owner_adaptive_work_blocked");
+   assert.equal(workflow.pr_created,false);
+   assert.equal(controller.calls,6);
+   assert.equal(controller.verifiedFailBeforeRepair,true);
+   assert.equal(runnerCalls,1,"first real Docker FAIL only; no unverified PASS");
+   assert.equal(gatewayCasWrites,3,"only the two D0 edits and the read-gated D1 edit");
+   assert.equal(models.backend.stageIndex,3,"D0, post-FAIL read, one real CAS repair");
+   assert.equal(models.frontend.stageIndex,1);
+   assert.ok(events.indexOf("execute_backend_read_file")>=0);
+   assert.ok(events.lastIndexOf("execute_backend_update_file")>
+    events.lastIndexOf("execute_backend_read_file"),
+    "native post-FAIL read must precede source-repair update");
+   assert.equal(nativeMcpChildCalls,issuedChildren,
+    "every original Child still issued via real task-local native MCP");
+   assert.equal(issuedChildren,5,"D0 backend, D0 frontend, failed Test, postfail read and repair");
+   assert.ok(nativeMcpVpByRole.backend>=3);
+   assert.ok(nativeMcpVpByRole.frontend>=1);
+   assert.ok(nativeMcpVpByRole.test>=1);
+   assert.equal(draftPrCreateAttempts,0);
+   assert.equal(branchPostAttempts,1);
+   assert.equal(await independentClient.getBranchMetadata("main").then(x=>x.commit_sha),
+    disposableMainHead);
+   assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha!==
+    disposableMainHead,true);
+   assert.equal((await readdir(path("runner-fail-receipts"))).filter(
+    name=>name.endsWith(".runner-fail.json")).length,1);
+   assert.equal((await readdir(path("runner-receipts"))).filter(
+    name=>name.endsWith(".runner.json")).length,0);
+   nativeE2eResultEmitted=true;
+   process.stdout.write(JSON.stringify({
+    event:"r3858_strict_native_postfail_read_and_first_repair_no_false_pass",
+    status:"pass",paid_model_calls:0,native_rust_evm:true,real_opa:true,
+    private_native_mcp:true,first_docker_status:"fail",
+    independently_attested_postfail_read:true,
+    signed_read_only_diagnostic_tasks:1,
+    gateway_cas_writes:gatewayCasWrites,
+    source_code_generated_autonomously_by_model:false,
+    further_tests_proven_pass:false,original_main_immutable:true,
+    pr_created:false,original_root_retired:true
+   })+"\n");
+  }else{
   assert.equal(workflow.status,"owner_operational_draft_pr_independently_attested");
   assert.equal(workflow.pr_created,true);
   assert.equal(workflow.pull_request_attested,true);
@@ -1321,6 +1402,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
    pr_post_attempts:draftPrCreateAttempts,
    tested_head:latest,paid_model_calls:0
   })+"\n");
+  }
  }finally{
   if(diagnosticMode&&!nativeE2eResultEmitted){
    // The protected provider or A2A exception is deliberately NOT logged.
