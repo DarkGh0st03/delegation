@@ -74,6 +74,20 @@ test('R384.7 remaining historical paid workflows cannot execute any job',()=>{
  }
 });
 
+test('R384.8 public runtime API exposes OIDC admission but not historical DAG execution',()=>{
+ const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
+ const consumer=readFileSync(path('poc/packages/orchestrator-runtime/src/trusted-github-admission-consumer.ts'),'utf8');
+ assert.match(index,/export \{consumePinnedGithubAdmission\}/u);
+ assert.match(index,/from "\.\/trusted-github-admission-consumer\.ts"/u);
+ assert.doesNotMatch(index,/from "\.\/trusted-admitted-github-handoff\.ts"/u);
+ assert.doesNotMatch(index,/startAdmittedGithubReviewedGeminiHandoff/u);
+ assert.match(consumer,/admissionStore\.consume\(/u,
+  'The new consumer must retain the original one-use HMAC store');
+ assert.doesNotMatch(consumer,
+  /trusted-reviewed-approved-dag|trusted-owner-operational-repair-handoff|startPersistedReviewedGeminiHandoff|GeminiAdkModel/u,
+  'An OIDC admission must never load the historical DAG or a model');
+});
+
 test('R384.7 canonical operational entrypoints cannot directly import historical DAG, repair or Adapter paths',()=>{
  for(const file of [
   'poc/apps/orchestrator/src/canonical-owner-deployment.mjs',
