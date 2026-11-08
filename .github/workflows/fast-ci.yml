@@ -33,6 +33,9 @@ jobs:
           npm --prefix poc run check:scaffold
           npm --prefix poc run check:imports
           npm --prefix poc run audit:r6:references
+          # R385.4: never add new production imports, computed loaders or configured launchers to retained signed-DAG modules.
+          node --experimental-vm-modules poc/scripts/r3854-legacy-dag-closure-audit.mjs
+          node --experimental-vm-modules --test poc/scripts/test/r3854-legacy-dag-closure-audit.test.mjs
           node --experimental-vm-modules --test poc/scripts/test/r6-configured-command.test.mjs
           node --experimental-vm-modules --test poc/scripts/test/r243-private-gateway-transport-audit.test.mjs
           npm --prefix poc run audit:r6:types
