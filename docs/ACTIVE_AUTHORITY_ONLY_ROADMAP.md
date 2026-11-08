@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R385.5 gate nativo post-isolamento in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.6 recovery diagnostico rigoroso in sviluppo)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -15,13 +15,38 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 
 | Fase | Priorità e gate verificabile | Stato |
 | --- | --- | --- |
-| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R384.4 E2E scripted FAIL→CREATE D1→CAS→Docker PASS e Draft PR attestata: esecuzione e sicurezza provate. Autonomia del codice generato da Gemini NON dimostrata. Budget e recovery generale da consolidare.** |
+| **A. Autonomia Executor / recovery** | Ispezione read-only prima/dopo errori, Task Backend/Frontend/Test scelti dal modello; recovery multiplo da FAIL applicativi autentici. Errori di autorizzazione o effetti ambigui restano fail-closed | **R385.5 E2E scripted completo PASS sulla SHA `339a8b1` con Fast CI; recovery realistica FAIL→CREATE D1→CAS→Docker PASS e Draft PR attestata, NON autonoma. R385.6 aggiunge un gate opt-in per UPDATE post-FAIL con lettura diagnostica Gateway/Child firmata, test offline da certificare; autonomia modello e Test Agent E2E ancora aperti.** |
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
-| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 nativo SUCCESS `81ad3fdd` (#42423327568), ma su vecchia SHA. R385.4 Fast CI SUCCESS `9911f3c` (#42438718252). R385.5 ripete E2E nativo completo + Fast CI sulla medesima nuova SHA dopo isolamento legacy; non dichiarare completo prima di entrambi i risultati.** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; consumer canonico non importa DAG/HTTP; gate R385.4 provenienza statica/dinamica PASS sulla SHA `9911f3c` (Fast CI #42438718252). I moduli storici con caller di test sono conservati: isolamento verificato, eliminazione fisica non dimostrata. R385.5 E2E nativo post-isolamento da attestare.** |
+| **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R385.5 Fast CI #42440148395 ed E2E nativo #42440148389 entrambi SUCCESS sulla SHA `339a8b1` (Rust/EVM/OPA/Gitea/A2A/MCP/Docker FAIL→D1→PASS, PR Draft). Le successive modifiche R385.6 devono superare Fast CI sulla loro SHA: non attribuire loro automaticamente il vecchio E2E.** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.4: client Engineer HTTP e Signed DAG legacy isolati; gate degli ultimi caller R385.4 PASS `9911f3c`. R385.5 native E2E e Fast CI PASS sulla stessa SHA `339a8b1`. Moduli storici conservati per test e handoff gated; la cancellabilità fisica non è attestata. R385.6 prosegue sull'autonomia post-failure senza nuovi grant.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.6 — Fonte diagnostica firmata prima di UPDATE dopo Test FAIL (opt-in)
+
+Il report [`R3856_AUTHENTICATED_DIAGNOSTIC_READ_FIRST_RECOVERY.md`](./R3856_AUTHENTICATED_DIAGNOSTIC_READ_FIRST_RECOVERY.md)
+documenta la nuova verifica pura della provenienza read-only del file:
+un Task di lettura distinto **dopo** il Test FAIL originale, dello
+stesso ruolo e ResourceURI della modifica, confermato dal Gateway,
+firmato nella Root Engineer ed eseguito sulla HEAD corrente.
+Il Review Host originario costruisce il vincolo dalle proprie
+registrazioni, dai digest di evidenza e dalle attestazioni Gitea.
+Solo il file di deployment owner privato può selezionare
+`requireVerifiedRepairDiagnostic: true`; il modello non può
+attivare o modificare questa policy.
+
+In modalità rigorosa UPDATE senza prova oppure CREATE post-FAIL
+(ancora privo di una semantica di lettura su file inesistente)
+**falliscono prima di Child, dispatch o effetto provider**, ritirando
+la Root. I test offline coprono letture stantie, falsificate,
+fuori ruolo e HEAD cambiata, oltre alla continuazione con una
+lettura autentica, e la conservazione del D0 legacy.
+
+**Fast CI R385.6 sulla SHA finale ancora da verificare**.
+Questo step non dimostra autonomia Gemini, non avvia un pilot,
+non attesta un vero Test Agent editor E2E, e non riusa la prova
+nativa R385.5 per dichiarare PASS sulla nuova SHA.
 
 ### R385.5 — Retest nativo completo dopo isolamento Signed DAG/HTTP
 
@@ -33,7 +58,7 @@ viene attivato tramite il checkpoint
 `.github/ci-checkpoints/r3844-functional-create-d1-pass-request.json`.
 Lo stesso commit scatena anche `fast-ci.yml`.
 
-**Condizioni per PASS R385.5:** entrambe le run terminate SUCCESS
+**PASS R385.5 confermato:** Fast CI #42440148395 e nativo completo #42440148389 terminati SUCCESS sul commit `339a8b1c6b4d5c8925995c5d795065bc62c6d222`. Evidenze: 15 Child native MCP, Test Docker FAIL verificato, una CREATE D1, 12 CAS, Docker PASS autenticato, Gitea PR Draft non unita, zero chiamate a pagamento. Nessuna generazione autonoma (fixture scripted). Main invariato, PR #38 Draft.\n\n**Condizioni di ammissione originali:** entrambe le run terminate SUCCESS
 sulla **identica SHA**; workflow R384.4 con
 `ENGINEER_CORE_NATIVE_MODE=1`, `APPROVED_RUNNER_NATIVE_MCP=1`,
 `DELEGATION_GATEWAY_ARCHITECTURE=authority-only`, nessun Adapter
