@@ -20,8 +20,7 @@ import {SignedPlanningCheckpointFileStore}
   from "./trusted-planning-checkpoint-store.ts";
 import {startPersistedReviewedGeminiHandoff}
   from "./trusted-manual-gemini-handoff.ts";
-import {createReviewedApprovedDagExecution}
-  from "./trusted-reviewed-approved-dag.ts";
+// R385.2: historical DAG controller is loaded after original-root liveness.
 import {verifyGithubManualRunViaApi}
   from "./trusted-manual-github-dispatch.ts";
 import {armTrustedOwnerOperationalRecovery}
@@ -297,6 +296,9 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
         verifyLiveRun:checkNow
       }):undefined;
     await checkNow();
+    const {createReviewedApprovedDagExecution}=await import(
+      "./trusted-reviewed-approved-dag.ts");
+    await checkNow(); // No live run -> close/revoke original root before DAG.
     approvedDag=createReviewedApprovedDagExecution({
       coordinator:input.coordinator,reviewGate:input.reviewGate,running,
       verifyLiveRun:checkNow,close:stop,
