@@ -143,6 +143,9 @@ const sourceObservationMode=diagnosticMode&&!specialistStop;
 // before one source-grounded repair. Stop before a false PASS/PR claim.
 const strictReadProbe=process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1";
 const secondReadProbe=process.env.R3859_NATIVE_SECOND_REPAIR_PROBE==="1";
+const testAgentProbe=process.env.R38512_NATIVE_TEST_AGENT_SOURCE_PROBE==="1";
+assert.ok(!testAgentProbe||(strictReadProbe&&!secondReadProbe&&!diagnosticMode),
+ "R385.12 requires isolated strict post-FAIL Test Agent mode");
 assert.ok(!secondReadProbe||strictReadProbe,"R385.9 requires signed post-FAIL mode");
 assert.ok(process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE===undefined||strictReadProbe);
 if(strictReadProbe){
@@ -217,11 +220,16 @@ class ScriptedNativeDockerTest extends BaseLlm {
  async *generateContentAsync(req){
   this.requests.push(req);
   const requestIndex=this.requests.length;
-  if(this.repairWriter&&requestIndex>=3&&requestIndex<=5){
+  if(this.repairWriter&&requestIndex>=3&&
+     this.repairWriter.stageIndex<this.repairWriter.stages.length){
    yield* this.repairWriter.generateContentAsync(req);
    return;
   }
-  const turn=requestIndex-(this.repairWriter&&requestIndex>5?3:0);
+  // The authenticated Test investigation and same-file CAS are different
+  // ADK stages/Child Tasks, never a combined unsigned edit.
+  const recoveryTurns=this.repairWriter?.stages.reduce((n,stage)=>
+   n+(stage.readOnly?2:stage.files.length*2+1),0)??0;
+  const turn=requestIndex-(this.repairWriter&&requestIndex>2?recoveryTurns:0);
   if(turn===1||turn===3){
    yield {content:{role:"model",parts:[{functionCall:{
     id:"r375-docker-"+turn,name:"run_tests",
@@ -498,7 +506,7 @@ try{
     frontend:{did:frontendDid,card_ref:"trusted:r375-frontend",
      capabilities:["read_file","update_file"]},
     test:{did:testDid,card_ref:"trusted:r375-test",
-     capabilities:diagnosticMode?["read_file","update_file","run_tests"]:["run_tests"]},
+     capabilities:diagnosticMode||testAgentProbe?["read_file","update_file","run_tests"]:["run_tests"]},
     orchestrator:{did:process.env.ADAPTER_ID_ORCHESTRATOR,
      card_ref:"trusted:r375-orchestrator",
      capabilities:["create_branch","create_pull_request"]}
@@ -585,13 +593,16 @@ try{
  const backendTaskId="r375-backend-task";let backendRuntimeId="dispatch_"+"B".repeat(22);
  const testTaskId="r375-test-task";let testRuntimeId="dispatch_"+"T".repeat(22);
  const diagnosticTaskId=specialistStop?"r377-"+diagnosticRole+"-no-change":"r376-authenticated-source-read";
- const postFailReadTaskId="r3858-postfail-backend-read";
+ const postFailReadTaskId=testAgentProbe?"r38512-postfail-test-read":"r3858-postfail-backend-read";
   const secondPostFailReadTaskId="r3859-postfail-backend-second-read";
  const diagnosticPath=diagnosticRole==="frontend"?mutationPath:sharedPath;
  const diagnosticPermissions=specialistStop?permissionsFor(diagnosticPath):[pair(diagnosticPath,"read_file")];
  const decisionOffset=diagnosticMode?1:0;
- const testRepairPath=diagnosticMode?testFiles.at(-1):undefined;
- const sourceTasks=approvedFiles.map((file,index)=>Object.freeze({
+ const testRepairPath=diagnosticMode||testAgentProbe?testFiles.at(-1):undefined;
+ const sourceOrder=testAgentProbe?
+  [testRepairPath,...approvedFiles.filter(file=>file!==testRepairPath)]:
+  approvedFiles;
+ const sourceTasks=sourceOrder.map((file,index)=>Object.freeze({
   file,task_id:"r375-functional-file-"+(index+1),
   agent_id:file===testRepairPath?"test":
    file.startsWith("apps/frontend/")||file.startsWith("tests/frontend/")?"frontend":"backend",
@@ -701,6 +712,8 @@ try{
    replacement:ACCOUNT_SUSPENSION_REFERENCE_FILES[file]
   }));
  const testRepairWriter=testRepairPath?new ScriptedScopedReferenceWriter(branch,"test",[
+  ...(testAgentProbe?[{readOnly:true,files:[{path:testRepairPath,
+   previous:ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[testRepairPath]}]}]:[]),
   {files:frontendTestReferenceFiles.filter(file=>file.path===testRepairPath)}
  ]):undefined;
  if(testRepairWriter)assert.equal(testRepairWriter.stages[0].files.length,1);
@@ -994,9 +1007,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
      assert.doesNotMatch(context,/source_observations/u);
      this.verifiedFailBeforeRepair=true;
      choice={action:"delegate",task:{
-      task_id:postFailReadTaskId,agent_id:"backend",
-      depends_on:[taskId],permissions:[pair(sharedPath,"read_file")],
-      instruction:"Read independently authorized post-FAIL account-status source"
+      task_id:postFailReadTaskId,agent_id:testAgentProbe?"test":"backend",
+      depends_on:[taskId],permissions:[pair(testAgentProbe?testRepairPath:sharedPath,"read_file")],
+      instruction:testAgentProbe?"Read signed project Test source after Runner FAIL":
+       "Read independently authorized post-FAIL account-status source"
      }};
     }else if(secondReadProbe&&initialIndex===5){
      assert.ok(context.includes(sourceTasks[0].task_id));
@@ -1017,7 +1031,9 @@ const tool=record?.request?.tool,role=record?.agent_role;
      if(strictReadProbe&&j===0){
       assert.match(context,/source_observations/u);
       assert.match(context,/independent_runner_failure/u);
-      assert.match(context,/Baseline account states/u);
+      if(testAgentProbe)assert.ok(context.includes(testRepairPath),
+        "signed Test Agent read required before CAS");
+       else assert.match(context,/Baseline account states/u);
       assert.ok(context.includes(postFailReadTaskId));
      }
      if(j===0){
@@ -1175,10 +1191,12 @@ const tool=record?.request?.tool,role=record?.agent_role;
       return freshChildParams("urn:r375:child:frontend-d0",29154,600);
      if(epoch===4+decisionOffset&&agent_id==="test")
       return freshChildParams("urn:r375:child:test-failed",29155,1200);
-     if(strictReadProbe&&epoch===5&&agent_id==="backend")
-      return freshChildParams("urn:r3858:child:postfail-source-read",29180,900);
-     if(strictReadProbe&&epoch===6&&agent_id==="backend")
-      return freshChildParams("urn:r3858:child:verified-first-repair",29181,900);
+     if(strictReadProbe&&epoch===5&&agent_id===(testAgentProbe?"test":"backend"))
+       return freshChildParams(testAgentProbe?"urn:r38512:child:test-read":
+        "urn:r3858:child:postfail-source-read",29180,900);
+      if(strictReadProbe&&epoch===6&&agent_id===(testAgentProbe?"test":"backend"))
+       return freshChildParams(testAgentProbe?"urn:r38512:child:test-repair":
+        "urn:r3858:child:verified-first-repair",29181,900);
       if(secondReadProbe&&epoch===7&&agent_id==="backend")
        return freshChildParams("urn:r3859:child:second-postfail-read",29182,900);
       if(secondReadProbe&&epoch===8&&agent_id==="backend")
@@ -1249,20 +1267,31 @@ const tool=record?.request?.tool,role=record?.agent_role;
    assert.equal(runnerCalls,1,"first real Docker FAIL only; no unverified PASS");
    assert.equal(gatewayCasWrites,secondReadProbe?4:3,
      "two D0 edits plus independently signed post-FAIL repairs");
-   assert.equal(models.backend.stageIndex,secondReadProbe?5:3,
-     "D0, individually signed post-FAIL reads and CAS repairs");
-   assert.equal(models.frontend.stageIndex,1);
-   assert.ok(events.indexOf("execute_backend_read_file")>=0);
-   assert.ok(events.lastIndexOf("execute_backend_update_file")>
-    events.lastIndexOf("execute_backend_read_file"),
-    "native post-FAIL read must precede source-repair update");
-   assert.equal(nativeMcpChildCalls,issuedChildren,
+   assert.equal(models.backend.stageIndex,testAgentProbe?1:secondReadProbe?5:3,
+     "D0 plus independently signed post-FAIL read and repair stages");
+    assert.equal(models.frontend.stageIndex,1);
+    if(testAgentProbe){
+     assert.equal(testRepairWriter?.stageIndex,2);
+     assert.deepEqual(events.filter(x=>x.startsWith("execute_test_")),
+      ["execute_test_run_tests","execute_test_read_file",
+       "execute_test_read_file","execute_test_update_file"]);
+     const latest=(await independentClient.getBranchMetadata(branch)).commit_sha;
+     const actual=await independentClient.readTextFile(branch,testRepairPath,latest);
+     assert.equal(actual.content,ACCOUNT_SUSPENSION_REFERENCE_FILES[testRepairPath],
+      "Test Agent must actually CAS only its authorized project test source");
+    }else{
+     assert.ok(events.indexOf("execute_backend_read_file")>=0);
+     assert.ok(events.lastIndexOf("execute_backend_update_file")>
+      events.lastIndexOf("execute_backend_read_file"),
+      "native post-FAIL read must precede source-repair update");
+    }
+    assert.equal(nativeMcpChildCalls,issuedChildren,
     "every original Child still issued via real task-local native MCP");
    assert.equal(issuedChildren,secondReadProbe?7:5,
      "separate native signed Child for each post-FAIL read and repair");
-   assert.ok(nativeMcpVpByRole.backend>=(secondReadProbe?5:3));
+   assert.ok(nativeMcpVpByRole.backend>=(testAgentProbe?2:secondReadProbe?5:3));
    assert.ok(nativeMcpVpByRole.frontend>=1);
-   assert.ok(nativeMcpVpByRole.test>=1);
+   assert.ok(nativeMcpVpByRole.test>=(testAgentProbe?3:1));
    assert.equal(draftPrCreateAttempts,0);
    assert.equal(branchPostAttempts,1);
    assert.equal(await independentClient.getBranchMetadata("main").then(x=>x.commit_sha),
@@ -1275,13 +1304,17 @@ const tool=record?.request?.tool,role=record?.agent_role;
     name=>name.endsWith(".runner.json")).length,0);
    nativeE2eResultEmitted=true;
    process.stdout.write(JSON.stringify({
-    event:secondReadProbe?
+    event:testAgentProbe?"r38512_native_test_agent_signed_postfail_read_cas_no_false_pass":
+     secondReadProbe?
       "r3859_native_sequential_postfail_two_read_two_cas_no_false_pass":
       "r3858_strict_native_postfail_read_and_first_repair_no_false_pass",
     status:"pass",paid_model_calls:0,native_rust_evm:true,real_opa:true,
     private_native_mcp:true,first_docker_status:"fail",
     independently_attested_postfail_read:true,
     signed_read_only_diagnostic_tasks:secondReadProbe?2:1,
+     ...(testAgentProbe?{test_agent_signed_diagnostic_read:true,
+      test_agent_signed_project_test_cas:true,
+      test_agent_project_test_path:testRepairPath}:{}),
     gateway_cas_writes:gatewayCasWrites,
     source_code_generated_autonomously_by_model:false,
     further_tests_proven_pass:false,original_main_immutable:true,
