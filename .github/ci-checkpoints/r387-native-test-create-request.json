@@ -1,0 +1,8 @@
+{
+  "schema": "authority-only-ci-checkpoint-v1",
+  "milestone": "R387",
+  "target": "native-test-agent-create-file",
+  "proof": "signed Test project source CREATE, Gitea CAS and independently observed MAC",
+  "paid_model_calls_authorized": false,
+  "merge_authorized": false
+}
