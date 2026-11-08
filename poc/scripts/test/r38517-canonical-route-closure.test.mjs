@@ -134,13 +134,18 @@ test("R385.17 real tracked graph retains every private MCP module; not deletion 
  assert.equal(direct.status,"INVENTORY_PROVENANCE_OK");
 });
 
-test("R385.18 historical repair controller consumes neutral credential contracts, not HTTP issuer",()=>{
- const controller=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
+test("R385.18/R409 owner repair DAG core retains neutral credential types, never HTTP issuer",()=>{
+ const compatibility=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
+ assert.match(compatibility,/export \{executeTrustedAdmittedRepairDag\}[\s\S]*?from "\.\/trusted-owner-repair-dag-execution\.ts"/u,
+  "historical imports must forward to the single tested Owner core");
+ const controller=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts");
  const neutral=read("poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts");
  assert.match(controller,
   /import type \{ChildIssuanceInput\} from "\.\/trusted-credential-contracts\.ts";/u);
  assert.doesNotMatch(controller,/from "\.\/authority-client\.ts"/u,
   "repair DAG data type must not depend on HTTP Engineer client");
+ assert.doesNotMatch(controller,/from "\.\/authority-adapter-transport\.ts"/u,
+  "Owner repair DAG must not import HTTP Adapter transport");
  assert.match(neutral,/export interface ChildIssuanceInput/u);
  assert.doesNotMatch(neutral,/authority-adapter-transport|postCredential|fetch\(/u,
   "neutral credential shapes are not an HTTP authority transport");
