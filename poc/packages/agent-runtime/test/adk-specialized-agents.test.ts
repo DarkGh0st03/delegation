@@ -766,7 +766,8 @@ test("R157 signed A2A Agent capabilities use generic role tools, not demo path t
  }
  const testAgent=signed({role:"test",rights:[{operation:"create_file",path:target}]});
  assert.deepEqual(testAgent.profile.tools,["read_file","update_file","create_file","run_tests"]);
- assert.deepEqual(testAgent.agent.tools.map(t=>t.name),["create_file","run_tests"]);
+ assert.deepEqual(testAgent.agent.tools.map(t=>t.name),["create_file"],
+  "signed Test file creation does not inherit Docker Runner authority");
  assert.doesNotMatch(testAgent.profile.system_prompt,/Account Suspension|account-suspension/u);
 });
 
