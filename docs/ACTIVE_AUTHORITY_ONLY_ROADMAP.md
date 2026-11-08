@@ -5,7 +5,7 @@ riaffermato dall'utente con «Continua il lavoro seguendo questo sempre».
 Questa roadmap guida le priorità: la presenza di componenti non dimostra ancora
 un comportamento autonomo del sistema.
 
-## Piano attivo — aggiornato all'8 novembre 2026 (R384.9 cleanup legacy in corso)
+## Piano attivo — aggiornato all'8 novembre 2026 (R385.0 cleanup legacy in corso)
 
 Questa sezione sostituisce le priorità dei checkpoint R353–R357 riportate sotto
 a titolo **storico**, senza cancellare gli esiti di regressione. La nuova
@@ -19,9 +19,27 @@ all'entrypoint definitivo e un'evidenza verificabile, non il numero del commit.
 | **B. Confini architetturali** | Child DC + VP attraverso MCP crittografico definitivo; Engineer e Gateway **diretti a Rust**; Agent Card trusted e FunctionTools disaccoppiati dai grant; Planning gerarchico e read composte | **MCP privato Child/VP e Rust attestati; Planning gerarchico e composite read già coperti R380; altri confini Agent Card / FunctionTools ancora da consolidare** |
 | **C. Launcher unico** | Engineer permission-only → Planning → root indipendente → branch → ADK/A2A adaptive Executor → Runner → Draft PR, senza fallback Signed DAG | **R382.8 integra provision operativo, worker A2A, CLI locale e handoff firmato: E2E gratuito PASS stessa SHA 63a4414. Rimangono consolidamento, casi generici e cleanup legacy** |
 | **D. Validazione gratuita** | Test positivi/negativi e un E2E Rust/EVM/OPA/Gitea/Docker/MCP dopo B e C, sulla stessa SHA del codice finale | **R384.4 native SUCCESS su `81ad3fdd` (run #42423327568); Fast CI SUCCESS sulla SHA successiva `f236a4dd` (run #42423579107). Non sono due gate verdi sulla stessa HEAD. Ripetere validazione completa dopo il cleanup.** |
-| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R384.9: workflow Gemini storici disabilitati; OIDC HMAC e credenziali neutre separati da DAG e vecchio Adapter HTTP. Fast CI R384.8 PASS sulla SHA `f3eaa68` (#42430511297); Fast CI R384.9 e native E2E post-cleanup ancora da certificare.** |
+| **E. Cleanup legacy** | Inventario reachability di codice, workflow, script e import dinamici; migrare gli entrypoint poi rimuovere solo moduli sostituiti; Fast CI mirate + E2E finale **post-cleanup** | **R384.6–R385.0: workflow Gemini storici disabilitati; OIDC HMAC e credenziali neutre separati da DAG/HTTP. In R385.0 il selector Engineer non importa più staticamente il client HTTP/MCP legacy, che resta lazy per le fixture. R384.9 Fast CI PASS `0de6c3c` (#42432179360). Fast CI R385.0 e native E2E post-cleanup ancora da certificare.** |
 | **F. Pilot Gemini** | Solo sul launcher authority-only della repository ripulita, con i gate CI sulla SHA finale e consenso **esplicito** ai costi | **Non autorizzato / non avviato** |
 | **G. GUI completa** | Repository dinamica, requisito, Engineer review firmata, execution osservabile, Draft PR, merge umano | **Da completare** |
+
+### R385.0 — Confine di caricamento: Root Engineer diretto a Rust, legacy MCP/HTTP lazy
+
+Il report [`R3850_ENGINEER_ROOT_DIRECT_RUST_BOUNDARY.md`](./R3850_ENGINEER_ROOT_DIRECT_RUST_BOUNDARY.md)
+documenta il modulo separato `trusted-engineer-legacy-mcp-http-port.ts`.
+Il selettore originale `trusted-engineer-crypto-port.ts` non importa più
+all'avvio il vecchio `SoftwareEngineerAuthorityBootstrap` o il trasporto
+MCP in-process; li carica **soltanto durante un'operazione legacy**,
+dopo aver selezionato il fallback consentito alle fixture.
+La via authority-only `ENGINEER_CORE_NATIVE_MODE=1` continua a usare
+direttamente il Node-API del Core Rust e non deve eseguire MCP/HTTP.
+Resta la via socket Unix compatibile senza HTTP.
+Sono stati aggiunti test per la precedenza, l'assenza di downgrade,
+il pinning dei grant attraverso l'import asincrono e il fail-closed.
+
+**Gate:** Fast CI gratuita sulla SHA R385.0, poi ulteriori
+migrazioni handoff legacy; native E2E finale post-cleanup sulla SHA
+definitiva. Nessuna chiamata Gemini a pagamento e nessun merge.
 
 ### R384.9 — Contratti di credenziale neutrali, vecchio HTTP Adapter non pubblico
 
@@ -36,7 +54,7 @@ neutrali, senza riferimento ciclico al client.
 
 Fast CI comprende ora i test espliciti del vecchio client e un vincolo
 statico sull'API. L'inventario R6 registra i suoi importatori diretti.
-**R384.9 non è concluso fino al SUCCESS della Fast CI sulla nuova SHA.**
+**R384.9 Fast CI SUCCESS `0de6c3c` (run #42432179360).**
 Resta il lavoro di reachability sui caller dei handoff/recovery storici.
 E2E completo post-cleanup obbligatorio prima di qualunque pilot Gemini.
 Nessun costo Gemini né merge.
