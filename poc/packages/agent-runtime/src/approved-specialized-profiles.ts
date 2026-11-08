@@ -39,3 +39,20 @@ export const APPROVED_SPECIALIZED_AGENT_PROFILES:Readonly<
  test:role("test","Automated tests, validation evidence and controlled test execution",
   ["read_file","update_file","create_file","run_tests"],true)
 });
+
+/**
+ * R385.14 - The original authority-only A2A owner DOES NOT implement Test
+ * create_file.  Historical standalone ADK fixtures may still exercise the
+ * generic capability under separate trusted Task grants, but a native
+ * owner-bound Agent Card must never advertise an operation its owner rejects.
+ *
+ * This is discovery metadata ONLY, not a signed grant or model permission.
+ * Rust/OPA/Gateway still enforce each concrete Task independently.
+ */
+export function nativeAuthorityOnlyAdvertisedCapabilities(
+ role:SpecializedAgentRole
+):readonly string[]{
+ const tools=APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools;
+ return role==="test"?
+  Object.freeze(tools.filter(operation=>operation!=="create_file")):tools;
+}
