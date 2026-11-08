@@ -28,8 +28,8 @@ test("R385.16 Human Gate remains manual, exact and requires external reviewers",
  assert.equal(r.protectedEnvironmentReviewersVerified,false);
  assert.equal(r.protectedMainBranchConfigurationVerified,false);
  assert.equal(r.manualMergeExecuted,false);
- assert.equal(r.legacyMainPushAdapterWorkflowObserved,true,
-  "historical phase11 main-push HTTP Adapter still requires migration review");
+ assert.equal(r.legacyMainPushAdapterWorkflowObserved,false,
+  "R385.17 migration removed the automatic main-push legacy HTTP Adapter trigger");
 });
 test("R385.16 cannot enable push, PR, timers or secondary triggers",()=>{
  for(const event of ["push","pull_request","schedule","workflow_run","workflow_call"]){
