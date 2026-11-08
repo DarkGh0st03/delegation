@@ -18,6 +18,18 @@ test("R385.0 owner selector has no eager HTTP Adapter bootstrap or owner-private
  assert.match(legacy,/createOwnerPrivateCryptographicMcpSession\(/u);
 });
 
+test("R385.1 legacy HTTP issuer gate is shared by selector and direct compatibility module",()=>{
+ const selector=read("poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts");
+ const legacy=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts");
+ const gate=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-fixture-gate.ts");
+ assert.match(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
+ assert.match(legacy,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
+ assert.match(gate,/DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"/u);
+ assert.match(gate,/APPROVED_RUNNER_NATIVE_MCP==="1"/u);
+ assert.match(gate,/ENGINEER_CORE_NATIVE_MODE==="1"/u);
+ assert.match(gate,/ADAPTER_ENGINEER_NATIVE_SOCKET!==undefined/u);
+});
+
 test("R385.0 canonical selector still gives direct Rust priority and denies implicit HTTP fallback",()=>{
  const selector=read("poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts");
  const first=selector.indexOf('if(direct==="1"){');
