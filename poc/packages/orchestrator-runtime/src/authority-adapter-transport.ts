@@ -6,7 +6,7 @@
 import type {
   CredentialStatusInput,RootIssuanceInput,ChildIssuanceInput,
   IssuedDelegationCredential
-} from "./authority-client.ts";
+} from "./trusted-credential-contracts.ts";
 
 type FetchLike = typeof fetch;
 
