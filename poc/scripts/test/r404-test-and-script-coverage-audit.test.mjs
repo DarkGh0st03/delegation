@@ -61,3 +61,30 @@ test("R404.2 review candidates are only candidates, even if not configured",()=>
  assert.ok(unresolved.every(x=>x.deletionAuthorized===false));
  assert.equal(report.verifiedBehavioralDuplication,false);
 });
+
+test("R405 chained --check && --test is not falsely marked syntax-only",()=>{
+ const f=fake(),load=f.read;
+ const wf=".github/workflows/engineer.yml";
+ const approval="poc/apps/gateway/test/approval.test.mjs";
+ const host="poc/apps/gateway/test/host.test.mjs";
+ const run=[
+  "jobs:","  engineer:","    steps:",
+  "      - name: Combined command",
+  "        run: node --check poc/apps/gateway/test/syntax.test.mjs && node --experimental-strip-types --test poc/apps/gateway/test/approval.test.mjs poc/apps/gateway/test/host.test.mjs",
+  "      - name: Filter literal with quoted ampersands",
+  '        run: node --test --test-name-pattern="A && B" poc/apps/gateway/test/filtered.test.mjs'
+ ].join("\n");
+ const result=analyzeR404({tracked:[...f.tracked,wf,approval,host],
+  read:path=>path===wf?run:path===approval||path===host?
+   "import test from 'node:test'":load(path)});
+ for(const path of ["approval.test.mjs","host.test.mjs"]){
+  const found=row(result,path);
+  assert.equal(found.kind,"TEST_CONFIGURED");
+  assert.equal(found.syntaxChecks.length,0);
+  assert.ok(found.configuredTestCalls.some(x=>x.workflow===wf));
+ }
+ assert.equal(row(result,"syntax.test.mjs").kind,"SYNTAX_ONLY");
+ assert.equal(row(result,"filtered.test.mjs").kind,"FILTERED_TEST_CONFIGURED");
+ assert.equal(result.actualCIRunsCorrelated,false);
+ assert.equal(result.automaticDeletionAuthorized,false);
+});

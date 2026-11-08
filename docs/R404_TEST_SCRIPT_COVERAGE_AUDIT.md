@@ -30,3 +30,11 @@ The [R404.3 Fast CI #42509077171](https://github.com/DarkGh0st03/delegation/acti
 The five sources now have explicit `node --experimental-strip-types --test` invocations in the Fast CI workflow; this is a **coverage promotion**, not a source deletion. The change deliberately does not run the two larger Engineer HTTP/host suites, which still need independent environment and assertion review.
 
 [Fast CI #42509494405](https://github.com/DarkGh0st03/delegation/actions/runs/42509494405) **SUCCESS 2/2** on commit `1f1445fe`; the new R404.4 offline test step succeeded, and the independent Docker evidence job succeeded. The audit now observes 351 configured test files of 353; the only remaining two are Engineer UI/host scripts with syntax-only configuration. Automatic deletion remains forbidden; native Security CI still needs the final post-cleanup SHA.
+
+## R405 — Engineer CI chain-classification correction (8 November 2026)
+
+R404 falsely identified the Engineer GUI and Host suites as syntax-only. In the historical Engineer CI command, `node --check` of a native fixture was followed by `&& node --experimental-strip-types --test` with both actual test sources; the scanner treated both as one syntax-only command. [Engineer Approval CI #42505735385](https://github.com/DarkGh0st03/delegation/actions/runs/42505735385) confirms the combined test step **SUCCESS** on historical SHA `52fccfc7`.
+
+R405 splits `&&`, `||`, and `;` outside quotes in the read-only scanner, and adds a targeted synthetic regression including a quoted `--test-name-pattern` with literal `&&`. The dedicated Engineer workflow is also split into independent syntax and test steps; both suites were **already being executed**, so this is a clarity/correctness change, not newly recovered test coverage. Modifying the Engineer workflow triggers a fresh offline test on the R405 commit, with no paid model use.
+
+Historical R404 counts must be read as an earlier scanner limitation: the five R404.4 promotions are new CI test coverage, but the last two Engineer files were already configured and covered by a dedicated workflow. A corrected 353/353 configured observation is a source-level mapping, not proof that all 353 tests ran together on the latest SHA. GitHub branch protection and the final native Security CI remain separately unverified.

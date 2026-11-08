@@ -17,6 +17,31 @@ const SOURCE_PATH=/((?:\.{1,2}\/)?(?:poc\/|test\/|tests\/|scripts\/|src\/|apps\/
 const ordered=x=>[...x].sort();
 const lines=x=>x.replace(/\\\r?\n\s*/gu," ").split(/\r?\n/u)
  .map(v=>v.trim()).filter(v=>v&&!v.startsWith("#"));
+
+/**
+ * R405: treat shell &&, || and ; as separate configured command segments,
+ * only outside single/double quotes. This never attests actual execution.
+ */
+function configuredShellSegments(line){
+ const segments=[];
+ let buffer="",quote=null,escaped=false;
+ const flush=()=>{if(buffer.trim())segments.push(buffer.trim());buffer="";};
+ for(let i=0;i<line.length;i++){
+  const ch=line[i];
+  if(escaped){buffer+=ch;escaped=false;continue;}
+  if(ch==="\\"){buffer+=ch;escaped=true;continue;}
+  if(quote){buffer+=ch;if(ch===quote)quote=null;continue;}
+  if(ch==="'"||ch==='"'){buffer+=ch;quote=ch;continue;}
+  if(ch===";"||(ch==="&"&&line[i+1]==="&")||
+     (ch==="|"&&line[i+1]==="|")){
+   flush();if(ch!==";")i++;continue;
+  }
+  buffer+=ch;
+ }
+ flush();
+ return segments;
+}
+
 function runs(text){
  const a=text.split(/\r?\n/u),out=[];
  for(let i=0;i<a.length;i++){
@@ -87,7 +112,7 @@ export function analyzeR404({tracked,read,strictWitnesses=false}){
  };
  const visit=(text,cwd,workflow,via,depth,seen)=>{
   if(depth>4){unresolved.push({source:via,reason:"script-recursion-limit"});return;}
-  for(const command of lines(text)){
+  for(const command of lines(text).flatMap(configuredShellSegments)){
    const npm=npmInvocation(command);
    if(npm){
     const root=npm.prefix?posix.normalize(posix.join(cwd,npm.prefix)):cwd;
@@ -163,7 +188,7 @@ export function analyzeR404({tracked,read,strictWitnesses=false}){
  const categories=Object.fromEntries(ordered(new Set(records.map(x=>x.kind)))
   .map(kind=>[kind,records.filter(x=>x.kind===kind).length]));
  return {
-  schema:"r404-configured-test-coverage-v1",
+  schema:"r405-chained-shell-configured-coverage-v2",
   summary:{tracked:all.length,workflows:workflows.length,
    manifests:manifests.size,testFiles:testPaths.length,
    configuredTestFiles:records.filter(x=>x.configuredTestCalls.length).length,
