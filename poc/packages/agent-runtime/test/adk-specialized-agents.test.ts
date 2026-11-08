@@ -649,7 +649,7 @@ test("Signed Test Task may create a newly approved test path without expanding i
     trustedTaskPaths:[path],
     trustedFilePermissions:[{operation:"create_file",path}]
   });
-  assert.deepEqual(built.agent.tools.map(x=>x.name),["create_file","run_tests"]);
+  assert.deepEqual(built.agent.tools.map(x=>x.name),["create_file"]);
   assert.deepEqual(built.profile.creatable_paths,[path]);
   assert.deepEqual(built.profile.read_only_paths,[]);
   assert.doesNotMatch(built.profile.system_prompt,/Account Suspension/u);
@@ -837,4 +837,38 @@ test("R379.2 Test Agent Runner visibility is independent of its published capabi
   assert.deepEqual(built.agent.tools.map(tool=>tool.name),["run_tests"]);
   assert.equal(built.profile.writable_paths.length,0);
   assert.equal(built.profile.creatable_paths.length,0);
+});
+
+test("R385.15 signed Test FunctionTools never infer Docker Runner grant from role or file permission",()=>{
+ const file="tests/backend/user.service.test.ts";
+ const gatewayClient={invoke:async()=>{throw Error("unexpected Gateway effect");}} as never;
+ const model=new ScriptedAdkLlm("read_file",{branch:BRANCH,path:file});
+ const signed=(rights:readonly ("read_file"|"update_file"|"create_file")[],
+   runner?:boolean)=>createAdkSpecializedAgent({
+     role:"test",model,gatewayClient,trustedBranch:BRANCH,
+     trustedTaskPaths:rights.length?[file]:[],
+     trustedFilePermissions:rights.map(operation=>({operation,path:file})),
+     ...(runner===undefined?{}:{trustedRunTestsAllowed:runner})
+   });
+ for(const hint of [undefined,false]){
+  const read=signed(["read_file"],hint);
+  assert.deepEqual(read.agent.tools.map(tool=>tool.name),["read_file"],
+   "read-only signed Test must never expose run_tests");
+  assert.match(read.profile.system_prompt,
+   /cannot invoke run_tests; do not claim tests passed/u);
+ }
+ const historicalCreate=signed(["create_file"]);
+ assert.deepEqual(historicalCreate.agent.tools.map(tool=>tool.name),["create_file"],
+  "a signed file Task cannot obtain Runner from generic role capability");
+ const explicitRunner=signed([],true);
+ assert.deepEqual(explicitRunner.agent.tools.map(tool=>tool.name),["run_tests"]);
+ assert.throws(()=>signed(["read_file"],true),
+  /Signed Test Runner cannot combine file grants/u);
+ assert.throws(()=>signed(["create_file"],true),
+  /Signed Test Runner cannot combine file grants/u);
+ // Unsigned legacy fixtures remain separate and are still Gateway-gated.
+ const legacy=createAdkSpecializedAgent({
+  role:"test",model,gatewayClient,trustedBranch:BRANCH,trustedTaskPaths:[]
+ });
+ assert.deepEqual(legacy.agent.tools.map(tool=>tool.name),["run_tests"]);
 });
