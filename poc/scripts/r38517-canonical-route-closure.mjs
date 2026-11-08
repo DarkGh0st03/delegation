@@ -23,6 +23,33 @@ const POSITIVE=".github/workflows/isolated-positive-security-ci.yml";
 const NATIVE=".github/workflows/r38513-native-strict-full-recovery.yml";
 const BOOTSTRAP="poc/apps/orchestrator/src/trusted-authority-only-owner-bootstrap.mjs";
 
+/**
+ * R385.18: exact observed non-test legacy edges. These are historical
+ * migration liabilities, NOT canonical routes or deletion approval.
+ * New runtime/script imports must be blocked until explicitly reviewed.
+ * Source names from the R385.17 verified Git-tracked importer provenance.
+ */
+export const R38518_ALLOWED_NONTEST_LEGACY_CALLERS=Object.freeze({
+ "poc/packages/orchestrator-runtime/src/authority-client.ts":Object.freeze([
+  "poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs",
+  "poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts"
+ ]),
+ "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts":Object.freeze([
+  "poc/packages/orchestrator-runtime/src/authority-client.ts"
+ ]),
+ "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts":Object.freeze([
+  "poc/packages/orchestrator-runtime/src/trusted-admitted-github-handoff.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-admitted-scripted-handoff.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-fresh-repair-reviewed-dag.ts"
+ ]),
+ "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts":Object.freeze([
+  "poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts"
+ ]),
+ "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts":Object.freeze([
+  "poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts"
+ ])
+});
+
 export function configuredWorkflowEvents(workflow){
  if(typeof workflow!=="string")return [];
  const lines=workflow.split(/\r?\n/u),start=lines.indexOf("on:");
@@ -146,6 +173,22 @@ export function auditR38517CallerInventory(legacy){
   issues.push("Historical candidate changed without migration record");
  if(modules.some(x=>x.callers.some(c=>c.classification==="canonical-owner-review-required")))
   issues.push("Canonical owner still references legacy module; review before migration");
+ // Fail closed on *every* new non-test caller, not merely those whose
+ // path happens to start with trusted-authority-only. Exact importer
+ // names are pinned to the existing legacy compatibility surfaces.
+ for(const module of modules){
+  const allowed=R38518_ALLOWED_NONTEST_LEGACY_CALLERS[module.path];
+  if(!allowed){
+   issues.push("Unclassified legacy module: "+module.path);
+   continue;
+  }
+  for(const caller of module.callers){
+   if(caller.classification==="historical-or-regression-test")continue;
+   if(!allowed.includes(caller.source))
+    issues.push("Unexpected new non-test legacy caller: "+
+     module.path+" <- "+caller.source);
+  }
+ }
  return Object.freeze({
   status:issues.length?"CALLER_INVENTORY_FAIL":"CALLER_INVENTORY_OK",
   issues:Object.freeze(issues),modules:Object.freeze(modules),
