@@ -15,7 +15,9 @@ const owner=read(path+"trusted-owner-operational-repair-handoff.ts");
 test("R385.3 owner has no static runtime import of the old planner or DAG controller",()=>{
  assert.doesNotMatch(owner,/^import \{TrustedOperationalRepairPlanner,/mu);
  assert.doesNotMatch(owner,/^import \{executeTrustedAdmittedRepairDag\}/mu);
- assert.match(owner,/import type \{TrustedRepairModelInput\}\s*from "\.\/trusted-operational-repair-planner\.ts"/u);
+ assert.match(owner,/import type \{TrustedRepairModelInput\}\s*from "\.\/trusted-operational-repair-model-contracts\.ts"/u);
+ assert.doesNotMatch(owner,/import type \{TrustedRepairModelInput\}\s*from "\.\/trusted-operational-repair-planner\.ts"/u,
+  "Owner must use the neutral repair input type rather than the executable legacy planner");
  assert.match(owner,/import type \{executeTrustedAdmittedRepairDag\}\s*from "\.\/trusted-repair-dag-controller\.ts"/u);
  assert.match(owner,/await import\(\s*"\.\/trusted-operational-repair-planner\.ts"\)/u);
  assert.match(owner,/await import\(\s*"\.\/trusted-repair-dag-controller\.ts"\)/u);
