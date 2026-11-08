@@ -358,7 +358,8 @@ try{
   childJournal:new DurableAuthorityOnlyChildJournal(path("gateway-child-intents")),
   effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
   completionObserver:new TrustedAuthorityOnlyCompletionObserver({
-   readVerifiedCompletion:e=>e.task_id==="r395-test-runner-task"
+   readVerifiedCompletion:e=>(e.task_id==="r395-test-runner-task"||
+    e.task_id==="r395-test-a2a-runner-task")
     ?runnerObserver.observe(e):createCompletionObserver.observe(e)
   }),
   nowMs
