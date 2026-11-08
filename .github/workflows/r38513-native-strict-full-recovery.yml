@@ -6,6 +6,9 @@
 # One genuinely failed initial Test remains incomplete. No generative inference.
 name: R385.13 Native Strict Ten Read/CAS Recovery Docker PASS Draft PR (No AI)
 on:
+  # R385.18: native full E2E may be reused by disposable positive Security
+  # CI on the exact same source SHA; no secrets/paid inference inputs.
+  workflow_call:
   workflow_dispatch:
   push:
     branches: [refactor/post-prof-plan-contracts-20261021]
