@@ -62,6 +62,32 @@ supporta `workflow_dispatch` o un checkpoint dedicato
 con teardown dei servizi e nessuna scrittura su `main`
 o merge del PR GitHub.
 
+## Prima run: configurazione originale bloccata, senza recovery
+
+La run [#42445318317](https://github.com/DarkGh0st03/delegation/actions/runs/42445318317)
+sulla SHA `7805215` è **FAIL**, non un PASS applicativo:
+compilazione dei due addon Rust riuscita, ma il test
+R375 ha rifiutato **prima dell'avvio dell'owner**
+`DELEGATION_GATEWAY_ARCHITECTURE` mancante (valore
+atteso `authority-only` nel percorso MCP privato).
+
+Il workflow era stato derivato dalla vecchia suite R376,
+che non impostava quel flag. L'architettura R3844
+invece lo impostava correttamente **solo sullo step
+dell'owner**, non sull'intero job che verifica il rifiuto
+dell'Adapter legacy. R385.8 applica quel medesimo
+isolamento e aggiunge controlli espliciti anti-downgrade
+**dopo** aver caricato gli env temporanei, oltre a
+`set -euo pipefail` e asserzioni JSONL su Test FAIL,
+lettura firmata, primo CAS e zero PASS/PR.
+Un nuovo test Fast CI blocca la ricomparsa
+dell'errore di configurazione.
+
+**Il primo FAIL non prova né smentisce il read-after-FAIL
+nativo**, perché quell'esecuzione non ha raggiunto
+il Test Runner o il recupero. Non reinterpretarlo
+come fallimento funzionale né come SUCCESS.
+
 ## Evidenza richiesta e limiti
 
 **R385.8 è PENDING finché** Fast CI e probe native non
