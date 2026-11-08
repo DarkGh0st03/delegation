@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 import {resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {
@@ -126,7 +126,8 @@ test("R385.17 real tracked graph retains every private MCP module; not deletion 
  assert.equal(r.callers.modules.length,5);
  assert.equal(r.callers.privateMcp.length,4);
  assert.ok(r.callers.privateMcp.every(m=>m.present));
- assert.ok(r.callers.modules.every(m=>m.present));
+ assert.ok(r.callers.modules.filter(m=>/trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)\.ts$/u.test(m.path)).every(m=>!m.present));
+ assert.ok(r.callers.modules.filter(m=>!/trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)\.ts$/u.test(m.path)).every(m=>m.present));
  assert.equal(r.callers.deletionAuthorized,false);
  assert.equal(r.callers.externalConsumersVerified,false);
  assert.ok(r.callers.unresolvedIndirections>0);
@@ -135,9 +136,8 @@ test("R385.17 real tracked graph retains every private MCP module; not deletion 
 });
 
 test("R385.18/R409 owner repair DAG core retains neutral credential types, never HTTP issuer",()=>{
- const compatibility=read("poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts");
- assert.match(compatibility,/export \{executeTrustedAdmittedRepairDag\}[\s\S]*?from "\.\/trusted-owner-repair-dag-execution\.ts"/u,
-  "historical imports must forward to the single tested Owner core");
+ assert.equal(existsSync(resolve(root,"poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts")),false,
+  "retired DAG wrapper must stay absent");
  const controller=read("poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts");
  const neutral=read("poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts");
  assert.match(controller,
@@ -149,8 +149,7 @@ test("R385.18/R409 owner repair DAG core retains neutral credential types, never
  assert.match(neutral,/export interface ChildIssuanceInput/u);
  assert.doesNotMatch(neutral,/authority-adapter-transport|postCredential|fetch\(/u,
   "neutral credential shapes are not an HTTP authority transport");
- // The historical controller remains a retained fixture; this is not
- // evidence that its runtime DAG can be deleted.
+ // The actual Owner DAG remains protected; its historical wrapper is retired.
  const observed=r38516LegacyInventory(root,gitTrackedFiles(root));
  const issuer=observed.legacyModules.find(x=>
   x.path==="poc/packages/orchestrator-runtime/src/authority-client.ts");
@@ -165,7 +164,7 @@ test("R385.18 deny any new runtime or script importer of a historical HTTP/DAG m
  const fake={
   status:"INVENTORY_PROVENANCE_OK",
   legacyModules:rows.map(([path,allowed])=>({
-   path,present:true,
+   path,present:!/(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller)\.ts$/u.test(path),
    staticImporters:[],
    runtimeHints:allowed.map(source=>({source,kind:"dynamic-import"})),
    configuredCallers:[]

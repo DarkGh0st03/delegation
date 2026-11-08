@@ -84,6 +84,10 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
 export const R6_RETIRED_TARGETS=Object.freeze([
+  // R413: true historical Signed-DAG wrapper retirement; core Owner modules remain.
+  "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",
   "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",

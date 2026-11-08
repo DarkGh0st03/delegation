@@ -27,12 +27,9 @@ on:
       # invoke no-AI native Rust+MCP+OPA+Docker Security CI on the same SHA.
       - 'poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-reviewed-dag-execution.ts'
-      - 'poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts'
-      - 'poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts'
-      - 'poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts'
       # R411: native EVM fixture must never silently regress onto a legacy shim.
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
       - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'

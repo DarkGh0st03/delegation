@@ -3,7 +3,7 @@ import {createHash} from "node:crypto";
 import test from "node:test";
 import {boundedTrustedRepairDiscoveryObservation,
  verifyTrustedRepairDiscoverySource} from
- "../src/trusted-operational-repair-planner.ts";
+ "../src/trusted-owner-repair-planning-core.ts";
 const pins={
  session_id:"r15144-session",epoch:1,task_id:"r151-remote-child-task",
  runtime_task_id:"dispatch_"+Buffer.alloc(16,42).toString("base64url"),

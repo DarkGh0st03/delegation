@@ -23,7 +23,7 @@ import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback,
   preflightTrustedRemoteRepairDiscovery} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner,type TrustedRepairModelInput} from
-  "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
+  "../../../packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts";
 import {completeTrustedRemoteDiscoveryForPlanning} from
   "../../../packages/orchestrator-runtime/src/trusted-remote-discovery-planner-bridge.ts";
 import {armTrustedOwnerOperationalRecovery} from
@@ -49,7 +49,7 @@ import {issueAdmittedRepairTaskChild} from
 import {dispatchTrustedAdmittedRepairA2A,confirmTrustedAdmittedRepairA2A} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
 import {executeTrustedAdmittedRepairDag} from
-  "../../../packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts";
+  "../../../packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts";
 import {TrustedRetiredRepairAcceptanceWitness} from
   "../../../packages/orchestrator-runtime/src/trusted-retired-repair-acceptance.ts";
 import {TaskState} from "@a2a-js/sdk";

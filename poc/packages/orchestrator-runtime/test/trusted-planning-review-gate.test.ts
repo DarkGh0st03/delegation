@@ -41,7 +41,7 @@ import type {DeterministicTaskHandler}
 import {startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
 import {createReviewedApprovedDagExecution}
-  from "../src/trusted-reviewed-approved-dag.ts";
+  from "../src/trusted-owner-reviewed-dag-execution.ts";
 import {createTrustedApprovedTaskAuthorityAllocator}
   from "../src/trusted-approved-task-authority.ts";
 import {TrustedGithubAdmissionReceiptStore}

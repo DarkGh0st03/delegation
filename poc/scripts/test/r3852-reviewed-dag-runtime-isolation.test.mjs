@@ -7,16 +7,16 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {pinTrustedReviewedAgentEndpoints as purePins}
  from "../../packages/orchestrator-runtime/src/trusted-reviewed-agent-endpoint-pins.ts";
-import {pinTrustedReviewedAgentEndpoints as compatibilityPins}
- from "../../packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts";
+import {pinTrustedReviewedAgentEndpoints as ownerCorePins}
+ from "../../packages/orchestrator-runtime/src/trusted-owner-reviewed-dag-execution.ts";
 
 const root=new URL("../../../",import.meta.url);
 const read=p=>readFileSync(new URL(p,root),"utf8");
 const pkg="poc/packages/orchestrator-runtime/src/";
 
 test("R385.2 pure endpoint preflight preserves strict duplicate, loopback and immutable-copy checks",()=>{
- assert.equal(compatibilityPins,purePins,
-  "Old direct DAG callers must retain identical admission semantics");
+ assert.equal(ownerCorePins,purePins,
+  "Owner DAG core must retain identical endpoint admission semantics");
  const input={backend:"http://127.0.0.1:45101",
   frontend:"http://127.0.0.1:45102",test:"http://127.0.0.1:45103"};
  const pinned=purePins(input);

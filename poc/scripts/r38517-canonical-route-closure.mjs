@@ -10,6 +10,7 @@
  * callers are still unresolved, so deletionAuthorized MUST stay false.
  */
 import {readFileSync} from "node:fs";
+import {R3854_DAG_BOUNDARIES} from "./r3854-legacy-dag-closure-audit.mjs";
 import {resolve} from "node:path";
 import {fileURLToPath,pathToFileURL} from "node:url";
 import {gitTrackedFiles} from "./r6-legacy-references.mjs";
@@ -161,8 +162,11 @@ export function auditR38517CallerInventory(legacy){
   issues.push("Missing exact legacy/private MCP inventory targets");
  if(privateMcp.some(x=>!x.present))
   issues.push("Native private crypto MCP source must not be removed");
- if(modules.some(x=>!x.present))
-  issues.push("Historical candidate changed without migration record");
+ const retired=new Set(R3854_DAG_BOUNDARIES.map(x=>x.target));
+ if(modules.some(x=>retired.has(x.path)&&x.present))
+  issues.push("Retired Signed DAG wrapper reintroduced");
+ if(modules.some(x=>!retired.has(x.path)&&!x.present))
+  issues.push("Retained HTTP legacy candidate disappeared without migration");
  if(modules.some(x=>x.callers.some(c=>c.classification==="canonical-owner-review-required")))
   issues.push("Canonical owner still references legacy module; review before migration");
  // Fail closed on *every* new non-test caller, not merely those whose

@@ -11,7 +11,7 @@ import {TrustedExecutionCoordinator}
 import {TrustedPlanningReviewGate}
   from "../src/trusted-planning-review-gate.ts";
 import {createReviewedApprovedDagExecution}
-  from "../src/trusted-reviewed-approved-dag.ts";
+  from "../src/trusted-owner-reviewed-dag-execution.ts";
 import {TrustedApprovedA2ADispatcher}
   from "../src/trusted-approved-a2a-dispatcher.ts";
 

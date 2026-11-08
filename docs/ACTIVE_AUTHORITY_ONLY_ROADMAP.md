@@ -16,6 +16,22 @@
 
 **Checkpoint R411.2 validato — 8 novembre 2026.** [Fast CI #42519208693](https://github.com/DarkGh0st03/delegation/actions/runs/42519208693) e [Security CI nativa #42519208790](https://github.com/DarkGh0st03/delegation/actions/runs/42519208790) sono **entrambe SUCCESS 2/2** sulla SHA `00ba57c3`. L'ultimo Child del fixture E2E ha validità 900 s sotto Root invariata 1800 s, senza espansione permessi o fallback, con `paid_model_calls=0`. R412 rimuove l'import **statico** di `authority-client.ts` nel modulo Engineer MCP/HTTP storico. Rimangono due import dinamici da fixture selezionate (Engineer e Runner), senza cancellazioni. Le due CI native/fast sulla SHA R412 devono essere ancora validate.
 
+**R413 — Primo ritiro fisico dei wrapper Signed DAG/recovery (8 novembre 2026).**
+Dopo R412, tre wrapper senza caller runtime osservati sono ritirati dal tree in un solo commit:
+`trusted-reviewed-approved-dag.ts`, `trusted-operational-repair-planner.ts`,
+`trusted-repair-dag-controller.ts`. Le implementazioni Owner effettive
+(`trusted-owner-reviewed-dag-execution.ts`,
+`trusted-owner-repair-planning-core.ts` e
+`trusted-owner-repair-dag-execution.ts`) restano intatte. I test diretti
+importano i core; R385.4/R385.17 e R6 rifiutano la reintroduzione dei
+wrapper o nuovi import/configured caller. La copertura Rust/OPA/Child/VP,
+i test negativi, la PR Draft e il divieto di merge/Gemini senza consenso
+restano vincolanti. Questo checkpoint va validato con Fast CI e Security CI
+nativa sulla **stessa SHA**: nessun PASS viene dichiarato prima del risultato.
+Il vecchio transport HTTP e i suoi due caller dinamici gated restano per
+il batch Adapter successivo; la migrazione non autorizza cancellazioni di
+implementazioni Owner, private crypto MCP o attivazioni a pagamento.
+
 ## Mandato architetturale
 
 - **Software Engineer → Rust diretto** per approvazione/Root/revoca; il perimetro dei permessi firmato Ed25519 è immutabile. Il DAG operativo **non** costituisce l'autorità firmata.

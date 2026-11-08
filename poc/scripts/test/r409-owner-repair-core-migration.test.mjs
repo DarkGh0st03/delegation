@@ -5,7 +5,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 import {resolve} from "node:path";
 import {stripTypeScriptTypes} from "node:module";
 import {SourceTextModule} from "node:vm";
@@ -23,18 +23,12 @@ const read=path=>readFileSync(resolve(root,path),"utf8");
 const parse=path=>new SourceTextModule(
  stripTypeScriptTypes(read(path)),{identifier:path});
 
-test("R409 old Planner and DAG preserve named exports via single compatibility edges",()=>{
- const planner=read(oldPlanner),dag=read(oldDag);
- assert.match(planner,/export \* from "\.\/trusted-owner-repair-planning-core\.ts";/u);
- assert.match(dag,/export \{executeTrustedAdmittedRepairDag\}[\s\S]*?from "\.\/trusted-owner-repair-dag-execution\.ts";/u);
- assert.deepEqual(parse(oldPlanner).dependencySpecifiers,
-  ["./trusted-owner-repair-planning-core.ts"]);
- assert.deepEqual(parse(oldDag).dependencySpecifiers,
-  ["./trusted-owner-repair-dag-execution.ts"]);
- assert.doesNotMatch(planner,/export class TrustedOperationalRepairPlanner/u);
- assert.doesNotMatch(dag,/export async function executeTrustedAdmittedRepairDag/u);
+test("R413 old Planner and DAG wrappers are physically retired",()=>{
+ assert.equal(existsSync(resolve(root,oldPlanner)),false);
+ assert.equal(existsSync(resolve(root,oldDag)),false);
+ assert.equal(existsSync(resolve(root,newPlanner)),true);
+ assert.equal(existsSync(resolve(root,newDag)),true);
 });
-
 test("R409 extracted Owner cores retain fail-closed Gateway and signed Root checks",()=>{
  const planner=read(newPlanner),dag=read(newDag);
  const parsedPlanner=parse(newPlanner),parsedDag=parse(newDag);
@@ -88,34 +82,30 @@ test("R409 Owner only lazy-loads planning AFTER Test FAIL and DAG AFTER Gateway 
  assert.match(host,/report\.pull_request_created!==false/u);
 });
 
-test("R409 tracked graph has zero old executable callers and one Owner caller per core",()=>{
+test("R413 source graph proves old repair wrappers absent and no executable callers",()=>{
  const refs=collectLegacyReferences(root,gitTrackedFiles(root),{
   candidates:[oldPlanner,oldDag,newPlanner,newDag]
  });
  const oldRows=refs.candidates.filter(x=>x.target===oldPlanner||x.target===oldDag);
  const newRows=refs.candidates.filter(x=>x.target===newPlanner||x.target===newDag);
  assert.equal(oldRows.length,2);
- assert.ok(oldRows.every(x=>x.exists));
  for(const old of oldRows){
-  assert.deepEqual(old.runtimeIndirectionHints,[],
-   "no legacy Planner/DAG dynamic caller after migration");
+  assert.equal(old.exists,false);
+  assert.deepEqual(old.staticImporters,[]);
+  assert.deepEqual(old.runtimeIndirectionHints,[]);
   assert.deepEqual(old.configuredCallers,[]);
-  assert.ok(old.staticImporters.every(edge=>/\/test\/|\/native-test\//u.test(edge.source)),
-   "only historical regression/nativetest imports may reference old module");
  }
  for(const row of newRows){
-  assert.ok(row.exists);
+  assert.equal(row.exists,true);
   assert.deepEqual(row.runtimeIndirectionHints.map(x=>x.source),[owner],
-   "exactly one guarded Owner runtime loader must remain");
+   "exactly one guarded Owner runtime loader remains");
   assert.deepEqual(row.configuredCallers,[]);
-  assert.ok(row.staticImporters.some(edge=>
-   edge.source===(row.target===newPlanner?oldPlanner:oldDag)),
-   "compatibility wrapper must forward to the exact same implementation");
+  assert.ok(!row.staticImporters.some(edge=>
+   edge.source===oldPlanner||edge.source===oldDag));
  }
  assert.ok(refs.unresolvedRuntimeIndirections.length>0,
-  "uncertain computed imports remain a deletion blocker");
+  "computed/external import uncertainties remain explicitly unproven");
 });
-
 test("R410 no-AI positive Security CI watches migrated owner runtime boundaries",()=>{
  const wf=read(".github/workflows/isolated-positive-security-ci.yml");
  const paths=[
@@ -124,8 +114,6 @@ test("R410 no-AI positive Security CI watches migrated owner runtime boundaries"
   "poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts",
   "poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts",
   "poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts",
-  "poc/packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts",
-  "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts",
   "poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs"
  ];
  for(const file of paths)assert.ok(wf.includes("      - '"+file+"'"),
