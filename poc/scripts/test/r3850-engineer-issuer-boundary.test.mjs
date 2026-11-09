@@ -5,33 +5,25 @@ import {readFileSync,existsSync} from "node:fs";
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
 
-test("R385.0 owner selector has no eager HTTP Adapter bootstrap or owner-private MCP import",()=>{
+test("R432 historical HTTP Engineer issuer, MCP port and fixture gate remain physically retired",()=>{
+ const retired=[
+  "authority-adapter-transport.ts",
+  "authority-client.ts",
+  "trusted-engineer-legacy-mcp-http-port.ts",
+  "trusted-engineer-legacy-fixture-gate.ts"
+ ];
+ for(const name of retired){
+  const relative="poc/packages/orchestrator-runtime/src/"+name;
+  assert.equal(existsSync(new URL("../../../"+relative,import.meta.url)),false,
+   "retired HTTP issuer must not reappear: "+relative);
+ }
  const selector=read("poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts");
- const legacy=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts");
- assert.doesNotMatch(selector,/from ["']\.\/authority-client\.ts["']/u);
- assert.doesNotMatch(selector,/from ["']\.\/trusted-engineer-legacy-mcp-http-port\.ts["']/u);
- assert.doesNotMatch(selector,/from ["']\.\.\/\.\.\/\.\.\/mcp-shared\/src\/owner-private-child-mcp\.ts["']/u);
- assert.doesNotMatch(selector,/createOwnerPrivateCryptographicMcpSession\(/u);
- assert.doesNotMatch(selector,/trusted-engineer-legacy-mcp-http-port|createOwnerPrivateMcpEngineerCredentialPort|assertLegacyEngineerHttpFixtureAllowed/u);
- assert.match(legacy,/createLegacyOwnerPrivateMcpEngineerCredentialPort/u);
- assert.doesNotMatch(legacy,/import \{SoftwareEngineerAuthorityBootstrap\}/u);
- assert.match(legacy,/loaded\?\?=import\("\.\/authority-client\.ts"\)/u);
- assert.match(legacy,/new m\.SoftwareEngineerAuthorityBootstrap\(pinnedConfig\)/u);
- assert.match(legacy,/const pinnedConfig:AdapterClientConfig=Object.freeze\(\{\.\.\.config\}\)/u,
-  "HTTP endpoint, token and transport must be immutable before async import");
- assert.match(legacy,/createOwnerPrivateCryptographicMcpSession\(/u);
-});
-
-test("R417 historical HTTP opt-in gate belongs only to the legacy credential module",()=>{
- const selector=read("poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts");
- const legacy=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts");
- const gate=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-fixture-gate.ts");
- assert.doesNotMatch(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
- assert.match(legacy,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
- assert.match(gate,/DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"/u);
- assert.match(gate,/APPROVED_RUNNER_NATIVE_MCP==="1"/u);
- assert.match(gate,/ENGINEER_CORE_NATIVE_MODE==="1"/u);
- assert.match(gate,/ADAPTER_ENGINEER_NATIVE_SOCKET!==undefined/u);
+ const index=read("poc/packages/orchestrator-runtime/src/index.ts");
+ assert.doesNotMatch(selector,/authority-client|trusted-engineer-legacy-mcp-http-port|trusted-engineer-legacy-fixture-gate|createOwnerPrivateCryptographicMcpSession/u);
+ assert.match(selector,/return createDirectRustEngineerCredentialPort\(config\)/u);
+ assert.match(selector,/return createNativeRustEngineerCredentialPort\(/u);
+ assert.match(selector,/Canonical Engineer root requires native Rust issuer socket/u);
+ assert.doesNotMatch(index,/SoftwareEngineerAuthorityBootstrap|authority-client\.ts/u);
 });
 
 test("R415 canonical selector is native-only and has no legacy HTTP fallback",()=>{
@@ -98,18 +90,3 @@ test("R429 native EVM and repair regression reuse canonical Rust Engineer, not H
  }
 });
 
-test("R419 legacy Adapter transport is physically retired into the tested HTTP issuer",()=>{
- const deleted="poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts";
- assert.equal(existsSync(new URL("../../../"+deleted,import.meta.url)),false,
-  "the old transport split must stay absent");
- const issuer=read("poc/packages/orchestrator-runtime/src/authority-client.ts");
- const legacy=read("poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts");
- assert.match(issuer,/export interface AdapterClientConfig/u);
- assert.match(issuer,/function validateCommon\(/u);
- assert.match(issuer,/async function postCredential\(/u);
- assert.match(issuer,/Adapter root issuance response differs from exact trusted permissions/u);
- assert.match(issuer,/Adapter root DC revocation not confirmed/u);
- assert.doesNotMatch(issuer,/from "\.\/authority-adapter-transport\.ts"/u);
- assert.match(legacy,/import type \{AdapterClientConfig\}\s+from "\.\/authority-client\.ts"/u);
- assert.doesNotMatch(legacy,/from "\.\/authority-adapter-transport\.ts"/u);
-});

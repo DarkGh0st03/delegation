@@ -79,11 +79,12 @@ test("R406.4 native Engineer core and socket ports never import historical HTTP 
  }
  assert.match(direct,/config:Pick<TrustedEngineerCoreConfig,"bearerToken">/u);
  assert.match(socket,/interface NativeConfig extends TrustedEngineerCoreConfig/u);
- // The HTTP compatibility fixture remains distinct and gated.
+ // The historical HTTP credential issuer and its opt-in path are retired.
  const selector=read(base+"trusted-engineer-crypto-port.ts");
  assert.doesNotMatch(selector,/assertLegacyEngineerHttpFixtureAllowed\(\)|createOwnerPrivateMcpEngineerCredentialPort/u);
- const legacy=read(base+"trusted-engineer-legacy-mcp-http-port.ts");
- assert.match(legacy,/assertLegacyEngineerHttpFixtureAllowed\(\)/u);
+ for(const name of ["authority-client.ts","trusted-engineer-legacy-mcp-http-port.ts",
+  "trusted-engineer-legacy-fixture-gate.ts"])
+  assert.equal(existsSync(resolve(root,base+name)),false);
  assert.match(selector,/createDirectRustEngineerCredentialPort\(config\)/u);
  assert.match(selector,/createNativeRustEngineerCredentialPort\(/u);
 });

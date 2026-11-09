@@ -75,8 +75,6 @@ jobs:
           node --test poc/scripts/test/r240-direct-rust-issuer-config.test.mjs
           # R385.0: legacy MCP/HTTP Engineer path is lazy; native direct Rust path stays first.
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
-          # R412: no eager legacy HTTP issuer even when historical MCP port is imported.
-          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
           # R385.2: pure endpoint preflight, lazy DAG import and original root-retirement safety.
           node --experimental-strip-types --test poc/scripts/test/r3852-reviewed-dag-runtime-isolation.test.mjs
           # R385.3: lazy historical repair planner + DAG only under verified Test FAIL.
@@ -93,8 +91,6 @@ jobs:
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
           # R384.6: no legacy billed pipeline may be re-enabled.
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
-          # R384.9: the historical HTTP Adapter Engineer client remains a separately tested direct import.
-          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/authority-client.test.ts
           # R384.8: HMAC-backed OIDC consume remains one-use while DAG public export is retired.
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-admitted-github-handoff.test.ts
           node --experimental-strip-types --test --test-name-pattern="R382.6|R382.7" poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs

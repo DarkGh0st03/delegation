@@ -25,15 +25,13 @@ const NATIVE=".github/workflows/r38513-native-strict-full-recovery.yml";
 const BOOTSTRAP="poc/apps/orchestrator/src/trusted-authority-only-owner-bootstrap.mjs";
 
 /**
- * R385.18: exact observed non-test legacy edges. These are historical
- * migration liabilities, NOT canonical routes or deletion approval.
+ * R385.18: exact observed non-test legacy edges. All five historical issuers/wrappers are retired.
+ * New runtime/script imports are forbidden; this is not a deletion tool.
  * New runtime/script imports must be blocked until explicitly reviewed.
  * Source names from the R385.17 verified Git-tracked importer provenance.
  */
 export const R38518_ALLOWED_NONTEST_LEGACY_CALLERS=Object.freeze({
- "poc/packages/orchestrator-runtime/src/authority-client.ts":Object.freeze([
-  "poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts"
- ]),
+ "poc/packages/orchestrator-runtime/src/authority-client.ts":Object.freeze([]),
  // R419: the split HTTP transport has been physically retired.
  "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts":Object.freeze([]),
  "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts":Object.freeze([]),
@@ -162,12 +160,11 @@ export function auditR38517CallerInventory(legacy){
   issues.push("Native private crypto MCP source must not be removed");
  const retired=new Set([
   ...R3854_DAG_BOUNDARIES.map(x=>x.target),
-  "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts"
+  "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
+  "poc/packages/orchestrator-runtime/src/authority-client.ts"
  ]);
  if(modules.some(x=>retired.has(x.path)&&x.present))
-  issues.push("Retired Signed DAG wrapper reintroduced");
- if(modules.some(x=>!retired.has(x.path)&&!x.present))
-  issues.push("Historical HTTP issuer disappeared without regression migration");
+  issues.push("Retired historical HTTP/DAG module reintroduced");
  if(modules.some(x=>x.callers.some(c=>c.classification==="canonical-owner-review-required")))
   issues.push("Canonical owner still references legacy module; review before migration");
  // Fail closed on *every* new non-test caller, not merely those whose

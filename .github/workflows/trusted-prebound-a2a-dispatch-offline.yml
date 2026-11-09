@@ -7,7 +7,6 @@ on:
     paths:
       - "poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts"
       - "poc/packages/orchestrator-runtime/src/a2a-workflow.ts"
-      - "poc/packages/orchestrator-runtime/src/authority-client.ts"
       - "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts"
       - "poc/packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-approved-child-issuer.test.ts"

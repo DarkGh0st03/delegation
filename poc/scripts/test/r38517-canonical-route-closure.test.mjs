@@ -135,8 +135,8 @@ test("R385.17 real tracked graph retains every private MCP module; not deletion 
   "R419 former Adapter transport must be absent and have zero active callers");
  assert.equal(r.callers.privateMcp.length,4);
  assert.ok(r.callers.privateMcp.every(m=>m.present));
- assert.ok(r.callers.modules.filter(m=>/(?:trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)|authority-adapter-transport)\.ts$/u.test(m.path)).every(m=>!m.present));
- assert.ok(r.callers.modules.filter(m=>!/(?:trusted-(?:reviewed-approved-dag|operational-repair-planner|repair-dag-controller)|authority-adapter-transport)\.ts$/u.test(m.path)).every(m=>m.present));
+ assert.ok(r.callers.modules.every(m=>!m.present),
+  "every reviewed historical HTTP/DAG target must be physically absent");
  assert.equal(r.callers.deletionAuthorized,false);
  assert.equal(r.callers.externalConsumersVerified,false);
  assert.ok(r.callers.unresolvedIndirections>0);
@@ -162,7 +162,7 @@ test("R385.18/R409 owner repair DAG core retains neutral credential types, never
  const observed=r38516LegacyInventory(root,gitTrackedFiles(root));
  const issuer=observed.legacyModules.find(x=>
   x.path==="poc/packages/orchestrator-runtime/src/authority-client.ts");
- assert.ok(issuer);
+ assert.ok(issuer&&!issuer.present,"retired historical HTTP issuer must be absent");
  assert.ok(!issuer.staticImporters.includes(
   "poc/packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts"));
 });
@@ -173,7 +173,7 @@ test("R385.18 deny any new runtime or script importer of a historical HTTP/DAG m
  const fake={
   status:"INVENTORY_PROVENANCE_OK",
   legacyModules:rows.map(([path,allowed])=>({
-   path,present:!/(?:trusted-reviewed-approved-dag|trusted-operational-repair-planner|trusted-repair-dag-controller|authority-adapter-transport)\.ts$/u.test(path),
+   path,present:false,
    staticImporters:[],
    runtimeHints:allowed.map(source=>({source,kind:"dynamic-import"})),
    configuredCallers:[]
@@ -184,6 +184,11 @@ test("R385.18 deny any new runtime or script importer of a historical HTTP/DAG m
  const accepted=auditR38517CallerInventory(fake);
  assert.equal(accepted.status,"CALLER_INVENTORY_OK",accepted.issues.join("\n"));
  assert.equal(accepted.deletionAuthorized,false);
+ fake.legacyModules[0].present=true;
+ const reintroduced=auditR38517CallerInventory(fake);
+ assert.equal(reintroduced.status,"CALLER_INVENTORY_FAIL");
+ assert.match(reintroduced.issues.join("\n"),/Retired historical HTTP\/DAG module reintroduced/u);
+ fake.legacyModules[0].present=false;
  const suspicious="poc/packages/orchestrator-runtime/src/unreviewed-new-issuer.ts";
  fake.legacyModules[0].staticImporters.push(suspicious);
  const denied=auditR38517CallerInventory(fake);

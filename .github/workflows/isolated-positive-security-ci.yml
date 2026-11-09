@@ -61,7 +61,6 @@ on:
       - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
       - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
       # R419.2: consolidated issuer and the source-audit tests must both rerun native Security CI.
-      - 'poc/packages/orchestrator-runtime/src/authority-client.ts'
       - 'poc/scripts/test/r38517-canonical-route-closure.test.mjs'
       - 'poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs'
       # One-shot checkpoint JSON retired; original manual EVM/Gitea proofs remain.
@@ -93,8 +92,6 @@ on:
       - '.github/workflows/engineer-direct-native-evm-e2e.yml'
       - '.github/workflows/engineer-embedded-signed-d1-e2e.yml'
       - '.github/workflows/engineer-embedded-signed-dag-e2e.yml'
-      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts'
-      - 'poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs'
       - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
       - 'poc/scripts/test/r409-owner-repair-core-migration.test.mjs'
       - 'poc/apps/test-runner-controller/src/**'
@@ -147,7 +144,6 @@ jobs:
           node --experimental-vm-modules poc/scripts/r38517-canonical-route-closure.mjs
           node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/check-local-imports.test.mjs
-          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
           node --experimental-vm-modules --test poc/scripts/test/r407-historical-runner-issuer-isolation.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
