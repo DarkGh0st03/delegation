@@ -69,10 +69,12 @@ test("R412 historical MCP wrapper has one gated dynamic issuer import, no eager 
  const guard=src.indexOf("assertLegacyEngineerHttpFixtureAllowed();",factory);
  const loader=src.indexOf('loaded??=import("./authority-client.ts")',guard);
  const afterLoad=src.indexOf("assertLegacyEngineerHttpFixtureAllowed();",loader);
- const create=src.indexOf("new m.SoftwareEngineerAuthorityBootstrap(config)",afterLoad);
+ const create=src.indexOf("new m.SoftwareEngineerAuthorityBootstrap(pinnedConfig)",afterLoad);
  assert.ok(factory>=0&&guard>factory&&loader>guard&&afterLoad>loader&&create>afterLoad);
  assert.equal((src.match(/const rust=await historicalIssuer\(\)/gu)||[]).length,2);
  assert.ok((src.match(/assertLegacyEngineerHttpFixtureAllowed\(\);/gu)||[]).length>=9);
+ assert.match(src,/const pinnedConfig:AdapterClientConfig=Object.freeze\(\{\.\.\.config\}\)/u,
+  "config credentials and transport must be pinned before async lazy load");
  assert.match(src,/const pinned=structuredClone\(input\)/u,
   "root grants are pinned before any MCP/import async boundary");
  assert.match(src,/createOwnerPrivateCryptographicMcpSession\(\s*"root_issue"/u);

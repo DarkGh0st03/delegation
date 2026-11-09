@@ -22,9 +22,12 @@ export function createLegacyOwnerPrivateMcpEngineerCredentialPort(
  assertLegacyEngineerHttpFixtureAllowed();
  // R412: direct legacy callers must retain synchronous constructor
  // validation even though the HTTP issuer is now loaded on demand.
- if(config.adapterBaseUrl.trim().length===0)
+ // Snapshot trusted owner configuration synchronously: a caller cannot
+ // redirect HTTP issuance or replace the transport before lazy import/MCP.
+ const pinnedConfig:AdapterClientConfig=Object.freeze({...config});
+ if(pinnedConfig.adapterBaseUrl.trim().length===0)
   throw Error("Delegation Adapter base URL cannot be empty");
- if(config.bearerToken.trim().length===0)
+ if(pinnedConfig.bearerToken.trim().length===0)
   throw Error("Engineer Adapter token cannot be empty");
  let loaded:Promise<EngineerCredentialPort>|undefined;
  const historicalIssuer=()=>{
@@ -32,7 +35,7 @@ export function createLegacyOwnerPrivateMcpEngineerCredentialPort(
   loaded??=import("./authority-client.ts").then(m=>{
    // A native-profile switch during dynamic import must deny issuance.
    assertLegacyEngineerHttpFixtureAllowed();
-   return new m.SoftwareEngineerAuthorityBootstrap(config);
+   return new m.SoftwareEngineerAuthorityBootstrap(pinnedConfig);
   });
   return loaded;
  };

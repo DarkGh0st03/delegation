@@ -46,7 +46,7 @@ function validateStatus(status: CredentialStatusInput): void {
   }
 }
 
-export function validateCommon(input: RootIssuanceInput | ChildIssuanceInput): void {
+function validateCommon(input: RootIssuanceInput | ChildIssuanceInput): void {
   if (input.credential_id.trim().length === 0) {
     throw new Error("credential_id cannot be empty");
   }
@@ -57,7 +57,7 @@ export function validateCommon(input: RootIssuanceInput | ChildIssuanceInput): v
   validateStatus(input.credential_status);
 }
 
-export async function postCredential(
+async function postCredential(
   config: AdapterClientConfig,
   path: string,
   body: unknown
@@ -124,7 +124,9 @@ export class SoftwareEngineerAuthorityBootstrap {
     if (config.bearerToken.trim().length === 0) {
       throw new Error("Engineer Adapter token cannot be empty");
     }
-    this.#config = config;
+    // Pin the owner-supplied endpoint, token and transport before any async effect.
+    // Historical test/config callers cannot retarget issuance after construction.
+    this.#config = Object.freeze({...config});
   }
 
   /**

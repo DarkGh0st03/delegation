@@ -166,6 +166,34 @@ test("R385.0 lazy historical fixture pins approved grants before async module lo
   [{resource:uri,operation:"read_repository"}]);
 });
 
+test("R427 legacy MCP/HTTP fixture pins endpoint and bearer before lazy module load",async()=>{
+ const calls:{url:string;auth:string|null;body:any}[]=[];
+ const config={
+  adapterBaseUrl:"http://historical.example",
+  bearerToken:"owner-fixed-bearer",
+  fetchFn:async(url:Request|URL|string,init?:RequestInit)=>{
+   const body=JSON.parse(String(init?.body));
+   calls.push({url:String(url),auth:new Headers(init?.headers).get("authorization"),body});
+   return new Response(JSON.stringify({
+    id:body.credential_id,issuer:"did:thesis:rust",
+    credentialSubject:{sub:"did:thesis:orchestrator",per:body.permissions}
+   }),{status:201});
+  }
+ };
+ const port=createOwnerPrivateMcpEngineerCredentialPort(config);
+ config.adapterBaseUrl="http://attacker.invalid";
+ config.bearerToken="substituted-bearer";
+ config.fetchFn=async()=>{throw Error("substituted transport reached");};
+ const issued=await port.issueScopedOrchestratorRoot({
+  ...root("urn:r427:pinned","993",600),
+  permissions:[{resource:uri,operation:"read_repository"}]
+ });
+ assert.equal(issued.id,"urn:r427:pinned");
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].url,"http://historical.example/v1/credentials/root");
+ assert.equal(calls[0].auth,"Bearer owner-fixed-bearer");
+});
+
 test("R385.19 legacy HTTP issuer refuses missing or inexact opt-in without side effects",()=>{
  const flag=process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
  const cfg={adapterBaseUrl:"http://fixture.invalid",

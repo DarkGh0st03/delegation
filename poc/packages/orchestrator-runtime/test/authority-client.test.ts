@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {SoftwareEngineerAuthorityBootstrap}
   from "../src/authority-client.ts";
+import * as historicalHttpIssuer from "../src/authority-client.ts";
 import type {IssuedDelegationCredential}
   from "../src/index.ts";
 import * as canonicalOrchestratorApi from "../src/index.ts";
@@ -132,4 +133,38 @@ test("R173 canonical Engineer exports no legacy static root or child authority",
     SoftwareEngineerAuthorityBootstrap.prototype,false);
   assert.equal(typeof SoftwareEngineerAuthorityBootstrap.prototype.issueScopedOrchestratorRoot,
     "function");
+});
+
+// R427: no standalone HTTP issuance helper or mutable issuer configuration.
+// This is a historical fixture, NOT a public or canonical Engineer interface.
+test("R427 historical issuer exposes only class and pins original owner configuration",async()=>{
+ assert.deepEqual(Object.keys(historicalHttpIssuer).sort(),
+  ["SoftwareEngineerAuthorityBootstrap"]);
+ const requests:{url:string;token:string|null;body:unknown}[]=[];
+ const config={
+  adapterBaseUrl:"http://historical.local/",
+  bearerToken:"original-engineer-only-token",
+  fetchFn:async(input:Request|URL|string,init?:RequestInit)=>{
+   const body=JSON.parse(String(init?.body));
+   requests.push({url:String(input),
+    token:new Headers(init?.headers).get("authorization"),body});
+   return new Response(JSON.stringify(vc(body.credential_id,
+    "did:thesis:orchestrator",body.permissions)),{status:201});
+  }
+ };
+ const issuer=new SoftwareEngineerAuthorityBootstrap(config);
+ config.adapterBaseUrl="http://attacker.invalid";
+ config.bearerToken="mutated-credential";
+ config.fetchFn=async()=>{throw Error("late transport substitution");};
+ const issued=await issuer.issueScopedOrchestratorRoot({
+  credential_id:"urn:root:config-pinned",
+  valid_from:"2026-10-21T09:00:00Z",validity_seconds:600,
+  credential_status:status,
+  permissions:[{resource:"gitea://gitea.local/thesis/iam-console-poc",
+   operation:"read_repository"}]
+ });
+ assert.equal(issued.id,"urn:root:config-pinned");
+ assert.equal(requests.length,1);
+ assert.equal(requests[0].url,"http://historical.local/v1/credentials/root");
+ assert.equal(requests[0].token,"Bearer original-engineer-only-token");
 });
