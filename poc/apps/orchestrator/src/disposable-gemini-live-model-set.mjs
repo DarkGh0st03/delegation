@@ -12,7 +12,8 @@
  * billing consent. Environment predicates alone do not prove isolation.
  */
 import {Gemini} from "@google/adk";
-import {DisposablePrivateBudgetedAdkModel,PRIVATE_GEMINI_SESSION_LIMITS}
+import {DisposablePrivateBudgetedAdkModel,PRIVATE_GEMINI_SESSION_LIMITS,
+ DisposablePrivateSessionUsageBudget}
  from "./disposable-gemini-live-budgeted-model.mjs";
 import {execFileSync} from "node:child_process";
 import {dirname,resolve} from "node:path";
@@ -51,13 +52,24 @@ const PLANNING=Object.freeze({
  maxPlanningMs:180000,maxProposalRevisions:2,thinkingLevel:"LOW"
 });
 const ADAPTIVE=Object.freeze({maxSteps:25,maxVerifiedFailures:2});
+// Gemini 3.8 defaults to MEDIUM thinking. Force LOW for all original
+// specialist A2A roles to reduce uncontrolled reasoning-token expenditure.
+// Planner already pins LOW; the original Orchestrator Task proposer is
+// separately pinned to LOW in this experimental branch.
+const LOW_THINKING=Object.freeze({thinkingLevel:"LOW"});
 const WORKERS=Object.freeze({
  backend:Object.freeze({maxModelTurns:12,maxModelCallMs:60000,
-  generateContentConfig:Object.freeze({maxOutputTokens:16384})}),
+  generateContentConfig:Object.freeze({
+   maxOutputTokens:16384,thinkingConfig:LOW_THINKING
+  })}),
  frontend:Object.freeze({maxModelTurns:12,maxModelCallMs:60000,
-  generateContentConfig:Object.freeze({maxOutputTokens:16384})}),
+  generateContentConfig:Object.freeze({
+   maxOutputTokens:16384,thinkingConfig:LOW_THINKING
+  })}),
  test:Object.freeze({maxModelTurns:10,maxModelCallMs:60000,
-  generateContentConfig:Object.freeze({maxOutputTokens:12288})})
+  generateContentConfig:Object.freeze({
+   maxOutputTokens:12288,thinkingConfig:LOW_THINKING
+  })})
 });
 
 /**
@@ -134,6 +146,10 @@ function assembleVerifiedModels(privateKeyHandle,{fixtureOnly=false}={}){
  // The handle is consumed once BEFORE any SDK object is constructed.
  const privateApiKey=consumeProtectedDisposableGeminiKey(privateKeyHandle);
  if(fixtureOnly&&!OFFLINE_SYNTHETIC_KEYS.has(privateApiKey))deny();
+ // A single private-host session must not evade the cumulative ceiling by
+ // alternating between Planning, Orchestrator and the three specialists.
+ const sessionBudget=fixtureOnly?undefined:
+  new DisposablePrivateSessionUsageBudget();
  const create=phase=>{
   const model=createGeminiAdkModel({
    apiKey:privateApiKey,model:MODEL
@@ -145,7 +161,8 @@ function assembleVerifiedModels(privateKeyHandle,{fixtureOnly=false}={}){
   // and constructor-only work never contacts the Gemini provider.
   if(fixtureOnly)return model;
   return new DisposablePrivateBudgetedAdkModel({
-   delegate:model,phase,...PRIVATE_GEMINI_SESSION_LIMITS[phase]
+   delegate:model,phase,...PRIVATE_GEMINI_SESSION_LIMITS[phase],
+   sessionBudget
   });
  };
  const planner=Object.freeze({...PLANNING,model:create("planning")});

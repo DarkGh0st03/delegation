@@ -218,6 +218,14 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    name:'owner_authority_only_task_decider',
    description:'Suggest one Task; trusted Coordinator validates and owns all grants',
    model,
+   // Pinned disposable 3.8 Flash owner decisions use LOW, not the model's
+   // MEDIUM default. This does not touch the original scripted fixtures.
+   // No model can select the generation settings or increase token limits.
+   ...(this.model.model==='gemini-3.8-flash'?{
+    generateContentConfig:{
+     maxOutputTokens:12000,thinkingConfig:{thinkingLevel:'LOW'}
+    }
+   }:{}),
    instruction:[
     this.decisionKind==='adaptive'?
      'Choose the next action from verified execution progress. Return {"action":"delegate","task":TASK} or {"action":"ready_for_pr","reason":"..."} or {"action":"blocked","reason":"..."}. TASK has exactly task_id,agent_id,depends_on,permissions,instruction. Do not claim completion: the owner independently verifies current Test evidence before PR readiness.':

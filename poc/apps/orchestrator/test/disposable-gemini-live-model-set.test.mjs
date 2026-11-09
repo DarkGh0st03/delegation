@@ -111,6 +111,12 @@ test("real ADK Gemini instances bind to ORIGINAL Planner, adaptive loop and exac
  assert.equal(models.adaptive.maxSteps,25);
  assert.equal(models.adaptive.maxVerifiedFailures,2);
  assert.equal(models.workers.test.generateContentConfig.maxOutputTokens,12288);
+ for(const role of ["backend","frontend","test"]){
+  assert.equal(models.workers[role].generateContentConfig.thinkingConfig.thinkingLevel,
+   "LOW","disposable original "+role+" MUST NOT use default MEDIUM thinking");
+  assert.equal(Object.isFrozen(
+   models.workers[role].generateContentConfig.thinkingConfig),true);
+ }
  assert.throws(()=>JSON.stringify(models),/must not be serialized/u);
  assert.equal("apiKey" in describeDisposableLiveGeminiContract(),false);
 });

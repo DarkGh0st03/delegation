@@ -29,27 +29,80 @@ function usage(value){
  return {input,output,total};
 }
 
+/**
+ * One global counter shared by all FIVE models of the SAME owner session.
+ * Rejects concurrent paid requests across roles (fail-closed, not a queue),
+ * cap overruns, reuse and retries after ambiguous failures.
+ *
+ * Limits are fixed in audited source, never selected by a model, prompt,
+ * worker Task or GitHub workflow input. No monetary ceiling is guaranteed.
+ */
+const SESSION_MAX_CALLS=45;
+const SESSION_MAX_REPORTED_TOKENS=200000;
+export class DisposablePrivateSessionUsageBudget{
+ #calls=0;#tokens=0;#active;#blocked=false;
+ begin(){
+  if(this.#blocked||this.#active||
+     this.#calls>=SESSION_MAX_CALLS||
+     this.#tokens>=SESSION_MAX_REPORTED_TOKENS)
+   deny();
+  const claim=Object.freeze(Object.create(null));
+  this.#active=claim;
+  this.#calls++;
+  return claim;
+ }
+ inspect(claim,reportedTokens){
+  if(this.#blocked||this.#active!==claim||
+     !nonnegative(reportedTokens)||
+     this.#tokens+reportedTokens>
+       SESSION_MAX_REPORTED_TOKENS)deny();
+ }
+ commit(claim,reportedTokens){
+  this.inspect(claim,reportedTokens);
+  this.#tokens+=reportedTokens;
+  this.#active=undefined;
+ }
+ abandon(claim){
+  this.#blocked=true;
+  if(this.#active===claim)this.#active=undefined;
+ }
+ publicSummary(){
+  return Object.freeze({
+   calls_started:this.#calls,
+   max_calls:SESSION_MAX_CALLS,
+   reported_total_tokens:this.#tokens,
+   max_reported_tokens:
+     SESSION_MAX_REPORTED_TOKENS,
+   blocked:this.#blocked,
+   monetary_cap_enforced:false
+  });
+ }
+}
+
 /** Strict call gate; no SDK output reaches the trusted Planner/Task consumer
  * until the complete response (including last cumulative usage) is checked.
  */
 export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  #delegate;#phase;#maxCalls;#maxTokens;#maxPerCall;
  #calls=0;#reportedTotal=0;#input=0;#output=0;
- #busy=false;#blocked=false;
+ #busy=false;#blocked=false;#sessionBudget;
  constructor({
-  delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens
+  delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens,sessionBudget
  }={}){
   if(!(delegate instanceof BaseLlm)||typeof delegate.model!=="string"||
      !delegate.model||!PHASES.has(phase)||
      !positive(maxCalls,64)||!positive(maxReportedTokens,250000)||
      !positive(maxPerCallTokens,65536)||
-     maxPerCallTokens>maxReportedTokens)
+     maxPerCallTokens>maxReportedTokens||
+     (sessionBudget!==undefined&&
+      !(sessionBudget instanceof DisposablePrivateSessionUsageBudget)))
    deny();
   super({model:delegate.model});
   this.#delegate=delegate;
   this.#phase=phase;this.#maxCalls=maxCalls;
   this.#maxTokens=maxReportedTokens;
   this.#maxPerCall=maxPerCallTokens;
+  this.#sessionBudget=sessionBudget;
  }
  get phase(){return this.#phase;}
  /** Public counters NEVER include API key, prompts, source or tool calls. */
@@ -76,6 +129,14 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
   // One model instance accepts at most one in-flight request. Claim its
   // per-session call slot synchronously before any provider interaction.
   this.#busy=true;
+  let sessionClaim;
+  try{
+   sessionClaim=this.#sessionBudget?.begin();
+  }catch{
+   this.#busy=false;
+   this.#blocked=true;
+   throw Error("Disposable private Gemini request budget NO-GO");
+  }
   this.#calls++;
   const combined=AbortSignal.any([
    AbortSignal.timeout(60000),
@@ -98,6 +159,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
         next.output<last.output||next.total<last.total))deny();
      if(next.total>this.#maxPerCall||
         this.#reportedTotal+next.total>this.#maxTokens)deny();
+     if(sessionClaim)this.#sessionBudget.inspect(sessionClaim,next.total);
      last=next;
     }
     buffered.push(response);
@@ -105,6 +167,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    // No partial response (especially FunctionTool calls) may be executed
    // without a final, valid provider-reported usage entry.
    if(combined.aborted||!last)deny();
+   if(sessionClaim)this.#sessionBudget.commit(sessionClaim,last.total);
    this.#reportedTotal+=last.total;
    this.#input+=last.input;
    this.#output+=last.output;
@@ -115,7 +178,10 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    finished=true;
   }finally{
    this.#busy=false;
-   if(!finished)this.#blocked=true;
+   if(!finished){
+    this.#blocked=true;
+    if(sessionClaim)this.#sessionBudget.abandon(sessionClaim);
+   }
   }
  }
  connect(){deny();}
