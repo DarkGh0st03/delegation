@@ -103,6 +103,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs
           # Live-model assembly: construct ADK Gemini objects with a synthetic key only; NEVER issue provider calls.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-model-set.test.mjs
+          # Experimental owner-only canonical model binding: synthetic key, no provider inference.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-canonical-binding.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
           # R384.6: no legacy billed pipeline may be re-enabled.

@@ -23,6 +23,8 @@ const MODEL="gemini-3.8-flash";
 const CHARGE_CONSENT="I AUTHORIZE GEMINI API CHARGES";
 const CAP_ACK="I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
 const ROLES=Object.freeze(["backend","frontend","test"]);
+// In-process origin check: a plain object cannot impersonate a consented set.
+const ISSUED_SETS=new WeakSet();
 const deny=()=>{throw Error("Disposable live Gemini model admission NO-GO");};
 
 // These are runtime instruction/call limits, NEVER a monetary guarantee.
@@ -116,7 +118,16 @@ export function createDisposableLiveGeminiModelSet({env,checkoutSha}={}){
  Object.defineProperty(set,"toJSON",{enumerable:false,
   value:()=>{throw Error("Private Gemini model set must not be serialized");}
  });
- return Object.freeze(set);
+ const issued=Object.freeze(set);
+ ISSUED_SETS.add(issued);
+ return issued;
+}
+
+/** Strict origin check for owner-only zero-inference canonical binding. */
+export function assertIssuedDisposableLiveGeminiModelSet(candidate){
+ if(!candidate||typeof candidate!=="object"||!ISSUED_SETS.has(candidate))
+  deny();
+ return candidate;
 }
 
 /** Safe summary for CI prior to any actual provider call. */
