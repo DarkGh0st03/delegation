@@ -133,6 +133,8 @@ jobs:
           node --experimental-strip-types --test --test-name-pattern="R382.4" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
           node --test poc/scripts/test/r3822-native-mcp-checkpoint-isolation.test.mjs
           node --test poc/scripts/test/verify-r3818-native-mcp-proof.test.mjs
+          # Free-only original R385.13 same-process proof verifier; it MUST deny any Gemini-generated-source claims from scripted fixtures.
+          node --test poc/scripts/test/verify-disposable-native-e2e-proof.test.mjs
           node --check poc/packages/orchestrator-runtime/test/r330-native-two-adk-a2a-frontend-test-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r331-native-three-adk-a2a-test-docker-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r354-native-reviewed-root-branch-e2e.mjs

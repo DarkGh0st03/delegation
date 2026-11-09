@@ -271,6 +271,16 @@ jobs:
           grep -Fq '"read_only_human_gate_denied_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"source_code_generated_autonomously_by_model":false' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"paid_model_calls":0' "$RUNNER_TEMP/r38513-proof.jsonl"
+      # R385.13 same-run structured evidence gate: refuse missing/mismatched
+      # signed native, Docker, exact PR and source-origin claims. This gate
+      # explicitly declares SCRIPTED source, NEVER authentic Gemini code.
+      - name: Verify same-run native proof and prohibit fake Gemini provenance (No AI)
+        run: |
+          set -euo pipefail
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          node poc/scripts/verify-disposable-native-e2e-proof.mjs "$RUNNER_TEMP/r38513-proof.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only
