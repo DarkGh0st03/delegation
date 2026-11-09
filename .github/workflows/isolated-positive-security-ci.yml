@@ -58,6 +58,9 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts'
       - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
       - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
+      # R435: SDK endpoint, per-role IPC, and verified Agent Card roster guards.
+      - 'poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs'
+      - 'poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs'
       # R434: trusted registry-derived specialist Task and read/no-change guards.
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs'

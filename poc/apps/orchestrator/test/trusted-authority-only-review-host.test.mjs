@@ -19,7 +19,8 @@ import {createServer} from 'node:net';
 import {generateKeyPairSync,randomBytes,scryptSync,createHash} from 'node:crypto';
 import {createTrustedAuthorityOnlyReviewHost as createHost,
  startTrustedAuthorityOnlyReviewHost,
- reconcileTrustedAuthorityOnlyReviewRoots} from '../src/trusted-authority-only-review-host.mjs';
+ reconcileTrustedAuthorityOnlyReviewRoots,
+ assertTrustedSdkA2ARoster} from '../src/trusted-authority-only-review-host.mjs';
 import {TrustedOperationalRecoveryStore}
  from '../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts';
 import {startOwnerControlledEngineerReviewHost} from '../src/trusted-engineer-host.mjs';
@@ -3189,4 +3190,42 @@ for(const nativeReply of [false,true])test('R382.7 signed bootstrap '+
   }
   await host.close();
  }
+});
+
+test('R435 the exact trusted SDK roster requires per-specialist endpoints and both private channels',()=>{
+ const registry={backend:{},frontend:{},test:{}};
+ const roles=Object.keys(registry);
+ const config={
+  agentBaseUrls:Object.fromEntries(roles.map((role,i)=>[role,'http://127.0.0.1:'+(18900+i)])),
+  stageChannels:Object.fromEntries(roles.map(role=>[role,{
+   socketPath:'/tmp/r435-'+role+'-stage.sock',secretFile:'/tmp/r435-'+role+'-stage.key'
+  }])),
+  agentBindingChannels:Object.fromEntries(roles.map(role=>[role,{
+   socketPath:'/tmp/r435-'+role+'-bind.sock',secretFile:'/tmp/r435-'+role+'-bind.key'
+  }]))
+ };
+ assert.deepEqual(assertTrustedSdkA2ARoster(registry,config),roles);
+ const extended={...registry,invoice:{}};
+ for(const bad of [
+  {registry:extended,config},
+  {registry,config:{...config,agentBaseUrls:{
+   backend:config.agentBaseUrls.backend,frontend:config.agentBaseUrls.frontend}}},
+  {registry,config:{...config,stageChannels:{...config.stageChannels,
+   bogus:config.stageChannels.backend}}},
+  {registry,config:{...config,agentBindingChannels:{
+   frontend:config.agentBindingChannels.frontend,test:config.agentBindingChannels.test}}},
+  {registry,config:{...config,orchestrator:{root:'pretend'}}},
+  {registry:{orchestrator:{}},config}
+ ]){
+  assert.throws(()=>assertTrustedSdkA2ARoster(bad.registry,bad.config),
+   /Authority-only review host: /u);
+ }
+ // A complete four-role configuration passes this roster preflight,
+ // but the canonical three-role SDK still fails closed until a fourth
+ // private A2A process, card, signer and native role bind are implemented.
+ const full=Object.fromEntries(['agentBaseUrls','stageChannels','agentBindingChannels']
+  .map(key=>[key,{...config[key],invoice:config[key].backend}]));
+ assert.deepEqual(assertTrustedSdkA2ARoster(extended,full),
+  [...roles,'invoice'].sort());
+ assert.deepEqual(Object.keys(registry),roles,'preflight does not rewrite trusted pins');
 });

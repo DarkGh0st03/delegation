@@ -73,6 +73,24 @@ import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-r
 const OPS=new Set(RUST_OPERATIONS);
 const fields=(o,allowed)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).every(k=>allowed.includes(k));
 function deny(reason){throw Error('Authority-only review host: '+reason);}
+/**
+ * R435: the Owner must provision a separate endpoint, private staging
+ * channel and private Task-binding channel for EVERY trusted specialist.
+ * An unstarted role is not executable just because its DID is registered.
+ * The canonical SDK still supports only the original three role servers.
+ */
+export function assertTrustedSdkA2ARoster(registry,config){
+ if(!registry||typeof registry!=='object'||Array.isArray(registry))
+  deny('trusted SDK role registry required');
+ const roles=Object.keys(registry).filter(role=>role!=='orchestrator').sort();
+ if(!roles.length||roles.length>16||
+    !fields(config,['agentBaseUrls','stageChannels','agentBindingChannels','a2aPolling'])||
+    ['agentBaseUrls','stageChannels','agentBindingChannels'].some(key=>
+     !fields(config[key],roles)||
+     !isDeepStrictEqual(Object.keys(config[key]).sort(),roles)))
+  deny('SDK role endpoints and private channels differ from trusted specialist registry');
+ return Object.freeze(roles);
+}
 export async function createTrustedAuthorityOnlyReviewHost(options){
  if(!options||!(options.checkpoint?.store instanceof AuthorityPlanningCheckpointStore)||
   !(options.activationJournal instanceof DurableAuthorityOnlyActivationJournal)||
@@ -512,12 +530,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         taskStageFlight||!branchReadyForWorkers()||gateway.phase!=='active'||
         a2aStartAttempted||a2aStarting||a2aOwner)
       deny('A2A Owner requires independently verified branch and quiescent live root');
-     if(!fields(config,['agentBaseUrls','stageChannels','agentBindingChannels',
-       'a2aPolling'])||
-        !fields(config.agentBaseUrls,['backend','frontend','test'])||
-        !fields(config.stageChannels,['backend','frontend','test'])||
-        !fields(config.agentBindingChannels,['backend','frontend','test']))
-      deny('A2A Owner cannot accept root, transport overrides or legacy channels');
+     const configuredSpecialists=assertTrustedSdkA2ARoster(configuredAgents,config);
      a2aStartAttempted=true;
      a2aStarting=(async()=>{
       const owner=await startTrustedAuthorityOnlySdkA2AOwner({
@@ -533,6 +546,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       }
       try{
        operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       // A trusted Card that was not actually probed cannot be advertised
+       // as executable to the ADK model or accepted by the Owner.
+       if(!owner.verifiedAgentProfiles||
+          !isDeepStrictEqual(Object.keys(owner.verifiedAgentProfiles).sort(),
+           [...configuredSpecialists]))
+        deny('verified SDK Agent Card roster differs from original trusted registry');
        const profiles=structuredClone(configuredProfiles);
        for(const [role,card] of Object.entries(owner.verifiedAgentProfiles)){
         const pin=configuredAgents[role];
