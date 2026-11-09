@@ -70,7 +70,7 @@ test("R385.18 positive Security CI cannot omit canonical Rust/Child/VP reuse",()
  reject({native:base.native.replace("  workflow_dispatch:","  # workflow_dispatch retired:")},
   /canonical native E2E must be reusable/u);
  reject({native:base.native.replace("  workflow_dispatch:",
-  "  push:\\n    branches: [main]\\n  workflow_dispatch:".replaceAll("\\n","\\n"))},
+  ["  push:","    branches: [main]","  workflow_dispatch:"].join(String.fromCharCode(10)))},
   /canonical native E2E must be reusable/u);
 });
 test("R385.17 native Rust/MCP route must never fall back to HTTP Adapter",()=>{
