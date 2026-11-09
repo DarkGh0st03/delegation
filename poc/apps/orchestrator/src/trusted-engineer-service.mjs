@@ -127,7 +127,8 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
      ])||
      !allowedKeys(recovery,[
        "directory","planningDirectory","gatewaySocketPath",
-       "gatewaySecretFile","adapterBaseUrl","adapterTokenFile"
+       "gatewaySecretFile","adapterBaseUrl","adapterTokenFile",
+       "nativeEngineerSocketPath"
      ])||
      !allowedKeys(oidc.tls,[
        "caFile","certFile","keyFile","expectedClientFingerprint256"
