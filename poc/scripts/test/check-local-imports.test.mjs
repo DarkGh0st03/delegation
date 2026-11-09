@@ -314,7 +314,7 @@ test("R6 retired unsigned root bootstrap cannot be invoked through public npm sc
     "start-trusted-engineer-service.mjs"));
 });
 
-test("R178 old ADK entrypoint removed; Scenario preflight stays outside signed Planner",async()=>{
+test("R451 old ADK entrypoint and scenario preflight remain retired outside signed Planner",async()=>{
  const {readFileSync,existsSync}=await import("node:fs");
  const root=new URL("../../../",import.meta.url);
  const index=readFileSync(new URL(
@@ -325,7 +325,7 @@ test("R178 old ADK entrypoint removed; Scenario preflight stays outside signed P
  assert.equal(existsSync(new URL(
    "poc/packages/orchestrator-runtime/test/adk-orchestrator.test.ts",root)),false);
  assert.equal(existsSync(new URL(
-   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",root)),true);
+   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",root)),false);
  const planner=readFileSync(new URL(
    "poc/packages/orchestrator-runtime/src/trusted-adk-planner.ts",root),"utf8");
  assert.doesNotMatch(planner,/from\s+["'][^"']*account-suspension-preflight/u);
@@ -528,17 +528,22 @@ test("R178 private Gateway transport stays hidden from ADK and the public barrel
  assert.deepEqual(unexpectedPrivateGatewayTransportCallers(inventory),[]);
 });
 
-test("R178 remaining scenario fixture is only a focused regression, not signed Plan authorization",async()=>{
- const {readFileSync}=await import("node:fs");
- const {collectLegacyReferences,gitTrackedFiles,unexpectedHistoricalPreflightCallers}
-   =await import("../r6-legacy-references.mjs");
+test("R451 retired scenario preflight cannot regain static or configured runtime callers",async()=>{
+ const {existsSync}=await import("node:fs");
+ const {collectLegacyReferences,gitTrackedFiles,unexpectedHistoricalPreflightCallers,
+  R6_RETIRED_TARGETS}=await import("../r6-legacy-references.mjs");
  const {fileURLToPath}=await import("node:url");
  const root=fileURLToPath(new URL("../../../",import.meta.url));
+ const target="poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts";
+ assert.ok(R6_RETIRED_TARGETS.includes(target));
+ assert.equal(existsSync(new URL("../../../"+target,import.meta.url)),false);
  const audit=collectLegacyReferences(root,gitTrackedFiles(root));
  assert.deepEqual(unexpectedHistoricalPreflightCallers(audit),[]);
- const preflight=readFileSync(new URL(
-   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",new URL("../../../",import.meta.url)),"utf8");
- assert.match(preflight,/checkAccountSuspensionPreflight/u);
+ const retired=audit.candidates.find(x=>x.target===target);
+ assert.ok(retired&&!retired.exists);
+ assert.deepEqual(retired.staticImporters,[]);
+ assert.deepEqual(retired.runtimeIndirectionHints,[]);
+ assert.deepEqual(retired.configuredCallers,[]);
 });
 
 test("R178 protected human merge is never a model-exposed Orchestrator capability",async()=>{
