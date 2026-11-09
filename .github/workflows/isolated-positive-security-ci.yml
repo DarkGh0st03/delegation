@@ -91,6 +91,8 @@ on:
       - '.github/workflows/gemini-authority-only-ci-pilot.yml'
       - 'poc/apps/orchestrator/src/run-disposable-gemini-ci-pilot.mjs'
       - 'poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs'
+      - 'poc/apps/orchestrator/src/disposable-gemini-adk-model-boundary.mjs'
+      - 'poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs'
       # R434: trusted registry-derived specialist Task and read/no-change guards.
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs'
@@ -219,6 +221,7 @@ jobs:
           node --test poc/scripts/test/r463-gemini-private-host-preflight.test.mjs
           node --test poc/scripts/test/r464-gemini-private-github-readiness.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r409-owner-repair-core-migration.test.mjs
           node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs

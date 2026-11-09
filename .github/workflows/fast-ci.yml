@@ -99,6 +99,8 @@ jobs:
           node --test poc/scripts/test/r464-gemini-private-github-readiness.test.mjs
           # Phase C: a disposable scripted-only Engineer decision, actual Ed25519 signature, NEVER Gemini billing.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs
+          # Research model evidence: actual ADK BaseLlm output enters original owner adaptive loop; no provider key.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
           # R384.6: no legacy billed pipeline may be re-enabled.
