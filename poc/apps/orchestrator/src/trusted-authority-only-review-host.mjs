@@ -1380,9 +1380,22 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       // A signed one-effect read can support initial investigation or
       // recovery. Keep dispatch inside the live adaptive loop and require
       // the independent source observer in both cases.
+      // Additional specialists may perform ONLY a signed, independently
+      // observed read when the original trusted Registry AND the already
+      // verified live Agent Card both include read_file. A role name, SDK
+      // endpoint or LLM proposal alone cannot open this path.
+      const additionalRead=pin?.operation==='read_file'&&
+       !['backend','frontend','test','orchestrator'].includes(pin.agent_id)&&
+       Object.hasOwn(configuredAgents,pin.agent_id)&&
+       configuredAgents[pin.agent_id]?.capabilities.includes('read_file')&&
+       verifiedProfiles&&Object.hasOwn(verifiedProfiles,pin.agent_id)&&
+       verifiedProfiles[pin.agent_id]?.capabilities.includes('read_file')&&
+       operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).agent_did===
+        configuredAgents[pin.agent_id].did;
       const diagnosticRead=pin?.operation==='read_file'&&
        adaptiveLoopFlight&&
        (['backend','frontend'].includes(pin.agent_id)||
+        additionalRead||
         (pin.agent_id==='test'&&isProjectTestReadGrant(
          operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions,
           projectTestSourceProfile)))&&
