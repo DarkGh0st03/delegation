@@ -1383,13 +1383,17 @@ mod tests {
         // Revocation of an already issued fourth-specialist Child invalidates
         // the SAME previously verified signed VP. Only the Orchestrator
         // issuer manages this Child status, not the specialist or Backend.
-        assert!(runtime.update_credential_status(
-            signer,
-            UpdateCredentialStatusRequest {
-                credential_id: String::from("urn:credential:reviewer"),
-                status_set: true,
-            },
-        ).is_err());
+        assert!(
+            runtime
+                .update_credential_status(
+                    signer,
+                    UpdateCredentialStatusRequest {
+                        credential_id: String::from("urn:credential:reviewer"),
+                        status_set: true,
+                    },
+                )
+                .is_err()
+        );
         let revoked = runtime.update_credential_status(
             orchestrator,
             UpdateCredentialStatusRequest {
@@ -1398,17 +1402,21 @@ mod tests {
             },
         )?;
         assert!(revoked.status_set);
-        assert!(runtime.verify_presentation(
-            gateway,
-            &registry,
-            VerifyPresentationRequest {
-                presenter: role,
-                audience: String::from("cloud-access-gateway"),
-                challenge: String::from("r456-unique-gateway-challenge"),
-                required_permission: permission(Operation::ReadFile),
-                signed_vp: presenter.signed_vp,
-            },
-        ).is_err());
+        assert!(
+            runtime
+                .verify_presentation(
+                    gateway,
+                    &registry,
+                    VerifyPresentationRequest {
+                        presenter: role,
+                        audience: String::from("cloud-access-gateway"),
+                        challenge: String::from("r456-unique-gateway-challenge"),
+                        required_permission: permission(Operation::ReadFile),
+                        signed_vp: presenter.signed_vp,
+                    },
+                )
+                .is_err()
+        );
         Ok(())
     }
 
