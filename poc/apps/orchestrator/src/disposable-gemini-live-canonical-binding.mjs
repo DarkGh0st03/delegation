@@ -7,7 +7,8 @@
  * effects, signed Engineer review, immutable authority and private secrets
  * separately. The returned objects are host-only; do not serialize them.
  */
-import {assertIssuedDisposableLiveGeminiModelSet}
+import {assertIssuedDisposableLiveGeminiModelSet,
+ claimIssuedDisposableLiveGeminiModelSet}
  from "./disposable-gemini-live-model-set.mjs";
 
 const ROLES=Object.freeze(["backend","frontend","test"]);
@@ -139,5 +140,9 @@ export function bindDisposableLiveGeminiCanonicalInputs({
   ...operational,workflow,
   localWorkers:Object.freeze({...operational.localWorkers,workers})
  });
+ // Claim only AFTER the entire original-host configuration validates.
+ // One OIDC-admitted set may bind only ONE owner session; no model reuse
+ // as a second parallel Root/Planning launch with the same admission.
+ claimIssuedDisposableLiveGeminiModelSet(models);
  return Object.freeze({authority:nextAuthority,operational:nextOperational});
 }

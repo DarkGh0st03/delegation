@@ -246,6 +246,18 @@ export function assertIssuedDisposableLiveGeminiModelSet(candidate){
  return candidate;
 }
 
+/**
+ * In-process, one-shot claim for the original trusted Review Host.
+ * The OIDC receipt has already been consumed, but a retained model-set
+ * object must NOT bind another original owner session in this process.
+ * This is a defense-in-depth lifecycle fence, not process isolation.
+ */
+export function claimIssuedDisposableLiveGeminiModelSet(candidate){
+ assertIssuedDisposableLiveGeminiModelSet(candidate);
+ if(!ISSUED_SETS.delete(candidate))deny();
+ return candidate;
+}
+
 /** Safe summary for CI prior to any actual provider call. */
 export function describeDisposableLiveGeminiContract(){
  return Object.freeze({

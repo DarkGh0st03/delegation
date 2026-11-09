@@ -122,6 +122,13 @@ test("native rootGateway is bound without caller-owned provider callbacks",async
  delete f.operational.workflow.draftPullRequest.execute;
  const native={audit:{},verifier:{},policy:{},executor:{}};
  f.operational.rootGateway=native;
+ // An invalid native callback must be rejected BEFORE claiming the set,
+ // so this test actually checks the rootGateway bypass rather than replay.
+ f.operational.workflow.createBranch.prepare=noop;
+ assert.throws(()=>bindDisposableLiveGeminiCanonicalInputs({
+  ...f,models:set
+ }),/NO-GO/u);
+ delete f.operational.workflow.createBranch.prepare;
  const bound=bindDisposableLiveGeminiCanonicalInputs({...f,models:set});
  assert.equal(bound.operational.rootGateway,native);
  assert.equal(bound.operational.nativeEffects,f.operational.nativeEffects);
@@ -129,9 +136,7 @@ test("native rootGateway is bound without caller-owned provider callbacks",async
  assert.equal(bound.operational.workflow.draftPullRequest.model,set.adaptive.model);
  assert.equal("prepare" in bound.operational.workflow.createBranch,false);
  assert.equal("execute" in bound.operational.workflow.draftPullRequest,false);
- // A native Gateway transport and caller-defined prepare/execute must
- // NEVER coexist: the latter could bypass the original Rust/OPA bridge.
- f.operational.workflow.createBranch.prepare=noop;
+ // The model set has now been claimed and cannot launch another owner.
  assert.throws(()=>bindDisposableLiveGeminiCanonicalInputs({
   ...f,models:set
  }),/NO-GO/u);
@@ -174,4 +179,30 @@ test("fail closed on model override, extra role, legacy bypass and source mismat
    /NO-GO/u
   );
  }
+});
+
+
+test("one originally admitted model set cannot be bound to a second Engineer Host session",async t=>{
+ const set=await models(t);
+ const first=fixture(),second=fixture();
+ const initial=bindDisposableLiveGeminiCanonicalInputs({
+  ...first,models:set
+ });
+ assert.equal(initial.authority.planner.model,set.planner.model);
+ assert.throws(()=>bindDisposableLiveGeminiCanonicalInputs({
+  ...second,models:set
+ }),/NO-GO/u);
+ // No fourth agent or alternative signer is added by the one-use rule.
+ assert.deepEqual(Object.keys(initial.operational.localWorkers.workers).sort(),
+  ["backend","frontend","test"]);
+});
+
+test("invalid original-host configuration is rejected without consuming a valid set",async t=>{
+ const set=await models(t),f=fixture();
+ f.operational.localWorkers.workers.backend.port=9112;
+ assert.throws(()=>bindDisposableLiveGeminiCanonicalInputs({...f,models:set}),
+  /NO-GO/u);
+ f.operational.localWorkers.workers.backend.port=9111;
+ const approved=bindDisposableLiveGeminiCanonicalInputs({...f,models:set});
+ assert.equal(approved.authority.planner.model,set.planner.model);
 });
