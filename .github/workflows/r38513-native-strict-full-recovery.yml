@@ -251,6 +251,12 @@ jobs:
           grep -Fq '"strict_postfail_diagnostic_read_count":10' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"individually_signed_repair_tasks":10' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"original_owner_adaptive_decisions":25' "$RUNNER_TEMP/r38513-proof.jsonl"
+          # Both scripted model streams must be the ones consumed by the
+          # SAME native Review Host (not two separately green jobs).
+          grep -Fq '"scripted_adk_planning_calls_in_native_host":2' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"scripted_adk_adaptive_calls_in_native_host":25' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"observed_model_source":"scripted-offline"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"model_generated_source_proven":false' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"native_child_count":24' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"first_docker_status":"fail"' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"second_docker_status":"pass"' "$RUNNER_TEMP/r38513-proof.jsonl"

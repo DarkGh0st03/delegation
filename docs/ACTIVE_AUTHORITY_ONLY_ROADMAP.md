@@ -1,5 +1,8 @@
 # Delegation — roadmap operativa (authority-only)
 
+**Allineamento preflight Ed25519 della CI al perimetro R385.13 (9 novembre 2026).** La fixture indipendente di ammissione usa gli stessi 23 permessi della prova nativa (10 file, inclusi `packages/shared/src/account-status.ts` e `apps/frontend/src/styles.css`, più create_branch, create_pull_request e run_tests) e lo stesso requisito descrittivo. Il preflight mantiene una propria sessione e una propria firma: **non è** il receipt consumato dal Review Host del job nativo. Per la prova R385.13 lo script CI verifica esplicitamente due turni scripted del Planning e 25 decisioni scripted dell'Execution, correlati agli effettivi risultati Rust/Gateway/Gitea/Docker/Draft PR. Nessun modello Gemini o codice autonomamente generato viene attestato.
+
+
 **Hardening del boundary ADK sperimentale (9 novembre 2026, CI da verificare):** le risposte in streaming sono conservate solo in memoria con limite 128 chunk / 1 MB e non vengono inoltrate al Planner/Execution Loop finché l'intera chiamata, le risposte di errore e gli ultimi token cumulativi comunicati dal provider non siano stati verificati. Sforamento, interruzione o ambiguità sul provider reale sono fail-closed; nessun Task parziale può raggiungere ADK tramite questo wrapper. I token registrati restano solo dati di consumo *dichiarati*, non un blocco preventivo della fatturazione. Il profilo sperimentale non chiama Gemini.
 
 

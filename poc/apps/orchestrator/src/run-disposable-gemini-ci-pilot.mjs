@@ -26,7 +26,7 @@ const REPOSITORY=Object.freeze({
 const SOURCE_REPO="DarkGh0st03/delegation";
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
 const WF=".github/workflows/gemini-authority-only-ci-pilot.yml";
-const REQ="Account Suspension in the disposable IAM Console";
+const REQ="R375 original protected-main Account Suspension signed functional integration proof";
 const BRANCH="feature/account-suspension";
 const BASE="gitea://gitea.local/thesis/iam-console-poc";
 const FEATURE=BASE+"/branches/feature%2Faccount-suspension";
@@ -36,8 +36,10 @@ const PATHS=Object.freeze([
  "apps/backend/src/users/user.service.ts",
  "apps/backend/src/users/user.controller.ts",
  "apps/backend/src/users/user.routes.ts",
+ "packages/shared/src/account-status.ts",
  "apps/frontend/src/api/users-api.ts",
  "apps/frontend/src/pages/UserDetailPage.tsx",
+ "apps/frontend/src/styles.css",
  "tests/backend/user.service.test.ts",
  "tests/backend/user.routes.test.ts",
  "tests/frontend/UserDetailPage.test.tsx"

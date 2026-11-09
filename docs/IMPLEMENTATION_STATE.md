@@ -1,5 +1,8 @@
 # Delegation — implementation state (authority-only)
 
+**Standalone disposable Engineer grant alignment and explicit native witness:** The independent CI approval fixture covers the same **23** exact permission pairs and requirement text as the original R375/R385.13 native Engineer, including the two previously missing shared and frontend-style paths. Sessions and signed receipts remain **distinct**: the standalone signer still does not authorize native Root issuance. The reusable native workflow now checks its 2 scripted ADK Planning turns and 25 scripted adaptive decisions in the same process as the real Rust/Gateway/Gitea/Docker FAIL-to-PASS/Draft PR witness. No Gemini invocation, real human approval, or autonomous model-authored source is implied.
+
+
 **Experimental ADK response gate hardening (new SHA, CI pending):** The research-only model wrapper buffers at most 128 responses / 1 MB *in memory*, withholding all ADK responses until the provider stream is complete and any reported cumulative usage is validated. Errors, over-budget usage, truncation and interrupted delivery fail closed before downstream tools/decisions receive partial model output. Token metadata is only post-hoc provider accounting, not a pre-charge spending cap. No new provider route is enabled.
 
 

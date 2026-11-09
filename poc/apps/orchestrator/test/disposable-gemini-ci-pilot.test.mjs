@@ -13,7 +13,7 @@ test("disposable scripted Engineer uses genuine signed/verified Ed25519 and exac
  assert.equal(proof.engineer_review,"SIMULATED_NOT_HUMAN");
  assert.equal(proof.signed_authority_verified,true);
  assert.match(proof.authority_digest,/^[a-f0-9]{64}$/u);
- assert.equal(proof.permission_count,19);
+ assert.equal(proof.permission_count,23);
  assert.deepEqual(proof.canonical_specialists,["backend","frontend","test"]);
  assert.equal(proof.native_rust_roots_in_this_step,0);
  assert.equal(proof.child_credentials_in_this_step,0);
@@ -24,6 +24,27 @@ test("disposable scripted Engineer uses genuine signed/verified Ed25519 and exac
  for(const needle of ["BEGIN PRIVATE KEY","BEGIN PUBLIC KEY",
   "signature","geminiApiKey","signed_vp"])
   assert.equal(JSON.stringify(proof).includes(needle),false,needle);
+});
+
+test("standalone grant covers all ten original R375 native source files without widening roles",()=>{
+ const proposal=scriptedResearchProposal();
+ assert.equal(proposal.requirement,
+  "R375 original protected-main Account Suspension signed functional integration proof");
+ assert.equal(proposal.requested_permissions.length,23);
+ const files=proposal.requested_permissions.filter(p=>
+  p.operation==="read_file").map(p=>p.resource.split("/files/")[1]);
+ assert.equal(files.length,10);
+ assert.equal(new Set(files).size,10);
+ for(const path of [
+  "packages/shared/src/account-status.ts",
+  "apps/frontend/src/styles.css",
+  "apps/backend/src/users/user.service.ts",
+  "tests/frontend/UserDetailPage.test.tsx"
+ ])assert.ok(files.includes(path),path);
+ assert.deepEqual(proposal.requested_permissions.filter(p=>p.operation==="run_tests")
+  .map(p=>p.resource),[
+   "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension"
+  ]);
 });
 
 test("CI Engineer simulation refuses every permission ceiling expansion",()=>{
