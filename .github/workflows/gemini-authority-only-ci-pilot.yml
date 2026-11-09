@@ -47,6 +47,8 @@ jobs:
           test -z "${DELEGATION_SIGNED_GEMINI_PILOT:-}"
           node --check poc/apps/orchestrator/src/run-disposable-gemini-ci-pilot.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs
+          node --check poc/apps/orchestrator/src/disposable-gemini-adk-model-boundary.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs
       - name: Simulate bounded Engineer decision, sign and verify real Ed25519
         run: node --experimental-strip-types poc/apps/orchestrator/src/run-disposable-gemini-ci-pilot.mjs
 
@@ -79,6 +81,8 @@ jobs:
             echo "- Separate native 3-specialist E2E (Rust/OPA/Gitea/Docker/PR): PASS"
             echo "- Native R385.13 internally binds its OWN simulated signed Engineer approval to native Root issuance: PASS"
             echo "- First-job Ed25519 receipt forwarded to the native job: NO (separate fixture)"
+            echo "- Original ADK adaptive model substitution and offline call-meter tests: PASS"
+            echo "- ADK Gemini provider was NOT instantiated or called in this workflow"
             echo "- Real Gemini Planning and Execution: NOT EXECUTED"
             echo "- R5 private human/runner identity: NOT PROVEN"
             echo "- Billing and GitHub merge: NONE"
