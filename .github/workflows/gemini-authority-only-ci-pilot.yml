@@ -2,7 +2,8 @@
 # This workflow performs NO Gemini inference and does NOT automate R5 review.
 # The test signs a TEMPORARY Engineer decision with real Ed25519 and then
 # reuses the independent 3-agent native Rust/EVM/OPA/Gitea/Docker/PR E2E.
-# THESE ARE TWO SEPARATE PROOFS, NOT A UNIFIED GENERATIVE PILOT.
+# Standalone signed-decision preflight is separate; R385.13 already has its
+# OWN signed Engineer receipt consumed by the native Root path. No generative model.
 name: Gemini Authority-Only Experimental CI Pilot (Scripted, No AI)
 on:
   workflow_dispatch:
@@ -76,7 +77,8 @@ jobs:
             echo "# Disposable authority-only CI pilot: scripted phase C"
             echo "- Simulated Engineer decision with verified ephemeral Ed25519: PASS"
             echo "- Separate native 3-specialist E2E (Rust/OPA/Gitea/Docker/PR): PASS"
-            echo "- Unified simulated Engineer -> native Root authorization: NOT YET CONNECTED"
+            echo "- Native R385.13 internally binds its OWN simulated signed Engineer approval to native Root issuance: PASS"
+            echo "- First-job Ed25519 receipt forwarded to the native job: NO (separate fixture)"
             echo "- Real Gemini Planning and Execution: NOT EXECUTED"
             echo "- R5 private human/runner identity: NOT PROVEN"
             echo "- Billing and GitHub merge: NONE"
