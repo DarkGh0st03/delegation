@@ -7,6 +7,7 @@ import {runInNewContext} from "node:vm";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {createServer} from "node:http";
+import {createServer as createUnixServer} from "node:net";
 import {createTrustedPlanIpcServer}
   from "../../gateway/src/trusted-plan-ipc.ts";
 import {TrustedPlanningRevisions}
@@ -431,8 +432,18 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
 });
 
 
-test("strict Engineer bootstrap completes real private IPC + Adapter recovery before listeners and forbids reused sessions",async t=>{
-  enableHistoricalEngineerHttpForFixture(t);
+test("R428 strict Engineer cold recovery uses native Core socket before listeners and forbids reused sessions",async t=>{
+  const nativeKeys=["DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE",
+    "ENGINEER_CORE_NATIVE_MODE","ADAPTER_ENGINEER_NATIVE_SOCKET",
+    "APPROVED_RUNNER_NATIVE_MCP","DELEGATION_GATEWAY_ARCHITECTURE"];
+  const before=Object.fromEntries(nativeKeys.map(key=>[key,process.env[key]]));
+  for(const key of nativeKeys)delete process.env[key];
+  t.after(()=>{
+    for(const key of nativeKeys){
+      if(before[key]===undefined)delete process.env[key];
+      else process.env[key]=before[key];
+    }
+  });
   const f=await fixture(t);
   const home=await mkdtemp(join(tmpdir(),"engineer-real-bootstrap-"));
   t.after(()=>rm(home,{recursive:true,force:true}));
@@ -472,28 +483,40 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   });
   await ipc.start();
   t.after(()=>ipc.close());
-  let shouldFail=true,adapterCalls=0;
-  const adapter=createServer(async(req,res)=>{
+  let shouldFail=true,nativeCalls=0;
+  const unexpectedNativeMessages=[];
+  const issuerSocketPath=join(ipcDir,"engineer-core.sock");
+  const nativeIssuer=createUnixServer({allowHalfOpen:true},socket=>{
     const chunks=[];
-    for await(const chunk of req)chunks.push(chunk);
-    const request=JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    assert.equal(req.url,"/v1/credentials/status");
-    assert.equal(req.method,"POST");
-    assert.equal(req.headers.authorization,"Bearer offline-adapter-token");
-    assert.deepEqual(request,{credential_id:rootId,status_set:true});
-    adapterCalls++;
-    res.setHeader("content-type","application/json");
-    if(shouldFail){
-      res.writeHead(503).end(JSON.stringify({error:"revocation-unconfirmed"}));
-      return;
-    }
-    res.writeHead(200).end(JSON.stringify({
-      credential_id:rootId,status_purpose:"revocation",status_set:true
-    }));
+    socket.on("data",part=>chunks.push(part));
+    socket.once("end",()=>{
+      let message;
+      try{message=JSON.parse(Buffer.concat(chunks).toString("utf8"));}
+      catch{socket.end(JSON.stringify({ok:false}));return;}
+      nativeCalls++;
+      if(message.token!=="offline-adapter-token"||
+         message.operation!=="revoke_root"||
+         message.body?.credential_id!==rootId||
+         message.body?.status_set!==true){
+        unexpectedNativeMessages.push(message);
+        socket.end(JSON.stringify({ok:false}));
+        return;
+      }
+      socket.end(JSON.stringify(shouldFail
+        ?{ok:false,error:"revocation-unconfirmed"}
+        :{ok:true,result:{
+          credential_id:rootId,status_purpose:"revocation",status_set:true
+        }}));
+    });
   });
-  await new Promise(resolve=>adapter.listen(0,"127.0.0.1",resolve));
-  t.after(()=>new Promise(resolve=>adapter.close(resolve)));
-  const adapterBaseUrl="http://127.0.0.1:"+adapter.address().port;
+  await new Promise((resolve,reject)=>{
+    nativeIssuer.once("error",reject);
+    nativeIssuer.listen(issuerSocketPath,()=>{
+      nativeIssuer.removeListener("error",reject);resolve();
+    });
+  });
+  t.after(()=>new Promise((resolve,reject)=>
+    nativeIssuer.close(error=>error?reject(error):resolve())));
   const {startTrustedEngineerRecoveringHost}=await import(
     "../src/trusted-engineer-host.mjs");
   const {serverTls}=await disposableMtls(join(home,"mtls"));
@@ -502,7 +525,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     recovery:{
       directory:recoveryDir,planningDirectory:planningDir,
       gatewaySocketPath:socketPath,
-      gatewaySecretFile:secretFile,adapterBaseUrl,
+      gatewaySecretFile:secretFile,
       adapterToken:"offline-adapter-token"
     }
   };
@@ -590,17 +613,15 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   advertisedOperationalDurability=false;
   await assert.rejects(startTrustedEngineerRecoveringHost(operationalConfig),
     /persist operational session fences across restarts/);
-  assert.equal(adapterCalls,0);
+  assert.equal(nativeCalls,0);
   assert.equal((await journal.pending()).length,1);
   advertisedOperationalDurability=true;
-  // R416: a native/authority-only cold recovery must not require an
-  // historical Adapter HTTP URL, even if the old fixture was opted into.
-  // Native Engineered Root issuance MUST still fail without a Rust socket;
-  // no journal or HTTP credential side effect is permitted.
-  const {adapterBaseUrl:unusedHistoricalUrl,...withoutHttp}=operationalConfig.recovery;
+  // A cold recovery without Rust socket fails closed regardless of
+  // historical HTTP opt-in. A missing URL is not an authority downgrade.
+  const withoutHttp=operationalConfig.recovery;
   await assert.rejects(startTrustedEngineerRecoveringHost({
     ...operationalConfig,recovery:withoutHttp
-  }),/complete trusted recovery IPC and Engineer credential configuration required/);
+  }),/Canonical Engineer root requires native Rust issuer socket/u);
   const nativeEnvKeys=["DELEGATION_GATEWAY_ARCHITECTURE",
     "ENGINEER_CORE_NATIVE_MODE","ADAPTER_ENGINEER_NATIVE_SOCKET",
     "APPROVED_RUNNER_NATIVE_MCP","DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE"];
@@ -611,8 +632,14 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     await assert.rejects(startTrustedEngineerRecoveringHost({
       ...operationalConfig,recovery:withoutHttp
     }),/Canonical Engineer root requires native Rust issuer socket/);
-    assert.equal(adapterCalls,0);
+    assert.equal(nativeCalls,0);
     assert.equal((await journal.pending()).length,1);
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE="legacy-signed-dag";
+    process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
+    await assert.rejects(startTrustedEngineerRecoveringHost({
+      ...operationalConfig,recovery:withoutHttp
+    }),/Canonical Engineer root requires native Rust issuer socket/u);
+    assert.equal(nativeCalls,0);
   }finally{
     for(const key of nativeEnvKeys){
       if(nativeBefore[key]===undefined)delete process.env[key];
@@ -624,16 +651,18 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   await assert.rejects(startTrustedEngineerRecoveringHost({
     ...config,oidc:{...config.oidc,tls:undefined}
   }),/requires pinned mutual TLS/);
-  assert.equal(adapterCalls,0);
+  assert.equal(nativeCalls,0);
   // A direct in-process recovering bootstrap cannot bypass the verified
   // Planning checkpoint that the strict file loader already requires.
   await assert.rejects(startTrustedEngineerRecoveringHost(config),
     /requires verified backend-signed Planning checkpoint/);
-  assert.equal(adapterCalls,0);
-  // Boot is rejected while the real Adapter cannot confirm revocation.
+  assert.equal(nativeCalls,0);
+  // Boot is rejected while native Rust revocation remains unconfirmed.
+  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=issuerSocketPath;
+  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
   await assert.rejects(startConfiguredTrustedEngineerService(ownerConfigFile),
     /manual reconciliation required/);
-  assert.equal(adapterCalls,1);
+  assert.equal(nativeCalls,1);
   assert.deepEqual(retired,[oldSession]);
   assert.equal((await journal.pending()).length,1);
   // Retrying the *same* cold boot after Adapter recovery is allowed. No
@@ -641,7 +670,9 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   shouldFail=false;
   const host=await startConfiguredTrustedEngineerService(ownerConfigFile);
   t.after(()=>host.close());
-  assert.equal(adapterCalls,2);
+  assert.equal(nativeCalls,2);
+  assert.deepEqual(unexpectedNativeMessages,[],
+    "Cold recovery must issue only trusted native revoke requests");
   assert.deepEqual(retired,[oldSession,oldSession]);
   await journal.assertClean();
   assert.equal(host.operationalRecoveryStore instanceof
@@ -659,7 +690,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   // cannot be used for a later trusted Coordinator session.
   await assert.rejects(journal.assertFreshSession(oldSession),
     /reconciled session cannot be reused/);
-  assert.equal(adapterCalls,2);
+  assert.equal(nativeCalls,2);
   assert.throws(()=>host.startReviewedHandoff({runId}),
     /trusted Coordinator recovery journal required/);
   await host.close();

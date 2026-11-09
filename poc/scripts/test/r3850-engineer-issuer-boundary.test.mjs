@@ -52,39 +52,31 @@ test("R415 canonical selector is native-only and has no legacy HTTP fallback",()
  assert.match(direct,/loadDirectRustEngineerCore\(/u);
 });
 
-test("R415.1 cold recovery chooses HTTP only as separately gated historical fixture",()=>{
+test("R428 cold recovery calls only canonical native Rust Engineer, no historical HTTP opt-in",()=>{
  const host=read("poc/apps/orchestrator/src/trusted-engineer-host.mjs");
- const start=host.indexOf("const historicalFixture=");
- const end=host.indexOf("const credentials=historicalFixture",start);
- assert.ok(start>0&&end>start,"missing explicit fixture-only choice");
- const guard=host.slice(start,end);
- for(const condition of [
-  'DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE==="1"',
-  'ENGINEER_CORE_NATIVE_MODE===undefined',
-  'ADAPTER_ENGINEER_NATIVE_SOCKET===undefined',
-  'APPROVED_RUNNER_NATIVE_MCP===undefined',
-  'DELEGATION_GATEWAY_ARCHITECTURE===undefined'
- ])assert.ok(guard.includes(condition),"historical recovery guard missing "+condition);
- const select=host.slice(end,end+650);
- assert.match(select,/\?\(await import\(".*trusted-engineer-legacy-mcp-http-port\.ts"\)\)/u);
- assert.match(select,/\.createLegacyOwnerPrivateMcpEngineerCredentialPort\(/u);
- assert.match(select,/:createTrustedEngineerCredentialPort\(\{bearerToken:recovery\.adapterToken\}\)/u);
- assert.doesNotMatch(host,/from "\.\.\/\.\.\/\.\.\/packages\/orchestrator-runtime\/src\/authority-client\.ts"/u);
+ const start=host.indexOf("async function strictRecoveringHost(config){");
+ const end=host.indexOf("export async function startTrustedEngineerRecoveringHost(config){",start);
+ assert.ok(start>=0&&end>start,"strict recovering boundary missing");
+ const recovery=host.slice(start,end);
+ assert.match(recovery,/const credentials=createTrustedEngineerCredentialPort\(\{/u);
+ assert.match(recovery,/bearerToken:recovery\.adapterToken/u);
+ assert.doesNotMatch(recovery,/historicalFixture|DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE|createLegacyOwnerPrivateMcpEngineerCredentialPort|authority-client\.ts|trusted-engineer-legacy-mcp-http-port\.ts/u);
+ assert.doesNotMatch(recovery,/new URL\(recovery\.adapterBaseUrl\)/u);
 });
 
-test("R416 native cold recovery does not require historical HTTP Adapter URL",()=>{
+test("R428 native cold recovery ignores historical HTTP URL and rejects fallback",()=>{
  const host=read("poc/apps/orchestrator/src/trusted-engineer-host.mjs");
  const service=read("poc/apps/orchestrator/src/trusted-engineer-service.mjs");
- assert.match(host,/\(historicalFixture&&typeof recovery\.adapterBaseUrl!=="string"\)/u);
- assert.match(host,/if\(historicalFixture\)\{[\s\S]*?new URL\(recovery\.adapterBaseUrl\)/u);
+ const start=host.indexOf("async function strictRecoveringHost(config){");
+ const end=host.indexOf("export async function startTrustedEngineerRecoveringHost(config){",start);
+ const recovering=host.slice(start,end);
+ assert.ok(start>=0&&end>start);
+ assert.match(recovering,/createTrustedEngineerCredentialPort\(\{/u);
+ assert.doesNotMatch(recovering,/adapterBaseUrl|historicalFixture/u,
+  "operator recovery cannot select a second HTTP issuer");
+ // Historical config loading may accept an optional URL for old files,
+ // but it must never select the actual operational credential authority.
  assert.match(service,/\(recovery\.adapterBaseUrl!==undefined&&\s*typeof recovery\.adapterBaseUrl!=="string"\)/u);
- const start=host.indexOf("const historicalFixture=");
- const check=host.indexOf("if(historicalFixture){",start);
- const credentials=host.indexOf("const credentials=historicalFixture",check);
- assert.ok(start>=0&&check>start&&credentials>check,
-  "fixture scope must be decided before HTTP validation and root issuer construction");
- const native=host.slice(credentials,credentials+650);
- assert.match(native,/:createTrustedEngineerCredentialPort\(\{bearerToken:recovery\.adapterToken\}\)/u);
 });
 
 test("R418 historical EVM scripts do not eagerly load the old HTTP root issuer",()=>{

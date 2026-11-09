@@ -51,8 +51,10 @@ test("R414 canonical Engineer selector is type-decoupled from HTTP transport",()
  assert.doesNotMatch(src,/trusted-engineer-legacy-mcp-http-port|createOwnerPrivateMcpEngineerCredentialPort|assertLegacyEngineerHttpFixtureAllowed/u,
   "Canonical selector must not even reference historical HTTP fixture");
  const host=readFileSync(resolve(root,"poc/apps/orchestrator/src/trusted-engineer-host.mjs"),"utf8");
- assert.match(host,/\?\(await import\(".*trusted-engineer-legacy-mcp-http-port\.ts"\)\)/u,
-  "Only the explicitly gated historical Engineer host may lazy-load legacy issuance");
+ assert.doesNotMatch(host,/import\(".*trusted-engineer-legacy-mcp-http-port\.ts"\)/u,
+  "Operational Engineer host must not load historical HTTP issuance");
+ assert.match(host,/const credentials=createTrustedEngineerCredentialPort\(\{/u,
+  "Cold recovery must select the canonical Rust-only port");
  assert.doesNotMatch(src,/assertLegacyEngineerHttpFixtureAllowed/u,
   "Native Engineer selector must remain independent of historical HTTP gating");
  assert.match(source(),/assertLegacyEngineerHttpFixtureAllowed\(\);/u,

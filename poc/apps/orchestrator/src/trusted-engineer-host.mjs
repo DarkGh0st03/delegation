@@ -775,35 +775,17 @@ async function strictRecoveringHost(config){
      JSON.stringify(verified.snapshot.repository)!==
        JSON.stringify(config.approval.repository))
     deny("backend-signed Planning checkpoint differs from pinned Engineer session");
-  // R416: select the historical fixture before deciding which recovery
-  // fields are mandatory; a native Engineer must not depend on an Adapter URL.
-  // No delegated Task/Agent/model data can opt into the old HTTP issuer.
-  const historicalFixture=
-    process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE==="1"&&
-    process.env.ENGINEER_CORE_NATIVE_MODE===undefined&&
-    process.env.ADAPTER_ENGINEER_NATIVE_SOCKET===undefined&&
-    process.env.APPROVED_RUNNER_NATIVE_MCP===undefined&&
-    (process.env.DELEGATION_GATEWAY_ARCHITECTURE===undefined||
-     process.env.DELEGATION_GATEWAY_ARCHITECTURE==="legacy-signed-dag");
+  // R428: cold recovery is an operational Engineer entrypoint and MUST
+  // use the canonical Rust issuer, regardless of historical fixture opt-in.
+  // The old HTTP Adapter is retained only for isolated non-host EVM tests.
   const recovery=config?.recovery;
   if(!recovery||typeof recovery.directory!=="string"||
      typeof recovery.planningDirectory!=="string"||
      recovery.planningDirectory===recovery.directory||
      typeof recovery.gatewaySocketPath!=="string"||
      typeof recovery.gatewaySecretFile!=="string"||
-     typeof recovery.adapterToken!=="string"||!recovery.adapterToken.trim()||
-     (historicalFixture&&typeof recovery.adapterBaseUrl!=="string"))
+     typeof recovery.adapterToken!=="string"||!recovery.adapterToken.trim())
     deny("complete trusted recovery IPC and Engineer credential configuration required");
-  if(historicalFixture){
-    let adapterUrl;
-    try{adapterUrl=new URL(recovery.adapterBaseUrl);}
-    catch{deny("invalid trusted Adapter URL");}
-    if(!((adapterUrl.protocol==="https:"&&!adapterUrl.username&&!adapterUrl.password)||
-         (adapterUrl.protocol==="http:"&&
-          adapterUrl.hostname==="127.0.0.1"&&
-          !adapterUrl.username&&!adapterUrl.password)))
-      deny("Adapter must use HTTPS or loopback HTTP");
-  }
   await privateDirectory(recovery.planningDirectory);
   const gateway=await TrustedPlanIpcClient.connect({
     socketPath:recovery.gatewaySocketPath,
@@ -817,14 +799,11 @@ async function strictRecoveringHost(config){
     deny("private Gateway must expose actual Planning registry retirement");
   if(!gateway.planningRetirementDurableConfigured())
     deny("private Gateway must persist Planning retirement across restarts");
-  // The historical HTTP fixture requires explicit consent and HTTP URL.
-  // All other profiles use the Rust-native-only canonical selector.
-  const credentials=historicalFixture
-    ?(await import("../../../packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts"))
-      .createLegacyOwnerPrivateMcpEngineerCredentialPort({
-        adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
-      })
-    :createTrustedEngineerCredentialPort({bearerToken:recovery.adapterToken});
+  // No HTTP fallback: a missing/invalid native Rust issuer fails closed,
+  // even when an operator sets an obsolete historical fixture flag.
+  const credentials=createTrustedEngineerCredentialPort({
+    bearerToken:recovery.adapterToken
+  });
   return startTrustedEngineerLocalHost({
     ...config,recovery:{
       directory:recovery.directory,gateway,credentials,
