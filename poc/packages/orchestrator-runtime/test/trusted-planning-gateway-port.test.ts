@@ -1888,11 +1888,12 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
     const positiveHome=await mkdtemp(join(tmpdir(),"r49-live-review-"));
     const positiveDecisionDir=await mkdtemp(join(tmpdir(),"r49-disposition-"));
     let positiveHost:any,privateIpc:any;
-    // R385.19: ONLY this historical offline R49 Engineer UI fixture
-    // opts into its legacy HTTP issuer. Production/default and native
-    // authority-only code must not inherit this permission.
-    const previousLegacyOptIn=process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
-    process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE="1";
+    // R428: positive UI review reuses its existing owner Coordinator.
+    // A cold reconciliation port may only be native Rust; no synthetic
+    // HTTP issuer is allowed back into the operational Engineer path.
+    // A non-listening socket deliberately fails closed if used.
+    const previousNativeSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+    process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=join(positiveHome,"unused-native-engineer.sock");
     try{
       const {configPath,protectedConfig,credentialFiles}=
         await makeProtectedOwnerServiceConfig(positive,positiveHome,"fresh_repair");
@@ -2044,9 +2045,9 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
           }
         }
       }finally{
-        if(previousLegacyOptIn===undefined)
-          delete process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE;
-        else process.env.DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE=previousLegacyOptIn;
+        if(previousNativeSocket===undefined)
+          delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+        else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=previousNativeSocket;
       }
     }
   }finally{
