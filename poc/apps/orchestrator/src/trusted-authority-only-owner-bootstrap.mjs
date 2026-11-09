@@ -434,7 +434,12 @@ export async function createProtectedCanonicalOperationalProvision(
      !exact(localWorkers,["directory","workers","a2aPolling"]))||
      Object.hasOwn(workflow,"sdk")))
   deny();
- const workerOptions=localWorkers?{...localWorkers,native:true}:undefined;
+ const workerOptions=localWorkers?{
+  ...localWorkers,native:true,
+  // Only the protected, previously verified canonical manifest may enlarge
+  // this role roster; never accept role pins from an A2A request or model.
+  trustedAgentRegistry:authority.trustedAgentRegistry
+ }:undefined;
  const {rootGateway}=operational;
  if(Object.hasOwn(operational,"rootGateway")&&
     (!assembleEffects||!exact(rootGateway,["audit","verifier","policy","executor"])||
