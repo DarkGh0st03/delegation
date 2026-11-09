@@ -9,6 +9,13 @@ import {mkdtemp,readFile,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {randomBytes} from "node:crypto";
+import {createServer} from "node:net";
+import {startSpecializedAgentServer}
+ from "../../agent-runtime/src/server.ts";
+import {DeterministicA2AOrchestrator}
+ from "../../agent-runtime/src/orchestrator.ts";
+import {startTrustedAuthorityOnlySdkA2AOwner}
+ from "../src/trusted-authority-only-a2a-owner.ts";
 import {TrustedAuthorityOnlyRemoteEffectBootstrap}
  from "../src/trusted-authority-only-remote-effect-bootstrap.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
@@ -105,7 +112,12 @@ async function setup(extra=false){
  Object.defineProperty(coord,"phase",{value:"active"});
  const issuer=Object.assign(Object.create(
   TrustedAuthorityOnlyChildIssuer.prototype),{
-   assertTrustedIssuedChild:()=>childFor
+   assertTrustedIssuedChild:()=>childFor,
+  takeTrustedIssuedChildCredential:()=>({
+   id:childFor.credential_id,
+   credentialSubject:{sub:rowFor.agent_did,per:rowFor.permissions},
+   proof:{type:"offline-stub-NEVER-a-native-signature"}
+  })
   });
  const gateway=Object.assign(Object.create(
   TrustedAuthorityOnlyGatewayAdmissions.prototype),{
@@ -148,7 +160,7 @@ async function setup(extra=false){
    await rm(dir,{recursive:true,force:true});
   };
   return {dir,stageChannels,agentBindingChannels,registries,
-   activeRoles,config,startBind,start:async()=>host=await
+   activeRoles,config,coord,issuer,gateway,startBind,start:async()=>host=await
     TrustedAuthorityOnlyRemoteEffectBootstrap.start(config as never),
    close
   };
@@ -277,4 +289,136 @@ test("Extra private binder without the matching per-role staging channel is deni
    ...f.config,stageChannels
   } as never),/exactly one legacy stage or three role-pinned stage/u);
  }finally{await f.close();}
+});
+
+/**
+ * R453 offline A2A -> Owner Task -> HMAC integration. Unlike the earlier
+ * one-shot IPC unit test, this sends an actual HTTP+JSON A2A Task through
+ * the protected SDK. Native Root/Child/Gateway are deliberately stubbed;
+ * no signature or independent provider completion is claimed here.
+ */
+async function freeLocalPort():Promise<number>{
+ const listener=createServer();
+ await new Promise<void>((resolve,reject)=>{
+  listener.once("error",reject);
+  listener.listen(0,"127.0.0.1",()=>resolve());
+ });
+ const address=listener.address();
+ if(!address||typeof address==="string")throw Error("No TCP port assigned");
+ await new Promise<void>((resolve,reject)=>listener.close(error=>
+  error?reject(error):resolve()));
+ return address.port;
+}
+test("R453 additional read specialist receives actual SDK A2A Task only after its private HMAC bind",async()=>{
+ const f=await setup(true);
+ const servers:Awaited<ReturnType<typeof startSpecializedAgentServer>>[]=[];
+ let owner:Awaited<ReturnType<typeof startTrustedAuthorityOnlySdkA2AOwner>>|undefined;
+ let privateStages=0,served=0,attempted=0;
+ const requestId="req_reviewer_read_r453";
+ const reviewerDid="did:thesis:reviewer-agent";
+ const sourceSha="d".repeat(40);
+ try{
+  await f.startBind();
+  const endpoints:Record<string,string>={};
+  const ports=new Set<number>();
+  for(const role of f.activeRoles){
+   let port=await freeLocalPort();
+   while(ports.has(port))port=await freeLocalPort();
+   ports.add(port);
+   const server=await startSpecializedAgentServer({
+    role,port,host:"127.0.0.1",delegatedAuthorization:true,
+    capabilityProfile:"approved-plan",
+    ...(role==="reviewer"?{ownerAdditionalCardPin:{
+     did:reviewerDid,name:"Owner Read-Only Reviewer",
+     skillId:"source-review",capabilities:["read_file"]
+    }}:{}),
+    taskHandler:async context=>{
+     attempted++;
+     if(role!=="reviewer")throw Error("wrong specialist received reviewer Task");
+     // The A2A metadata alone is NEVER an HMAC or native credential.
+     const original=f.registries.reviewer.selectFor(context);
+     assert.equal(context.role,"reviewer");
+     assert.equal(context.trusted_gateway_task_id,runtimeTaskId);
+     assert.equal(context.delegation_evidence.presenter_id,reviewerDid);
+     assert.deepEqual(context.subtask.approved_file_permissions,
+      [{path:file,operation:"read_file"}]);
+     assert.equal(context.subtask.approved_run_tests,false);
+     await original.stage(requestId);
+     served++;
+     return {
+      role:"reviewer",summary:"Read-only offline probe completed",
+      files_modified:[],files_created:[],branch,
+      revision:sourceSha,commit_sha:sourceSha,
+      test_outcome:"not_run",errors:[]
+     };
+    }
+   });
+   servers.push(server);
+   endpoints[role]=server.baseUrl;
+  }
+  // An externally supplied Task carrying the correct role/DID/Task ID
+  // cannot self-register the one-shot native owner binding.
+  const rogue=new DeterministicA2AOrchestrator({
+   deadlineMs:5000,initialIntervalMs:10,maxIntervalMs:40
+  });
+  await assert.rejects(rogue.sendProtectedTask({
+   agent_base_url:endpoints.reviewer!,
+   trusted_gateway_task_id:runtimeTaskId,
+   delegation_evidence:{
+    credential:"untrusted-not-an-issued-child",credential_id:child.credential_id,
+    presenter_id:reviewerDid
+   },
+   subtask:{subtask_id:taskId,branch,
+    instruction:"Attempt a read without the original Owner",
+    relevant_paths:[file],
+    approved_file_permissions:[{path:file,operation:"read_file"}],
+    approved_run_tests:false}
+  }),/Protected A2A task ended without completion/u);
+  assert.equal(served,0);
+  assert.equal(privateStages,0);
+  owner=await startTrustedAuthorityOnlySdkA2AOwner({
+   ...f.config,agentBaseUrls:endpoints,
+   additionalRolePins:{reviewer:{
+    did:reviewerDid,name:"Owner Read-Only Reviewer",
+    skillId:"source-review",capabilities:["read_file"]
+   }},
+   a2aPolling:{deadlineMs:5000,initialIntervalMs:10,maxIntervalMs:40}
+  } as never);
+  assert.equal(owner.verifiedAgentProfiles?.reviewer?.did,reviewerDid);
+  assert.deepEqual(owner.verifiedAgentProfiles?.reviewer?.capabilities,["read_file"]);
+  const receipt=await owner.dispatchIssuedTask({
+   taskId,runtimeTaskId,instruction:"Read the approved source without editing it",
+   effectStager:{stagedTool:"read_file",stage:async id=>{
+    assert.equal(id,requestId);
+    privateStages++;
+    return {provider_write_authorized:false};
+   }}
+  });
+  assert.equal(receipt.role,"reviewer");
+  assert.equal(receipt.provider_completion_attested,false);
+  assert.equal(receipt.status,"a2a_report_not_gateway_completed");
+  assert.deepEqual(receipt.artifact.files_modified,[]);
+  assert.deepEqual(receipt.artifact.files_created,[]);
+  assert.equal(receipt.artifact.test_outcome,"not_run");
+  assert.equal(served,1);
+  assert.equal(privateStages,1);
+  assert.equal(attempted,2,"unbound spoof attempt plus one bound Task");
+  // HMAC stage is fenced when the owner dispatch finishes; a later
+  // replay, even with the correct socket key, cannot reserve twice.
+  const replay=await connectTrustedOwnerEffectStagingClient(
+   f.stageChannels.reviewer
+  );
+  await assert.rejects(replay.stage(runtimeTaskId,requestId),
+   /Authenticated private effect operation denied/u);
+  assert.equal(privateStages,1);
+  await assert.rejects(owner.dispatchIssuedTask({
+   taskId,runtimeTaskId,instruction:"Replay Task",effectStager:{
+    stagedTool:"read_file",stage:async()=>{throw Error("replay");}
+   }
+  }),/closed or malformed owner-selected Task/u);
+ }finally{
+  await owner?.close();
+  await Promise.allSettled(servers.reverse().map(server=>server.close()));
+  await f.close();
+ }
 });
