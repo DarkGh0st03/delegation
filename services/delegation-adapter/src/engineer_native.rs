@@ -202,6 +202,7 @@ impl NativeEngineerSocket {
                         | CallerRole::Backend
                         | CallerRole::Frontend
                         | CallerRole::Test
+                        | CallerRole::Additional(_)
                 ) =>
             {
                 serde_json::from_value::<CreatePresentationRequest>(req.body)

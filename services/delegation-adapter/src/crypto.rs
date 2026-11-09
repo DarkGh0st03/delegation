@@ -244,13 +244,7 @@ impl CryptoRuntime {
     ) -> Result<HashMap<CallerRole, DelegationIssuer<Curve>>, String> {
         let mut issuers = HashMap::new();
 
-        for role in [
-            CallerRole::Engineer,
-            CallerRole::Orchestrator,
-            CallerRole::Backend,
-            CallerRole::Frontend,
-            CallerRole::Test,
-        ] {
+        for role in callers.managed_identity_roles()? {
             let identity = callers.identity_for_role(role)?.to_string();
             let mut issuer = DelegationIssuer::<Curve>::new(identity.clone())?;
 
@@ -397,10 +391,11 @@ impl CryptoRuntime {
         }
         if !matches!(
             request.delegatee,
-            CallerRole::Backend | CallerRole::Frontend | CallerRole::Test
+            CallerRole::Backend | CallerRole::Frontend |
+            CallerRole::Test | CallerRole::Additional(_)
         ) {
             return Err(String::from(
-                "Child credentials may target only Backend, Frontend, or Test roles",
+                "Child credentials may target only provisioned specialist roles",
             ));
         }
         validate_common_issue_fields(
@@ -706,6 +701,7 @@ impl CryptoRuntime {
                 | CallerRole::Backend
                 | CallerRole::Frontend
                 | CallerRole::Test
+                | CallerRole::Additional(_)
         ) {
             return Err(String::from(
                 "Presenter must be an Orchestrator or specialized Agent role",
@@ -744,6 +740,7 @@ impl CryptoRuntime {
                 | CallerRole::Backend
                 | CallerRole::Frontend
                 | CallerRole::Test
+                | CallerRole::Additional(_)
         ) {
             return Err(String::from(
                 "Presenter must be an Orchestrator or specialized Agent role",

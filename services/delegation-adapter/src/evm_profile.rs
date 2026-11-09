@@ -55,14 +55,6 @@ use tokio::runtime::Runtime;
 type Curve = Bn254;
 
 const STATUS_LIST_BYTES: usize = 16 * 1024;
-const MANAGED_ROLES: [CallerRole; 5] = [
-    CallerRole::Engineer,
-    CallerRole::Orchestrator,
-    CallerRole::Backend,
-    CallerRole::Frontend,
-    CallerRole::Test,
-];
-
 sol! {
     #[sol(rpc)]
     interface EnterpriseTrustRegistryWriterContract {
@@ -147,7 +139,7 @@ impl EvmAdapterProfile {
         // reader can use this same directory without issuer or signing keys.
         if let Some(root) = &config.public_artifact_dir {
             let shared = Rc::new(FilePublicArtifactStore::<Curve>::new(root)?);
-            for role in MANAGED_ROLES {
+            for role in callers.managed_identity_roles()? {
                 let issuer_id = callers.identity_for_role(role)?;
                 let material = issuance_store.get_accumulator_data_at_version(issuer_id, 1)?;
                 shared.publish_accumulator(issuer_id, 1, &material)?;
@@ -171,7 +163,7 @@ impl EvmAdapterProfile {
         ));
         let verification_keys: VerificationKeyProviderRef = did_keys.clone();
 
-        for role in MANAGED_ROLES {
+        for role in callers.managed_identity_roles()? {
             verification_keys.get_verification_key(callers.identity_for_role(role)?)?;
         }
 
@@ -435,7 +427,7 @@ impl EvmAdapterProfile {
         issuance_store: Rc<InMemoryTrustStore<Curve>>,
         issuers: &HashMap<CallerRole, DelegationIssuer<Curve>>,
     ) -> Result<(), String> {
-        let identities = MANAGED_ROLES
+        let identities = callers.managed_identity_roles()?
             .iter()
             .map(|role| {
                 let identity = callers.identity_for_role(*role)?.to_string();
