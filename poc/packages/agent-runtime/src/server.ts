@@ -10,7 +10,8 @@ import {
   agentCardHandler,
   restHandler
 } from "@a2a-js/sdk/server/express";
-import { createSpecializedAgentCard } from "./cards.ts";
+import { createSpecializedAgentCard,createOwnerAdditionalSpecialistCard,
+ type OwnerAdditionalCardPin} from "./cards.ts";
 import { PrivateEvidenceTaskStore } from "./private-task-store.ts";
 import { PrivateEvidenceRequestHandler } from "./private-request-handler.ts";
 import {
@@ -18,7 +19,7 @@ import {
   type DeterministicArtifactPayloadBuilder,
   type DeterministicTaskHandler
 } from "./executor.ts";
-import type { SpecializedAgentRole } from "./contracts.ts";
+import {SPECIALIZED_AGENT_ROLES,type SpecializedAgentRole} from "./contracts.ts";
 import { createAdkA2ATaskHandler, type AdkA2ATaskHandlerConfig } from "./adk-a2a-handler.ts";
 import { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 
@@ -27,7 +28,9 @@ import {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host
 type DiscoveryHostConfig=Parameters<typeof startTrustedBackendDiscoveryHost>[0];
 
 export interface SpecializedAgentServerOptions {
-  role: SpecializedAgentRole;
+  role: string;
+  /** Owner-only non-native extra-role Card; never A2A/Task/LLM input. */
+  ownerAdditionalCardPin?:OwnerAdditionalCardPin;
   port: number;
   host?: string;
   delegatedAuthorization?: boolean;
@@ -46,7 +49,7 @@ export interface SpecializedAgentServerOptions {
 }
 
 export interface SpecializedAgentServer {
-  role: SpecializedAgentRole;
+  role: string;
   baseUrl: string;
   card: AgentCard;
   executor: DeterministicSpecializedAgentExecutor;
@@ -68,11 +71,25 @@ export async function startSpecializedAgentServer(
   // A2A worker. All native role keys remain exclusively with the Rust owner.
   if(options.nativeSignerDid!==undefined&&(!options.adk||!options.mcpTaskSigning))
     throw Error("Trusted native A2A signer DID requires an original ADK Task host");
-  const card = createSpecializedAgentCard(options.role, baseUrl, {
-    delegatedAuthorization: options.delegatedAuthorization,
-    capabilityProfile: options.capabilityProfile,
-    ...(options.nativeSignerDid===undefined?{}:{nativeSignerDid:options.nativeSignerDid})
-  });
+  const extra=!SPECIALIZED_AGENT_ROLES.includes(options.role as SpecializedAgentRole);
+  // A fourth worker cannot become a native signer by publishing a Card.
+  // The synthetic offline stage uses an explicit deterministic test handler;
+  // live additional-role ADK needs a separately pinned native crypto profile.
+  if(extra&&(!options.ownerAdditionalCardPin||!options.taskHandler||
+     options.adk||options.nativeSignerDid||options.mcpTaskSigning||
+     options.capabilityProfile==="legacy"||
+     options.delegatedAuthorization===false))
+    throw Error("Additional A2A specialist requires owner-pinned non-native test handler");
+  if(!extra&&options.ownerAdditionalCardPin)
+    throw Error("Original specialist cannot replace its trusted Agent Card");
+  const card=extra
+    ?createOwnerAdditionalSpecialistCard(
+       options.role,baseUrl,options.ownerAdditionalCardPin!)
+    :createSpecializedAgentCard(options.role as SpecializedAgentRole,baseUrl,{
+       delegatedAuthorization:options.delegatedAuthorization,
+       capabilityProfile:options.capabilityProfile,
+       ...(options.nativeSignerDid===undefined?{}:{nativeSignerDid:options.nativeSignerDid})
+     });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
   // R381.6: a private Rust MCP subprocess is an owner-bound signing
   // transport, never a free-standing A2A capability. Refuse it BEFORE any
@@ -111,7 +128,8 @@ export async function startSpecializedAgentServer(
   }):undefined;
   try{
   const mcpTaskRegistry = options.mcpTaskSigning
-    ? new PrivateMcpTaskRegistry({role:options.role, ...options.mcpTaskSigning})
+    ? new PrivateMcpTaskRegistry({role:options.role as SpecializedAgentRole,
+       ...options.mcpTaskSigning})
     : undefined;
   const adkHandler = options.adk
     ? createAdkA2ATaskHandler({...options.adk,
@@ -124,7 +142,7 @@ export async function startSpecializedAgentServer(
       }
     : options.taskHandler;
   const executor = new DeterministicSpecializedAgentExecutor(
-    options.role,
+    options.role as SpecializedAgentRole,
     undefined,
     options.artifactBuilder,
     taskHandler

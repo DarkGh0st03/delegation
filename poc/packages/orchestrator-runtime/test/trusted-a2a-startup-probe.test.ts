@@ -337,3 +337,42 @@ test("R436 reject extra-role spoofing, missing or overprivileged trusted pins be
  }
  assert.equal(gets,0);
 });
+
+test("Owner-provisioned fourth synthetic A2A HTTP server publishes only its pinned read Card",async()=>{
+ await withRealRoles(async({endpoints})=>{
+  const pin={did:"did:thesis:reviewer-agent",name:"Read-Only Reviewer",
+   skillId:"source-review",capabilities:["read_file"]};
+  const port=Number(new URL(endpoints.backend).port)+4;
+  const reviewer=await startSpecializedAgentServer({
+   role:"reviewer",host:"127.0.0.1",port,
+   delegatedAuthorization:true,ownerAdditionalCardPin:pin,
+   taskHandler:async()=>{
+    throw Error("Additional synthetic server must not accept unsigned authority");
+   }
+  });
+  try{
+   const verified=await assertTrustedApprovedA2AStartup({
+    endpoints:{...endpoints,reviewer:reviewer.baseUrl},
+    additionalRolePins:{reviewer:pin}
+   });
+   assert.deepEqual(verified.reviewer,
+    {did:pin.did,capabilities:["read_file"]});
+   assert.equal(reviewer.executor.executionCount,0);
+   // An Agent Card alone is not registration; the owner pin must match.
+   await assert.rejects(assertTrustedApprovedA2AStartup({
+    endpoints:{...endpoints,reviewer:reviewer.baseUrl},
+    additionalRolePins:{reviewer:{...pin,did:"did:thesis:forged"}}
+   }),/pinned localhost role-card verification denied/u);
+   await assert.rejects(assertTrustedApprovedA2AStartup({
+    endpoints:{...endpoints,reviewer:reviewer.baseUrl},
+    additionalRolePins:{reviewer:{...pin,
+     capabilities:["read_file","update_file","run_tests"]}}
+   }),/pinned localhost role-card verification denied/u);
+  }finally{await reviewer.close();}
+ });
+ const invalidPort=45005;
+ await assert.rejects(startSpecializedAgentServer({
+  role:"reviewer",host:"127.0.0.1",port:invalidPort,
+  taskHandler:async()=>{throw Error("unexpected");}
+ }),/Additional A2A specialist requires owner-pinned/u);
+});

@@ -162,3 +162,66 @@ export function createSpecializedAgentCard(
     signatures: []
   };
 }
+
+/**
+ * Owner-provisioned, read-only synthetic A2A specialist Card.
+ * This is a local NON-NATIVE server contract: it does not issue a Child,
+ * register an executable native Rust signer or add Gateway capabilities.
+ * Only the trusted owner may supply this immutable pin at server startup.
+ */
+export interface OwnerAdditionalCardPin{
+ did:string;name:string;skillId:string;capabilities:readonly string[];
+}
+export function createOwnerAdditionalSpecialistCard(
+ role:string,baseUrl:string,pin:OwnerAdditionalCardPin
+):AgentCard{
+ const CORE=["backend","frontend","test"];
+ const validRole=/^[a-z][a-z0-9_-]{0,23}$/u;
+ const validDid=/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/u;
+ const validSkill=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+ if(!validRole.test(role)||CORE.includes(role)||
+    ["orchestrator","constructor","prototype"].includes(role)||
+    !pin||typeof pin!=="object"||Array.isArray(pin)||
+    Object.keys(pin).sort().join(",")!=="capabilities,did,name,skillId"||
+    typeof pin.did!=="string"||!validDid.test(pin.did)||
+    typeof pin.name!=="string"||!pin.name.trim()||
+    pin.name.length>128||/[\x00-\x1f\x7f]/u.test(pin.name)||
+    typeof pin.skillId!=="string"||!validSkill.test(pin.skillId)||
+    !Array.isArray(pin.capabilities)||!pin.capabilities.length||
+    pin.capabilities.length>3||
+    new Set(pin.capabilities).size!==pin.capabilities.length||
+    pin.capabilities.some(operation=>
+     !["read_file","update_file","create_file"].includes(operation)))
+   throw Error("Additional A2A Card requires exact trusted Owner identity and capability pins");
+ return {
+  name:pin.name,
+  description:"Owner-provisioned delegated software specialist",
+  supportedInterfaces:[{
+   url:`${baseUrl.replace(/\/+$/u,"")}/a2a/rest`,
+   protocolBinding:"HTTP+JSON",tenant:"",protocolVersion:A2A_PROTOCOL_VERSION
+  }],
+  provider:{organization:"Thesis PoC",url:"https://github.com/DarkGh0st03/delegation"},
+  version:"0.1.0",
+  capabilities:{
+   streaming:false,pushNotifications:false,extendedAgentCard:false,
+   extensions:[{
+    uri:DELEGATED_AUTHORIZATION_EXTENSION_URI,
+    description:"Signed Task evidence; only Gateway/Rust/OPA can authorize a provider effect",
+    required:true,
+    params:{agentDid:pin.did,taskCapabilities:[...pin.capabilities],
+     evidenceLocation:"message.metadata.delegation_evidence"}
+   }]
+  },
+  securitySchemes:{},securityRequirements:[],
+  defaultInputModes:["application/json"],defaultOutputModes:["application/json"],
+  skills:[{
+   id:pin.skillId,name:pin.name,
+   description:"Work only within the signed owner-bound Task grant",
+   tags:["thesis","delegated-authorization","owner-provisioned",role],
+   examples:["Inspect an explicitly authorized repository file"],
+   inputModes:["application/json"],outputModes:["application/json"],
+   securityRequirements:[]
+  }],
+  documentationUrl:"",signatures:[]
+ };
+}
