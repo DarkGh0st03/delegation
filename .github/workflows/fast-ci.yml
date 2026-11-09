@@ -1,7 +1,7 @@
 name: Fast CI - Development
 on:
   push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
+    branches: [refactor/post-prof-plan-contracts-20261021, experiment/disposable-gemini-live-20261109]
   workflow_dispatch:
 permissions:
   contents: read
@@ -101,6 +101,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs
           # Research model evidence: actual ADK BaseLlm output enters original owner adaptive loop; no provider key.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs
+          # Live-model assembly: construct ADK Gemini objects with a synthetic key only; NEVER issue provider calls.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-model-set.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
           # R384.6: no legacy billed pipeline may be re-enabled.
