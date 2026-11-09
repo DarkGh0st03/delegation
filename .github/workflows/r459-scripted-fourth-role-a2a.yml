@@ -1,0 +1,45 @@
+name: R459 Scripted Planner to Reviewer A2A (No AI)
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/workflows/r459-scripted-fourth-role-a2a.yml'
+      - 'poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-a2a-owner.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-remote-effect-bootstrap.ts'
+      - 'poc/packages/agent-runtime/src/trusted-effect-staging-unix-ipc.ts'
+permissions:
+  contents: read
+concurrency:
+  group: r459-scripted-reviewer-a2a-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  scripted-planner-a2a:
+    name: "Scripted Planner, four role HTTP A2A and private HMAC fixture"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APPROVED_RUNNER_NATIVE_MCP: "0"
+      DELEGATION_GATEWAY_ARCHITECTURE: "offline-r459"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Deny billed model API
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+      - name: Install pinned dependencies
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: R459 single scripted Planner-to-A2A local fixture
+        run: |
+          node --check poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs
