@@ -71,7 +71,9 @@ async function fixture(t,{runId="987654321",model="gemini-3.8-flash"}={}){
   run_id:runId,workflow_sha:SHA
  }});
  const observed={calls:0};
- const githubApiFetchFn=async(url,opts)=>{
+ const previousFetch=globalThis.fetch;
+ t.after(()=>{globalThis.fetch=previousFetch;});
+ globalThis.fetch=async(url,opts)=>{
   observed.calls++;
   assert.equal(url,"https://api.github.com/repos/"+REPO+
    "/actions/runs/"+runId);
@@ -88,7 +90,7 @@ async function fixture(t,{runId="987654321",model="gemini-3.8-flash"}={}){
   };
  };
  return {admissionStore:store,pins,checkoutSha:SHA,keyFile:file,
-  githubApiToken:"synthetic-host-read-token",githubApiFetchFn,observed};
+  githubApiToken:"synthetic-host-read-token",observed};
 }
 
 test("independently admitted private Engineer Host constructs all five Gemini models but never infers",async t=>{
@@ -147,8 +149,8 @@ test("wrong source SHA and untrusted admission store fail before secret access",
 test("stale or canceled run is rejected after one-use HMAC consumption, never retried",async t=>{
  privateHost(t);
  const f=await fixture(t);
- const original=f.githubApiFetchFn;
- f.githubApiFetchFn=async(...args)=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async(...args)=>{
   const response=await original(...args);
   return {...response,async json(){
    return {...await response.json(),status:"completed"};
@@ -158,7 +160,7 @@ test("stale or canceled run is rejected after one-use HMAC consumption, never re
   createDisposableLiveGeminiModelSetFromPrivateHostAdmission(f),deny
  );
  assert.equal(f.observed.calls,1);
- f.githubApiFetchFn=original;
+ globalThis.fetch=original;
  await assert.rejects(
   createDisposableLiveGeminiModelSetFromPrivateHostAdmission(f),deny
  );

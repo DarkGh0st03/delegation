@@ -189,8 +189,7 @@ export async function createDisposableLiveGeminiModelSetFromPrivateFile({
  * operationally NO-GO until deployed with real native owner controls.
  */
 export async function createDisposableLiveGeminiModelSetFromPrivateHostAdmission({
- admissionStore,pins,checkoutSha,keyFile,githubApiToken,
- githubApiFetchFn
+ admissionStore,pins,checkoutSha,keyFile,githubApiToken
 }={}){
  if(process.env.GITHUB_ACTIONS==="true"||
     process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
@@ -234,7 +233,7 @@ export async function createDisposableLiveGeminiModelSetFromPrivateHostAdmission
   dispatch:{run_id:admitted.run_id,source_sha:admitted.source_sha},
   pinned:{repository:REPO,ref:REF,workflowPath:WORKFLOW,
    sourceSha:checkoutSha},
-  githubApiToken,fetchFn:githubApiFetchFn
+  githubApiToken
  });
  const privateKeyHandle=await loadProtectedDisposableGeminiKeyFile(keyFile);
  return assembleVerifiedModels(privateKeyHandle);
