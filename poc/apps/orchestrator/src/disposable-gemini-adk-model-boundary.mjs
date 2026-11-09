@@ -106,6 +106,12 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
     if(metadata!==undefined){
      const observed=validUsage(metadata);
      if(!observed)deny();
+     // Streaming usage is cumulative. Reject a decreasing report instead of
+     // treating the final (smaller) value as the entire provider charge.
+     // No response reaches the trusted Planner/Execution Loop until verified.
+     if(lastUsage&&(observed.input<lastUsage.input||
+        observed.output<lastUsage.output||
+        observed.total<lastUsage.total))deny();
      if(this.#input+observed.input>this.#tokenLimit||
         this.#output+observed.output>this.#tokenLimit||
         this.#total+observed.total>this.#tokenLimit)deny();

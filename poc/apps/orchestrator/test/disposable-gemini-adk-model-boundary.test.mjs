@@ -246,3 +246,34 @@ test("no partially streamed decision can escape an upstream failure",async()=>{
   for await(const _ of meter.generateContentAsync({})){}
  },/NO-GO/u);
 });
+
+test("a cumulative usage regression fails closed before releasing any streamed model decision",async()=>{
+ class RegressingUsage extends BaseLlm{
+  constructor(){super({model:"scripted-regressing-usage-no-provider"});}
+  async *generateContentAsync(){
+   yield {
+    content:{role:"model",parts:[{text:JSON.stringify(task())}]},
+    usageMetadata:{promptTokenCount:6,candidatesTokenCount:7,totalTokenCount:13}
+   };
+   yield {
+    content:{role:"model",parts:[{text:"final chunk"}]},
+    usageMetadata:{promptTokenCount:5,candidatesTokenCount:7,totalTokenCount:12}
+   };
+  }
+  connect(){throw Error("No provider");}
+ }
+ const meter=new DisposableCIMeteredAdkModel({
+  delegate:new RegressingUsage(),phase:"adaptive-execution",
+  maxCalls:2,maxReportedTokens:50
+ });
+ const forwarded=[];
+ await assert.rejects(async()=>{
+  for await(const response of meter.generateContentAsync({}))
+   forwarded.push(response);
+ },/Disposable ADK research model boundary NO-GO/u);
+ assert.deepEqual(forwarded,[],"Do not release even the earlier valid chunk");
+ assert.equal(meter.publicSummary().usage_complete,false);
+ await assert.rejects(async()=>{
+  for await(const _ of meter.generateContentAsync({})){}
+ },/NO-GO/u);
+});
