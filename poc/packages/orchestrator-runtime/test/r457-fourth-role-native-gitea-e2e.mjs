@@ -212,6 +212,14 @@ try{
  const enrolled=await gate.enrollTrustedIssuedChild(taskId,runtimeTaskId,issuer);
  assert.equal(enrolled.credential_id,child.credential_id);
  assert.equal(enrolled.gateway_execution_authorized,false);
+ // R457 uses the stricter post-R296 diagnostic-read contract: ONLY the
+ // trusted owner fixes current Gitea HEAD after native Child enrollment
+ // and before Prepare/OPA/provider I/O. The A2A request cannot choose HEAD.
+ const witnessHead=await independentClient.getBranchMetadata(branch);
+ assert.equal(witnessHead.commit_sha,baseRevision);
+ const pin=gate.pinTrustedSingleReadTask(taskId,runtimeTaskId,witnessHead.commit_sha);
+ assert.equal(pin.status,"owner_single_read_head_pinned_only");
+ assert.equal(pin.gateway_execution_authorized,false);
  const verifier=loadDirectCoreRustVerifier();
  const policy=new OpaPolicyClient({baseUrl:"http://127.0.0.1:8181",
   timeoutMs:6000});
