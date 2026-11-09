@@ -116,6 +116,9 @@ on:
       - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.test.mjs'
       - 'poc/scripts/test/r3858-native-strict-postfail-wiring.test.mjs'
       - 'poc/scripts/test/r3859-native-second-postfail-wiring.test.mjs'
+      # R441: R394 standalone wrapper is gone; retain proof source and R395 full A2A runner coverage.
+      - 'poc/packages/orchestrator-runtime/test/r394-native-test-runner-pass-e2e.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r395-native-a2a-runner-e2e.mjs'
       # R422.1: old one-shot CI triggers are retired; source proofs stay native/manual.
       - 'poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs'
       - 'poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs'

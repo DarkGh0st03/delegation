@@ -81,6 +81,34 @@ test('R439 superseded standalone manual E2E launchers stay retired while source 
  }
 });
 
+test('R441 retired R394 standalone Runner launcher keeps its proof and R395 canonical successor',()=>{
+ const oldLauncher='.github/workflows/r394-native-test-runner-pass-e2e.yml';
+ const oldProof='poc/packages/orchestrator-runtime/test/r394-native-test-runner-pass-e2e.mjs';
+ const successor='.github/workflows/r395-native-a2a-runner-e2e.yml';
+ const successorProof='poc/packages/orchestrator-runtime/test/r395-native-a2a-runner-e2e.mjs';
+ const preflight='.github/workflows/r393-native-test-runner-child-e2e.yml';
+ const preflightProof='poc/packages/orchestrator-runtime/test/r393-native-test-runner-child-e2e.mjs';
+ assert.equal(existsSync(path(oldLauncher)),false,'retired R394 launcher must not reappear');
+ for(const filename of [oldProof,successor,successorProof,preflight,preflightProof])
+  assert.equal(existsSync(path(filename)),true,'preserve runnable proof/negative gate: '+filename);
+ const positive=readFileSync(path(successorProof),'utf8');
+ for(const proof of [
+  'r395_signed_separate_test_runner_child_preflight',
+  'r395_native_a2a_test_runner_complete',
+  'protected_runner_pass_attested:true',
+  'independent_runner_receipt:true',
+  'actual_adk_function_tool_run_tests:true',
+  'authenticated_a2a_completion:true'
+ ])assert.ok(positive.includes(proof),'canonical successor must retain: '+proof);
+ const negative=readFileSync(path(preflightProof),'utf8');
+ assert.ok(negative.includes('protected_runner_invoked:false'),
+  'R393 independent staged-but-not-executed proof is not covered by R395');
+ const security=readFileSync(path('.github/workflows/isolated-positive-security-ci.yml'),'utf8');
+ for(const source of [oldProof,successorProof])
+  assert.ok(security.includes("- '"+source+"'"),
+   'native Security CI must watch retained source: '+source);
+});
+
 test('R432 public runtime cannot load retired HTTP Adapter Engineer authority',()=>{
  const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
  const neutral=readFileSync(path('poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'),'utf8');

@@ -5,8 +5,10 @@
  * -> OPA -> real Gitea atomic CREATE HEAD CAS -> independently MAC
  * verified receipt -> original Gateway/owner Task completion.
  * No paid inference, no production credentials, no main commits.
- * R395: signed Test create_file only for an exact project-test source;
- * no separate delegated run_tests Child is claimed by this fixture.
+ * R395: the signed Test create_file Child is followed by a separate
+ * native Runner Child and an additional independent Test A2A run_tests Child.
+ * Both Runner executions require exact-head, Gateway and MAC-backed evidence;
+ * no generative model inference or automatic merge is performed.
  */
 import assert from "node:assert/strict";
 import {generateKeyPairSync,createHash,randomBytes} from "node:crypto";
