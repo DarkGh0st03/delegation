@@ -387,3 +387,29 @@ test_additional_specialist_cannot_use_nonread_provider_ops if {
   not allow with input as reviewer
  }
 }
+
+# R457: an additional Child is permitted to sign only a single read_file
+# grant. OPA must not independently admit a feature-branch directory walk,
+# even if a forged VP payload appears well formed to the policy engine.
+test_additional_specialist_cannot_list_directory if {
+ base := make_input(
+  "list_directory",
+  sprintf("%s/directories/apps/backend", [feature_uri]),
+  {"branch":"feature/account-suspension","path":"apps/backend"}
+ )
+ reviewer := object.union(base,{
+  "agent_role":"reviewer",
+  "verified_delegation":object.union(base.verified_delegation,{
+   "presenter_id":"did:thesis:reviewer-agent"
+  })
+ })
+ not allow with input as reviewer
+}
+
+test_original_specialist_can_still_list_approved_directory if {
+ allow with input as make_input(
+  "list_directory",
+  sprintf("%s/directories/apps/backend", [feature_uri]),
+  {"branch":"feature/account-suspension","path":"apps/backend"}
+ )
+}

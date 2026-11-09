@@ -109,6 +109,7 @@ allow if {
 
 allow if {
 	bound_request_context
+	original_agent_role
 	input.tool == "list_directory"
 	input.arguments.branch == effective_feature_branch
 	directory_permission(sprintf("%s/directories", [effective_feature_uri]))
