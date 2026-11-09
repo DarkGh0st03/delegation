@@ -164,9 +164,12 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
     servers.push(server); // close even if start partially fails
     await server.start();
    }
-   const clients=await Promise.all(bindingChannels.map(ch=>
+   const clients=await Promise.all(bindingChannels.map((ch,i)=>
     connectTrustedEffectAgentBindingClient({
-     socketPath:ch.socketPath,secretFile:ch.secretFile
+     socketPath:ch.socketPath,secretFile:ch.secretFile,
+     // Extra roles must match the owner-provisioned physical binder.
+     // Without this pin the IPC validator deliberately admits only base roles.
+     ...(multi?{expectedRole:liveRoles[i]}:{})
     })
    ));
    const binders=multi
