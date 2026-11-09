@@ -14,7 +14,7 @@
 > real provider attestation and PR without automatic merge.
 > Consult the [archived R0 integration inventory](https://github.com/DarkGh0st03/delegation/blob/5decff3e20592bb15ea6c462fbeac309e689fe22/poc/docs/R0_Canonical_Route_Legacy_Inventory_2026-10-23.md),
 > [archived R4 historical readiness and R5 NO-GO](https://github.com/DarkGh0st03/delegation/blob/5decff3e20592bb15ea6c462fbeac309e689fe22/poc/docs/R4_Security_Gate_and_R5_Readiness_2026-10-23.md)
-> and [R6 cleanup evidence](../poc/docs/R6_Legacy_Reference_Baseline_2026-10-24.md)
+> and [archived R6 cleanup evidence](https://github.com/DarkGh0st03/delegation/blob/d1941003304c95e8c91dd6b285c4dece00bfa2a6/poc/docs/R6_Legacy_Reference_Baseline_2026-10-24.md)
 > for refactoring status. **No new paid Gemini E2E has been run on that
 > architecture.** Do not dispatch the historical paid workflow as R5.
 >

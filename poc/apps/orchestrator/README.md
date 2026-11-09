@@ -93,10 +93,10 @@ treat a synthetic Engineer receipt as real human approval.
 
 ## Canonical documentation
 
-- [Current canonical route and legacy inventory](../../docs/R0_Canonical_Route_Legacy_Inventory_2026-10-23.md)
-- [R4 security gate and R5 NO-GO criteria](../../docs/R4_Security_Gate_and_R5_Readiness_2026-10-23.md)
+- [Archived R0 original route inventory](https://github.com/DarkGh0st03/delegation/blob/5decff3e20592bb15ea6c462fbeac309e689fe22/poc/docs/R0_Canonical_Route_Legacy_Inventory_2026-10-23.md)
+- [Archived R4 historical gate and R5 NO-GO](https://github.com/DarkGh0st03/delegation/blob/5decff3e20592bb15ea6c462fbeac309e689fe22/poc/docs/R4_Security_Gate_and_R5_Readiness_2026-10-23.md)
 - [Trusted manual admission, private runner and recovery](../../docs/trusted-gemini-manual-dispatch.md)
-- [R6 conservative cleanup and historical-caller evidence](../../docs/R6_Legacy_Reference_Baseline_2026-10-24.md)
+- [Archived R6 legacy reference evidence](https://github.com/DarkGh0st03/delegation/blob/d1941003304c95e8c91dd6b285c4dece00bfa2a6/poc/docs/R6_Legacy_Reference_Baseline_2026-10-24.md)
 
 **Documentation cleanup note:** The earlier chronological Stage 9–12
 implementation diary in this README was superseded by these focused
