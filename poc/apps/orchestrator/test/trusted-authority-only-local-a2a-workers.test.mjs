@@ -81,7 +81,7 @@ test("Canonical local A2A bootstrap starts fourth native read-only Worker with p
   }}
  }),/Invalid private local A2A worker configuration/u);
  handle=await startTrustedAuthorityOnlyLocalA2AWorkers(options);
- assert.deepEqual(Object.keys(handle.sdk.agentBaseUrls).sort(),roles);
+ assert.deepEqual(Object.keys(handle.sdk.agentBaseUrls).sort(),[...roles].sort());
  assert.deepEqual(handle.sdk.additionalRolePins.reviewer.capabilities,["read_file"]);
  const verified=await assertTrustedApprovedA2AStartup({
   endpoints:handle.sdk.agentBaseUrls,
