@@ -1,5 +1,8 @@
 # Delegation — roadmap operativa (authority-only)
 
+**Blocco esplicito del provider nel profilo disposable (9 novembre 2026).** `DisposableCIMeteredAdkModel` supporta esclusivamente `scripted-offline`: non accetta istanze SDK Gemini, nomi modello che dichiarano Gemini, modalità `gemini-live` o funzioni di autorizzazione che potrebbero aggirare il consenso. È una protezione aggiuntiva, non una prova che un qualunque `BaseLlm` custom non possa avere effetti: i chiamanti di questo workflow restano rigidamente versionati e senza segreti. L'eventuale pilot realmente generativo avrà un percorso owner isolato e un consenso economico separato. Il gate `c5d531af` ha riportato varie run `failure` senza job e senza log di test; la causa non è verificata e la SHA non è da considerare verde.
+
+
 **Allineamento preflight Ed25519 della CI al perimetro R385.13 (9 novembre 2026).** La fixture indipendente di ammissione usa gli stessi 23 permessi della prova nativa (10 file, inclusi `packages/shared/src/account-status.ts` e `apps/frontend/src/styles.css`, più create_branch, create_pull_request e run_tests) e lo stesso requisito descrittivo. Il preflight mantiene una propria sessione e una propria firma: **non è** il receipt consumato dal Review Host del job nativo. Per la prova R385.13 lo script CI verifica esplicitamente due turni scripted del Planning e 25 decisioni scripted dell'Execution, correlati agli effettivi risultati Rust/Gateway/Gitea/Docker/Draft PR. Nessun modello Gemini o codice autonomamente generato viene attestato.
 
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {BaseLlm} from "@google/adk";
+import {BaseLlm,Gemini} from "@google/adk";
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs";
 import {DisposableCIMeteredAdkModel}
@@ -149,6 +149,36 @@ test("metering refuses extra calls, missing provider labels, fake live Gemini, m
  assert.equal(noUsage.publicSummary().usage_complete,false);
  assert.equal(noUsage.publicSummary().reported_total_tokens,0);
 });
+
+test("disposable CI refuses a real Gemini object even if disguised as scripted or given an always-true permit",()=>{
+ // Construction does not invoke the Google provider; the intentionally
+ // invalid key is never used for any request.
+ const gemini=new Gemini({
+  model:"gemini-3.8-flash",apiKey:"synthetic-not-a-real-api-key",
+  vertexai:false
+ });
+ for(const config of [
+  {source:"scripted-offline"},
+  {source:"gemini-live",permitLiveCall:()=>true},
+  {source:"scripted-offline",permitLiveCall:()=>true}
+ ]){
+  assert.throws(()=>new DisposableCIMeteredAdkModel({
+   delegate:gemini,phase:"planning",maxCalls:1,...config
+  }),/Disposable ADK research model boundary NO-GO/u);
+ }
+ // Known model-name claims are independently blocked even for a fake
+ // BaseLlm; the real no-provider property comes from CI-pinned call sites.
+ class FakeGeminiLabel extends BaseLlm{
+  constructor(){super({model:"gemini-3.8-flash"});}
+  async *generateContentAsync(){throw Error("Not invoked");}
+  connect(){throw Error("Not invoked");}
+ }
+ assert.throws(()=>new DisposableCIMeteredAdkModel({
+  delegate:new FakeGeminiLabel(),phase:"planning",
+  source:"scripted-offline"
+ }),/Disposable ADK research model boundary NO-GO/u);
+});
+
 test("metered research no raw token, source, private model output or receipt in snapshots",()=>{
  const fake=new OfflineRecordedAdk([{action:"blocked",reason:"hidden source"}]);
  const metered=new DisposableCIMeteredAdkModel({

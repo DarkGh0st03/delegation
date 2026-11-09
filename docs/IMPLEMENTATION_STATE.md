@@ -1,5 +1,8 @@
 # Delegation — implementation state (authority-only)
 
+**Disposable CI real-provider denial:** The standalone research wrapper now accepts **only** `scripted-offline`. Real ADK `Gemini` instances, Gemini-labelled model identifiers, any `gemini-live` mode or an always-true live permit are rejected at construction. This is defense in depth, not proof against a custom network-backed `BaseLlm`: the fixed trusted CI call sites and absence of provider credentials remain necessary. A genuine billable Gemini experiment requires its own owner-side isolated authorization route and explicit user consent. The `c5d531af` batch includes failed workflow-level runs with **zero created jobs**, so its entire CI suite is not green and no application-code failure is established by those particular runs.
+
+
 **Standalone disposable Engineer grant alignment and explicit native witness:** The independent CI approval fixture covers the same **23** exact permission pairs and requirement text as the original R375/R385.13 native Engineer, including the two previously missing shared and frontend-style paths. Sessions and signed receipts remain **distinct**: the standalone signer still does not authorize native Root issuance. The reusable native workflow now checks its 2 scripted ADK Planning turns and 25 scripted adaptive decisions in the same process as the real Rust/Gateway/Gitea/Docker FAIL-to-PASS/Draft PR witness. No Gemini invocation, real human approval, or autonomous model-authored source is implied.
 
 

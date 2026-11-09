@@ -8,16 +8,16 @@
  * usage observable without recording prompts, source, keys, tool contents,
  * raw responses, receipts or private A2A/task identifiers.
  *
- * A "gemini-live" candidate REQUIRES an actual ADK Gemini instance and a
- * trusted owner-supplied synchronous permit function before EACH call.
- * The current scripted-only GitHub workflow supplies neither. An invocation
- * permit is not a billing cap or substitute for separate user consent.
+ * This research-only CI adapter is explicitly OFFLINE. No API key, billing
+ * permit, Gemini model, or alternate live mode is admitted. A future paid
+ * Gemini experiment requires a separate owner-side authorization path,
+ * genuinely isolated credentials and explicit user billing consent.
  */
 import {BaseLlm,Gemini} from "@google/adk";
 
 const ROLES=Object.freeze(["backend","frontend","test"]);
 const PHASES=new Set(["planning","adaptive-execution","backend","frontend","test"]);
-const SOURCES=new Set(["scripted-offline","gemini-live"]);
+const SOURCES=new Set(["scripted-offline"]);
 const deny=()=>{throw Error("Disposable ADK research model boundary NO-GO");};
 const positive=(x,max)=>Number.isSafeInteger(x)&&x>=1&&x<=max;
 const nonnegative=x=>Number.isSafeInteger(x)&&x>=0;
@@ -35,7 +35,7 @@ function validUsage(metadata){
  * belongs to the original Owner's execution evidence ledger.
  */
 export class DisposableCIMeteredAdkModel extends BaseLlm{
- #delegate;#source;#phase;#permit;#limit;#tokenLimit;#calls=0;
+ #delegate;#source;#phase;#limit;#tokenLimit;#calls=0;
  #input=0;#output=0;#total=0;#withUsage=0;#broken=false;
  constructor({
   delegate,source="scripted-offline",phase,
@@ -45,15 +45,16 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
      typeof delegate.model!=="string"||!delegate.model||
      !SOURCES.has(source)||!PHASES.has(phase)||
      !positive(maxCalls,64)||!positive(maxReportedTokens,250000)||
-     (source==="gemini-live"&&(
-      !(delegate instanceof Gemini)||
-      delegate.model!=="gemini-3.8-flash"||
-      typeof permitLiveCall!=="function"))||
-     (source==="scripted-offline"&&permitLiveCall!==undefined))
+     // An actual Gemini instance must never be smuggled into an offline
+     // profile. A model name alone is NOT a security proof; this is a
+     // defense-in-depth check beside the audited fixed CI call sites.
+     delegate instanceof Gemini||
+     /^gemini(?:-|$)/iu.test(delegate.model)||
+     permitLiveCall!==undefined)
    deny();
   super({model:delegate.model});
   this.#delegate=delegate;this.#source=source;this.#phase=phase;
-  this.#permit=permitLiveCall;this.#limit=maxCalls;
+  this.#limit=maxCalls;
   this.#tokenLimit=maxReportedTokens;
  }
  get observedCalls(){return this.#calls;}
@@ -81,10 +82,8 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
  async *generateContentAsync(request,stream,signal){
   if(this.#broken||this.#calls>=this.#limit||
      this.#total>=this.#tokenLimit)deny();
-  // The permit is Owner-side only, never a model FunctionTool or A2A callback.
-  // It must synchronously reject unless independent per-run billing consent,
-  // GitHub dispatch provenance and secret isolation have been verified.
-  if(this.#source==="gemini-live"&&this.#permit?.()!==true)deny();
+  // Only trusted, code-pinned local BaseLlm fixtures are constructed by
+  // the disposable workflow. No live provider or billing permit is valid.
   ++this.#calls;
   const combined=AbortSignal.any([
    AbortSignal.timeout(60000),...(signal?[signal]:[])
@@ -115,9 +114,8 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
     buffered.push(response);
    }
    if(combined.aborted)deny();
-   // A missing usage record cannot be interpreted as a zero-token Gemini
-   // request. No subsequent provider call is permitted after this ambiguity.
-   if(this.#source==="gemini-live"&&!lastUsage)deny();
+   // Missing metadata is explicitly incomplete evidence, NEVER zero-cost
+   // Gemini proof. The signed CI experiment itself is offline-only.
    if(lastUsage){
     this.#input+=lastUsage.input;this.#output+=lastUsage.output;
     this.#total+=lastUsage.total;this.#withUsage++;
