@@ -161,12 +161,16 @@ test('R444 old R384.2 manual A2A CREATE launcher stays retired with native proof
   'native Security CI must not watch a missing launcher');
 });
 
-test('R449 unique native negative and D1 CREATE launchers remain manually runnable',()=>{
+test('R450 unique native negative and recovery launchers remain manually runnable',()=>{
  const protectedCases=[
   ['r292-authority-only-native-evm-e2e.yml',
    'poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs'],
   ['r302-gitea-atomic-cas-e2e.yml',
    'poc/apps/gateway/native-test/r302-gitea-atomic-head-cas-e2e.mjs'],
+  ['r338-native-runner-fail-e2e.yml',
+   'poc/packages/orchestrator-runtime/test/r333-native-three-role-stage-adk-e2e.mjs'],
+  ['r376-native-source-diagnostic-recovery-e2e.yml',
+   'poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs'],
   ['r3844-functional-create-d1-pass-native-e2e.yml',
    'poc/packages/orchestrator-runtime/test/r3844-native-functional-create-d1-docker-pass-e2e.mjs']
  ];
