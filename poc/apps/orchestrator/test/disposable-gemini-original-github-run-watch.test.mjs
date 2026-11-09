@@ -125,7 +125,7 @@ test("Actions environment and foreign source/branch cannot create private watch"
  delete process.env.GITHUB_ACTIONS;
  for(const patch of [
   {ref:"refs/heads/main"},
-  {sourceSha:"b".repeat(40)},
+  {sourceSha:"not-a-sha"},
   {runId:"0"},
   {sessionId:""},
   {repository:"attacker/fork"}
@@ -135,4 +135,20 @@ test("Actions environment and foreign source/branch cannot create private watch"
    githubApiToken:"synthetic-owner-read-token",onClose:()=>{}
   }),DENIED);
  }
+});
+
+
+test("a well-formed foreign SHA is rejected by authoritative GitHub run corroboration",async t=>{
+ const f=setup(t);
+ let closes=0;
+ const foreign=createDisposableOriginalGithubRunWatch({
+  pins:{...f.pins,sourceSha:"b".repeat(40)},
+  githubApiToken:"synthetic-owner-read-token",
+  onClose:async()=>{closes++;}
+ });
+ t.after(()=>foreign.close());
+ await assert.rejects(foreign.start(),DENIED);
+ assert.equal(foreign.status,"closed");
+ assert.equal(closes,1);
+ assert.equal(f.calls(),1);
 });
