@@ -11,7 +11,9 @@
 import {TaskState} from "@a2a-js/sdk";
 import {DeterministicA2AOrchestrator,
  type A2APollingOptions} from "../../agent-runtime/src/orchestrator.ts";
-import {assertTrustedApprovedA2AStartup,verifyTrustedApprovedAgentCard,type VerifiedA2AProfiles}
+import {assertTrustedApprovedA2AStartup,verifyTrustedApprovedAgentCard,
+ verifyOwnerPinnedAdditionalCard,type VerifiedA2AProfiles,
+ type TrustedAdditionalA2ACardPin}
  from "./trusted-a2a-startup-probe.ts";
 import {isDeepStrictEqual} from "node:util";
 import {canonicalBranchUri,canonicalFileUri}
@@ -45,7 +47,17 @@ const ROLES=["backend","frontend","test"] as const;
 function deny(reason:string):never{
  throw Error("Trusted authority-only A2A owner NO-GO: "+reason);
 }
-type AgentUrls=Readonly<Record<SpecializedAgentRole,string>>;
+type AgentUrls=Readonly<Record<string,string>>;
+const ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+const trustedRoster=(urls:AgentUrls):string[]=>{
+ if(!urls||typeof urls!=="object"||Array.isArray(urls))deny("missing trusted A2A endpoints");
+ const roles=Object.keys(urls).sort();
+ if(roles.length<3||roles.length>16||
+    !ROLES.every(role=>Object.hasOwn(urls,role))||
+    roles.some(role=>!ROLE.test(role)||["orchestrator","constructor","prototype"].includes(role)))
+  deny("trusted A2A roster has an unprovisioned or reserved specialist");
+ return roles;
+};
 const endpoint=(value:string)=>{
  let url:URL;
  try{url=new URL(value);}catch{deny("invalid pinned A2A Agent Card base URL");}
@@ -102,13 +114,16 @@ export class TrustedAuthorityOnlyA2AOwner {
      !(opts.gateway instanceof TrustedAuthorityOnlyGatewayAdmissions)||
      !(opts.bootstrap instanceof TrustedAuthorityOnlyRemoteEffectBootstrap)||
      typeof opts.a2a?.sendProtectedTask!=="function"||
-     !opts.agentBaseUrls||Object.keys(opts.agentBaseUrls).sort().join(",")!==
-        "backend,frontend,test")
+     !opts.agentBaseUrls)
     deny("original owner, active private bind and protected A2A client required");
-  const urls=(Object.fromEntries(
-    ROLES.map(r=>[r,endpoint(opts.agentBaseUrls[r])])
-  )) as Record<SpecializedAgentRole,string>;
-  if(new Set(Object.values(urls)).size!==3)
+  const roles=trustedRoster(opts.agentBaseUrls);
+  if(roles.length>ROLES.length&&(!opts.verifiedAgentProfiles||
+     Object.keys(opts.verifiedAgentProfiles).sort().join(",")!==roles.join(",")))
+   deny("additional specialist lacks exactly matching verified owner Card pins");
+  const urls=Object.fromEntries(roles.map(role=>[
+   role,endpoint(opts.agentBaseUrls[role]!)
+  ]));
+  if(new Set(Object.values(urls)).size!==roles.length)
     deny("each specialized agent must have a distinct pinned endpoint");
   this.#coordinator=opts.coordinator;this.#issuer=opts.childIssuer;
   this.#gateway=opts.gateway;this.#bootstrap=opts.bootstrap;
@@ -149,7 +164,9 @@ export class TrustedAuthorityOnlyA2AOwner {
      registered.gateway_execution_authorized!==false||
      child.authority_digest!==root.authority_digest||
      !isDeepStrictEqual(child.permissions,row.permissions)||
-     !ROLES.includes(row.agent_id as SpecializedAgentRole))
+     !Object.hasOwn(this.#urls,row.agent_id)||
+     (!ROLES.includes(row.agent_id as SpecializedAgentRole)&&
+      !this.verifiedAgentProfiles?.[row.agent_id]))
     deny("Engineer root, Task, native Child and Gateway differ");
   const role=row.agent_id as SpecializedAgentRole;
   const card=this.verifiedAgentProfiles?.[role];
@@ -404,32 +421,41 @@ export async function startTrustedAuthorityOnlyA2AOwner(
 export async function startTrustedAuthorityOnlySdkA2AOwner(
  config:TrustedAuthorityOnlyRemoteEffectBootstrapOptions & {
   agentBaseUrls:AgentUrls;
+  additionalRolePins?:Readonly<Record<string,TrustedAdditionalA2ACardPin>>;
   a2aPolling?:A2APollingOptions;
  }):Promise<TrustedAuthorityOnlyA2AOwner>{
- if(!config||Object.hasOwn(config,"a2a")||
-    !config.agentBaseUrls||
-    Object.keys(config.agentBaseUrls).sort().join(",")!==
-      "backend,frontend,test")
+ if(!config||Object.hasOwn(config,"a2a")||!config.agentBaseUrls)
   deny("canonical SDK owner requires only trusted pinned role endpoints");
- const urls=Object.freeze({
-  backend:endpoint(config.agentBaseUrls.backend),
-  frontend:endpoint(config.agentBaseUrls.frontend),
-  test:endpoint(config.agentBaseUrls.test)
- });
- if(new Set(Object.values(urls)).size!==3||
+ const roles=trustedRoster(config.agentBaseUrls);
+ const extra=roles.filter(role=>!ROLES.includes(role as SpecializedAgentRole));
+ if((extra.length>0&&(!config.additionalRolePins||
+     Object.keys(config.additionalRolePins).sort().join(",")!==extra.join(",")))||
+    (!extra.length&&config.additionalRolePins&&
+     Object.keys(config.additionalRolePins).length!==0))
+  deny("additional roles require exact owner-provisioned Agent Card pins");
+ const urls=Object.freeze(Object.fromEntries(roles.map(role=>[
+  role,endpoint(config.agentBaseUrls[role]!)
+ ])));
+ if(new Set(Object.values(urls)).size!==roles.length||
     Object.values(urls).some(url=>!/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u.test(url)))
   deny("canonical SDK A2A startup requires distinct loopback role hosts");
  // Card probes use GET with no credential, then the protected SDK client
  // performs the one-shot A2A HTTP send only after R324 private Task bind.
- const verifiedAgentProfiles=await assertTrustedApprovedA2AStartup({endpoints:urls});
+ const verifiedAgentProfiles=await assertTrustedApprovedA2AStartup({
+  endpoints:urls as Record<"backend"|"frontend"|"test",string>,
+  ...(extra.length?{additionalRolePins:config.additionalRolePins}:{})
+ });
  const client=new DeterministicA2AOrchestrator(config.a2aPolling,(url,card)=>{
-  const role=ROLES.find(candidate=>urls[candidate]===url);
+  const role=roles.find(candidate=>urls[candidate]===url);
   if(!role)deny("SDK send has no verified specialist endpoint");
-  const live=verifyTrustedApprovedAgentCard(role,url,card);
-  const pinned=verifiedAgentProfiles[role];
-  if(live.capabilities.length!==pinned.capabilities.length||
+  const live=ROLES.includes(role as SpecializedAgentRole)
+   ?verifyTrustedApprovedAgentCard(role as "backend"|"frontend"|"test",url,card)
+   :verifyOwnerPinnedAdditionalCard(role,url,card,config.additionalRolePins![role]!);
+  const pinned=verifiedAgentProfiles[role]!;
+  if(live.did!==pinned.did||
+     live.capabilities.length!==pinned.capabilities.length||
      live.capabilities.some(operation=>!pinned.capabilities.includes(operation)))
-   deny("specialist Agent Card capabilities changed after startup");
+   deny("specialist Agent Card identity or capabilities changed after startup");
  });
  return startTrustedAuthorityOnlyA2AOwner({
   ...config,agentBaseUrls:urls,a2a:client,verifiedAgentProfiles

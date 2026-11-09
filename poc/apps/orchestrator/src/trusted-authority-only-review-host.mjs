@@ -77,18 +77,32 @@ function deny(reason){throw Error('Authority-only review host: '+reason);}
  * R435: the Owner must provision a separate endpoint, private staging
  * channel and private Task-binding channel for EVERY trusted specialist.
  * An unstarted role is not executable just because its DID is registered.
- * The canonical SDK still supports only the original three role servers.
+ * The protected SDK admits extra roles only with independent Owner Card
+ * pins matching this trusted registry; a registered DID is not an active server.
  */
 export function assertTrustedSdkA2ARoster(registry,config){
  if(!registry||typeof registry!=='object'||Array.isArray(registry))
   deny('trusted SDK role registry required');
  const roles=Object.keys(registry).filter(role=>role!=='orchestrator').sort();
  if(!roles.length||roles.length>16||
-    !fields(config,['agentBaseUrls','stageChannels','agentBindingChannels','a2aPolling'])||
+    !fields(config,['agentBaseUrls','stageChannels','agentBindingChannels','additionalRolePins','a2aPolling'])||
     ['agentBaseUrls','stageChannels','agentBindingChannels'].some(key=>
      !fields(config[key],roles)||
      !isDeepStrictEqual(Object.keys(config[key]).sort(),roles)))
   deny('SDK role endpoints and private channels differ from trusted specialist registry');
+ const extras=roles.filter(role=>!['backend','frontend','test'].includes(role));
+ const pins=config.additionalRolePins;
+ if((extras.length>0&&(!fields(pins,extras)||
+     !isDeepStrictEqual(Object.keys(pins).sort(),extras)))||
+    (!extras.length&&pins!==undefined&&
+     (!fields(pins,[])||Object.keys(pins).length!==0))||
+    extras.some(role=>{
+     const pin=pins[role],registered=registry[role];
+     return !registered||!pin||pin.did!==registered.did||
+      !Array.isArray(pin.capabilities)||!pin.capabilities.length||
+      pin.capabilities.some(operation=>!registered.capabilities.includes(operation));
+    }))
+  deny('additional SDK Card pins must match trusted role DID and capabilities');
  return Object.freeze(roles);
 }
 export async function createTrustedAuthorityOnlyReviewHost(options){
@@ -536,6 +550,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const owner=await startTrustedAuthorityOnlySdkA2AOwner({
        coordinator:operationalCoordinator,childIssuer,gateway,
        agentBaseUrls:config.agentBaseUrls,
+       ...(config.additionalRolePins===undefined?{}:
+        {additionalRolePins:config.additionalRolePins}),
        stageChannels:config.stageChannels,
        agentBindingChannels:config.agentBindingChannels,
        ...(config.a2aPolling===undefined?{}:{a2aPolling:config.a2aPolling})

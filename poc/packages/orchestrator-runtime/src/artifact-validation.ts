@@ -68,7 +68,10 @@ export function validateWorkflowArtifact(
 ): ValidatedWorkflowArtifact {
   const raw = object(value, "Agent Artifact payload");
   const role = nonEmptyString(raw.role, "Artifact role");
-  if (!VALID_ROLES.has(role as SpecializedAgentRole)) {
+  // The canonical A2A owner has already pinned any additional role to
+  // a registered Coordinator Task, native Child, Gateway and verified Card.
+  // Reject untrusted role substitution rather than requiring a fixed enum.
+  if (!VALID_ROLES.has(role as SpecializedAgentRole) && role!==expectedRole) {
     throw new Error(`Artifact contains unsupported role ${role}`);
   }
   if (role !== expectedRole) {

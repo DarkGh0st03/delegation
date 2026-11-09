@@ -55,7 +55,7 @@ const exactKeys=(value:object,keys:string[])=>{
  * from a remote card, model output, environment fallback or role string.
  * This does NOT start a worker or make the extra role executable.
  */
-function verifyOwnerPinnedAdditionalCard(
+export function verifyOwnerPinnedAdditionalCard(
  role:string,base:string,card:AgentCard,pin:TrustedAdditionalA2ACardPin
 ):VerifiedProfile{
  const ext=card?.capabilities?.extensions;
