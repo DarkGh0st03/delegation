@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {DirectCoreRustVerifier,type CoreRustBinding} from "../src/direct-core-verifier.ts";
+import {trustedCoreRustIdentitiesFromEnvironment}
+ from "../src/direct-core-loader.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {parseGatewayVerifierMode,gatewayConfigFromEnv} from "../src/config.ts";
 import {
@@ -239,4 +241,75 @@ test("R299 native scope-result corroboration requires explicit trusted opt-in",a
   await assert.rejects(scoped.verify({...req,required_permission:wrong}),
    VerificationUnavailableError);
  }
+});
+
+test("R455 native Core accepts extra specialist only with explicit matching DID and Rust VP response",async()=>{
+ const reviewer="did:thesis:reviewer-agent";
+ const identities={...ids,reviewer};
+ const traces:Record<string,unknown>[]=[];
+ const core=new DirectCoreRustVerifier(fakeBinding((context,proof)=>{
+  traces.push(context);
+  assert.equal(proof,"REVIEWER_NATIVE_PROOF_FIXTURE");
+  return result([read],reviewer);
+ }),identities);
+ const req={...legacy,presenter:"reviewer" as never,
+  signed_vp:"REVIEWER_NATIVE_PROOF_FIXTURE"};
+ const verified=await core.verify(req);
+ assert.equal(verified.presenter_id,reviewer);
+ assert.equal(traces[0]?.presenter_id,reviewer);
+ assert.deepEqual(traces[0]?.required_permission,read);
+ await assert.rejects(core.verify({...req,presenter:"unregistered" as never}),
+  VerificationRejectedError);
+ assert.equal(traces.length,1,"unprovisioned role cannot invoke native binding");
+ const wrongRole=new DirectCoreRustVerifier(fakeBinding(()=>
+  result([read],ids.backend)
+ ),identities);
+ await assert.rejects(wrongRole.verify(req),VerificationUnavailableError);
+ for(const invalid of [
+  {...identities,reviewer:ids.backend},
+  {...identities,reviewer:"did:"},
+  {...identities,engineer:"did:thesis:engineer"},
+  {...identities,"reviewer/../backend":"did:thesis:forged"}
+ ]){
+  assert.throws(()=>new DirectCoreRustVerifier(fakeBinding(()=>
+   result([read],reviewer)),invalid));
+ }
+ const inherited=Object.create({reviewer}) as Record<string,string>;
+ Object.assign(inherited,ids);
+ const legacyCore=new DirectCoreRustVerifier(fakeBinding(()=>
+   result([read],reviewer)),inherited);
+ await assert.rejects(legacyCore.verify(req),VerificationRejectedError);
+});
+test("R455 Gateway Rust signer roster mirrors bounded Engineer deployment variables",()=>{
+ const environment={
+  ADAPTER_ID_ORCHESTRATOR:ids.orchestrator,
+  ADAPTER_ID_BACKEND:ids.backend,
+  ADAPTER_ID_FRONTEND:ids.frontend,
+  ADAPTER_ID_TEST:ids.test,
+  ADAPTER_ID_REVIEWER:"did:thesis:reviewer-agent",
+  ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer"
+ };
+ const trusted=trustedCoreRustIdentitiesFromEnvironment(environment);
+ assert.deepEqual(Object.keys(trusted).sort(),
+  ["orchestrator","backend","frontend","test","reviewer"].sort());
+ assert.equal(trusted.reviewer,environment.ADAPTER_ID_REVIEWER);
+ assert.equal(Object.isFrozen(trusted),true);
+ for(const changes of [
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer,reviewer"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"backend"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"engineer"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"__proto__"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer/../test"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer,"},
+  {ADAPTER_ID_REVIEWER:ids.backend},
+  {ADAPTER_ID_REVIEWER:undefined},
+  {ADAPTER_ID_REVIEWER:" did:thesis:reviewer-agent "}
+ ]){
+  assert.throws(()=>trustedCoreRustIdentitiesFromEnvironment(
+   {...environment,...changes}),/Rust Core|trusted Rust Core|DIDs must be distinct/u);
+ }
+ const absent=trustedCoreRustIdentitiesFromEnvironment({
+  ...environment,ADAPTER_ADDITIONAL_SPECIALISTS:""
+ });
+ assert.equal(Object.hasOwn(absent,"reviewer"),false);
 });

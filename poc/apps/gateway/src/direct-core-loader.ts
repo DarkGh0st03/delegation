@@ -18,18 +18,36 @@ import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
 
 const requireNative=createRequire(import.meta.url);
 
-function identitiesFromEnvironment():CoreRustIdentityMap {
-  const value=(name:string):string=>{
-    const id=process.env[name]?.trim();
-    if(!id)throw new Error("Missing trusted Rust Core identity: "+name);
-    return id;
-  };
-  return {
-    orchestrator:value("ADAPTER_ID_ORCHESTRATOR"),
-    backend:value("ADAPTER_ID_BACKEND"),
-    frontend:value("ADAPTER_ID_FRONTEND"),
-    test:value("ADAPTER_ID_TEST")
-  };
+/** Read only the SAME bounded native deployment roster as the Rust Engineer.
+ * This map is a presenter identity expectation, not a VP validity shortcut.
+ * DirectCoreRustVerifier independently requires unique DIDs and an actual
+ * native signature/trust/status verification for every delegated operation. */
+export function trustedCoreRustIdentitiesFromEnvironment(
+ env:Readonly<Record<string,string|undefined>>=process.env
+):CoreRustIdentityMap {
+ const value=(name:string):string=>{
+  const did=env[name];
+  if(typeof did!=="string"||!did||did.trim()!==did||
+     did.length>1024||!did.startsWith("did:"))
+   throw Error("Missing trusted Rust Core identity: "+name);
+  return did;
+ };
+ const raw=env.ADAPTER_ADDITIONAL_SPECIALISTS??"";
+ if(typeof raw!=="string"||raw.length>325)
+  throw Error("Invalid native Rust Core additional specialist roster");
+ const additional=raw===""?[]:raw.split(",");
+ const legal=/^[a-z][a-z0-9_-]{0,23}$/u;
+ if(additional.length>13||new Set(additional).size!==additional.length||
+    additional.some(role=>!legal.test(role)||
+      ["engineer","gateway","orchestrator","backend","frontend","test",
+       "constructor","prototype"].includes(role)))
+  throw Error("Invalid native Rust Core additional specialist roster");
+ const pins:Record<string,string>=Object.create(null);
+ for(const role of ["orchestrator","backend","frontend","test",...additional])
+  pins[role]=value("ADAPTER_ID_"+role.toUpperCase());
+ if(new Set(Object.values(pins)).size!==Object.keys(pins).length)
+  throw Error("Native Rust Core specialist DIDs must be distinct");
+ return Object.freeze(pins);
 }
 
 /** Fixed relative path: never pass caller/environment-controlled paths. */
@@ -60,6 +78,6 @@ export function loadDirectCoreRustVerifier(
     throw new Error("Native Rust Core verification sources are not ready; refusing startup");
   }
   return new DirectCoreRustVerifier(
-    native as CoreRustBinding,identitiesFromEnvironment(),options
+    native as CoreRustBinding,trustedCoreRustIdentitiesFromEnvironment(),options
   );
 }

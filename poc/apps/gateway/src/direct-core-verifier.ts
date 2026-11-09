@@ -21,7 +21,7 @@ import type {
   VerificationRequest, VerifiedDelegation, VerifierPort
 } from "./types.ts";
 
-export type CoreRustIdentityMap = Readonly<Record<AgentRole, string>>;
+export type CoreRustIdentityMap = Readonly<Record<string,string>>;
 
 /** Method signature mirrors Rust Verifier::verify_verifiable_presentation. */
 export interface CoreRustBinding {
@@ -31,9 +31,10 @@ export interface CoreRustBinding {
   ): string | Promise<string>;
 }
 
-const ROLES: readonly AgentRole[] = [
-  "orchestrator","backend","frontend","test"
+const ROLES:readonly AgentRole[]=[
+ "orchestrator","backend","frontend","test"
 ];
+const ADDITIONAL_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 
 function validIdentity(id:unknown): id is string {
   return typeof id==="string" && id.trim()===id &&
@@ -105,12 +106,20 @@ export class DirectCoreRustVerifier implements VerifierPort {
     if(!binding || typeof binding.verify_verifiable_presentation!=="function") {
       throw new Error("A loaded native Rust Core verifier binding is required");
     }
-    for(const role of ROLES) {
-      if(!validIdentity(identities?.[role])) {
+    const roles=identities&&typeof identities==="object"&&!Array.isArray(identities)
+      ?Object.keys(identities):[];
+    if(roles.length<ROLES.length||roles.length>ROLES.length+13||
+       !ROLES.every(role=>Object.hasOwn(identities,role))||
+       roles.some(role=>!ROLES.includes(role as AgentRole)&&
+         (!ADDITIONAL_ROLE.test(role)||
+          ["engineer","gateway","constructor","prototype"].includes(role))))
+      throw Error("Invalid trusted Rust Core presenter identity roster");
+    for(const role of roles){
+      if(!Object.hasOwn(identities,role)||!validIdentity(identities[role])){
         throw new Error("Trusted DID identity missing for Rust Core role: "+role);
       }
     }
-    if(new Set(ROLES.map(role=>identities[role])).size!==ROLES.length){
+    if(new Set(roles.map(role=>identities[role])).size!==roles.length){
       throw new Error("Rust Core role identities must be distinct");
     }
     this.#binding=binding;
@@ -141,7 +150,8 @@ export class DirectCoreRustVerifier implements VerifierPort {
     role:AgentRole,audience:string,challenge:string,
     required:readonly Permission[],signedVp:string
   ):Promise<VerifiedDelegation>{
-    const presenterId=this.#identities[role];
+    const presenterId=Object.hasOwn(this.#identities,role)
+     ?this.#identities[role]:undefined;
     if(!validIdentity(presenterId) ||
        typeof audience!=="string" || !audience.trim() ||
        typeof challenge!=="string" || !challenge.trim() ||
