@@ -1,0 +1,50 @@
+# R462: independent public-only audit of the unmerged paid-Gemini
+# workflow-registration Draft PR #39. ZERO BILLING; no dispatch, signing,
+# private host interaction, OIDC, merge, token, or privileged Runner.
+name: R462 Gemini Registration Draft PR Read-only Audit (No AI)
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/workflows/r462-gemini-private-registration-pr-audit.yml'
+      - 'poc/scripts/r462-gemini-registration-pr-audit.mjs'
+      - 'poc/scripts/test/r462-gemini-registration-pr-audit.test.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: r462-gemini-registration-draft-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline-public-readonly:
+    name: Fixed PR39 review, exact single workflow blob and main registration absent
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DELEGATION_R462_EXPECTED_DEV_SHA: ${{ github.sha }}
+      # Independently inspected main HEAD before PR39 was prepared.
+      # Any main drift is NO-GO until a NEW explicit reviewer decision.
+      DELEGATION_R462_EXPECTED_MAIN_SHA: 0f995678a2ee78f750803c0e6b7f95cedb602ff8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+      - name: Reject all model credentials and billable consent in this audit
+        shell: bash
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+      - name: R462 pure offline negative tests
+        run: |
+          node --check poc/scripts/r462-gemini-registration-pr-audit.mjs
+          node --test poc/scripts/test/r462-gemini-registration-pr-audit.test.mjs
+      - name: Read-only real GitHub PR39 audit (no auth token, dispatch or merge)
+        run: node poc/scripts/r462-gemini-registration-pr-audit.mjs
+      - name: State explicit non-authorization
+        run: |
+          echo "R462 verified registration PR review only."
+          echo "No default-branch registration, no private Host or runner proof, no R5 GO."
