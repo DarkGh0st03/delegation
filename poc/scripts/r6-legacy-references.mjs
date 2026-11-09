@@ -15,6 +15,12 @@ import {SourceTextModule} from "node:vm";
 import {fileURLToPath,pathToFileURL} from "node:url";
 
 export const R6_LEGACY_CANDIDATES=Object.freeze([
+  // Retired one-shot CI trigger payloads: original native/EVM test workflows
+  // remain manual-only and runnable; these JSON requests must not resurrect.
+  ".github/ci-checkpoints/r292-native-evm-request.json",
+  ".github/ci-checkpoints/r302-cas-request.json",
+  ".github/ci-checkpoints/r338-native-fail-request.json",
+  ".github/ci-checkpoints/r376-native-source-diagnostic-recovery-request.json",
   "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
   "poc/packages/orchestrator-runtime/src/legacy-authority-client.ts",
   "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
@@ -90,6 +96,12 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
 export const R6_RETIRED_TARGETS=Object.freeze([
+  // Retired one-shot CI trigger payloads: original native/EVM test workflows
+  // remain manual-only and runnable; these JSON requests must not resurrect.
+  ".github/ci-checkpoints/r292-native-evm-request.json",
+  ".github/ci-checkpoints/r302-cas-request.json",
+  ".github/ci-checkpoints/r338-native-fail-request.json",
+  ".github/ci-checkpoints/r376-native-source-diagnostic-recovery-request.json",
   // R421: prevent PR synthetic-merge resurrection of main-only Actions write workflow.
   ".github/workflows/recover-stuck-planner-run-40350899503.yml",
   // R420: retired, previously non-executable paid launcher records.

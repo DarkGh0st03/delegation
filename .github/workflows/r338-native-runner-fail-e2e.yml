@@ -5,10 +5,6 @@
 name: R338 Native Real Runner FAIL and Authenticated Evidence (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r338-native-fail-request.json'
 permissions:
   contents: read
 concurrency:

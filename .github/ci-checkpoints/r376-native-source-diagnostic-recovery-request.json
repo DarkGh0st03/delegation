@@ -1,7 +1,0 @@
-{
-  "checkpoint": "R378.2",
-  "expected": "native authority-only flow with private MCP Child issuance and Orchestrator VP, specialist task-local MCP VP, authenticated Frontend stop and recovery, Docker FAIL and PASS, and independently verified Draft PR",
-  "models": "scripted deterministic",
-  "paid_inference_calls": 0,
-  "status": "PENDING_NATIVE_E2E"
-}

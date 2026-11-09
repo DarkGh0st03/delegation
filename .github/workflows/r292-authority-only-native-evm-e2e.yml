@@ -3,10 +3,6 @@
 name: R292 Authority-only Native Child EVM and OPA (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r292-native-evm-request.json'
 permissions:
   contents: read
 concurrency:

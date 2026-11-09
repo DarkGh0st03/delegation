@@ -7,10 +7,6 @@
 name: Native Authenticated Specialist Stop and Docker Recovery (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r376-native-source-diagnostic-recovery-request.json'
 permissions:
   contents: read
 concurrency:

@@ -56,6 +56,12 @@ on:
       - 'poc/packages/orchestrator-runtime/src/authority-client.ts'
       - 'poc/scripts/test/r38517-canonical-route-closure.test.mjs'
       - 'poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs'
+      # One-shot checkpoint JSON retired; original manual EVM/Gitea proofs remain.
+      - '.github/workflows/r292-authority-only-native-evm-e2e.yml'
+      - '.github/workflows/r302-gitea-atomic-cas-e2e.yml'
+      - '.github/workflows/r338-native-runner-fail-e2e.yml'
+      - '.github/workflows/r376-native-source-diagnostic-recovery-e2e.yml'
+      - 'poc/scripts/r6-legacy-references.mjs'
       # R422.1: old one-shot CI triggers are retired; source proofs stay native/manual.
       - 'poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs'
       - 'poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs'
@@ -118,6 +124,7 @@ jobs:
         run: |
           node --experimental-vm-modules poc/scripts/r38517-canonical-route-closure.mjs
           node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/check-local-imports.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
