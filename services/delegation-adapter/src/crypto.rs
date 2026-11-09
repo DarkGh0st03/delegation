@@ -1263,7 +1263,6 @@ mod tests {
         );
     }
 
-
     /// R456 native cryptographic positive: a dynamically provisioned
     /// specialist is a distinct Rust issuer/presenter, not Backend's key.
     /// This uses real in-memory Rust Core signatures/status, NOT EVM/OPA.
@@ -1330,11 +1329,22 @@ mod tests {
         )?;
         assert_eq!(verified.presenter_id(), "did:thesis:reviewer");
         assert_eq!(verified.hierarchy_depth(), 1);
-        assert_eq!(verified.permissions(), &vec![permission(Operation::ReadFile)]);
+        assert_eq!(
+            verified.permissions(),
+            &vec![permission(Operation::ReadFile)]
+        );
 
         for (presenter_role, challenge, operation) in [
-            (CallerRole::Backend, "r456-unique-gateway-challenge", Operation::ReadFile),
-            (CallerRole::Frontend, "r456-unique-gateway-challenge", Operation::ReadFile),
+            (
+                CallerRole::Backend,
+                "r456-unique-gateway-challenge",
+                Operation::ReadFile,
+            ),
+            (
+                CallerRole::Frontend,
+                "r456-unique-gateway-challenge",
+                Operation::ReadFile,
+            ),
             (role, "r456-forged-challenge", Operation::ReadFile),
             (role, "r456-unique-gateway-challenge", Operation::UpdateFile),
         ] {
@@ -1349,19 +1359,26 @@ mod tests {
                     signed_vp: presenter.signed_vp.clone(),
                 },
             );
-            assert!(invalid.is_err(), "wrong role, nonce or operation must be rejected");
+            assert!(
+                invalid.is_err(),
+                "wrong role, nonce or operation must be rejected"
+            );
         }
 
         let other = registry.record_for_role(CallerRole::Backend)?;
-        assert!(runtime.create_presentation(
-            other,
-            CreatePresentationRequest {
-                credential_id: String::from("urn:credential:reviewer"),
-                disclosed_permissions: vec![permission(Operation::ReadFile)],
-                audience: String::from("cloud-access-gateway"),
-                challenge: String::from("r456-stolen-role-token"),
-            },
-        ).is_err());
+        assert!(
+            runtime
+                .create_presentation(
+                    other,
+                    CreatePresentationRequest {
+                        credential_id: String::from("urn:credential:reviewer"),
+                        disclosed_permissions: vec![permission(Operation::ReadFile)],
+                        audience: String::from("cloud-access-gateway"),
+                        challenge: String::from("r456-stolen-role-token"),
+                    },
+                )
+                .is_err()
+        );
         Ok(())
     }
 
