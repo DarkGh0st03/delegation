@@ -18,6 +18,7 @@
 | Human merge | `workflow_dispatch` with independent operator and approval verification | Live GitHub Environment reviewers and Gitea admin protection are not proven by offline tests |
 | Legacy retirement | R432 removes the historical HTTP Engineer issuer, its private MCP/HTTP fixture and opt-in gate; the three obsolete signed-DAG wrappers were already retired | The genuine Owner DAG/recovery implementations remain active. Indirect/external callers are not exhaustively proven absent; protect source-level anti-regression guards |
 | SDK A2A trusted roster (R435) | Original Owner now checks exact specialist endpoint and private stage/bind keys and requires the same full set of independently verified live Cards before ADK decisions | Additional roles cannot run until the underlying SDK role runtime, signer and owner-private bindings are implemented; native Rust/OPA/Gateway remain unchanged |
+| Additional A2A Card verification (R436) | Read-only startup probe can verify an extra role against Owner-supplied DID/name/skill/capability ceiling, with distinct loopback URL and no unsafe Test powers | Optional verifier is not yet wired into executable SDK; additional workers need private per-role signer/IPC binding and native E2E |
 
 ## Validated regression snapshots
 

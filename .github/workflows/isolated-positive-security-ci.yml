@@ -58,6 +58,9 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts'
       - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
       - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
+      # R436: owner-pinned additional Agent Card read-only verification (no new dispatcher).
+      - 'poc/packages/orchestrator-runtime/src/trusted-a2a-startup-probe.ts'
+      - 'poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts'
       # R435: SDK endpoint, per-role IPC, and verified Agent Card roster guards.
       - 'poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs'
       - 'poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs'

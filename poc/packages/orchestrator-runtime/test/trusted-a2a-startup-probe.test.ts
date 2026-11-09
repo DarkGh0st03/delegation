@@ -232,3 +232,108 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
    else process.env[k]=v;
  }
 });
+
+/** R436: additional-role Card verification is intentionally read-only.
+ * It cannot start a signer/Agent, bind a Child, admit Gateway effects or
+ * bypass the still-three-role protected SDK dispatcher. */
+test("R436 provisioned additional role requires its exact DID, Card skill and capability ceiling",async()=>{
+ const endpoints={
+  backend:"http://127.0.0.1:61021",frontend:"http://127.0.0.1:61022",
+  test:"http://127.0.0.1:61023",invoice:"http://127.0.0.1:61024"
+ };
+ const pin={did:"did:thesis:invoice-agent",name:"Invoice Engineering Specialist",
+  skillId:"invoice-engineering",capabilities:["read_file","update_file"]};
+ const pins={invoice:pin};
+ let fetchCount=0;
+ const fakeFetch=(mutate?:(card:ReturnType<typeof createSpecializedAgentCard>)=>void)=>{
+  return async(raw:string|URL|Request)=>{
+   fetchCount++;
+   const entry=Object.entries(endpoints).find(([,url])=>
+    String(raw)===url+"/.well-known/agent-card.json");
+   assert.ok(entry,"unknown Card probe endpoint");
+   const [role,base]=entry;
+   const card=createSpecializedAgentCard(
+    role==="invoice"?"backend":role as typeof ROLES[number],base);
+   if(role==="invoice"){
+    card.name=pin.name;
+    card.skills[0]!.id=pin.skillId;
+    card.capabilities.extensions![0]!.params!.agentDid=pin.did;
+    card.capabilities.extensions![0]!.params!.taskCapabilities=["read_file"];
+    mutate?.(card);
+   }
+   return Response.json(card);
+  };
+ };
+ const verified=await assertTrustedApprovedA2AStartup({
+  endpoints,additionalRolePins:pins,fetchFn:fakeFetch()
+ });
+ assert.equal(fetchCount,4,"read-only one Card GET per verified role");
+ assert.deepEqual(verified.invoice,{did:pin.did,capabilities:["read_file"]});
+ assert.equal(Object.isFrozen(verified.invoice),true);
+ assert.equal(Object.isFrozen(verified.invoice.capabilities),true);
+ // A forged additional role cannot reuse an already trusted signer DID.
+ await assert.rejects(assertTrustedApprovedA2AStartup({
+  endpoints,additionalRolePins:{invoice:{...pin,did:"did:thesis:backend-agent"}},
+  fetchFn:async raw=>{
+   const entry=Object.entries(endpoints).find(([,url])=>
+    String(raw)===url+"/.well-known/agent-card.json");
+   assert.ok(entry);
+   const [role,base]=entry;
+   const card=createSpecializedAgentCard(
+    role==="invoice"?"backend":role as typeof ROLES[number],base);
+   if(role==="invoice"){
+    card.name=pin.name;card.skills[0]!.id=pin.skillId;
+    card.capabilities.extensions![0]!.params!.agentDid="did:thesis:backend-agent";
+    card.capabilities.extensions![0]!.params!.taskCapabilities=["read_file"];
+   }
+   return Response.json(card);
+  }
+ }),/pinned localhost role-card verification denied/u);
+ for(const mutate of [
+  (card:ReturnType<typeof createSpecializedAgentCard>)=>{
+   card.capabilities.extensions![0]!.params!.agentDid="did:thesis:attacker";
+  },
+  (card:ReturnType<typeof createSpecializedAgentCard>)=>{
+   card.capabilities.extensions![0]!.params!.taskCapabilities=["read_file","run_tests"];
+  },
+  (card:ReturnType<typeof createSpecializedAgentCard>)=>{
+   card.skills[0]!.id="forged-skill";
+  },
+  (card:ReturnType<typeof createSpecializedAgentCard>)=>{
+   card.supportedInterfaces[0]!.url="http://127.0.0.1:9999/a2a/rest";
+  },
+  (card:ReturnType<typeof createSpecializedAgentCard>)=>{
+   card.skills.push({...card.skills[0]!,id:"extra-skill"});
+  }
+ ]){
+  await assert.rejects(assertTrustedApprovedA2AStartup({
+   endpoints,additionalRolePins:pins,fetchFn:fakeFetch(mutate)
+  }),/pinned localhost role-card verification denied/u);
+ }
+});
+test("R436 reject extra-role spoofing, missing or overprivileged trusted pins before any HTTP",async()=>{
+ const endpoints={
+  backend:"http://127.0.0.1:61021",frontend:"http://127.0.0.1:61022",
+  test:"http://127.0.0.1:61023",invoice:"http://127.0.0.1:61024"
+ };
+ const good={did:"did:thesis:invoice-agent",name:"Invoice Specialist",
+  skillId:"invoice-engineering",capabilities:["read_file","update_file"]};
+ let gets=0;
+ const forbidden=async()=>{gets++;throw Error("no HTTP expected");};
+ for(const invalid of [
+  {endpoints},
+  {endpoints,additionalRolePins:{other:good}},
+  {endpoints,additionalRolePins:{invoice:{...good,capabilities:["run_tests"]}}},
+  {endpoints,additionalRolePins:{invoice:{...good,capabilities:["read_file","read_file"]}}},
+  {endpoints,additionalRolePins:{invoice:{...good,did:"did:invalid"}}},
+  {endpoints,additionalRolePins:{invoice:{...good,skillId:"bad skill"}}},
+  {endpoints:{...endpoints,invoice:endpoints.frontend},additionalRolePins:{invoice:good}},
+  {endpoints:{...endpoints,orchestrator:"http://127.0.0.1:61025"},
+   additionalRolePins:{invoice:good,orchestrator:good}}
+ ]){
+  await assert.rejects(assertTrustedApprovedA2AStartup({
+   ...invalid,fetchFn:forbidden as typeof fetch
+  }),/pinned localhost role-card verification denied/u);
+ }
+ assert.equal(gets,0);
+});
