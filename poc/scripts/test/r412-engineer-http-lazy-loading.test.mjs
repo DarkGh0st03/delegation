@@ -118,7 +118,7 @@ test("R412 direct legacy import cannot issue under missing or canonical profile,
  });
  assert.equal(calls.count,0);
 });
-test("R412 tracked HTTP issuer graph now has only two literal historical dynamic runtime edges",()=>{
+test("R429 historical HTTP issuer graph is limited to private legacy fixture and Runner",()=>{
  const inv=collectLegacyReferences(root,gitTrackedFiles(root),{candidates:[issuer]});
  const entry=inv.candidates[0];
  assert.equal(entry.exists,true);
@@ -129,13 +129,13 @@ test("R412 tracked HTTP issuer graph now has only two literal historical dynamic
   "poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs",
   "poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs"
  ];
- assert.deepEqual(dynamic,[path,runner,...historicalEvm].sort(),
-  "Only the two gated non-test callers and two historical EVM tests load the old issuer");
+ assert.deepEqual(dynamic,[path,runner].sort(),
+  "Real EVM Root/repair scenarios must call Rust native, not a legacy HTTP issuer");
  assert.deepEqual(entry.staticImporters.filter(x=>historicalEvm.includes(x.source)),[],
-  "EVM fixture import must not re-enter the module graph eagerly");
+  "EVM regression cannot statically import old HTTP issuer");
  assert.equal(entry.configuredCallers.length,0);
  assert.ok(inv.unresolvedRuntimeIndirections.length>0,
-  "other computed/external callers remain unproven, so no deletion");
+  "Potential computed/external historical imports remain unproven");
 });
 test("R412 R385.17 disallows static regression even from exact allowed legacy fixture names",()=>{
  const entries=Object.entries(R38518_ALLOWED_NONTEST_LEGACY_CALLERS);

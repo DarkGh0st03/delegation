@@ -79,24 +79,22 @@ test("R428 native cold recovery ignores historical HTTP URL and rejects fallback
  assert.match(service,/\(recovery\.adapterBaseUrl!==undefined&&\s*typeof recovery\.adapterBaseUrl!=="string"\)/u);
 });
 
-test("R418 historical EVM scripts do not eagerly load the old HTTP root issuer",()=>{
+test("R429 native EVM and repair regression reuse canonical Rust Engineer, not HTTP issuer",()=>{
+ const workflow=read(".github/workflows/cumulative-refactoring-offline.yml");
+ assert.match(workflow,/ADAPTER_ENGINEER_NATIVE_SOCKET=\"\$RUNNER_TEMP/); 
  for(const file of [
   "poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs",
   "poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs"
  ]){
   const src=read(file);
-  assert.doesNotMatch(src,
-   /import\s*\{\s*SoftwareEngineerAuthorityBootstrap\s*\}\s*from\s*["'][^"']*\/authority-client\.ts["']/u,
-   file+" must not contain a static HTTP issuer import");
-  const guard=src.indexOf('process.env.ADAPTER_TRUST_PROFILE');
-  const bearer=src.indexOf("ADAPTER_CALLER_");
-  const dynamic=src.indexOf("const {SoftwareEngineerAuthorityBootstrap}=await import(");
-  const constructor=src.indexOf("new SoftwareEngineerAuthorityBootstrap({",dynamic);
-  assert.ok(guard>=0&&bearer>=0&&dynamic>guard&&dynamic>bearer&&
-   constructor>dynamic,
-   file+" must guard EVM identity and bearer before the historical HTTP issuer loads");
-  const imports=[...src.matchAll(/await import\(\s*["'][^"']*\/authority-client\.ts["']\s*\)/gu)];
-  assert.equal(imports.length,1,file+" must have exactly one test-only lazy importer");
+  assert.doesNotMatch(src,/SoftwareEngineerAuthorityBootstrap|authority-client\.ts|createLegacyOwnerPrivateMcpEngineerCredentialPort/u,
+   "Native EVM regression must not import legacy Root issuer: "+file);
+  assert.match(src,/import \{createTrustedEngineerCredentialPort\} from/u);
+  assert.match(src,/createTrustedEngineerCredentialPort\(\{/u);
+  assert.match(src,/ADAPTER_TRUST_PROFILE/u,
+   "EVM fixture may not bypass real EVM verification");
+  assert.ok(workflow.includes(file),
+   "Cumulative EVM offline gate must execute migrated scenario "+file);
  }
 });
 

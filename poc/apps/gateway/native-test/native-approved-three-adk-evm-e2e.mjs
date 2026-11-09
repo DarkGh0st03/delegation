@@ -22,6 +22,8 @@ import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {OpaPolicyClient} from "../src/policy-client.ts";
 
 import {TrustedEngineerAuthoritySession} from "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
+import {createTrustedEngineerCredentialPort} from
+  "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {TrustedExecutionCoordinator} from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {TrustedApprovedA2ADispatcher} from "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {DeterministicA2AOrchestrator} from "../../../packages/agent-runtime/src/orchestrator.ts";
@@ -146,13 +148,12 @@ async function executeScenario({wrongBackend=false,seed}){
       trustedKeys:{[keyId]:{engineer_did:did.engineer,
         public_key_pem:publicKey.export({format:"pem",type:"spki"}).toString()}}
     });
-    // R418: historical real-EVM regression only. Keep the HTTP issuer out
-    // of the module graph until the EVM DID/bearer/trust profile has
-    // already been checked; never expose it to canonical native owners.
-    const {SoftwareEngineerAuthorityBootstrap}=await import(
-      "../../../packages/orchestrator-runtime/src/authority-client.ts");
-    authorityClient=new SoftwareEngineerAuthorityBootstrap({
-      adapterBaseUrl:adapter,bearerToken:process.env.ADAPTER_CALLER_ENGINEER,
+    // R429: use the SAME role-authenticated Rust issuer as the EVM Adapter.
+    // This offline three-Agent scenario must never load HTTP Root issuance.
+    // The cumulative native-EVM workflow supplies an actual Unix socket;
+    // absence of it is a hard error, never an Adapter transport downgrade.
+    authorityClient=createTrustedEngineerCredentialPort({
+      bearerToken:process.env.ADAPTER_CALLER_ENGINEER,
       timeoutMs:30_000
     });
     const snapshot={session_id:session,repository:repo,base_revision:initial,

@@ -20,6 +20,8 @@ import {SignedEngineerApprovalFileStore} from
 
 import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
+import {createTrustedEngineerCredentialPort} from
+  "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {TrustedExecutionCoordinator} from
   "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {TrustedOperationalEpochIntake} from
@@ -154,13 +156,11 @@ try{
    public_key_pem:keys.publicKey.export({format:"pem",type:"spki"}).toString()
   }}
  });
- // R418: historical EVM repair regression only. The HTTP issuer is
- // lazily imported after explicit EVM/Gateway identity and bearer guards;
- // the canonical Owner/Gateway executable must never load it.
- const {SoftwareEngineerAuthorityBootstrap}=await import(
-   "../../../packages/orchestrator-runtime/src/authority-client.ts");
- const credentials=new SoftwareEngineerAuthorityBootstrap({
-  adapterBaseUrl:adapter,bearerToken:tokens.engineer,timeoutMs:25_000
+ // R429: reuse canonical Software Engineer Rust Root issuance/revocation.
+ // Root, Child and VP now bind to the same EVM-backed Rust authority;
+ // a missing native socket never retries through historical HTTP.
+ const credentials=createTrustedEngineerCredentialPort({
+  bearerToken:tokens.engineer,timeoutMs:25_000
  });
  let gates;
  const trustedGatewayControl={
