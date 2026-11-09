@@ -102,6 +102,7 @@ jobs:
           # Research model evidence: actual ADK BaseLlm output enters original owner adaptive loop; no provider key.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs
           # Live-model assembly: construct ADK Gemini objects with a synthetic key only; NEVER issue provider calls.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-private-key.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-model-set.test.mjs
           # Experimental owner-only canonical model binding: synthetic key, no provider inference.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-canonical-binding.test.mjs

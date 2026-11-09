@@ -14,6 +14,9 @@
 import {Gemini} from "@google/adk";
 import {createGeminiAdkModel}
  from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
+import {loadProtectedDisposableGeminiKeyFile,
+ consumeProtectedDisposableGeminiKey}
+ from "./disposable-gemini-private-key.mjs";
 
 const SHA=/^[0-9a-f]{40}$/u;
 const REPO="DarkGh0st03/delegation";
@@ -98,14 +101,13 @@ export function assertDisposableLiveGeminiAdmission(
  * from ordinary object enumeration. This is defense-in-depth, not sandboxing.
  */
 export function createDisposableLiveGeminiModelSet({
- env,checkoutSha,privateApiKey
+ env,checkoutSha,privateKeyHandle
 }={}){
  assertDisposableLiveGeminiAdmission(env,checkoutSha);
- // The trusted operator must read this from a protected private file.
- // Caller-supplied environment values are NOT accepted by admission.
- // This constructor never issues a request or creates a paid workflow.
- if(typeof privateApiKey!=="string"||privateApiKey.length<10||
-    /\s/u.test(privateApiKey))deny();
+ // Only a key actually loaded by the owner-private filesystem reader is
+ // accepted. A raw string or a forged handle is never sufficient.
+ // The handle is consumed once BEFORE any SDK object is constructed.
+ const privateApiKey=consumeProtectedDisposableGeminiKey(privateKeyHandle);
  const create=()=>{
   const model=createGeminiAdkModel({
    apiKey:privateApiKey,model:MODEL
@@ -130,6 +132,22 @@ export function createDisposableLiveGeminiModelSet({
  const issued=Object.freeze(set);
  ISSUED_SETS.add(issued);
  return issued;
+}
+
+/**
+ * Verify consent/source BEFORE opening the protected key file. The file
+ * reader checks ownership/mode/symlink boundaries; this still DOES NOT
+ * prove separate process isolation or an enforced provider spend cap.
+ * No inference occurs here.
+ */
+export async function createDisposableLiveGeminiModelSetFromPrivateFile({
+ env,checkoutSha,keyFile
+}={}){
+ assertDisposableLiveGeminiAdmission(env,checkoutSha);
+ const privateKeyHandle=await loadProtectedDisposableGeminiKeyFile(keyFile);
+ return createDisposableLiveGeminiModelSet({
+  env,checkoutSha,privateKeyHandle
+ });
 }
 
 /** Strict origin check for owner-only zero-inference canonical binding. */

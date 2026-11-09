@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {Gemini} from "@google/adk";
-import {createDisposableLiveGeminiModelSet}
+import {mkdtemp,rm,writeFile} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {createDisposableLiveGeminiModelSetFromPrivateFile}
  from "../src/disposable-gemini-live-model-set.mjs";
 import {bindDisposableLiveGeminiCanonicalInputs}
  from "../src/disposable-gemini-live-canonical-binding.mjs";
@@ -9,7 +12,13 @@ import {bindDisposableLiveGeminiCanonicalInputs}
 const SHA="a".repeat(40);
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
 const roles=["backend","frontend","test"];
-function models(){
+async function models(t){
+ const directory=await mkdtemp(join(tmpdir(),"disposable-binding-key-"));
+ t.after(()=>rm(directory,{recursive:true,force:true}));
+ const keyFile=join(directory,"gemini.secret");
+ await writeFile(keyFile,"synthetic-no-network-key\n",{
+  mode:0o600,flag:"wx"
+ });
  const env={
   GITHUB_ACTIONS:"true",GITHUB_REPOSITORY:"DarkGh0st03/delegation",
   GITHUB_EVENT_NAME:"workflow_dispatch",GITHUB_REF:REF,
@@ -20,8 +29,8 @@ function models(){
   DELEGATION_BILLING_CAP_ACK:
    "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES",
   };
- return createDisposableLiveGeminiModelSet({
-  env,checkoutSha:SHA,privateApiKey:"synthetic-no-network-key"
+ return createDisposableLiveGeminiModelSetFromPrivateFile({
+  env,checkoutSha:SHA,keyFile
  });
 }
 const noop=()=>{};
@@ -72,8 +81,8 @@ function fixture(){
  return {authority,operational};
 }
 
-test("original Review Host, native transports and exactly three workers receive the consented Gemini models without inference",()=>{
- const f=fixture(), set=models();
+test("original Review Host, native transports and exactly three workers receive the consented Gemini models without inference",async t=>{
+ const f=fixture(), set=await models(t);
  const bound=bindDisposableLiveGeminiCanonicalInputs({...f,models:set});
  assert.equal(bound.authority.checkpoint,f.authority.checkpoint);
  assert.equal(bound.authority.approval,f.authority.approval);
@@ -105,8 +114,8 @@ test("original Review Host, native transports and exactly three workers receive 
  assert.equal(Object.isFrozen(bound.operational.localWorkers.workers),true);
 });
 
-test("a forged or hand-written model set cannot inject a provider into canonical authority",()=>{
- const f=fixture(),set=models();
+test("a forged or hand-written model set cannot inject a provider into canonical authority",async t=>{
+ const f=fixture(),set=await models(t);
  for(const fake of [
   null,{},{
    planner:set.planner,adaptive:set.adaptive,workers:set.workers
@@ -116,8 +125,8 @@ test("a forged or hand-written model set cannot inject a provider into canonical
  }),/NO-GO/u);
 });
 
-test("fail closed on model override, extra role, legacy bypass and source mismatch",()=>{
- const set=models();
+test("fail closed on model override, extra role, legacy bypass and source mismatch",async t=>{
+ const set=await models(t);
  const mutations=[
   f=>{f.authority.planner.model=set.planner.model;},
   f=>{f.authority.trustedAgentRegistry.reviewer={did:"did:reviewer"};},
