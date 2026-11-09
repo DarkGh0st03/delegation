@@ -20,6 +20,8 @@ export async function startTrustedAuthorityOnlyLocalA2AWorkers({
  const roles=workers&&typeof workers==="object"&&!Array.isArray(workers)
   ?Object.keys(workers).sort():[];
  const additional=roles.filter(role=>!ORIGINAL.includes(role));
+ const nativeExtras=(process.env.ADAPTER_ADDITIONAL_SPECIALISTS??"");
+ const configuredExtras=nativeExtras===""?[]:nativeExtras.split(",").sort();
  const registered=trustedAgentRegistry&&typeof trustedAgentRegistry==="object"&&
   !Array.isArray(trustedAgentRegistry)
    ?Object.keys(trustedAgentRegistry).filter(role=>role!=="orchestrator").sort()
@@ -30,6 +32,8 @@ export async function startTrustedAuthorityOnlyLocalA2AWorkers({
      ["constructor","prototype","orchestrator"].includes(role))||
     (registered&&registered.join(",")!==roles.join(","))||
     (additional.length>0&&(!native||!registered))||
+    configuredExtras.length!==additional.length||
+    !additional.every((role,i)=>role===configuredExtras[i])||
     typeof directory!=="string"||!directory.startsWith("/")||
     (native&&(process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
      process.env.APPROVED_RUNNER_NATIVE_MCP!=="1")))
@@ -49,6 +53,7 @@ export async function startTrustedAuthorityOnlyLocalA2AWorkers({
      !adk?.model||!adk.adapterToken||
      (native&&!did?.startsWith("did:"))||
      (registered&&(!registeredPin||registeredPin.did!==did))||
+     (extra&&process.env["ADAPTER_CALLER_"+role.toUpperCase()]!==adk?.adapterToken)||
      (extra&&(!pin||typeof pin!=="object"||Array.isArray(pin)||
        Object.keys(pin).sort().join(",")!=="capabilities,did,name,skillId"||
        pin.did!==registeredPin?.did||

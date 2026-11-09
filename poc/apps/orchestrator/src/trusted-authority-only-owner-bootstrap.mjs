@@ -61,6 +61,16 @@ const REQUIRED_ROLES=new Set(ROLES);
 function trustedRegistry(registry){
  if(!plain(registry))return false;
  const roles=Object.keys(registry);
+ const extras=roles.filter(role=>!REQUIRED_ROLES.has(role)).sort();
+ // The manifest is not a second Rust signer registry. It must describe
+ // exactly the additional roles already provisioned inside the one
+ // Engineer-owned native Rust process; no silent default signer.
+ const raw=process.env.ADAPTER_ADDITIONAL_SPECIALISTS??"";
+ const nativeExtras=raw===""?[]:raw.split(",").sort();
+ if(extras.length!==nativeExtras.length||
+    !extras.every((role,i)=>role===nativeExtras[i])||
+    extras.some(role=>!process.env["ADAPTER_CALLER_"+role.toUpperCase()]?.trim()))
+  return false;
  if(roles.length<ROLES.length||roles.length>17||
     !ROLES.every(role=>Object.hasOwn(registry,role))||
     roles.some(role=>!ADDITIONAL_ROLE.test(role)||

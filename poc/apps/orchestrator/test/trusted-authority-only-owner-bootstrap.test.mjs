@@ -19,7 +19,8 @@ const ROLES=["backend","frontend","test","orchestrator"];
 async function fixture(t){
  const envNames=["GITHUB_ACTIONS","DELEGATION_GATEWAY_ARCHITECTURE",
   "APPROVED_RUNNER_NATIVE_MCP","ENGINEER_CORE_NATIVE_MODE",
-  "ADAPTER_ENGINEER_NATIVE_SOCKET",
+  "ADAPTER_ENGINEER_NATIVE_SOCKET","ADAPTER_ADDITIONAL_SPECIALISTS",
+  "ADAPTER_ID_REVIEWER","ADAPTER_CALLER_REVIEWER",
   ...ROLES.map(x=>"ADAPTER_ID_"+x.toUpperCase())];
  const previous=new Map(envNames.map(x=>[x,process.env[x]]));
  t.after(()=>{
@@ -338,6 +339,8 @@ test("canonical deployment rejects extra configuration and missing billing conse
 test("Protected 0600 manifest admits one Owner-pinned additional read specialist, never inferred power",async t=>{
  const f=await fixture(t);
  const name="reviewer",key="ADAPTER_ID_REVIEWER";
+ process.env.ADAPTER_ADDITIONAL_SPECIALISTS="reviewer";
+ process.env.ADAPTER_CALLER_REVIEWER="PRIVATE_NATIVE_REVIEWER_TOKEN";
  const previous=process.env[key];
  t.after(()=>{if(previous===undefined)delete process.env[key];
   else process.env[key]=previous;});
@@ -368,5 +371,13 @@ test("Protected 0600 manifest admits one Owner-pinned additional read specialist
  delete process.env[key];
  await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
  process.env[key]=did;
+ process.env.ADAPTER_ADDITIONAL_SPECIALISTS="";
+ await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
+ process.env.ADAPTER_ADDITIONAL_SPECIALISTS="reviewer,unknown";
+ await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
+ process.env.ADAPTER_ADDITIONAL_SPECIALISTS="reviewer";
+ delete process.env.ADAPTER_CALLER_REVIEWER;
+ await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
+ process.env.ADAPTER_CALLER_REVIEWER="PRIVATE_NATIVE_REVIEWER_TOKEN";
  assert.ok((await f.load()).pins.trustedAgentRegistry.reviewer);
 });

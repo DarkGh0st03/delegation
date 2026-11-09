@@ -28,7 +28,8 @@ async function port(){
 test("Canonical local A2A bootstrap starts fourth native read-only Worker with pinned Card and private channels",async t=>{
  const dir=await mkdtemp(join(tmpdir(),"r452-a2a-"));
  const names=["DELEGATION_GATEWAY_ARCHITECTURE","APPROVED_RUNNER_NATIVE_MCP",
-  "ADAPTER_ENGINEER_NATIVE_SOCKET",
+  "ADAPTER_ENGINEER_NATIVE_SOCKET","ADAPTER_ADDITIONAL_SPECIALISTS",
+  "ADAPTER_CALLER_REVIEWER",
   ...["backend","frontend","test","reviewer"].map(role=>
    "ADAPTER_ID_"+role.toUpperCase())];
  const original=new Map(names.map(name=>[name,process.env[name]]));
@@ -43,6 +44,8 @@ test("Canonical local A2A bootstrap starts fourth native read-only Worker with p
  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=join(dir,"owner-rust.sock");
+ process.env.ADAPTER_ADDITIONAL_SPECIALISTS="reviewer";
+ process.env.ADAPTER_CALLER_REVIEWER="PRIVATE_ADAPTER_TOKEN";
  const roles=["backend","frontend","test","reviewer"];
  const didFor=(i)=>"did:ethr:0x7a69:0x"+String(i+1).padStart(40,"0");
  const registry={};
@@ -68,6 +71,14 @@ test("Canonical local A2A bootstrap starts fourth native read-only Worker with p
  registry.orchestrator={did:didFor(10),card_ref:"trusted:orchestrator",
   capabilities:["create_branch"]};
  const options={directory:dir,workers,native:true,trustedAgentRegistry:registry};
+ process.env.ADAPTER_ADDITIONAL_SPECIALISTS="";
+ await assert.rejects(startTrustedAuthorityOnlyLocalA2AWorkers(options),
+  /Invalid private local A2A worker configuration/u);
+ process.env.ADAPTER_ADDITIONAL_SPECIALISTS="reviewer";
+ process.env.ADAPTER_CALLER_REVIEWER="wrong-token";
+ await assert.rejects(startTrustedAuthorityOnlyLocalA2AWorkers(options),
+  /Invalid private local A2A worker configuration/u);
+ process.env.ADAPTER_CALLER_REVIEWER="PRIVATE_ADAPTER_TOKEN";
  await assert.rejects(startTrustedAuthorityOnlyLocalA2AWorkers({
   ...options,workers:{...workers,reviewer:{
    ...workers.reviewer,ownerAdditionalCardPin:{
