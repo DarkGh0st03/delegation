@@ -41,19 +41,10 @@ test('R384.6 executable cannot select paid legacy mode even when requested expli
  assert.doesNotMatch(result.stderr,/PRIVATE KEY|Bearer|API key/u);
 });
 
-test('R384.6 both historical billed GitHub Actions jobs are unconditionally skipped',()=>{
- const workflow=readFileSync(
-  path('.github/workflows/gemini-paid-shared-mcp-final.yml'),'utf8');
- assert.match(workflow,/^name: RETIRED - Historical Gemini Signed DAG Pilot \(Disabled\)$/mu);
- for(const name of ['account-suspension','f1-real-gitea-planning']){
-  const offset=workflow.indexOf('  '+name+':\n');
-  assert.ok(offset>=0,'historical job must remain visible for migration audit');
-  const opening=workflow.slice(offset,offset+300);
-  assert.match(opening,/^    if: \$\{\{ false \}\}$/mu,
-   'historical job must never reach a potentially-billed step');
- }
+test('R426 historical billed Signed DAG GitHub workflow is physically retired',()=>{
+ assert.equal(existsSync(path('.github/workflows/gemini-paid-shared-mcp-final.yml')),false,
+  'retired billed workflow must remain absent, not merely if:false');
 });
-
 
 test('R420 no obsolete paid workflow can be dispatched after physical retirement',()=>{
  const old=[
@@ -66,8 +57,7 @@ test('R420 no obsolete paid workflow can be dispatched after physical retirement
   assert.equal(existsSync(file),false,
    'retired paid workflow must not remain runnable: '+filename);
  }
- // Keep separate R384.6 assertions for the still-archived, always-disabled
- // old Signed-DAG pilot; the absence of these other three is stronger.
+ // R426 verifies the retired Signed-DAG pilot is also physically absent.
 });
 
 test('R384.9 public runtime cannot load historical HTTP Adapter Engineer authority',()=>{

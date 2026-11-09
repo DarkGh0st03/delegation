@@ -10,7 +10,7 @@ const ID="dispatch_"+"A".repeat(22);
 test("real A2A transport retains a prebound Gateway ID privately, distinct from the SDK Task ID",async()=>{
  let context:any;
  const server=await startSpecializedAgentServer({
-   role:"backend",host:"127.0.0.1",port:43608,
+   role:"backend",host:"127.0.0.1",port:0,
    taskHandler:async ctx=>{
      context=structuredClone(ctx);
      return buildDeterministicArtifactPayload("backend",ctx.subtask);
@@ -63,7 +63,7 @@ test("real A2A transport retains a prebound Gateway ID privately, distinct from 
 test("real A2A transport preserves signed Test no-Runner hint across separate Tasks",async()=>{
   const contexts:any[]=[];
   const server=await startSpecializedAgentServer({
-    role:"test",host:"127.0.0.1",port:43609,
+    role:"test",host:"127.0.0.1",port:0,
     taskHandler:async ctx=>{
       contexts.push(structuredClone(ctx));
       const prep=ctx.subtask.approved_run_tests===false;

@@ -155,24 +155,13 @@ test("R168 green legacy MCP must never substitute actual signed D1 recovery",()=
   .independent_workflows_verified,4);
 });
 
-test("R384.6 archived manual Gemini workflow is disabled and cannot start legacy Adapter HTTP",()=>{
- const paid=readFileSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url),"utf8");
- const triggers=/^on:\s*\n([\s\S]*?)^permissions:/mu.exec(paid);
- assert.ok(triggers&&triggers[1].includes("workflow_dispatch:"));
- for(const job of ["account-suspension","f1-real-gitea-planning"]){
-  const offset=paid.indexOf("  "+job+":\n");
-  assert.ok(offset>=0,"retired job must be accounted for: "+job);
-  assert.match(paid.slice(offset,offset+300),/^    if: \$\{\{ false \}\}$/mu);
+test("R426 retired billed workflow cannot substitute for four free CI gates",()=>{
+ const retired=".github/workflows/gemini-paid-shared-mcp-final.yml";
+ assert.equal(existsSync(new URL("../../../"+retired,import.meta.url)),false);
+ for(const missing of paths){
+  const forged=[...paths.filter(p=>p!==missing).map(green),green(retired)];
+  assert.throws(()=>verifyExactShaOfflineCiRuns(forged,sha),/NO-GO/u);
  }
- assert.doesNotMatch(triggers[1],/^  (push|schedule|pull_request):/mu);
- assert.equal((paid.match(/ENGINEER_CORE_NATIVE_MODE: "1"/gu)??[]).length,2);
- assert.equal((paid.match(/APPROVED_RUNNER_NATIVE_MCP: "1"/gu)??[]).length,2);
- assert.equal((paid.match(/libdelegation_engineer_node\.so/gu)??[]).length,2);
- assert.equal((paid.match(/assert_verification_ready\(\)/gu)??[]).length,2);
- assert.doesNotMatch(paid,/cargo run --manifest-path services\/delegation-adapter\/Cargo.toml/u);
- assert.doesNotMatch(paid,/cargo build --manifest-path services\/delegation-adapter\/Cargo.toml/u);
- assert.match(paid,/node poc\/scripts\/signed-gemini-pilot-ci-gate\.mjs --check-ci-no-inference/u);
- assert.equal((paid.match(/test ! -e \/tmp\/native-evm-adapter\.pid/gu)??[]).length,2);
 });
 test("R267 historical HTTP Adapter CI cannot masquerade as native proof",()=>{
  const historical=[
@@ -188,21 +177,16 @@ test("R267 historical HTTP Adapter CI cannot masquerade as native proof",()=>{
   ],sha),/NO-GO/u);
 });
 
-test("R384.6 retired D0/F1 jobs preserve original Rust DID references for audit only",()=>{
- const paid=readFileSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url),"utf8");
+test("R426 free native DID script references survive removal of paid workflow",()=>{
+ assert.equal(existsSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url)),false);
  const free=readFileSync(new URL("../../../.github/workflows/f1-real-gitea-planning-parity.yml",import.meta.url),"utf8");
  const signed=readFileSync(new URL("../../../.github/workflows/engineer-embedded-signed-dag-e2e.yml",import.meta.url),"utf8");
  for(const [name,file] of [
-   ["ADAPTER_DID_PUBLISHER_SCRIPT","publish-ed25519.mjs"],
-   ["ADAPTER_DID_RESOLVER_SCRIPT","resolve-did-json.mjs"]
+  ["ADAPTER_DID_PUBLISHER_SCRIPT","publish-ed25519.mjs"],
+  ["ADAPTER_DID_RESOLVER_SCRIPT","resolve-did-json.mjs"]
  ]){
-   const path=name+": "+"$"+"{{ github.workspace }}/blockchain/did-client/"+file;
-   assert.ok(free.includes(path),"Free F1 path reference must exist");
-   assert.ok(signed.includes(path),"Free signed DAG path reference must exist");
-   assert.equal(paid.split(path).length-1,2,"D0 and paid F1 must both pin "+name);
-   assert.equal(paid.split('test -f "$'+name+'"').length-1,2);
-   assert.equal(paid.split('case "$'+name+'" in /*) ;; *) exit 1 ;; esac').length-1,2);
+  const path=name+": "+"$"+"{{ github.workspace }}/blockchain/did-client/"+file;
+  assert.ok(free.includes(path),"Free F1 path reference must exist");
+  assert.ok(signed.includes(path),"Free signed DAG path reference must exist");
  }
- assert.match(paid,/Block billed Gemini pilot unless SAME SHA passed all four native\/free CI gates/u);
- assert.doesNotMatch(paid,/\n  push:\s*\n/u);
 });
