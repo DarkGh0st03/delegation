@@ -107,6 +107,8 @@ jobs:
           node --check poc/packages/orchestrator-runtime/test/r330-native-two-adk-a2a-frontend-test-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r331-native-three-adk-a2a-test-docker-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r354-native-reviewed-root-branch-e2e.mjs
+          # R461: parse native Planner/Child/A2A/Gateway provider proof without starting expensive services.
+          node --check poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r333-native-three-role-stage-adk-e2e.mjs
           node --test poc/scripts/test/r271-adapter-legacy-feature-boundary.test.mjs
           node --test poc/apps/test-runner-controller/test/disposable-docker-safe-diagnostic.test.mjs

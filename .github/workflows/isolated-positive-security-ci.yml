@@ -69,6 +69,9 @@ on:
       # R435: SDK endpoint, per-role IPC, and verified Agent Card roster guards.
       - 'poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs'
       - 'poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs'
+      # R461: exact Planner-chosen Task flows through native Rust/EVM/OPA/Gitea.
+      - 'poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs'
+      - '.github/workflows/r457-fourth-role-native-gitea-e2e.yml'
       # R459: one scripted Planner-to-additional-role private A2A chain.
       # This is offline fixture-backed; the R458 native provider proof remains separate.
       - 'poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs'
@@ -202,6 +205,7 @@ jobs:
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r409-owner-repair-core-migration.test.mjs
           node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs
+          node --check poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs

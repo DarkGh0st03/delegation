@@ -12,6 +12,9 @@ import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {createRequire} from "node:module";
+import {BaseLlm} from "@google/adk";
+import {TrustedAuthorityOnlyAdkDecisionProposer}
+ from "../src/trusted-authority-only-adk-decision-proposer.mjs";
 
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {InMemoryAuditSink,InMemoryRequestStore,prepareAuthorization}
@@ -334,15 +337,92 @@ try{
  // IPC. The deterministic handler is a CI fixture (not a Gemini/ADK model).
  // It may stage the one approved read, but only the real Rust+OPA+Gitea
  // provider and independent Gateway observer can complete the Task.
+ // R461 — one continuous OFFLINE Planner choice -> real native Child/VP
+ // -> signed A2A HTTP -> Rust/EVM/OPA -> Gitea -> Gateway completion.
+ // The canonical GEMINI scenario STILL has precisely 3 specialists:
+ // Backend, Frontend and Test. The read-only reviewer exists solely in
+ // this disposable native fixture and never joins the paid Pilot manifest.
+ const canonicalGeminiRoles=["backend","frontend","test"];
+ assert.deepEqual(canonicalGeminiRoles,["backend","frontend","test"]);
  const a2aTaskId="r458-reviewer-a2a-task";
  const a2aRuntimeTaskId="dispatch_"+"R".repeat(22);
+ const chosenNativeRead={
+  task_id:a2aTaskId,agent_id:"reviewer",depends_on:[taskId],
+  permissions:[grantPermission],
+  instruction:"Read only the Owner-approved source at its current pinned HEAD"
+ };
+ class NativeScriptedTaskChoice extends BaseLlm{
+  constructor(response){
+   super({model:"r461-scripted-owner-planner-zero-api"});
+   this.response=response;this.calls=0;
+  }
+  async *generateContentAsync(){
+   assert.equal(++this.calls,1,"one model turn for each bounded owner choice");
+   yield {content:{role:"model",parts:[{text:JSON.stringify(this.response)}]}};
+  }
+  connect(){throw Error("R461 cannot connect to a billable provider");}
+ }
+ const nativeDecisionContext={
+  requirement,branch,rootPermissions:[grantPermission],
+  // Only the existing trusted Coordinator reviewer pin is offered here.
+  // Four HTTP A2A listeners later in this file are transport test fixtures,
+  // not a fourth canonical Gemini specialist or new authority to mutate.
+  agents:{reviewer:{capabilities:["read_file"]}},
+  previousTasks:[{task_id:taskId,agent_id:"reviewer"}],
+  nextEpoch:2,decisionKind:"adaptive",
+  executionProgress:{
+   current_head_sha:baseRevision,
+   completed_work:[{
+    task_id:taskId,agent_id:"reviewer",operation:"read_file",
+    instruction:"Previous signed Rust/OPA/Gitea read independently completed"
+   }]
+  }
+ };
+ const chooseNativeRead=async response=>{
+  const scripted=new NativeScriptedTaskChoice(response);
+  try{
+   const result=await new TrustedAuthorityOnlyAdkDecisionProposer({
+    ...nativeDecisionContext,model:scripted
+   }).propose();
+   assert.equal(scripted.calls,1);
+   return result;
+  }catch(error){
+   assert.equal(scripted.calls,1);
+   throw error;
+  }
+ };
+ // Fail before registration, Child issuance, A2A send, or provider effects
+ // if the scripted Planner invents a role, widens the signed Root ceiling,
+ // or references a Task that Gateway has never independently completed.
+ const rejectedPlannerChoices=[
+  {...chosenNativeRead,agent_id:"auditor"},
+  {...chosenNativeRead,permissions:[{
+   ...grantPermission,operation:"update_file"
+  }]},
+  {...chosenNativeRead,depends_on:["invented-gateway-completion"]}
+ ];
+ for(const forged of rejectedPlannerChoices)
+  await assert.rejects(chooseNativeRead({action:"delegate",task:forged}),
+   /R351 authority-only model Task choice denied/u);
+ assert.equal(providerCalls,1,"rejected Planner choices cannot reach Gitea");
+ assert.equal(gate.stagedCompletedTaskCount,1);
+ const nativeDecision=await chooseNativeRead({
+  action:"delegate",task:chosenNativeRead
+ });
+ assert.equal(nativeDecision.action,"delegate");
+ assert.deepEqual(nativeDecision.task,chosenNativeRead);
+ // The trusted Coordinator registers only the selected Task *within* the
+ // originally signed Engineer permissions. The model cannot pick epoch,
+ // credential IDs, signer DIDs, source SHA, or Gateway binding.
  await coordinator.registerTask({
   session_id:sessionId,requirement_sha256:createHash("sha256")
    .update(requirement).digest("hex"),
-  base_revision:baseRevision,branch,task_id:a2aTaskId,epoch:2,
-  agent_id:"reviewer",depends_on:[taskId],permissions:[grantPermission]
+  base_revision:baseRevision,branch,task_id:nativeDecision.task.task_id,epoch:2,
+  agent_id:nativeDecision.task.agent_id,
+  depends_on:nativeDecision.task.depends_on,
+  permissions:nativeDecision.task.permissions
  });
- await gate.bindTrustedTask(a2aTaskId,a2aRuntimeTaskId,"reviewer");
+ await gate.bindTrustedTask(nativeDecision.task.task_id,a2aRuntimeTaskId,nativeDecision.task.agent_id);
  const a2aIssuedAt=new Date().toISOString().replace(/\.\d{3}Z$/u,"Z");
  const nativeA2AChild=await issuer.issueForRegisteredTask(a2aTaskId,{
   ...params("urn:r458:child:reviewer-a2a",45706,600),
@@ -421,6 +501,8 @@ try{
      const conveyed=JSON.parse(context.delegation_evidence.credential);
      assert.equal(conveyed.id,nativeA2AChild.credential_id);
      assert.equal(conveyed.credentialSubject?.sub,reviewerDid);
+     assert.equal(context.subtask.subtask_id,nativeDecision.task.task_id);
+     assert.equal(context.subtask.instruction,nativeDecision.task.instruction);
      assert.deepEqual(context.subtask.approved_file_permissions,
       [{path:"README.md",operation:"read_file"}]);
      assert.equal(context.subtask.approved_run_tests,false);
@@ -467,7 +549,7 @@ try{
   assert.equal(a2aOwner.verifiedAgentProfiles?.reviewer?.did,reviewerDid);
   const report=await a2aOwner.dispatchIssuedTask({
    taskId:a2aTaskId,runtimeTaskId:a2aRuntimeTaskId,
-   instruction:"Read only the Owner-approved source at its current pinned HEAD",
+   instruction:nativeDecision.task.instruction,
    effectStager:{
     stagedTool:"read_file",
     stage:async id=>{
@@ -564,6 +646,13 @@ try{
   r458_private_role_hmac_bind:true,
   r458_independent_gateway_read_attestation:true,
   r458_unbound_spoof_denied:true,
+  r461_scripted_planner_native_task_selected:true,
+  r461_unprovisioned_planner_roles_denied:true,
+  r461_signed_scope_escalation_denied:true,
+  r461_unverified_planner_dependency_denied:true,
+  r461_canonical_gemini_three_roles_unchanged:true,
+  r461_negative_planner_decisions:rejectedPlannerChoices.length,
+  r461_native_selected_role:nativeDecision.task.agent_id,
   provider_calls:providerCalls,gateway_read_executed:true,completion_attested:true,
   paid_model_calls:0
  })+"\n");
