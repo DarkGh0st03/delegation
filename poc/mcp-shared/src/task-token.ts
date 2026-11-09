@@ -2,8 +2,11 @@ import { randomBytes, sign, verify, createPrivateKey, createPublicKey } from "no
 
 export const MCP_AUDIENCE = "thesis-shared-mcp";
 export const AGENT_ROLES = ["backend", "frontend", "test"] as const;
-export type AgentRole = (typeof AGENT_ROLES)[number];
-export type VerificationKeys = Readonly<Partial<Record<AgentRole, string>>>;
+/** Extra roles are permitted only when an Owner holds a corresponding
+ * signing key AND the verifier is explicitly provisioned with that role's
+ * public key. Role text itself does not grant any repository capability. */
+export type AgentRole = (typeof AGENT_ROLES)[number] | (string & {});
+export type VerificationKeys = Readonly<Partial<Record<string, string>>>;
 export interface TaskClaims {
   role: AgentRole;
   task_id: string;
@@ -15,8 +18,11 @@ export interface TaskClaims {
 }
 const HEADER = Buffer.from(JSON.stringify({alg:"EdDSA",typ:"JWT"})).toString("base64url");
 const MAX_AGE = 600;
+const TRUSTED_ROLE = /^[a-z][a-z0-9_-]{0,23}$/u;
 function isRole(value: unknown): value is AgentRole {
-  return typeof value === "string" && AGENT_ROLES.includes(value as AgentRole);
+  return typeof value === "string" &&
+    TRUSTED_ROLE.test(value) &&
+    !["orchestrator","constructor","prototype"].includes(value);
 }
 function object(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -53,8 +59,12 @@ export function verifyTaskToken(
   catch { throw new Error("invalid_task_token"); }
   const claims = object(decoded);
   if (!claims || !isRole(claims.role)) throw new Error("invalid_task_token");
-  const publicKey = publicKeys[claims.role];
-  if (!publicKey || !verify(null, Buffer.from(parts[0]+"."+parts[1]),
+  // A parsed role MUST have an own, explicitly trusted verification key:
+  // never accept an inherited JS property as a signer registration.
+  const publicKey = Object.hasOwn(publicKeys, claims.role)
+    ? publicKeys[claims.role] : undefined;
+  if (typeof publicKey !== "string" || !publicKey ||
+      !verify(null, Buffer.from(parts[0]+"."+parts[1]),
                             createPublicKey(publicKey),Buffer.from(parts[2]!,"base64url"))) {
     throw new Error("invalid_task_signature");
   }

@@ -32,3 +32,33 @@ test("cannot mint empty tasks or overlong tokens",()=>{
   assert.throws(()=>issueTaskToken(k.priv,"backend","",1000));
   assert.throws(()=>issueTaskToken(k.priv,"backend","task",1000,601));
 });
+
+test("additional Owner-keyed roles bind MCP crypto tokens to their own signing identity",()=>{
+ const reviewer=keys(),backend=keys();
+ const token=issueTaskToken(reviewer.priv,"reviewer","task-native-reviewer",1000,120);
+ const accepted=verifyTaskToken(token,{backend:backend.pub,reviewer:reviewer.pub},1100);
+ assert.equal(accepted.role,"reviewer");
+ assert.equal(accepted.task_id,"task-native-reviewer");
+ assert.throws(()=>verifyTaskToken(token,{backend:backend.pub},1100),/invalid_task_signature/u);
+ assert.throws(()=>verifyTaskToken(token,{reviewer:backend.pub},1100),/invalid_task_signature/u);
+ assert.throws(()=>verifyTaskToken(token,{reviewer:reviewer.pub},1120),/expired_or_invalid_task_scope/u);
+ const pieces=token.split(".");
+ const modified=JSON.parse(Buffer.from(pieces[1]!,"base64url").toString("utf8"));
+ modified.role="backend";
+ const swapped=pieces[0]+"."+Buffer.from(JSON.stringify(modified)).toString("base64url")+
+  "."+pieces[2];
+ assert.throws(()=>verifyTaskToken(swapped,{
+  reviewer:reviewer.pub,backend:backend.pub
+ },1100),/invalid_task_signature/u);
+});
+test("extra MCP role names reject reserved/prototype/path roles before signing or lookup",()=>{
+ const reviewer=keys();
+ for(const role of ["orchestrator","constructor","prototype","__proto__",
+  "../backend","backend/test","BACKEND","admin.danger","x".repeat(25),""]){
+  assert.throws(()=>issueTaskToken(reviewer.priv,role,"task",1000,120),
+   /Invalid task token parameters/u);
+ }
+ const token=issueTaskToken(reviewer.priv,"reviewer","task",1000,120);
+ const inherited=Object.create({reviewer:reviewer.pub}) as Record<string,string>;
+ assert.throws(()=>verifyTaskToken(token,inherited,1100),/invalid_task_signature/u);
+});
