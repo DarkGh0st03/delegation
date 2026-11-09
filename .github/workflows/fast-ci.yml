@@ -87,6 +87,8 @@ jobs:
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-native-port.test.ts
           node --experimental-strip-types --test poc/packages/agent-runtime/test/native-agent-card-signer-binding.test.ts poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-owner-bootstrap.test.mjs
+          # R452: four original-owner-provisioned signed A2A workers (including a read-only specialist); no Gemini inference.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-local-a2a-workers.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
           # R384.6: no legacy billed pipeline may be re-enabled.
