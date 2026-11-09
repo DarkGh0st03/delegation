@@ -13,6 +13,8 @@ const fail=()=>{throw Error('R351 authority-only model Task choice denied');};
 const exact=(obj,fields)=>obj&&typeof obj==='object'&&!Array.isArray(obj)&&
  Object.keys(obj).length===fields.length&&fields.every(k=>Object.hasOwn(obj,k));
 const pair=p=>JSON.stringify([p.operation,p.resource]);
+// Roles are owner-provisioned. Orchestrator and Test remain privileged exceptions.
+const isFileSpecialist=role=>role!=='orchestrator'&&role!=='test';
 class SingleDecisionModel extends BaseLlm{
  constructor(delegate,deadline){
   super({model:delegate.model});
@@ -102,7 +104,9 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
        'source_sha256','source_bytes','excerpt','excerpt_truncated',
        'evidence_sha256'])||
         !ID.test(observation.task_id)||seen.has(observation.task_id)||
-        !['backend','frontend','test'].includes(observation.agent_id)||
+        !Object.hasOwn(pins,observation.agent_id)||
+        observation.agent_id==='orchestrator'||
+        !pins[observation.agent_id].includes('read_file')||
         (observation.agent_id==='test'&&!isProjectTestSource(observation.path,this.projectTestSourceProfile))||
         !executionProgress.completed_work.some(p=>
          p.task_id===observation.task_id&&
@@ -130,8 +134,10 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    if(decisionKind!=='adaptive'||
       !exact(specialistNoChange,['task_id','agent_id','read_revision','read_evidence_sha256'])||
       !ID.test(specialistNoChange.task_id)||
-      !['backend','frontend'].includes(specialistNoChange.agent_id)||
       !Object.hasOwn(pins,specialistNoChange.agent_id)||
+      !isFileSpecialist(specialistNoChange.agent_id)||
+      !pins[specialistNoChange.agent_id].includes('read_file')||
+      !pins[specialistNoChange.agent_id].includes('update_file')||
       prior.some(p=>p.task_id===specialistNoChange.task_id)||
       !/^[a-f0-9]{40}$/u.test(specialistNoChange.read_revision)||
       !/^[a-f0-9]{64}$/u.test(specialistNoChange.read_evidence_sha256))fail();
@@ -326,17 +332,17 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    // Scope comes ONLY from the original Engineer root and trusted role card.
    const scopedRead=this.decisionKind==='adaptive'&&selected.length===1&&
      selected[0].operation==='read_file'&&
-     (['backend','frontend'].includes(raw.agent_id)||
+     (isFileSpecialist(raw.agent_id)||
       (raw.agent_id==='test'&&isProjectTestReadGrant(selected,this.projectTestSourceProfile)));
    const oneNativeEffect=selected.length===1&&
      ['update_file','create_file','run_tests'].includes(selected[0].operation)&&
      (selected[0].operation!=='run_tests'||raw.agent_id==='test')&&
      (!['update_file','create_file'].includes(selected[0].operation)||
-      ['backend','frontend'].includes(raw.agent_id)||
+      isFileSpecialist(raw.agent_id)||
       (selected[0].operation==='create_file'&&raw.agent_id==='test'&&
        isProjectTestCreateGrant(selected,this.projectTestSourceProfile)));
    const exactNativeReadCas=selected.length===2&&
-     ['backend','frontend','test'].includes(raw.agent_id)&&
+     (isFileSpecialist(raw.agent_id)||raw.agent_id==='test')&&
      selected.some(p=>p.operation==='read_file')&&
      selected.some(p=>p.operation==='update_file')&&
      selected[0].resource===selected[1].resource&&

@@ -1125,3 +1125,67 @@ test('R386 adaptive Test CREATE uses one exact project-test source Task then ret
   ['gateway_attested:task-0','gateway_attested:task-1']);
  assert.equal(f.retired,false);
 });
+
+test('R434 owner may execute a registered specialist file Task, then only verified Test readiness',async()=>{
+ const f=fixture(),role='invoice',source=grant(role);
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(source);
+  ctx.agents[role]={capabilities:['update_file']};
+  return ctx;
+ };
+ const model=new Decisions([
+  candidate(role,0),candidate('test',1),
+  {action:'ready_for_pr',reason:'Independent Test completion on current source HEAD'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.deepEqual(f.verified.map(p=>p.agent_id),[role,'test']);
+ assert.equal(result.source_test_task_id,'task-1');
+ assert.equal(result.pr_created,false);
+ assert.equal(f.retired,false);
+});
+test('R434 dynamic specialist no-change never completes a Task or grants Test authority',async()=>{
+ for(const invalid of [false,true]){
+  const f=fixture(),role='invoice',update=grant(role),read={...update,operation:'read_file'};
+  const original=f.hooks.readContext;
+  let noChange;
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   ctx.rootPermissions.push(update,read);
+   ctx.agents[role]={capabilities:['read_file','update_file']};
+   if(noChange){ctx.nextEpoch++;ctx.specialistNoChange=noChange;}
+   return ctx;
+  };
+  f.hooks.executeTask=async(task,before)=>{
+   noChange={task_id:task.task_id,agent_id:role,
+    read_revision:before.executionProgress.current_head_sha,
+    read_evidence_sha256:'f'.repeat(64)};
+   return {status:'owner_verified_specialist_no_change',
+    observation:noChange,gateway_task_completed:invalid,recovery_authorized:false};
+  };
+  const model=new Decisions([
+   candidate(role,0,[read,update]),
+   {action:'blocked',reason:'No additional verified Test effects'}
+  ]);
+  if(invalid){
+   await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+    model,hooks:f.hooks,maxSteps:2
+   }),/specialist no-change is not bound/u);
+   assert.equal(model.calls,1);
+  }else{
+   const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+    model,hooks:f.hooks,maxSteps:2
+   });
+   assert.equal(result.status,'owner_adaptive_work_blocked');
+   assert.equal(result.executed_tasks,0);
+   assert.equal(model.calls,2);
+  }
+  assert.equal(f.verified.length,0);
+  assert.equal(f.retired,true);
+ }
+});

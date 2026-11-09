@@ -7,6 +7,7 @@ import {TrustedAuthorityOnlyAdkDecisionProposer} from './trusted-authority-only-
 // exact original root permissions. At most 24 Child-consuming Tasks plus
 // one terminal (no-Child) decision; 25 is the hard owner-only turn ceiling.
 const deny=s=>{throw Error('Authority-only adaptive work loop: '+s);};
+const isFileSpecialist=role=>role!=='orchestrator'&&role!=='test';
 export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false}){
  if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>25||
     !hooks||['readContext','beforeDecision','executeTask','confirmReady','retire']
@@ -94,7 +95,9 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
    if(effect?.status==='owner_verified_specialist_no_change'){
     const observed=effect.observation;
     if(before.specialistNoChange||!observed||
-       !['backend','frontend'].includes(decision.task.agent_id)||
+       !isFileSpecialist(decision.task.agent_id)||
+       !before.agents?.[decision.task.agent_id]?.capabilities?.includes('read_file')||
+       !before.agents?.[decision.task.agent_id]?.capabilities?.includes('update_file')||
        decision.task.permissions.length!==2||
        !decision.task.permissions.some(p=>p.operation==='read_file')||
        !decision.task.permissions.some(p=>p.operation==='update_file')||

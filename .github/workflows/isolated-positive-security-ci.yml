@@ -58,6 +58,11 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts'
       - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
       - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
+      # R434: trusted registry-derived specialist Task and read/no-change guards.
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r401-trusted-test-profile-wiring.test.mjs'
+      - 'poc/packages/orchestrator-runtime/test/trusted-authority-only-adaptive-work-loop.test.mjs'
       # R432.2: retired HTTP issuer is absent; all Child/A2A credential types
       # resolve through neutral contracts. Include each trust-boundary consumer
       # so type-only security regressions also trigger real native Security CI.
