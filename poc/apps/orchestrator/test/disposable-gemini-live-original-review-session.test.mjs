@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {startDisposableGeminiOriginalReviewSession}
+import {startDisposableGeminiOriginalReviewSession,
+ retireDisposableOriginalHostAfterStartup}
  from "../src/disposable-gemini-live-original-review-session.mjs";
 
 const SHA="a".repeat(40);
@@ -91,4 +92,53 @@ test("original native Root/Gateway/worker composition cannot be omitted or pre-o
   const f=fixture();mutate(f);
   await assert.rejects(startDisposableGeminiOriginalReviewSession(f),NO_GO);
  }
+});
+
+
+test("GitHub cancellation while original listener is STARTING still closes the resolved original host",async()=>{
+ let release,closeCalls=0,settled=false;
+ const original={close:async()=>{closeCalls++;}};
+ const starting=new Promise(resolve=>{release=resolve;});
+ const retiring=retireDisposableOriginalHostAfterStartup({
+  starting,host:undefined,handoff:undefined
+ }).then(()=>{settled=true;});
+ assert.equal(settled,false);
+ // In the actual canceled-run race, the outer host assignment
+ // continuation may not yet have assigned any host variable.
+ release(original);
+ await retiring;
+ assert.equal(closeCalls,1);
+ assert.equal(settled,true);
+});
+
+test("after a reviewed handoff exists, close the original handoff (Root retirement), not a standalone host",async()=>{
+ let handoffCloses=0,hostCloses=0;
+ await retireDisposableOriginalHostAfterStartup({
+  host:{close:async()=>{hostCloses++;}},
+  handoff:{close:async()=>{handoffCloses++;}}
+ });
+ assert.equal(handoffCloses,1);
+ assert.equal(hostCloses,0);
+});
+
+test("failed original startup, invalid original host or failed revocation never report closure success",async()=>{
+ await assert.rejects(
+  retireDisposableOriginalHostAfterStartup({
+   starting:Promise.reject(Error("original startup uncertain"))
+  }),NO_GO
+ );
+ await assert.rejects(
+  retireDisposableOriginalHostAfterStartup({
+   starting:Promise.resolve({close:"not a close function"})
+  }),NO_GO
+ );
+ await assert.rejects(
+  retireDisposableOriginalHostAfterStartup({
+   host:{close:async()=>{throw Error("native Root retirement unconfirmed");}}
+  }),/native Root retirement unconfirmed/u
+ );
+});
+
+test("original cancellation with no listener and no Root is inert",async()=>{
+ await retireDisposableOriginalHostAfterStartup({});
 });

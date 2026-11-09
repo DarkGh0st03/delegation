@@ -38,6 +38,36 @@ const CONFIRM="I AUTHORIZE GEMINI API CHARGES";
 const deny=()=>{throw Error("Disposable live original Review Host startup NO-GO");};
 
 /**
+ * Original-host terminal cleanup, including the hard race where cancellation
+ * is observed before the awaiting caller assigns the startup result to host.
+ * The startup promise itself is authoritative: resolve that EXACT original
+ * listener and close it, even when the outer variable is not yet assigned.
+ *
+ * No second Root, listener, approver, model or review is constructed here.
+ * An uncertain/failed close MUST reject, never report Root retirement.
+ */
+export async function retireDisposableOriginalHostAfterStartup({
+ starting,host,handoff
+}={}){
+ let original=host;
+ if(starting!==undefined){
+  try{
+   const started=await starting;
+   if(!started||typeof started.close!=="function")deny();
+   original=started;
+  }catch{deny();}
+ }
+ if(handoff!==undefined){
+  if(!handoff||typeof handoff.close!=="function")deny();
+  return handoff.close();
+ }
+ if(original!==undefined){
+  if(!original||typeof original.close!=="function")deny();
+  return original.close();
+ }
+}
+
+/**
  * Explicit operator-only start. DO NOT CALL during offline CI.
  * The returned host exposes only original Engineer review and one canonical,
  * signed, Rust-native operational handoff; it never signs an approval itself.
@@ -120,12 +150,9 @@ export async function startDisposableGeminiOriginalReviewSession({
  let host,handoff,starting;
  const watch=createDisposableOriginalGithubRunWatch({
   pins,githubApiToken,
-  onClose:async()=>{
-   // Planning startup may be in flight when GitHub cancels the job. The
-   // original host is closed as soon as its one-shot startup settles.
-   if(starting)try{await starting;}catch{/* original startup failed */}
-   await (handoff?.close()??host?.close());
-  }
+  onClose:()=>retireDisposableOriginalHostAfterStartup({
+   starting,host,handoff
+  })
  });
  try{
   await watch.start();
