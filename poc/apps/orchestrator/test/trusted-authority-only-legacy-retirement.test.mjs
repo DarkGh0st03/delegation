@@ -109,6 +109,34 @@ test('R441 retired R394 standalone Runner launcher keeps its proof and R395 cano
    'native Security CI must watch retained source: '+source);
 });
 
+test('R443 security workflow path filters target active native crypto and Engineer sources',()=>{
+ const crypto=readFileSync(path('.github/workflows/crypto-mcp-offline.yml'),'utf8');
+ const engineer=readFileSync(path('.github/workflows/trusted-engineer-authority-offline.yml'),'utf8');
+ const cryptoSections=crypto.split(/^  pull_request:\s*$/mu);
+ assert.equal(cryptoSections.length,2,'crypto profile must retain push and PR event filters');
+ for(const active of [
+  'poc/packages/agent-runtime/src/local-crypto-mcp-bridge.ts',
+  'poc/packages/agent-runtime/src/native-crypto-ipc.ts'
+ ]){
+  assert.equal(existsSync(path(active)),true,'active native crypto source missing: '+active);
+  for(const section of cryptoSections)
+   assert.ok(section.includes('"'+active+'"'),'MCP push and PR must watch '+active);
+ }
+ assert.equal(crypto.includes('private-mcp-worker-http.ts'),false,
+  'retired HTTP MCP worker must not remain a workflow trigger');
+ const delegated='poc/packages/orchestrator-runtime/src/delegated-permission.ts';
+ assert.equal(existsSync(path(delegated)),true,'neutral Engineer permission contract must exist');
+ const engineerPush=engineer.split(/^  pull_request:\s*$/mu)[0];
+ assert.ok(engineerPush.includes('"'+delegated+'"'),
+  'Engineer source push must watch active delegated permission contract');
+ assert.equal(engineer.includes('permission-templates.ts'),false,
+  'retired static role templates must not remain a workflow trigger');
+ assert.ok(engineer.includes('npm --prefix poc run orchestrator-runtime:test'),
+  'preserve Engineer authority regression job');
+ assert.ok(crypto.includes('npm --prefix poc run agent-runtime:test'),
+  'preserve MCP/Agent regression job');
+});
+
 test('R432 public runtime cannot load retired HTTP Adapter Engineer authority',()=>{
  const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
  const neutral=readFileSync(path('poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'),'utf8');

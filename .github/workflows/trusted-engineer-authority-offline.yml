@@ -12,7 +12,8 @@ on:
       - "poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts"
-      - "poc/packages/orchestrator-runtime/src/permission-templates.ts"
+      # R443: neutral permission contract, not retired static role templates.
+      - "poc/packages/orchestrator-runtime/src/delegated-permission.ts"
       - "poc/packages/orchestrator-runtime/src/index.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts"
       - "poc/packages/plan-contracts/**"
