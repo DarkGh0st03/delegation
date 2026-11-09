@@ -25,6 +25,23 @@ import {DurableAuthorityOnlyChildJournal} from "./trusted-authority-only-child-j
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const ROLE=new Set(["backend","frontend","test"]);
+const EXTRA_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+function nativeAdditionalReadRole(id:string,did:string,
+ permissions:readonly DelegatedPermission[]):boolean{
+ const raw=process.env.ADAPTER_ADDITIONAL_SPECIALISTS??"";
+ const provisioned=raw?raw.split(","):[];
+ return EXTRA_ROLE.test(id)&&
+  !["backend","frontend","test","orchestrator","engineer","gateway",
+     "constructor","prototype"].includes(id)&&
+  provisioned.length>0&&provisioned.length<=13&&
+  new Set(provisioned).size===provisioned.length&&
+  provisioned.includes(id)&&
+  provisioned.every(role=>EXTRA_ROLE.test(role)&&
+   !["backend","frontend","test","orchestrator","engineer","gateway",
+      "constructor","prototype"].includes(role))&&
+  process.env["ADAPTER_ID_"+id.toUpperCase()]===did&&
+  permissions.length===1&&permissions[0]?.operation==="read_file";
+}
 const PAIR=(p:DelegatedPermission)=>JSON.stringify([p.resource,p.operation]);
 const sha=(value:unknown)=>createHash("sha256")
  .update(JSON.stringify(value)).digest("hex");
@@ -142,7 +159,9 @@ export class TrustedAuthorityOnlyChildIssuer {
      task.child_credential_issued!==false||
      task.gateway_registered!==false||
      task.execution_authorized!==false||
-     !ROLE.has(task.agent_id)||!task.agent_did.startsWith("did:")||
+     !(ROLE.has(task.agent_id)||
+       nativeAdditionalReadRole(task.agent_id,task.agent_did,task.permissions))||
+     !task.agent_did.startsWith("did:")||
      !Array.isArray(task.permissions)||task.permissions.length<1||
      task.permissions.length>128)
    fail("Task does not match live Engineer authority");

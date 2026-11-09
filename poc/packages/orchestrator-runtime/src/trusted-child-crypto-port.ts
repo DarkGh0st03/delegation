@@ -23,7 +23,9 @@ type FetchLike=typeof fetch;
 export interface ExactTrustedChildIssuance {
   parent_credential_id:string;
   credential_id:string;
-  delegatee:"backend"|"frontend"|"test";
+  /** Only the Coordinator and native Rust registry select an additional
+   * specialist, never A2A/ADK/model data. All extra Child scopes are read-only. */
+  delegatee:string;
   valid_from:string;
   validity_seconds:number;
   credential_status:CredentialStatusInput;

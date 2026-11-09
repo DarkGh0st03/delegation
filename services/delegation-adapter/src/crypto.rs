@@ -3,6 +3,7 @@ use crate::config::{AdapterConfig, AdapterTrustProfile, EvmAdapterConfig};
 use crate::evm_profile::EvmAdapterProfile;
 use ark_bn254::Bn254;
 use delegation::delegation::authorization::authorization_context::AuthorizationContext;
+use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::authorization::verified_delegation::VerifiedDelegation;
 use delegation::delegation::credentials::delegation::delegation_credential::DelegationCredential;
@@ -398,6 +399,14 @@ impl CryptoRuntime {
         ) {
             return Err(String::from(
                 "Child credentials may target only provisioned specialist roles",
+            ));
+        }
+        if matches!(request.delegatee, CallerRole::Additional(_))
+            && (request.permissions.len() != 1
+                || request.permissions[0].operation() != &Operation::ReadFile)
+        {
+            return Err(String::from(
+                "Additional native Child must contain exactly one signed read_file grant",
             ));
         }
         validate_common_issue_fields(

@@ -24,21 +24,24 @@ const status={
  statusListIndex:"81",statusListCredential:"https://issuer.example/status"
 };
 
-function fixture(transport:"stdio"|"in-process"|"native-stdio"="stdio",badChild=false){
+function fixture(transport:"stdio"|"in-process"|"native-stdio"="stdio",
+ badChild=false,extra?:{role:string;did:string;permission:{resource:string;operation:"read_file"|"update_file"}}){
  const now=Date.now(),start=new Date(now).toISOString();
+ const permitted=extra?.permission??permission;
  const root={
    session_id:"r381-native-session",
    root_credential_id:"r381-original-root",
    authority_digest:"a".repeat(64),
-   root_permissions:[permission],
+   root_permissions:[permitted],
    root_expires_at:new Date(now+120_000).toISOString(),
    expires_at:new Date(now+120_000).toISOString()
  };
  const row={
    status:"task_registered_preflight_only",
    session_id:root.session_id,task_id:taskId,epoch:1,
-   agent_id:"backend",agent_did:"did:thesis:backend-agent",
-   permissions:[permission],
+   agent_id:extra?.role??"backend",
+   agent_did:extra?.did??"did:thesis:backend-agent",
+   permissions:[permitted],
    root_credential_id:root.root_credential_id,
    authority_digest:root.authority_digest,
    execution_authorized:false,child_credential_issued:false,
@@ -167,4 +170,46 @@ test("R381.3 rejects native MCP opt-in when port lacks service capability",()=>{
    {async reserveChild(){throw Error("MUST_NOT_BE_CALLED");}}),
   privateMcpTransport:"native-stdio"
  }),/trusted Coordinator, native Rust issuer and private journal required/u);
+});
+
+test("R455 fourth native Child requires explicit Rust role enrollment and exactly one read grant",async()=>{
+ const key="ADAPTER_ADDITIONAL_SPECIALISTS",identityKey="ADAPTER_ID_REVIEWER";
+ const oldRoles=process.env[key],oldDid=process.env[identityKey];
+ const did="did:thesis:reviewer-agent";
+ const read={resource:uri,operation:"read_file" as const};
+ const specialist={role:"reviewer",did,permission:read};
+ try{
+  process.env[key]="reviewer";
+  process.env[identityKey]=did;
+  const accepted=fixture("in-process",false,specialist);
+  const issued=await accepted.issuer.issueForRegisteredTask(taskId,accepted.parameters);
+  assert.equal(issued.agent_id,"reviewer");
+  assert.equal(issued.agent_did,did);
+  assert.deepEqual(issued.permissions,[read]);
+  assert.equal(accepted.issues,1);
+  assert.equal(accepted.reservations,1);
+  assert.equal(issued.gateway_execution_authorized,false);
+  for(const bad of [
+   {role:"reviewer",did,permission:{...read,operation:"update_file" as const}},
+   {role:"other",did,permission:read},
+   {role:"reviewer",did:"did:thesis:forged",permission:read}
+  ]){
+   const rejected=fixture("in-process",false,bad);
+   await assert.rejects(
+    rejected.issuer.issueForRegisteredTask(taskId,rejected.parameters),
+    /Task does not match live Engineer authority/u);
+   assert.equal(rejected.reservations,0);
+   assert.equal(rejected.issues,0);
+  }
+  delete process.env[key];
+  const absent=fixture("in-process",false,specialist);
+  await assert.rejects(absent.issuer.issueForRegisteredTask(taskId,absent.parameters),
+   /Task does not match live Engineer authority/u);
+  assert.equal(absent.reservations,0);
+  assert.equal(absent.issues,0);
+ }finally{
+  if(oldRoles===undefined)delete process.env[key];else process.env[key]=oldRoles;
+  if(oldDid===undefined)delete process.env[identityKey];
+  else process.env[identityKey]=oldDid;
+ }
 });
