@@ -82,26 +82,18 @@ test("AUD-004: fails closed if the existing Gitea branch rule allows zero approv
   await assert.rejects(provisionProtectedGiteaFixture(h.values),assert.AssertionError);
 });
 
-test("R178 protected Gitea provisioner stays separate from canonical signed DAG and synthetic merge",async()=>{
+test("R426 protected Gitea bootstrap preserves native EVM isolation after paid launcher retirement",async()=>{
  const script=await readFile(new URL(
   "../../packages/agent-runtime/scripts/protected-gitea-bootstrap.mjs",import.meta.url),"utf8");
  const functional=await readFile(new URL(
   "../../../.github/workflows/functional-signed-dag-e2e.yml",import.meta.url),"utf8");
- const paid=await readFile(new URL(
-  "../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url),"utf8");
+ const root=new URL("../../../",import.meta.url);
+ await assert.rejects(readFile(new URL(
+  ".github/workflows/gemini-paid-shared-mcp-final.yml",root),"utf8"),{code:"ENOENT"});
  assert.match(script,/export async function provisionProtectedGiteaFixture/u);
  assert.doesNotMatch(script,/merge-operator-|positiveMergeFixture/u);
- for(const run of [functional,paid]){
-  assert.match(run,/APPROVED_RUNNER_NATIVE_EVM: "1"/u);
-  assert.match(run,/security-ci:isolated-positive-smoke/u);
-  assert.match(run,/ADAPTER_ENGINEER_NATIVE_SOCKET/u);
-  assert.doesNotMatch(run,/simulatedPositiveMerge|positiveMergeFixture/u);
- }
- assert.match(paid,/workflow_dispatch:/u);
- // R384.6: a retired workflow must be non-billable regardless of consent.
- for(const job of ["account-suspension","f1-real-gitea-planning"]){
-  const at=paid.indexOf("  "+job+":\n");
-  assert.ok(at>=0,"historical job absent: "+job);
-  assert.match(paid.slice(at,at+300),/^    if: \$\{\{ false \}\}$/mu);
- }
+ assert.match(functional,/APPROVED_RUNNER_NATIVE_EVM: "1"/u);
+ assert.match(functional,/security-ci:isolated-positive-smoke/u);
+ assert.match(functional,/ADAPTER_ENGINEER_NATIVE_SOCKET/u);
+ assert.doesNotMatch(functional,/simulatedPositiveMerge|positiveMergeFixture/u);
 });
