@@ -1,6 +1,9 @@
-// Static, non-sensitive demo fixture. NEVER treat this as delegated authority.
-// This matches poc/packages/plan-contracts/schema/workflow-plan.schema.json v1.
-globalThis.DELEGATION_MOCK_PLAN = {
+/** Test-only legacy signed-plan data for authenticated Engineer regressions.
+ * This cannot authorize execution, replace a trusted Engineer signature or
+ * be loaded by the browser. Authority-only runtime never imports this file.
+ */
+export function makeSignedPlanFixture(){
+ return structuredClone({
   schema_version: "1.0.0",
   plan_id: "plan-demo-iam-suspension",
   session_id: "session-demo-approval",
@@ -68,9 +71,5 @@ globalThis.DELEGATION_MOCK_PLAN = {
   ],
   assumptions: ["Scenario IAM Console fisso per il PoC GitHub Actions"],
   uncertainties: ["I file effettivi saranno confermati dalla scansione read-only"]
-};
-// UI mock suggestion list only. The authoritative operation catalog is in Rust.
-globalThis.DELEGATION_MOCK_OPERATION_CHOICES = [
-  "read_repository","list_directory","read_file","create_file","update_file",
-  "write_file","create_branch","create_pull_request","run_tests","read_test_results"
-];
+});
+}

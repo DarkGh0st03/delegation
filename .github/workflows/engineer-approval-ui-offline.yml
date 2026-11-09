@@ -61,8 +61,7 @@ jobs:
             poc/apps/orchestrator/test/trusted-engineer-host.test.mjs \
             poc/apps/orchestrator/test/trusted-engineer-service.test.mjs \
             poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs
-      - name: Regress trusted approval and GUI mock contracts
+      - name: Regress trusted Engineer approval and plan contracts
         run: |
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts
           node --test poc/packages/plan-contracts/test/*.test.mjs
-          node --test poc/workflow-ui/tests/ui-contract.test.mjs

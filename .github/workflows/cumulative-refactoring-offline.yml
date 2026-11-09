@@ -65,9 +65,6 @@ jobs:
           npm --prefix poc run test -w @thesis/test-runner-controller
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/*.test.mjs
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts
-      - name: GUI mock + exact plan digest contract
-        run: |
-          node --test poc/workflow-ui/tests/ui-contract.test.mjs
       - name: Real OPA policy and denied-main regression
         run: bash poc/scripts/phase4a-policy-test.sh
       - name: Validate signed Gemini consent/CI gate syntax WITHOUT billing

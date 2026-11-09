@@ -134,6 +134,9 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   ".github/workflows/gemini-real-gitea-planning-only.yml",
   ".github/workflows/gemini-planner-manual-feasibility.yml",
   ".github/workflows/f1-paid-real-gitea-once.yml",
+  // R451: retired browser DAG mock and unused fixed IAM preflight.
+  "poc/workflow-ui/mock-plan.js",
+  "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",
   // R432: the historical HTTP issuer is retired as well as its former transport.
   "poc/packages/orchestrator-runtime/src/authority-client.ts",
   "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",

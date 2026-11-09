@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {generateKeyPairSync,sign,randomBytes,scryptSync} from "node:crypto";
 import {mkdtemp,mkdir,writeFile,rm,readdir} from "node:fs/promises";
 import {readFileSync} from "node:fs";
-import {runInNewContext} from "node:vm";
+import {makeSignedPlanFixture} from "./fixtures/signed-plan-regression.mjs";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {createServer} from "node:http";
@@ -113,10 +113,7 @@ async function fixture(t){
     admissions=join(home,"admissions"),receipts=join(home,"receipts");
   for(const dir of [secrets,replays,admissions,receipts])
     await mkdir(dir,{mode:0o700});
-  const sandbox={};
-  runInNewContext(readFileSync(new URL("../../../workflow-ui/mock-plan.js",
-    import.meta.url),"utf8"),sandbox);
-  const plan=JSON.parse(JSON.stringify(sandbox.DELEGATION_MOCK_PLAN));
+  const plan=makeSignedPlanFixture();
   const planFile=join(secrets,"plan.json"),keyFile=join(secrets,"key.pem");
   const signing=generateKeyPairSync("ed25519");
   const publicKeyPem=signing.publicKey.export({

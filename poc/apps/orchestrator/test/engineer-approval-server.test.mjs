@@ -5,8 +5,7 @@ import {request as httpRequest} from "node:http";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {scryptSync,randomBytes,generateKeyPairSync} from "node:crypto";
-import {runInNewContext} from "node:vm";
-import {readFileSync} from "node:fs";
+import {makeSignedPlanFixture} from "./fixtures/signed-plan-regression.mjs";
 import {createAuthenticatedEngineerServer} from "../src/engineer-approval-server.mjs";
 import {SignedEngineerApprovalFileStore} from
   "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
@@ -16,12 +15,7 @@ import {signTrustedPlanningCheckpoint} from
 import {SignedPlanningCheckpointFileStore} from
   "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 
-const SOURCE=new URL("../../../workflow-ui/mock-plan.js",import.meta.url);
-function plan(){
-  const context={};
-  runInNewContext(readFileSync(SOURCE,"utf8"),context);
-  return JSON.parse(JSON.stringify(context.DELEGATION_MOCK_PLAN));
-}
+const plan=makeSignedPlanFixture;
 const DID="did:thesis:software-engineer",PASSWORD="a-local-operator-test-password";
 const KEYID="engineer-test-key";
 
