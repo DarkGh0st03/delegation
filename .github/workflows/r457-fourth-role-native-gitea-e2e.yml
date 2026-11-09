@@ -1,4 +1,5 @@
-# R457: REAL fourth-role native Rust issuance, EVM DID/status, OPA and Gitea read.
+# R461: scripted Planner selection is now part of the REAL native fourth-role
+# Rust/EVM/OPA/Gitea read and signed Child/VP/A2A evidence chain.
 # No old Adapter HTTP executable, remote MCP or paid model calls.
 # Unsigned initial branch is absent; protected unsolved main is unchanged.
 # Separate signed Child, distinct Rust reviewer DID, real OPA and one Gitea

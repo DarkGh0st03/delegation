@@ -1,5 +1,7 @@
 name: Isolated Real Positive Security CI (No AI Billing)
 
+# R461: this no-AI Security CI also verifies source compatibility with the
+# Planner-selected native read-only specialist proof, never a paid pilot.
 # Dedicated disposable integration verification of the trusted Docker Runner
 # and independent researcher acceptance.
 # R397/R398: the historical positive job also proves on one real disposable
