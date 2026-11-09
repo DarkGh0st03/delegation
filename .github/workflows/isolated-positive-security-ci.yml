@@ -56,6 +56,15 @@ on:
       - 'poc/packages/orchestrator-runtime/src/authority-client.ts'
       - 'poc/scripts/test/r38517-canonical-route-closure.test.mjs'
       - 'poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs'
+      # R422.1: old one-shot CI triggers are retired; source proofs stay native/manual.
+      - 'poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs'
+      - 'poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs'
+      - 'poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs'
+      - '.github/workflows/d1-private-assertion-e2e.yml'
+      - '.github/workflows/engineer-direct-native-contract.yml'
+      - '.github/workflows/engineer-direct-native-evm-e2e.yml'
+      - '.github/workflows/engineer-embedded-signed-d1-e2e.yml'
+      - '.github/workflows/engineer-embedded-signed-dag-e2e.yml'
       - 'poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts'
       - 'poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs'
       - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
@@ -112,6 +121,7 @@ jobs:
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
+          node --test poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
           node --check poc/apps/orchestrator/src/trusted-engineer-host.mjs
 
       - name: R410 Owner-only recovery source and fail-closed audit gates

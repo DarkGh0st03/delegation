@@ -1,5 +1,5 @@
 import test from "node:test";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 import assert from "node:assert/strict";
 import {verifyExactShaOfflineCiRuns,checkSignedGeminiCiGate} from
   "../signed-gemini-pilot-ci-gate.mjs";
@@ -42,8 +42,8 @@ test("R267 native CI gate requires EVM + direct signed DAG + D1 + Fast CI",()=>{
    assert.ok(start>=0&&end>start,"Missing native workflow on/permissions sections");
    const triggers=yaml.slice(start,end);
    assert.ok(triggers.includes("workflow_dispatch:"));
-   assert.ok(triggers.includes("refactor/post-prof-plan-contracts-20261021"));
-   assert.ok(triggers.includes("'"+marker+"'"),"Missing explicit native checkpoint");
+   assert.doesNotMatch(triggers,/^  push:/mu);
+   assert.equal(existsSync(new URL("../../../"+marker,import.meta.url)),false);
    assert.ok(!triggers.includes("poc/**"),"Native full CI must not run on normal source push");
  }
  const fast=readFileSync(new URL("../../../.github/workflows/fast-ci.yml",import.meta.url),"utf8");

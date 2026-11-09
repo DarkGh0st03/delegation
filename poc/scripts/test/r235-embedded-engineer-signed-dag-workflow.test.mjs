@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
@@ -19,7 +19,10 @@ test("R235 standalone real signed DAG preserves one direct Rust owner and no HTT
  assert.match(file,/libdelegation_core_node\.so/u);
  assert.match(file,/same_signed_dag_docker_acceptance/u);
  assert.match(file,/signed_dag_pr_unmerged/u);
- assert.match(file,/'.github\/ci-checkpoints\/engineer-full-dag-request\.json'/u);
+ // R422: the old one-shot checkpoint cannot revive full native E2E via push.
+ assert.equal(existsSync(new URL(".github/ci-checkpoints/engineer-full-dag-request.json",root)),false);
+ assert.match(file,/^  workflow_dispatch:\s*$/mu);
+ assert.doesNotMatch(file,/^  push:\s*$/mu);
  assert.doesNotMatch(file,/cargo run[^\n]*services\/delegation-adapter\/Cargo\.toml/u);
  assert.doesNotMatch(file,/Start Adapter with public-only|\/tmp\/native-evm-adapter\.log/u);
  assert.doesNotMatch(file,/GEMINI_API_KEY:\s*\$\{\{\s*secrets\./u);

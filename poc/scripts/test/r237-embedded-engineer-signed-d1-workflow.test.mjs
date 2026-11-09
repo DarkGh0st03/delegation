@@ -21,7 +21,9 @@ test("R237 embedded Engineer D1 runs single Rust owner, signed repair and no pai
   assert.ok(workflow.includes(flag+': "1"'),flag);
  }
  assert.match(workflow,/GATEWAY_VERIFIER_MODE: core-rust/u);
- assert.match(workflow,/'.github\/ci-checkpoints\/engineer-d1-request\.json'/u);
+ assert.equal(existsSync(new URL(".github/ci-checkpoints/engineer-d1-request.json",root)),false);
+ assert.match(workflow,/^  workflow_dispatch:\s*$/mu);
+ assert.doesNotMatch(workflow,/^  push:\s*$/mu);
  assert.match(workflow,/\bsecurity-ci:isolated-positive-smoke\b/u);
  assert.match(workflow,/\bengineer-direct-native\/Cargo\.toml\b|services\/delegation-engineer-node\/Cargo\.toml/u);
  assert.match(workflow,/libdelegation_core_node\.so/u);
@@ -46,15 +48,13 @@ test("R237 embedded Engineer D1 runs single Rust owner, signed repair and no pai
  assert.doesNotMatch(workflow,/workflow_dispatch:\s*\{/u);
 });
 
-test("R237 long CI runs only with explicit zero-model-billing checkpoint",()=>{
+test("R422 long Engineer D1 CI requires explicit manual launch and absent old checkpoint",()=>{
  const checkpointUrl=new URL(
   ".github/ci-checkpoints/engineer-d1-request.json",root);
- if(existsSync(checkpointUrl)){
-  const marker=JSON.parse(readFileSync(checkpointUrl,"utf8"));
-  assert.equal(marker.paid_model_invocation,false);
-  assert.equal(marker.workflow,"engineer-embedded-signed-d1-e2e.yml");
-  assert.equal(marker.activate_once,true);
- }
+ assert.equal(existsSync(checkpointUrl),false);
+ const yaml=read(".github/workflows/engineer-embedded-signed-d1-e2e.yml");
+ assert.match(yaml,/^  workflow_dispatch:\s*$/mu);
+ assert.doesNotMatch(yaml,/^  push:\s*$/mu);
  const old=read(".github/workflows/functional-signed-dag-e2e.yml");
  assert.match(old,/cargo run --manifest-path services\/delegation-adapter\/Cargo\.toml/u);
  const harness=read("poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs");
