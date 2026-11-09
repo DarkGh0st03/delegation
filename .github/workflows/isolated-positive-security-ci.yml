@@ -83,6 +83,10 @@ on:
       - 'poc/scripts/r463-gemini-private-host-preflight.mjs'
       - 'poc/scripts/test/r463-gemini-private-host-preflight.test.mjs'
       - '.github/workflows/r463-paid-engineer-host-preflight.yml'
+      # R464: reviewer protections, single eligible private runner and exact paid registration.
+      - 'poc/scripts/r464-gemini-private-github-readiness.mjs'
+      - 'poc/scripts/test/r464-gemini-private-github-readiness.test.mjs'
+      - '.github/workflows/r464-gemini-private-github-readiness.yml'
       # R434: trusted registry-derived specialist Task and read/no-change guards.
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs'
@@ -209,6 +213,7 @@ jobs:
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs
           node --test poc/apps/orchestrator/test/r460-gemini-three-agent-binding.test.mjs
           node --test poc/scripts/test/r463-gemini-private-host-preflight.test.mjs
+          node --test poc/scripts/test/r464-gemini-private-github-readiness.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r409-owner-repair-core-migration.test.mjs
           node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs
