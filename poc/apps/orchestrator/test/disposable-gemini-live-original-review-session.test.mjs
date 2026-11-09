@@ -11,7 +11,8 @@ function fixture(){
  return {
   configPath:"/unavailable/owner/manifest.json",expectedSourceSha:SHA,
   admissionStore:undefined,pins:undefined,
-  githubApiToken:undefined,keyFile:undefined,
+  githubApiToken:undefined,keyFile:"/unavailable/key/gemini.secret",
+  backendPrivateKeyFile:"/unavailable/key/backend.pem",
   chargeAuthorization:CONFIRM,
   operational:{
    rootGateway:{audit:{},verifier:{},policy:{},executor:{}},
@@ -54,6 +55,9 @@ test("operator billing confirmation and clean source are required before owner m
   f=>{f.chargeAuthorization="yes";},
   f=>{delete f.chargeAuthorization;},
   f=>{f.expectedSourceSha="invalid";},
+  f=>{delete f.backendPrivateKeyFile;},
+  f=>{f.backendPrivateKeyFile=f.keyFile;},
+  f=>{f.backendPrivateKeyFile=f.configPath;},
   f=>{f.operational=undefined;}
  ]){
   const f=fixture();patch(f);

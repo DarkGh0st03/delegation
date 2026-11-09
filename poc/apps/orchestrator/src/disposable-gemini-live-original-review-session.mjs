@@ -28,6 +28,8 @@ import {createDisposableLiveGeminiModelSetFromPrivateHostAdmission}
  from "./disposable-gemini-live-model-set.mjs";
 import {bindDisposableLiveGeminiCanonicalInputs}
  from "./disposable-gemini-live-canonical-binding.mjs";
+import {bindOriginalBackendCheckpointSigner}
+ from "./disposable-gemini-original-checkpoint-signer.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const CONFIRM="I AUTHORIZE GEMINI API CHARGES";
@@ -47,7 +49,8 @@ const deny=()=>{throw Error("Disposable live original Review Host startup NO-GO"
  */
 export async function startDisposableGeminiOriginalReviewSession({
  configPath,expectedSourceSha,admissionStore,pins,
- githubApiToken,keyFile,operational,chargeAuthorization
+ githubApiToken,keyFile,backendPrivateKeyFile,operational,
+ chargeAuthorization
 }={}){
  if(chargeAuthorization!==CONFIRM||
     !SHA.test(expectedSourceSha??"")||
@@ -58,6 +61,9 @@ export async function startDisposableGeminiOriginalReviewSession({
     process.env.GEMINI_API_KEY!==undefined||
     process.env.GOOGLE_API_KEY!==undefined||
     process.env.OPENAI_API_KEY!==undefined||
+    typeof backendPrivateKeyFile!=="string"||
+    backendPrivateKeyFile===keyFile||
+    backendPrivateKeyFile===configPath||
     !operational||typeof operational!=="object"||
     Array.isArray(operational)||
     // A private native rootGateway is mandatory: no caller-prepared HTTP
@@ -89,16 +95,24 @@ export async function startDisposableGeminiOriginalReviewSession({
  const bound=bindDisposableLiveGeminiCanonicalInputs({
   models,authority,operational
  });
+ // The original bootstrap pins the BACKEND PUBLIC Ed25519 checkpoint key.
+ // Its original Review Host requires the matching private signer too.
+ // Load only after authenticated admission, verify the pinned identity
+ // AND the original store.assertSigner; never generate a new key.
+ const signedAuthority=await bindOriginalBackendCheckpointSigner({
+  authority:bound.authority,loaded,backendPrivateKeyFile,
+  forbiddenFiles:[configPath,keyFile]
+ });
 
  // All native transports are prepared by the original bootstrap. The
  // callbacks do not execute Git mutations; only reviewed execution can.
  const provision=await createProtectedCanonicalOperationalProvision(
-  bound.authority,bound.operational
+  signedAuthority,bound.operational
  );
 
  // POTENTIALLY BILLABLE: original Review Host starts real ADK Planning.
  // Do not invoke this method without explicit user authorization.
- const host=await startTrustedAuthorityOnlyReviewHost(bound.authority);
+ const host=await startTrustedAuthorityOnlyReviewHost(signedAuthority);
  try{
   const handoff=host.createReviewedCanonicalHandoff({provision});
   return Object.freeze({
