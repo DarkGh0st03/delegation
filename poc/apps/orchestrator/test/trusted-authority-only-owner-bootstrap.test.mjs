@@ -334,3 +334,39 @@ test("canonical deployment rejects extra configuration and missing billing conse
   expectedSourceSha:SHA,chargeAuthorization:"I AUTHORIZE GEMINI API CHARGES"
  }),/configuration denied/u);
 });
+
+test("Protected 0600 manifest admits one Owner-pinned additional read specialist, never inferred power",async t=>{
+ const f=await fixture(t);
+ const name="reviewer",key="ADAPTER_ID_REVIEWER";
+ const previous=process.env[key];
+ t.after(()=>{if(previous===undefined)delete process.env[key];
+  else process.env[key]=previous;});
+ const did="did:ethr:0x7a69:0x"+"7".repeat(40);
+ process.env[key]=did;
+ const pin={did,card_ref:"trusted:source-reviewer",capabilities:["read_file"]};
+ const baseline=structuredClone(f.config);
+ baseline.trustedAgentRegistry.reviewer=pin;
+ await f.save(baseline);
+ const accepted=await f.load();
+ assert.deepEqual(accepted.pins.trustedAgentRegistry.reviewer,pin);
+ assert.equal(Object.isFrozen(accepted.pins.trustedAgentRegistry.reviewer),true);
+ const bad=[
+  value=>{value.trustedAgentRegistry.reviewer.capabilities=["run_tests"];},
+  value=>{value.trustedAgentRegistry.reviewer.capabilities=["update_file"];},
+  value=>{value.trustedAgentRegistry.reviewer.capabilities=["read_file","read_file"];},
+  value=>{value.trustedAgentRegistry.reviewer.did=value.trustedAgentRegistry.backend.did;},
+  value=>{value.trustedAgentRegistry.reviewer.nativeSignerPrivateKey="forbidden";},
+  value=>{value.trustedAgentRegistry.constructor={...pin};},
+  value=>{value.trustedAgentRegistry.orchestrator.capabilities.push("read_file");}
+ ];
+ for(const mutate of bad){
+  const changed=structuredClone(baseline);mutate(changed);
+  await f.save(changed);
+  await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
+ }
+ await f.save(baseline);
+ delete process.env[key];
+ await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
+ process.env[key]=did;
+ assert.ok((await f.load()).pins.trustedAgentRegistry.reviewer);
+});

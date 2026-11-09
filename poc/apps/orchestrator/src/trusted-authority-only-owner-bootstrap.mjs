@@ -54,6 +54,39 @@ const SHA=/^[0-9a-f]{40}$/u;
 const HEX=/^[0-9a-f]+$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const ROLES=["backend","frontend","test","orchestrator"];
+const ADDITIONAL_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+const REQUIRED_ROLES=new Set(ROLES);
+const EXTRA_CAPABILITIES=new Set(["read_file"]);
+// A new specialist only gets a read ceiling here. Widening role operations
+// requires separately reviewed native owner/Gateway support, not a Card claim.
+function trustedRegistry(registry){
+ if(!plain(registry))return false;
+ const roles=Object.keys(registry);
+ if(roles.length<ROLES.length||roles.length>17||
+    !ROLES.every(role=>Object.hasOwn(registry,role))||
+    roles.some(role=>!ADDITIONAL_ROLE.test(role)||
+     ["constructor","prototype","__proto__"].includes(role)))
+  return false;
+ const dids=new Set();
+ for(const role of roles){
+  const p=registry[role];
+  const allowed=REQUIRED_ROLES.has(role)?AGENTS[role]:EXTRA_CAPABILITIES;
+  if(!exact(p,["did","card_ref","capabilities"])||
+     typeof p.did!=="string"||!/^did:ethr:[A-Za-z0-9:._%-]+$/u.test(p.did)||
+     p.did!==process.env["ADAPTER_ID_"+role.toUpperCase()]||
+     dids.has(p.did)||
+     typeof p.card_ref!=="string"||!p.card_ref.trim()||
+     p.card_ref.length>256||
+     !Array.isArray(p.capabilities)||!p.capabilities.length||
+     p.capabilities.length>allowed.size||
+     new Set(p.capabilities).size!==p.capabilities.length||
+     p.capabilities.some(cap=>REQUIRED_ROLES.has(role)
+      ?!AGENTS[role].includes(cap):!EXTRA_CAPABILITIES.has(cap)))
+   return false;
+  dids.add(p.did);
+ }
+ return true;
+}
 const CONFIG_KEYS=["schema","source_sha","snapshot","requirement",
  "workBranch","preliminaryRoot","planner","trustedAgentRegistry",
  "gateway","checkpoint","approval","directories","native"];
@@ -156,18 +189,7 @@ function assertManifest(x,expectedSourceSha){
     typeof x.requirement!=="string"||!x.requirement.trim()||
     typeof x.workBranch!=="string"||
     !x.workBranch.startsWith("feature/")||
-    !exact(x.trustedAgentRegistry,ROLES)||
-    !ROLES.every(role=>{
-     const p=x.trustedAgentRegistry[role];
-     return exact(p,["did","card_ref","capabilities"])&&
-      typeof p.did==="string"&&p.did.startsWith("did:ethr:")&&
-      p.did===process.env["ADAPTER_ID_"+role.toUpperCase()]&&
-      typeof p.card_ref==="string"&&p.card_ref.length>0&&
-      p.card_ref.length<=256&&
-      Array.isArray(p.capabilities)&&p.capabilities.length>0&&
-      new Set(p.capabilities).size===p.capabilities.length&&
-      p.capabilities.every(c=>AGENTS[role].includes(c));
-    })||
+    !trustedRegistry(x.trustedAgentRegistry)||
     !Object.values(x.directories).every(path)||
     new Set(Object.values(x.directories)).size!==DIRS.length||
     !Object.values(x.native).every(path)||
