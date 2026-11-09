@@ -27,7 +27,14 @@ function deny(){throw Error("Protected canonical Gemini owner binding denied");}
 function plain(x){return !!x&&typeof x==="object"&&!Array.isArray(x)&&
  Object.getPrototypeOf(x)===Object.prototype;}
 function sameAgentPins(a,b){
+ // R460: the paid Gemini pilot has exactly three specialist roles.
+ // A trusted Review Host may additionally own the privileged Orchestrator,
+ // but MUST NOT silently pass a provisioned fourth A2A specialist through
+ // the three-role private Gemini binding. Offline A2A tests remain generic.
+ const actual=plain(a)?Object.keys(a).sort().join(","):"";
  if(!plain(a)||!plain(b)||
+    !["backend,frontend,test","backend,frontend,orchestrator,test"]
+     .includes(actual)||
     Object.keys(b).sort().join(",")!=="backend,frontend,test")
   return false;
  return ROLES.every(role=>{
