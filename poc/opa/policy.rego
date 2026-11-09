@@ -32,6 +32,10 @@ effective_feature_uri := sprintf("%s/branches/%s",[
   repository_uri,replace(effective_feature_branch,"/","%2F")
 ])
 
+original_agent_role if {
+ input.agent_role in {"backend", "frontend", "test", "orchestrator"}
+}
+
 controlled_repository if {
 	input.repository.authority == "gitea.local"
 	input.repository.owner == "thesis"
@@ -118,18 +122,21 @@ allow if {
 
 allow if {
 	bound_request_context
+	original_agent_role
 	input.tool == "update_file"
 	file_operation_on_feature_branch
 }
 
 allow if {
 	bound_request_context
+	original_agent_role
 	input.tool == "create_file"
 	file_operation_on_feature_branch
 }
 
 allow if {
 	bound_request_context
+	original_agent_role
 	input.tool == "create_branch"
 	input.required_permission.resource == repository_uri
 	input.arguments.base_branch == main_branch
@@ -138,6 +145,7 @@ allow if {
 
 allow if {
 	bound_request_context
+	original_agent_role
 	input.tool == "create_pull_request"
 	input.required_permission.resource == repository_uri
 	input.arguments.head_branch == effective_feature_branch
@@ -146,6 +154,7 @@ allow if {
 
 allow if {
 	bound_request_context
+	original_agent_role
 	input.tool == "run_tests"
 	input.required_permission.resource == effective_feature_uri
 	input.arguments.branch == effective_feature_branch

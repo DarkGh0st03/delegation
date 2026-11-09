@@ -54,6 +54,18 @@ const SHA40=/^[a-f0-9]{40}$/u;
 const SHA64=/^[a-f0-9]{64}$/u;
 const OPERATIONS=new Set<string>(RUST_OPERATIONS);
 const IMPLEMENTED=new Set<string>(TOOL_NAMES);
+const NATIVE_CORE_ROLES=new Set(["backend","frontend","test","orchestrator"]);
+const OWNER_EXTRA_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+/** Trusted Coordinator rows only: a fourth role can neither write, create,
+ * run Docker nor become a substitute Orchestrator. The underlying signed
+ * root, native Child, exact branch/permission and OPA remain mandatory. */
+function ownerAdditionalSingleRead(row:RegisteredAuthorityOnlyTask):boolean{
+ return !NATIVE_CORE_ROLES.has(row.agent_id)&&
+  OWNER_EXTRA_ROLE.test(row.agent_id)&&
+  !["constructor","prototype"].includes(row.agent_id)&&
+  row.permissions.length===1&&
+  row.permissions[0]?.operation==="read_file";
+}
 function deny(reason:string):never {
  throw Error("Authority-only Gateway admission: "+reason);
 }
@@ -395,6 +407,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      row.epoch>256||
      row.agent_did.length>256||
      !row.agent_did.startsWith("did:")||
+     (!NATIVE_CORE_ROLES.has(row.agent_id)&&
+      !ownerAdditionalSingleRead(row))||
      typeof row.card_ref!=="string"||
      !row.card_ref.startsWith("trusted:"))
    deny("Task differs from registered trusted Coordinator state");
@@ -497,7 +511,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      bound.row.authority_digest!==root.authority_digest||
      !(["backend","frontend"].includes(bound.row.agent_id)||
       (bound.row.agent_id==="test"&&
-       isProjectTestReadGrant(bound.row.permissions)))||
+       isProjectTestReadGrant(bound.row.permissions))||
+      ownerAdditionalSingleRead(bound.row))||
      bound.row.permissions.length!==1||
      bound.row.permissions[0]?.operation!=="read_file"||
      child.root_credential_id!==root.root_credential_id||
@@ -820,7 +835,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      bound.row.task_id!==taskId||
      !(["backend","frontend"].includes(bound.row.agent_id)||
       (bound.row.agent_id==="test"&&
-       isProjectTestReadGrant(bound.row.permissions)))||
+       isProjectTestReadGrant(bound.row.permissions))||
+      ownerAdditionalSingleRead(bound.row))||
      bound.row.permissions.length!==1||
      bound.row.permissions[0]?.operation!=="read_file"||
      bound.row.session_id!==root.session_id||
@@ -1485,9 +1501,16 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   gateway_execution_authorized:false
  }>{
   this.#live();
-  const request=validatePrepareAuthorizationRequest(raw);
+  // This is the protected owner-local preflight, not a public role registry.
+  // Even a syntactically valid additional role MUST match the original
+  // Coordinator/Gateway bound Task and its exact signed read-only grant.
+  const request=validatePrepareAuthorizationRequest(raw,{
+   allowOwnerAdditionalReadOnlyRole:true
+  });
   const bound=this.#tasks.get(request.task_id);
-  if(!bound||bound.row.agent_id!==request.agent_role)
+  if(!bound||bound.row.agent_id!==request.agent_role||
+     (!NATIVE_CORE_ROLES.has(request.agent_role)&&
+      !ownerAdditionalSingleRead(bound.row)))
    deny("unbound runtime Task or presenter role");
   if(bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
    deny("dependency completion not yet Gateway-attested");

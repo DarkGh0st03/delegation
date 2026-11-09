@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 import { deriveRequiredPermission } from "./canonical.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
-import type { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-only-admissions.ts";
+import { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-only-admissions.ts";
 import {
   assertNoCallerSuppliedAuthority,
   validatePrepareAuthorizationRequest
@@ -75,7 +75,13 @@ export function prepareAuthorization(
      (dependencies.approvedPlans||dependencies.planningRevisions))
     throw Error("Authority-only Gateway mode cannot share legacy or Planning gates");
   assertNoCallerSuppliedAuthority(raw);
-  const normalized = validatePrepareAuthorizationRequest(raw);
+  // No legacy/Planning/mock owner can register a new public Agent role.
+  // The live authority-only admission independently checks the immutable
+  // Coordinator Task, enrolled native Child and signed read permission.
+  const normalized = validatePrepareAuthorizationRequest(raw,{
+    allowOwnerAdditionalReadOnlyRole:
+      dependencies.authorityOnlyAdmissions instanceof TrustedAuthorityOnlyGatewayAdmissions
+  });
   const permission = deriveRequiredPermission(config.repository, normalized.request);
   const authorityOnlyBinding=dependencies.authorityOnlyAdmissions?.preflightCanonicalRequest(raw as never);
   const pinnedRevision = dependencies.planningRevisions?.authorizePrepare(

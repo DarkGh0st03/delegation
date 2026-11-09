@@ -97,10 +97,18 @@ export function validateRepositoryPath(value: unknown): string {
   return segments.join("/");
 }
 
-function role(value: unknown): AgentRole {
-  if (typeof value !== "string" || !(AGENT_ROLES as readonly string[]).includes(value)) {
+const OWNER_READ_ONLY_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+function role(value:unknown,operation:ToolName,ownerReadOnly:boolean):AgentRole{
+  const original=typeof value==="string"&&
+    (AGENT_ROLES as readonly string[]).includes(value);
+  const additional=ownerReadOnly&&operation==="read_file"&&
+    typeof value==="string"&&OWNER_READ_ONLY_ROLE.test(value)&&
+    !["constructor","prototype"].includes(value);
+  if(!original&&!additional)
     throw new Error("agent_role is not supported");
-  }
+  // Legacy enumerated roles retain their precise public contract.
+  // Additional identities are accepted only at the private authority-only
+  // Gateway preflight, which independently verifies the signed Task/Child.
   return value as AgentRole;
 }
 
@@ -207,7 +215,9 @@ function normalizeArguments(tool: ToolName, raw: unknown): NormalizedToolRequest
   }
 }
 
-export function validatePrepareAuthorizationRequest(raw: unknown): {
+export function validatePrepareAuthorizationRequest(
+ raw:unknown,options:{allowOwnerAdditionalReadOnlyRole?:boolean}={}
+): {
   task_id: string;
   agent_role: AgentRole;
   request: NormalizedToolRequest;
@@ -218,7 +228,7 @@ export function validatePrepareAuthorizationRequest(raw: unknown): {
   const tool = toolName(value.tool);
   return {
     task_id: string(value.task_id, "task_id", { max: 256 }),
-    agent_role: role(value.agent_role),
+    agent_role: role(value.agent_role,tool,options.allowOwnerAdditionalReadOnlyRole===true),
     request: normalizeArguments(tool, value.arguments)
   };
 }

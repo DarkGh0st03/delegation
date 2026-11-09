@@ -363,3 +363,27 @@ test_deny_approved_branch_traversal_and_invalid_profile if {
     {"branch":approved_feature_branch,"profile":"uncontrolled-shell"})
   not allow with input as object.union(tests,trusted_approval)
 }
+
+# R454: OPA may evaluate a new signed specialist read (the native Gateway
+# separately authenticates the role/Child and exact read-only Task). A model
+# or A2A Card cannot use that role name to gain writes, Runner or PR power.
+test_additional_specialist_signed_source_read_allowed if {
+ base := make_input("read_file",backend_file,
+  {"branch":"feature/account-suspension","path":"apps/backend/src/users/user.service.ts"})
+ reviewer := object.union(base,{
+  "agent_role":"reviewer",
+  "verified_delegation":object.union(base.verified_delegation,{
+   "presenter_id":"did:thesis:reviewer-agent"
+  })
+ })
+ allow with input as reviewer
+}
+
+test_additional_specialist_cannot_use_nonread_provider_ops if {
+ every action in ["update_file","create_file","run_tests","create_branch","create_pull_request"] {
+  args := {"branch":"feature/account-suspension","path":"apps/backend/src/users/user.service.ts","content":"forbidden"}
+  base := make_input(action,backend_file,args)
+  reviewer := object.union(base,{"agent_role":"reviewer"})
+  not allow with input as reviewer
+ }
+}
