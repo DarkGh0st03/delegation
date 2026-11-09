@@ -3170,7 +3170,7 @@ for(const nativeReply of [false,true])test('R382.7 signed bootstrap '+
   assert.deepEqual(await readdir(at('reservations')),[]);
   await f.approve(['permission-1','permission-2','permission-3']);
   await assert.rejects(handoff.runApprovedCanonical(),nativeReply?
-   /A2A Owner cannot accept root, transport overrides or legacy channels/u:/Native Rust Orchestrator presentation denied/u);
+   /SDK role endpoints and private channels differ from trusted specialist registry/u:/Native Rust Orchestrator presentation denied/u);
   assert.equal(installs,1);
   assert.equal(model.calls,1);
   if(nativeReply){
