@@ -2,6 +2,10 @@
 
 **Updated:** 9 November 2026. This is the current architecture; the historical 15 October shared-MCP PoC is explicitly separated in [README](../README.md).
 
+**Current verified HEAD — R458:** `b3652cc01eccc2a150b1b44d52f16430163cf6c7` on `refactor/post-prof-plan-contracts-20261021` (Draft PR #38). The [R458 native fourth-role test](https://github.com/DarkGh0st03/delegation/actions/runs/42628486939) and [Fast CI](https://github.com/DarkGh0st03/delegation/actions/runs/42628486999) succeeded. R458 demonstrates a separately owner-pinned, read-only scripted `reviewer` with live A2A/HMAC, native Rust Child DC/VP, OPA, Gitea read and independent Gateway completion. **The canonical Gemini manifest still admits exactly Backend, Frontend and Test; `reviewer` is test-only.** The single continuous manifest-to-scripted-Planner-to-bootstrap-to-provider proof and same-SHA complete native Security CI have **not** yet been verified.
+
+**Legacy audit (read-only, after R458):** the three Owner DAG/repair cores are not safe to delete by file name alone. `trusted-owner-reviewed-dag-execution.ts` is dynamically imported by `trusted-admitted-github-handoff.ts`, `trusted-admitted-scripted-handoff.ts`, and `trusted-fresh-repair-reviewed-dag.ts`; `trusted-owner-repair-planning-core.ts` and `trusted-owner-repair-dag-execution.ts` are dynamically imported by `trusted-owner-operational-repair-handoff.ts`. These caller chains and unique negative regressions must be retired or migrated together before physical deletion. No paid Gemini run or merge is authorized.
+
 **R402 verified:** [Fast CI #42506638774](https://github.com/DarkGh0st03/delegation/actions/runs/42506638774) SUCCESS on SHA `5a7f88cc`. The conservative audit observed 4,692 source/configuration edges, 226 unresolved indirections, 5 guarded legacy modules and 4 protected private MCP components. No runtime source was authorized for deletion. R403 classifies historical documents separately, with explicit safeguards.
 
 ## Implemented and tested
@@ -19,7 +23,7 @@
 | Legacy retirement | R432 removes the historical HTTP Engineer issuer, its private MCP/HTTP fixture and opt-in gate; the three obsolete signed-DAG wrappers were already retired | The genuine Owner DAG/recovery implementations remain active. Indirect/external callers are not exhaustively proven absent; protect source-level anti-regression guards |
 | SDK A2A trusted roster (R435) | Original Owner now checks exact specialist endpoint and private stage/bind keys and requires the same full set of independently verified live Cards before ADK decisions | Additional roles cannot run until the underlying SDK role runtime, signer and owner-private bindings are implemented; native Rust/OPA/Gateway remain unchanged |
 | Additional A2A Card verification (R436) | Read-only startup probe can verify an extra role against Owner-supplied DID/name/skill/capability ceiling, with distinct loopback URL and no unsafe Test powers | Optional verifier is not yet wired into executable SDK; additional workers need private per-role signer/IPC binding and native E2E |
-| Owner-private IPC role pins (R437) | Local staging and private bind accept an additional role only with explicit matched local role, original Child/Task pins and separate HMAC credentials; legacy bind stays limited to the three original roles | No new A2A process/registered signer/SDK dispatcher; full native four-role E2E still required |
+| Owner-private IPC and native A2A (R458) | Added owner-pinned synthetic `reviewer` worker, distinct per-role HMAC, native Rust-issued Child DC/VP, Gateway/OPA and genuine Gitea read E2E; original SDK transport and independently witnessed completion | Free scripted read-only proof is SUCCESS; a continuous scripted Planner-to-bootstrap E2E and same-SHA native Security CI are still outstanding. No fourth Gemini specialist |
 
 ## Validated regression snapshots
 
