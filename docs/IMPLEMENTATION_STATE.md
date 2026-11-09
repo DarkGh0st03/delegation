@@ -1,6 +1,6 @@
 # Delegation — implementation state (authority-only)
 
-**Updated:** 8 November 2026. This is the current architecture; the historical 15 October shared-MCP PoC is explicitly separated in [README](../README.md).
+**Updated:** 9 November 2026. This is the current architecture; the historical 15 October shared-MCP PoC is explicitly separated in [README](../README.md).
 
 **R402 verified:** [Fast CI #42506638774](https://github.com/DarkGh0st03/delegation/actions/runs/42506638774) SUCCESS on SHA `5a7f88cc`. The conservative audit observed 4,692 source/configuration edges, 226 unresolved indirections, 5 guarded legacy modules and 4 protected private MCP components. No runtime source was authorized for deletion. R403 classifies historical documents separately, with explicit safeguards.
 
@@ -16,10 +16,11 @@
 | Provider execution | Gitea real pinned reads / atomic HEAD CAS, controlled Docker Runner, researcher-owned acceptance | Tests are pinned to actual revisions and receipts |
 | PR and security | R399.2 links separate Security CI status to the **same native Draft PR HEAD**; Human Gate denies its Draft status | Disposable Gitea and scripted model; real GitHub branch protection/reviewers remain externally unverified |
 | Human merge | `workflow_dispatch` with independent operator and approval verification | Live GitHub Environment reviewers and Gitea admin protection are not proven by offline tests |
-| Legacy isolation | HTTP Engineer fixture exact opt-in, denied in authority-only; legacy DAG/workflows pinned and under review | Runtime caller inventory still has unknown/indirect references |
+| Legacy retirement | R432 removes the historical HTTP Engineer issuer, its private MCP/HTTP fixture and opt-in gate; the three obsolete signed-DAG wrappers were already retired | The genuine Owner DAG/recovery implementations remain active. Indirect/external callers are not exhaustively proven absent; protect source-level anti-regression guards |
 
 ## Validated regression snapshots
 
+- **R432.2 Engineer HTTP retirement and type-decoupling:** 1,119 tracked files; historical HTTP issuer, port and gate physically absent, nine type-only imports moved to `trusted-credential-contracts.ts`. [Fast CI #42575458875](https://github.com/DarkGh0st03/delegation/actions/runs/42575458875) SUCCESS on SHA `595a50b9`. A same-SHA full native Security CI result is **not claimed** here. R433 adds automatic native CI triggers for these credential, Child and A2A surfaces. PR #38 remains Draft; no paid Gemini or merge.
 - **Full positive native chain + historical Runner regression:** [Security CI #42477209043](https://github.com/DarkGh0st03/delegation/actions/runs/42477209043), 2/2 SUCCESS, plus [Fast CI #42477209047](https://github.com/DarkGh0st03/delegation/actions/runs/42477209047), 2/2 SUCCESS; identical SHA `bbb60fa09d88b0f2949a5c6452f340aedbc33f54`.
 - **Engineer HTTP fail-closed change:** [R385.19 native full run #42478904754](https://github.com/DarkGh0st03/delegation/actions/runs/42478904754) SUCCESS and [Fast CI #42478904760](https://github.com/DarkGh0st03/delegation/actions/runs/42478904760) SUCCESS; exact SHA `8bf19fd59e042b7e4f189f9a543aa8933a169680`.
 - **Cleanup of milestone reports:** 69 Markdown reports deleted, [Fast CI #42479660224](https://github.com/DarkGh0st03/delegation/actions/runs/42479660224) SUCCESS on `c97bf3ef`.

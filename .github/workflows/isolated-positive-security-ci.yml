@@ -33,7 +33,6 @@ on:
       # R410: source-level Owner/DAG/legacy migration changes must automatically
       # invoke no-AI native Rust+MCP+OPA+Docker Security CI on the same SHA.
       - 'poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs'
-      - 'poc/apps/test-runner-controller/scripts/approved-runner-historical-issuer-gate.mjs'
       - 'poc/scripts/test/r407-historical-runner-issuer-isolation.test.mjs'
       - '.github/workflows/d1-private-assertion-e2e.yml'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-reviewed-dag-execution.ts'
@@ -43,15 +42,14 @@ on:
       # R411: native EVM fixture must never silently regress onto a legacy shim.
       - 'poc/apps/gateway/src/trusted-operational-feature-head.ts'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
-      # R418: old EVM fixtures may load HTTP only lazily after EVM identity guards.
+      # R429/R430: migrated EVM regressions use the canonical native Rust issuer.
       - 'poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs'
       - 'poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs'
       - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'
       - 'poc/scripts/test/r408-reviewed-dag-caller-migration.test.mjs'
       - 'poc/scripts/r38517-canonical-route-closure.mjs'
-      # R412: historical Engineer issuer dynamic-only import boundary.
-      # R414: native Engineer config must never type-import historical HTTP transport.
-      # R415.1: Engineer cold-recovery history has an explicit fail-closed fixture gate.
+      # R432: the historical HTTP issuer/fixture gate are physically retired.
+      # Preserve native Rust Engineer selection and cold-recovery anti-fallback tests.
       - 'poc/apps/orchestrator/src/trusted-engineer-host.mjs'
       - 'poc/apps/orchestrator/src/trusted-engineer-service.mjs'
       - 'poc/apps/orchestrator/test/trusted-engineer-host.test.mjs'
@@ -60,7 +58,23 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts'
       - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
       - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
-      # R419.2: consolidated issuer and the source-audit tests must both rerun native Security CI.
+      # R432.2: retired HTTP issuer is absent; all Child/A2A credential types
+      # resolve through neutral contracts. Include each trust-boundary consumer
+      # so type-only security regressions also trigger real native Security CI.
+      - 'poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-authority.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-native-port.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-direct-core-port.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-child-crypto-port.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-remote-discovery-a2a-handoff.ts'
+      - 'poc/packages/orchestrator-runtime/src/a2a-workflow.ts'
+      - 'poc/packages/orchestrator-runtime/test/trusted-authority-only-engineer-session.test.ts'
+      - 'poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts'
+      - 'poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts'
+      - 'poc/scripts/test/check-local-imports.test.mjs'
       - 'poc/scripts/test/r38517-canonical-route-closure.test.mjs'
       - 'poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs'
       # One-shot checkpoint JSON retired; original manual EVM/Gitea proofs remain.
