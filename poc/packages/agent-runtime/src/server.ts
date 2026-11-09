@@ -148,7 +148,7 @@ export async function startSpecializedAgentServer(
   const adkHandler = options.adk
     ? createAdkA2ATaskHandler({...options.adk,
       ...(discovery?{trustedBackendDiscoverySlot:discovery.slot}:{}),
-      ...(mcpTaskRegistry?{mcpTaskRegistry}:{}),
+      ...(mcpTaskRegistry ? {mcpTaskRegistry} : {}),
       ...(nativeExtra?{trustedAdditionalReadOnlyRole:{
        role:options.role,capabilities:[...pinned!.capabilities]
       }}:{})})
