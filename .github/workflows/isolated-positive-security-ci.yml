@@ -102,7 +102,8 @@ on:
       # R424: retired trigger payloads; retain no-AI manual native E2E and static wiring safeguards.
       - '.github/workflows/r3818-canonical-private-native-mcp-e2e.yml'
       - '.github/workflows/r384-native-create-cas-e2e.yml'
-      - '.github/workflows/r3842-native-a2a-adk-create-e2e.yml'
+      # R444: source proof kept; superseded manual R384.2 launcher retired.
+      - 'poc/packages/orchestrator-runtime/test/r3842-native-a2a-adk-create-e2e.mjs'
       - '.github/workflows/r3843-native-adaptive-d1-create-retest-fail-e2e.yml'
       - '.github/workflows/r3844-functional-create-d1-pass-native-e2e.yml'
       - '.github/workflows/r38512-native-test-agent-postfail-probe.yml'

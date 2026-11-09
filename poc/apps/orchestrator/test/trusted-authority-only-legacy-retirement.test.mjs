@@ -137,6 +137,30 @@ test('R443 security workflow path filters target active native crypto and Engine
   'preserve MCP/Agent regression job');
 });
 
+test('R444 old R384.2 manual A2A CREATE launcher stays retired with native proofs preserved',()=>{
+ const removed='.github/workflows/r3842-native-a2a-adk-create-e2e.yml';
+ const source='poc/packages/orchestrator-runtime/test/r3842-native-a2a-adk-create-e2e.mjs';
+ const successor='.github/workflows/r395-native-a2a-runner-e2e.yml';
+ const positive='poc/packages/orchestrator-runtime/test/r395-native-a2a-runner-e2e.mjs';
+ assert.equal(existsSync(path(removed)),false,'redundant manual CREATE launcher must remain retired');
+ for(const required of [source,successor,positive,
+  '.github/workflows/r384-native-create-cas-e2e.yml',
+  '.github/workflows/r3843-native-adaptive-d1-create-retest-fail-e2e.yml'])
+  assert.equal(existsSync(path(required)),true,'preserve native proof and negative controls: '+required);
+ const proof=readFileSync(path(positive),'utf8');
+ for(const witness of ['r395_native_sdk_a2a_adk_atomic_create',
+  'r395_native_a2a_test_runner_complete',
+  'independent_create_receipt_attested:true',
+  'original_parent_absence_verified:true',
+  'task_local_crypto_mcp:true','revoked_root_denied:true'])
+  assert.ok(proof.includes(witness),'canonical A2A successor must retain '+witness);
+ const security=readFileSync(path('.github/workflows/isolated-positive-security-ci.yml'),'utf8');
+ assert.ok(security.includes("- '"+source+"'"),
+  'native Security CI must watch source proof after launcher retirement');
+ assert.equal(security.includes("- '"+removed+"'"),false,
+  'native Security CI must not watch a missing launcher');
+});
+
 test('R432 public runtime cannot load retired HTTP Adapter Engineer authority',()=>{
  const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
  const neutral=readFileSync(path('poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'),'utf8');
