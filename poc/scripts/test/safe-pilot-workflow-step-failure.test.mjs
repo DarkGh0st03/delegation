@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
 import {safePaidWorkflowStepFailure as classify}
  from "../safe-pilot-workflow-step-failure.mjs";
 
@@ -39,19 +38,6 @@ test("private values cannot be represented as public step status",()=>{
  const x=classify({adapter_start:"failure",private_message:secret});
  assert.ok(!JSON.stringify(x).includes(secret));
 });
-test("manual paid D0 uploads sanitized fallback with explicit step IDs",()=>{
- const w=readFileSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",
-  import.meta.url),"utf8");
- const d0=w.split("\n  f1-real-gitea-planning:")[0];
- assert.match(d0,/safe-pilot-workflow-step-failure\.mjs/);
- assert.match(d0,/four-gemini-pilot-step-failure\.json/);
- for(const id of ["billing_consent","offline_ci_gate","adapter_start",
-  "gateway_start","signed_pilot","seal_private"]){
-  assert.match(d0,new RegExp("id: "+id+"\\n"));
-  assert.ok(d0.includes("steps."+id+".outcome"));
- }
-});
-
 test("R154 omitted workflow steps are a diagnostic gap, not implicit success",()=>{
  const unknown=classify({checkout:"success"});
  assert.equal(unknown.observed_failure,"no_failure_observed");

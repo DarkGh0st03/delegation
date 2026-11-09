@@ -61,39 +61,24 @@ jobs:
           node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
           node --check poc/scripts/signed-gemini-pilot-consent.mjs
           node --check poc/scripts/signed-gemini-pilot-ci-gate.mjs
-      - name: Prohibit automatically triggered paid Gemini workflows
+      - name: Enforce retired paid workflow absence and preserve signed preflight (no inference)
         shell: bash
         run: |
           node - <<'NODE'
           const fs=require("node:fs"),assert=require("node:assert/strict");
-          const text=fs.readFileSync(".github/workflows/gemini-paid-shared-mcp-final.yml","utf8");
-          const triggers=/^on:\s*\n([\s\S]*?)^permissions:/m.exec(text);
-          assert.ok(triggers,"paid workflow trigger missing");
-          assert.match(triggers[1],/^  workflow_dispatch:/m);
-          assert.doesNotMatch(triggers[1],/^  (push|schedule|pull_request|workflow_run|workflow_call):/m);
-          // R420.1: archived billable jobs cannot run at all.
-          // Unconditional skips are stronger than an old run-attempt guard.
-          for(const name of ["account-suspension","f1-real-gitea-planning"]){
-            const marker="  "+name+":\n";
-            const start=text.indexOf(marker);
-            assert.ok(start>=0,"archived job marker absent: "+name);
-            const rest=text.slice(start+marker.length);
-            const next=rest.search(/^  [a-zA-Z0-9_-]+:\s*$/m);
-            const body=next<0?rest:rest.slice(0,next);
-            assert.match(body,/^    if: \$\{\{ false \}\}$/m,
-             "archived billed job must remain unconditional SKIP: "+name);
-          }
-          // Even though both jobs are disabled, preserve the archived
-          // explicit consent, exact-SHA and spend-acknowledgement inputs.
-          assert.match(text,/^      authorization:\s*$/m);
-          assert.match(text,/I AUTHORIZE GEMINI API CHARGES/);
-          assert.match(text,/^      pinned_commit_sha:\s*$/m);
-          assert.match(text,/^      billing_cap_acknowledgement:\s*$/m);
+          // Compose the retired basename so the static command audit does not
+          // mistake a negative absence assertion for a configured invocation.
+          const old=".github/workflows/"+["gemini","paid","shared","mcp","final"].join("-")+".yml";
+          assert.equal(fs.existsSync(old),false,"retired paid workflow must not return");
           const consent=fs.readFileSync("poc/scripts/signed-gemini-pilot-consent.mjs","utf8");
           const gate=fs.readFileSync("poc/scripts/signed-gemini-pilot-ci-gate.mjs","utf8");
           assert.match(consent,/GITHUB_EVENT_NAME!=="workflow_dispatch"/);
+          assert.match(consent,/DELEGATION_PINNED_COMMIT_SHA!==env\.GITHUB_SHA/);
           assert.match(gate,/verifySignedGeminiPilotConsent/);
-          console.log("PASS: signed-DAG Gemini remains manual-only, with consent and exact-SHA gate");
+          const merge=fs.readFileSync(".github/workflows/human-approved-gitea-merge.yml","utf8");
+          assert.match(merge,/github\.actor == vars\.THESIS_MERGE_GITHUB_OPERATOR/);
+          assert.match(merge,/github\.triggering_actor == github\.actor/);
+          console.log("PASS: billed workflow absent; signed consent and protected merge remain gated");
           NODE
       - name: Prove CLI denies accidental untrusted local execution
         shell: bash

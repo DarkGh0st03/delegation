@@ -178,7 +178,7 @@ test("R267 historical HTTP Adapter CI cannot masquerade as native proof",()=>{
 });
 
 test("R426 free native DID script references survive removal of paid workflow",()=>{
- assert.equal(existsSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url)),false);
+ assert.equal(existsSync(new URL(".github/workflows/gemini-paid-shared-mcp-final.yml",new URL("../../../",import.meta.url))),false);
  const free=readFileSync(new URL("../../../.github/workflows/f1-real-gitea-planning-parity.yml",import.meta.url),"utf8");
  const signed=readFileSync(new URL("../../../.github/workflows/engineer-embedded-signed-dag-e2e.yml",import.meta.url),"utf8");
  for(const [name,file] of [

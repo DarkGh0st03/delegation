@@ -5,7 +5,8 @@ import {test} from "node:test";
 // R426: avoid retaining an otherwise executable paid GitHub workflow
 // solely for historic test assertions. Its original contents remain in Git history.
 test("R426 retired billed workflow is absent; signed-consent and Human Gate stay protected",async()=>{
- const retired=new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url);
+ const root=new URL("../../../",import.meta.url);
+ const retired=new URL(".github/workflows/gemini-paid-shared-mcp-final.yml",root);
  await assert.rejects(readFile(retired,"utf8"),{code:"ENOENT"});
  const guard=await readFile(new URL("../signed-gemini-pilot-consent.mjs",import.meta.url),"utf8");
  const protectedMerge=await readFile(new URL("../../../.github/workflows/human-approved-gitea-merge.yml",import.meta.url),"utf8");

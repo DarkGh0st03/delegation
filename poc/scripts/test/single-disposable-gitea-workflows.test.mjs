@@ -10,8 +10,7 @@ import {test} from "node:test";
  */
 for(const name of [
  "functional-signed-dag-e2e.yml",
- "ts2724-signed-d1-targeted.yml",
- "gemini-paid-shared-mcp-final.yml"
+ "ts2724-signed-d1-targeted.yml"
 ]){
  test("R178 "+name+" launches disposable Gitea through signed test Runner",async()=>{
   const workflow=await readFile(new URL(
@@ -20,26 +19,11 @@ for(const name of [
   assert.match(workflow,/GITEA_IMAGE: docker\.gitea\.com\/gitea:28\.0\.0/u);
   assert.match(workflow,/APPROVED_RUNNER_NATIVE_EVM: "1"/u);
   assert.match(workflow,/ADAPTER_ENGINEER_NATIVE_SOCKET/u);
-  if(name==="gemini-paid-shared-mcp-final.yml"){
-   // Native Rust owner socket appears inside its one signed-DAG process;
-   // the workflow itself must not launch a second HTTP Adapter issuer.
-   assert.match(workflow,/ENGINEER_CORE_NATIVE_MODE: "1"/u);
-   assert.match(workflow,/libdelegation_engineer_node\.so/u);
-   assert.match(workflow,/test ! -e "\$ADAPTER_ENGINEER_NATIVE_SOCKET"/u);
-   assert.doesNotMatch(workflow,/cargo run --manifest-path services\/delegation-adapter\/Cargo.toml/u);
-  }else assert.match(workflow,/test -S "\$ADAPTER_ENGINEER_NATIVE_SOCKET"/u);
+  assert.match(workflow,/test -S "\$ADAPTER_ENGINEER_NATIVE_SOCKET"/u);
+
   assert.match(workflow,/docker compose --env-file poc\/infra\/\.env -f poc\/infra\/docker-compose\.yml up -d anvil opa/u);
   assert.doesNotMatch(workflow,/a2a-production-coordinator-mcp-isolated|a2a-production-coordinator-mcp-gemini-live/u);
-  if(name==="gemini-paid-shared-mcp-final.yml"){
-   assert.match(workflow,/workflow_dispatch:/u);
-   assert.doesNotMatch(workflow,/^  push:/mu);
-   // R384.6: historical billing has been retired, not merely consent-gated.
-   for(const job of ["account-suspension","f1-real-gitea-planning"]){
-    const at=workflow.indexOf("  "+job+":\n");
-    assert.ok(at>=0,"historical job absent: "+job);
-    assert.match(workflow.slice(at,at+300),/^    if: \$\{\{ false \}\}$/mu);
-   }
-  }
+
  });
 }
 test("R178 old sequential MCP workflow and scripts stay physically removed",async()=>{
@@ -47,6 +31,7 @@ test("R178 old sequential MCP workflow and scripts stay physically removed",asyn
  const {R6_RETIRED_TARGETS}=await import("../r6-legacy-references.mjs");
  const root=new URL("../../../",import.meta.url);
  const removed=[
+  ".github/workflows/gemini-paid-shared-mcp-final.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml",
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/disposable-simulated-approval-merge.yml",

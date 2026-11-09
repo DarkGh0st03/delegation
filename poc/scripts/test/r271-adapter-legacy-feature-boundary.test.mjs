@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync,readdirSync} from "node:fs";
+import {readFileSync,readdirSync,existsSync} from "node:fs";
 
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
@@ -38,11 +38,12 @@ test("R271 historical GitHub Adapter commands require the legacy HTTP Cargo feat
  assert.ok(commands>=15,"Expected to check historical explicit Adapter workflows");
  for(const name of [
   "engineer-embedded-signed-dag-e2e.yml",
-  "engineer-embedded-signed-d1-e2e.yml",
-  "gemini-paid-shared-mcp-final.yml"
+  "engineer-embedded-signed-d1-e2e.yml"
  ]){
   const workflow=read(".github/workflows/"+name);
   assert.doesNotMatch(workflow,/cargo run.*services\/delegation-adapter\/Cargo\.toml/u);
   assert.doesNotMatch(workflow,/--features legacy-http/u);
  }
+ assert.equal(existsSync(new URL(".github/workflows/gemini-paid-shared-mcp-final.yml",root)),false,
+  "retired billed GitHub workflow must not be restored");
 });

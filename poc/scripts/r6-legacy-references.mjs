@@ -128,6 +128,8 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   ".github/ci-checkpoints/r376-native-source-diagnostic-recovery-request.json",
   // R421: prevent PR synthetic-merge resurrection of main-only Actions write workflow.
   ".github/workflows/recover-stuck-planner-run-40350899503.yml",
+  // R426: previously-disabled Signed-DAG billed workflow is physically gone.
+  ".github/workflows/gemini-paid-shared-mcp-final.yml",
   // R420: retired, previously non-executable paid launcher records.
   ".github/workflows/gemini-real-gitea-planning-only.yml",
   ".github/workflows/gemini-planner-manual-feasibility.yml",
