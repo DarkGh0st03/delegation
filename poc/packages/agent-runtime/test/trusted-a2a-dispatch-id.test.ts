@@ -1,16 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {createServer} from "node:net";
 import {TaskState} from "@a2a-js/sdk";
 import {DeterministicA2AOrchestrator} from "../src/orchestrator.ts";
 import {startSpecializedAgentServer} from "../src/server.ts";
 import {buildDeterministicArtifactPayload} from "../src/artifact-builder.ts";
 import {modelVisibleTaskContext} from "../src/agent-controller.ts";
 
+// The A2A server advertises its requested port in Agent Cards before bind,
+// so port:0 would advertise an unusable URL. Probe a free ephemeral loopback
+// port and release it before the test starts its own real listener.
+async function freeLoopbackPort():Promise<number>{
+ return await new Promise<number>((resolve,reject)=>{
+  const probe=createServer();
+  probe.once("error",reject);
+  probe.listen(0,"127.0.0.1",()=>{
+   const address=probe.address();
+   if(!address||typeof address==="string"){
+    probe.close();
+    reject(Error("No ephemeral A2A test port assigned"));
+    return;
+   }
+   probe.close(error=>error?reject(error):resolve(address.port));
+  });
+ });
+}
+
 const ID="dispatch_"+"A".repeat(22);
 test("real A2A transport retains a prebound Gateway ID privately, distinct from the SDK Task ID",async()=>{
  let context:any;
  const server=await startSpecializedAgentServer({
-   role:"backend",host:"127.0.0.1",port:0,
+   role:"backend",host:"127.0.0.1",port:await freeLoopbackPort(),
    taskHandler:async ctx=>{
      context=structuredClone(ctx);
      return buildDeterministicArtifactPayload("backend",ctx.subtask);
@@ -63,7 +83,7 @@ test("real A2A transport retains a prebound Gateway ID privately, distinct from 
 test("real A2A transport preserves signed Test no-Runner hint across separate Tasks",async()=>{
   const contexts:any[]=[];
   const server=await startSpecializedAgentServer({
-    role:"test",host:"127.0.0.1",port:0,
+    role:"test",host:"127.0.0.1",port:await freeLoopbackPort(),
     taskHandler:async ctx=>{
       contexts.push(structuredClone(ctx));
       const prep=ctx.subtask.approved_run_tests===false;
