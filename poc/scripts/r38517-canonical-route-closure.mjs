@@ -97,8 +97,8 @@ export function auditR38517WorkflowRoutes({
   "native reusable workflow changes must trigger positive Security CI");
  demand(!/(GEMINI_API_KEY|GOOGLE_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)/u.test(positive),
   "positive Security CI cannot have paid-model credentials");
- demand(equalArray(configuredWorkflowEvents(native),["workflow_call","workflow_dispatch","push"]),
-  "canonical native E2E must be reusable and retain explicit/pinned dispatch");
+ demand(equalArray(configuredWorkflowEvents(native),["workflow_call","workflow_dispatch"]),
+  "canonical native E2E must be reusable and retain explicit manual dispatch without push");
  demand(native.includes('R38513_NATIVE_STRICT_FULL_RECOVERY: "1"')&&
   native.includes('R3818_CANONICAL_NATIVE_MCP: "1"'),
   "native E2E must retain trusted Rust/MCP strict recovery route");

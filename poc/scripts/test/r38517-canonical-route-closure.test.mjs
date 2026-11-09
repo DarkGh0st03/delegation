@@ -31,7 +31,7 @@ test("R385.17 no automatic legacy Adapter on main; positive CI follows active br
  assert.equal(r.status,"ROUTES_STATIC_OK",r.issues.join("\n"));
  assert.deepEqual(r.phase11Events,["workflow_dispatch"]);
  assert.deepEqual(r.positiveEvents,["push","workflow_dispatch"]);
- assert.deepEqual(r.nativeEvents,["workflow_call","workflow_dispatch","push"]);
+ assert.deepEqual(r.nativeEvents,["workflow_call","workflow_dispatch"]);
  assert.equal(r.positiveSecurityCiNoAi,true);
  assert.equal(r.deploymentConfigurationsVerified,false);
  assert.equal(r.deletionAuthorized,false);
@@ -66,6 +66,11 @@ test("R385.18 positive Security CI cannot omit canonical Rust/Child/VP reuse",()
   "'"+".github/workflows/retired-workflow.yml"+"'")},
   /native reusable workflow changes must trigger positive Security CI/u);
  reject({native:base.native.replace("  workflow_call:","  # workflow_call retired:")},
+  /canonical native E2E must be reusable/u);
+ reject({native:base.native.replace("  workflow_dispatch:","  # workflow_dispatch retired:")},
+  /canonical native E2E must be reusable/u);
+ reject({native:base.native.replace("  workflow_dispatch:",
+  "  push:\\n    branches: [main]\\n  workflow_dispatch:".replaceAll("\\n","\\n"))},
   /canonical native E2E must be reusable/u);
 });
 test("R385.17 native Rust/MCP route must never fall back to HTTP Adapter",()=>{
