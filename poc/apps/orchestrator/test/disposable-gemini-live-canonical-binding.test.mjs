@@ -19,9 +19,10 @@ function models(){
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
   DELEGATION_BILLING_CAP_ACK:
    "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES",
-  GEMINI_API_KEY:"synthetic-no-network-key"
- };
- return createDisposableLiveGeminiModelSet({env,checkoutSha:SHA});
+  };
+ return createDisposableLiveGeminiModelSet({
+  env,checkoutSha:SHA,privateApiKey:"synthetic-no-network-key"
+ });
 }
 const noop=()=>{};
 function fixture(){

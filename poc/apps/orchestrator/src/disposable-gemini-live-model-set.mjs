@@ -71,9 +71,11 @@ export function assertDisposableLiveGeminiAdmission(
     env.DELEGATION_DISPOSABLE_CI_MODE!==undefined||
     env.DELEGATION_SIGNED_GEMINI_PILOT!==undefined||
     env.OPENAI_API_KEY!==undefined||
-    typeof env.GEMINI_API_KEY!=="string"||
-    env.GEMINI_API_KEY.length<10||
-    /\s/u.test(env.GEMINI_API_KEY))
+    // A key in a runner-wide environment would be inherited by child
+    // processes and potentially by Docker. It must be loaded separately
+    // from a protected owner-only secret file, never by workflow inputs.
+    env.GEMINI_API_KEY!==undefined||
+    env.GOOGLE_API_KEY!==undefined)
   deny();
  return Object.freeze({
   source_sha:observedCheckoutSha,
@@ -95,11 +97,18 @@ export function assertDisposableLiveGeminiAdmission(
  * The returned set refuses JSON serialization and hides its member references
  * from ordinary object enumeration. This is defense-in-depth, not sandboxing.
  */
-export function createDisposableLiveGeminiModelSet({env,checkoutSha}={}){
+export function createDisposableLiveGeminiModelSet({
+ env,checkoutSha,privateApiKey
+}={}){
  assertDisposableLiveGeminiAdmission(env,checkoutSha);
+ // The trusted operator must read this from a protected private file.
+ // Caller-supplied environment values are NOT accepted by admission.
+ // This constructor never issues a request or creates a paid workflow.
+ if(typeof privateApiKey!=="string"||privateApiKey.length<10||
+    /\s/u.test(privateApiKey))deny();
  const create=()=>{
   const model=createGeminiAdkModel({
-   apiKey:env.GEMINI_API_KEY,model:MODEL
+   apiKey:privateApiKey,model:MODEL
   });
   if(!(model instanceof Gemini)||model.model!==MODEL)deny();
   return model;

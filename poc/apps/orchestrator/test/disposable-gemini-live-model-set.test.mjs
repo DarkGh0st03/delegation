@@ -25,8 +25,7 @@ function admitted(){
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
   DELEGATION_BILLING_CAP_ACK:
    "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES",
-  GEMINI_API_KEY:"synthetic-not-a-real-provider-key"
- };
+  };
 }
 
 test("live admission is manual, pinned, consented and separate from no-billing CI",()=>{
@@ -78,7 +77,8 @@ test("live admission denies every unsanctioned source, replay, mode and billing 
 test("real ADK Gemini instances bind to ORIGINAL Planner, adaptive loop and exactly three A2A roles without making a request",()=>{
  // The synthetic key is never sent to Google: only Gemini constructors run.
  const models=createDisposableLiveGeminiModelSet({
-  env:admitted(),checkoutSha:SHA
+  env:admitted(),checkoutSha:SHA,
+  privateApiKey:"synthetic-not-a-real-provider-key"
  });
  assert.equal(Object.isFrozen(models),true);
  assert.deepEqual(Object.keys(models),[]);
@@ -100,6 +100,24 @@ test("real ADK Gemini instances bind to ORIGINAL Planner, adaptive loop and exac
  assert.equal(models.workers.test.generateContentConfig.maxOutputTokens,12288);
  assert.throws(()=>JSON.stringify(models),/must not be serialized/u);
  assert.equal("apiKey" in describeDisposableLiveGeminiContract(),false);
+});
+
+test("Gemini secrets are never accepted from the shared GitHub Actions environment",()=>{
+ const env=admitted();
+ for(const name of ["GEMINI_API_KEY","GOOGLE_API_KEY"]){
+  assert.throws(()=>assertDisposableLiveGeminiAdmission({
+   ...env,[name]:"synthetic-secret-must-not-be-inherited"
+  },SHA),/NO-GO/u);
+ }
+ assert.throws(()=>createDisposableLiveGeminiModelSet({
+  env,checkoutSha:SHA
+ }),/NO-GO/u);
+ assert.throws(()=>createDisposableLiveGeminiModelSet({
+  env,checkoutSha:SHA,privateApiKey:"too-short"
+ }),/NO-GO/u);
+ assert.throws(()=>createDisposableLiveGeminiModelSet({
+  env,checkoutSha:SHA,privateApiKey:"invalid with spaces"
+ }),/NO-GO/u);
 });
 
 test("safe evidence says no Gemini decisions or generative code have been proved",()=>{
