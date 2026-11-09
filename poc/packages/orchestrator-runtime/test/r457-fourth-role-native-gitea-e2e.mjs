@@ -77,6 +77,11 @@ assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
 const client=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
  token:process.env.GITEA_GATEWAY_TOKEN,owner:repo.owner,repository:repo.repository});
+assert.ok(process.env.GITEA_RUNNER_TOKEN,"Independent read-only Gitea token required");
+assert.notEqual(process.env.GITEA_RUNNER_TOKEN,process.env.GITEA_GATEWAY_TOKEN,
+ "Gateway writer cannot impersonate independent read-only witness");
+const independentClient=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
+ token:process.env.GITEA_RUNNER_TOKEN,owner:repo.owner,repository:repo.repository});
 // Disposable CI owner provisioning, outside delegated execution.
 const created=await client.createBranch("main","feature/account-suspension");
 const baseRevision=created.commit_sha;
@@ -198,7 +203,7 @@ try{
   effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
   completionObserver:new AuthenticatedGiteaReadCompletionObserver({
    directory:path("receipts"),key:evidenceKey,repository:"thesis/iam-console-poc",
-   branch,giteaClient:client,nowMs
+   branch,giteaClient:independentClient,nowMs
   }).toTrustedObserver(),
   nowMs
  });
@@ -235,6 +240,7 @@ try{
   authorityOnlyAdmissions:gate,nowMs,authorityOnlyReadEnabled:true,
   authorityOnlyReceiptWriter:new TrustedGatewayGiteaReadEvidencePublisher({
    directory:path("receipts"),key:evidenceKey,admissions:gate,
+   independentGiteaClient:independentClient,
    repository:"thesis/iam-console-poc",branch,nowMs
   })};
  const good=prepare(),goodVp=await sign(child.credential_id,good);

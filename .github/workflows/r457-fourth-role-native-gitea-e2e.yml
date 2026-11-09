@@ -170,6 +170,7 @@ jobs:
           set -o pipefail
           set -a
           source poc/infra/runtime/gateway.env
+          source poc/infra/runtime/runner.env
           set +a
           node --experimental-strip-types poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs |
             tee "$RUNNER_TEMP/r457-native-read.jsonl"
