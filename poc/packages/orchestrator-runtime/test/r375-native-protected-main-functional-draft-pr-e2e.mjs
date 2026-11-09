@@ -439,6 +439,18 @@ try{
    connect(){throw Error("Paid Planning provider disabled");}
   }
   const planningModel=new ScriptedPermissionOnlyPlanner();
+  // The *original* signed native E2E already has a simulated Engineer
+  // decision and real Rust/Child/OPA/Gitea/Docker effects. For the
+  // research-only STRICT profile, meter the exact ADK Planning calls
+  // inside this SAME original Review Host. No model substitution into R5.
+  const {DisposableCIMeteredAdkModel}=strictFullRecovery?
+   await import("../../../apps/orchestrator/src/disposable-gemini-adk-model-boundary.mjs"):
+   {DisposableCIMeteredAdkModel:null};
+  const researchPlanningModel=strictFullRecovery?
+   new DisposableCIMeteredAdkModel({
+    delegate:planningModel,phase:"planning",source:"scripted-offline",
+    maxCalls:2,maxReportedTokens:16000
+   }):planningModel;
   const checkpointKey=generateKeyPairSync("ed25519");
   const checkpoints=new AuthorityPlanningCheckpointStore({
    directory:path("checkpoints"),trust:{
@@ -505,7 +517,7 @@ try{
     receiptDirectory:path("approvals"),
     passwordSaltHex:salt.toString("hex"),
     passwordScryptHex:scryptSync("r375-engineer-test-only",salt,64).toString("hex")},
-   planner:{model:planningModel,planId:"r375-native-review",
+   planner:{model:researchPlanningModel,planId:"r375-native-review",
     maxModelTurns:3,maxProposalRevisions:0},
    trustedAgentRegistry:{
     backend:{did:backendDid,card_ref:"trusted:r375-backend",
@@ -529,6 +541,10 @@ try{
     timeoutMs:60000}
   });
   assert.equal(planningModel.calls,2);
+  if(strictFullRecovery){
+   assert.equal(researchPlanningModel.observedCalls,2);
+   assert.equal(researchPlanningModel.publicSummary().source_claim,"scripted-offline");
+  }
   assert.equal(planningExecuteCount,1);
   let coordinator,execution,gate,deps;
   const registeredTaskCount=()=>coordinator?.registeredTaskCount??gate?.registeredTaskCount??0;
@@ -1230,6 +1246,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
    connect(){throw Error("Paid provider inference forbidden in R375");}
   }
   const controller=new FreeOriginalHostDecisionModel();
+  const researchAdaptiveModel=strictFullRecovery?
+   new DisposableCIMeteredAdkModel({
+    delegate:controller,phase:"adaptive-execution",source:"scripted-offline",
+    maxCalls:25,maxReportedTokens:16000
+   }):controller;
   let childMetadataCount=0;
   class FreeSignedPrTaskProposal extends BaseLlm{
    constructor(){super({model:"r375-free-signed-original-root-pr-proposer"});
@@ -1328,7 +1349,7 @@ const tool=record?.request?.tool,role=record?.agent_role;
     }
    },
    sdk:localWorkers.sdk,
-   adaptive:{model:controller,maxSteps:strictFullRecovery?25:15+decisionOffset,
+   adaptive:{model:researchAdaptiveModel,maxSteps:strictFullRecovery?25:15+decisionOffset,
     ...(strictReadProbe?{requireVerifiedRepairDiagnostic:true}:{}),
     nextChildParameters:({epoch,agent_id})=>{
      childMetadataCount++;
@@ -1611,6 +1632,16 @@ const tool=record?.request?.tool,role=record?.agent_role;
    for(const role of roles)assert.ok(nativeMcpVpByRole[role]>0,
     "Every original A2A role must sign via native MCP: "+role);
   }
+  if(strictFullRecovery){
+   // This proof is emitted only after the existing independent native
+   // Rust/Gateway/Runner/Gitea/PR assertions succeeded, not when merely
+   // receiving untrusted model text or A2A completion.
+   assert.equal(researchPlanningModel.observedCalls,2);
+   assert.equal(researchAdaptiveModel.observedCalls,25);
+   assert.equal(controller.calls,25);
+   assert.equal(researchPlanningModel.publicSummary().real_model_decisions_verified,false);
+   assert.equal(researchAdaptiveModel.publicSummary().source_claim,"scripted-offline");
+  }
   nativeE2eResultEmitted=true;
   process.stdout.write(JSON.stringify({
    event:strictFullRecovery?"r38513_native_ten_signed_reads_ten_cas_docker_pass_draft_pr":
@@ -1633,6 +1664,14 @@ const tool=record?.request?.tool,role=record?.agent_role;
     no_extra_child_for_terminal_decision:true
    }:{}),
    original_main_immutable:true,
+   ...(strictFullRecovery?{
+    // Same-process SCRIPTED ADK Planning + adaptive decision counters,
+    // linked to the original native credential/Gitea/Docker assertions.
+    scripted_adk_planning_calls_in_native_host:researchPlanningModel.observedCalls,
+    scripted_adk_adaptive_calls_in_native_host:researchAdaptiveModel.observedCalls,
+    observed_model_source:"scripted-offline",
+    model_generated_source_proven:false
+   }:{}),
    feature_branch_created_from_original_root:true,
    independent_branch_get:true,
    native_rust_evm:true,real_opa:true,
