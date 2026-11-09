@@ -134,7 +134,8 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   ".github/workflows/gemini-real-gitea-planning-only.yml",
   ".github/workflows/gemini-planner-manual-feasibility.yml",
   ".github/workflows/f1-paid-real-gitea-once.yml",
-  // R419: historical Adapter transport merged into its sole HTTP issuer.
+  // R432: the historical HTTP issuer is retired as well as its former transport.
+  "poc/packages/orchestrator-runtime/src/authority-client.ts",
   "poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts",
   // R413: true historical Signed-DAG wrapper retirement; core Owner modules remain.
   "poc/packages/orchestrator-runtime/src/trusted-reviewed-approved-dag.ts",
