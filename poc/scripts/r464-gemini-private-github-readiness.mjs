@@ -124,10 +124,13 @@ export async function verifyR464PaidPrivateGithubReadiness({
     expectedWorkflowPath:WORKFLOW,expectedSourceSha},
    fetchFn:async(url,request)=>{
     const target=new URL(url);
+    // The fixed repository metadata GET has no trailing slash. Permit
+    // that exact path, NOT arbitrary siblings; all other requests must
+    // belong to one of the paid-profile registration's fixed GET families.
     if(target.origin!=="https://api.github.com"||
-       !target.pathname.startsWith("/repos/"+REPO+"/")||
-       !(/^\/repos\/DarkGh0st03\/delegation\/(?:branches\/|contents\/|actions\/workflows\/)/u.test(target.pathname)||
-        target.pathname==="/repos/"+REPO))deny();
+       !(target.pathname==="/repos/"+REPO||
+         /^\/repos\/DarkGh0st03\/delegation\/(?:branches\/|contents\/|actions\/workflows\/)/u
+           .test(target.pathname)))deny();
     return fetchFn(url,{...request,method:"GET",redirect:"error",
      headers:{...request.headers,authorization:"Bearer "+githubToken}});
    }
