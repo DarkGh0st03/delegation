@@ -73,7 +73,14 @@ export type AdkGenerationConfig = NonNullable<LlmAgentConfig["generateContentCon
   temperature?: number;
 };
 
+/** Only trusted native Worker bootstrap may pin this read-only role.
+ * Never accept it from the model, A2A Task, Gateway response or Card. */
+export interface TrustedAdditionalReadOnlyAdkRole {
+  role:string;
+  capabilities:readonly string[];
+}
 export interface AdkSpecializedAgentConfig {
+  trustedAdditionalReadOnlyRole?:TrustedAdditionalReadOnlyAdkRole;
   onToolOutcome?: (outcome: AdkControlledToolOutcome) => void;
   /** Opaque diagnostic correlation of a trusted signed dispatch only. */
   diagnosticTaskRef?:string;
@@ -129,9 +136,25 @@ export function createAdkSpecializedAgent(
   // skill or tool description from the frozen Account Suspension fixture.
   // Unsigned historical A2A cases remain explicit regression compatibility.
   const signedTask=config.trustedFilePermissions!==undefined;
-  const baseline=signedTask
+  const extra=config.trustedAdditionalReadOnlyRole;
+  if(extra&&(!signedTask||typeof extra.role!=="string"||
+     !/^[a-z][a-z0-9_-]{0,23}$/u.test(extra.role)||
+     extra.role!==config.role||
+     ["backend","frontend","test","orchestrator"].includes(extra.role)||
+     !Array.isArray(extra.capabilities)||extra.capabilities.length!==1||
+     extra.capabilities[0]!=="read_file"||
+     config.trustedRunTestsAllowed!==undefined))
+    throw Error("Additional native ADK role requires exact Owner-pinned read-only signed Task");
+  const additional:SpecializedAgentProfile|undefined=extra?{
+    role:config.role,
+    skill:"Owner-pinned, delegated source investigation",
+    tools:Object.freeze(["read_file"] as const),
+    writable_paths:[],creatable_paths:[],read_only_paths:[],
+    can_run_tests:false,system_prompt:""
+  }:undefined;
+  const baseline=additional??(signedTask
     ? APPROVED_SPECIALIZED_AGENT_PROFILES[config.role]
-    : LEGACY_ACCOUNT_SUSPENSION_PROFILES[config.role];
+    : LEGACY_ACCOUNT_SUSPENSION_PROFILES[config.role]);
   if(!baseline)throw new Error("Unknown specialized agent role");
   const branch=validatePrivateApprovedBranch(config.trustedBranch??LEGACY_A2A_BRANCH);
   const scoped=config.trustedTaskPaths!==undefined;

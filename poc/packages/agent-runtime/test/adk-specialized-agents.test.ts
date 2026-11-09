@@ -876,3 +876,37 @@ test("R385.15 signed Test FunctionTools never infer Docker Runner grant from rol
  });
  assert.deepEqual(legacy.agent.tools.map(tool=>tool.name),["run_tests"]);
 });
+
+test("Additional signed ADK role exposes only its Owner-pinned read grant",()=>{
+ const path="src/approved-source.ts";
+ const make=(profile:{role:string;capabilities:readonly string[]},permissions=[
+  {path,operation:"read_file" as const}
+ ])=>createAdkSpecializedAgent({
+  role:"reviewer" as never,
+  model:new ScriptedAdkLlm("read_file",{branch:BRANCH,path}),
+  gatewayClient:{invoke:async()=>({revision:"a".repeat(40)})} as never,
+  trustedBranch:BRANCH,trustedTaskPaths:[path],
+  trustedFilePermissions:permissions,
+  trustedAdditionalReadOnlyRole:profile
+ });
+ const role={role:"reviewer",capabilities:["read_file"]};
+ const approved=make(role);
+ assert.deepEqual(approved.agent.tools.map(t=>t.name),["read_file"]);
+ assert.deepEqual(approved.profile.writable_paths,[]);
+ assert.deepEqual(approved.profile.creatable_paths,[]);
+ assert.deepEqual(approved.profile.read_only_paths,[path]);
+ assert.equal(approved.profile.can_run_tests,false);
+ for(const invalid of [
+  {role:"frontend",capabilities:["read_file"]},
+  {role:"reviewer",capabilities:["read_file","update_file"]},
+  {role:"reviewer",capabilities:["run_tests"]},
+  {role:"orchestrator",capabilities:["read_file"]}
+ ]){
+  assert.throws(()=>make(invalid),/Owner-pinned read-only signed Task/u);
+ }
+ assert.throws(()=>createAdkSpecializedAgent({
+  role:"reviewer" as never,model:new ScriptedAdkLlm("read_file",{}),
+  gatewayClient:{invoke:async()=>({})} as never,
+  trustedAdditionalReadOnlyRole:role
+ }),/Owner-pinned read-only signed Task/u);
+});

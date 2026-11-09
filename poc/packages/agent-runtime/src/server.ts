@@ -72,13 +72,27 @@ export async function startSpecializedAgentServer(
   if(options.nativeSignerDid!==undefined&&(!options.adk||!options.mcpTaskSigning))
     throw Error("Trusted native A2A signer DID requires an original ADK Task host");
   const extra=!SPECIALIZED_AGENT_ROLES.includes(options.role as SpecializedAgentRole);
-  // A fourth worker cannot become a native signer by publishing a Card.
-  // The synthetic offline stage uses an explicit deterministic test handler;
-  // live additional-role ADK needs a separately pinned native crypto profile.
-  if(extra&&(!options.ownerAdditionalCardPin||!options.taskHandler||
-     options.adk||options.nativeSignerDid||options.mcpTaskSigning||
-     options.capabilityProfile==="legacy"||
+  // Extra roles are NEVER authorized by the Card itself. The only native
+  // opt-in is a previously provisioned signer DID and read-only profile,
+  // with a separate private one-shot MCP key and an exact Owner Task binder.
+  // The original synthetic offline test mode remains strictly non-native.
+  const pinned=options.ownerAdditionalCardPin;
+  const nativeExtra=extra&&!!options.adk;
+  if(extra&&(!pinned||options.capabilityProfile==="legacy"||
      options.delegatedAuthorization===false))
+    throw Error("Additional A2A specialist requires exact Owner Card pins");
+  if(extra&&nativeExtra&&(
+     !options.mcpTaskSigning||!options.nativeSignerDid||
+     options.nativeSignerDid!==pinned!.did||
+     process.env["ADAPTER_ID_"+options.role.toUpperCase()]!==pinned!.did||
+     process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+     process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+     options.adk?.nativePresentationTransport!=="mcp-stdio"||
+     !Array.isArray(pinned!.capabilities)||
+     pinned!.capabilities.length!==1||pinned!.capabilities[0]!=="read_file"))
+    throw Error("Additional native A2A worker requires original Owner-signed read-only identity");
+  if(extra&&!nativeExtra&&(!options.taskHandler||
+     options.nativeSignerDid||options.mcpTaskSigning))
     throw Error("Additional A2A specialist requires owner-pinned non-native test handler");
   if(!extra&&options.ownerAdditionalCardPin)
     throw Error("Original specialist cannot replace its trusted Agent Card");
@@ -133,7 +147,11 @@ export async function startSpecializedAgentServer(
     : undefined;
   const adkHandler = options.adk
     ? createAdkA2ATaskHandler({...options.adk,
-      ...(discovery?{trustedBackendDiscoverySlot:discovery.slot}:{}), ...(mcpTaskRegistry ? {mcpTaskRegistry} : {})})
+      ...(discovery?{trustedBackendDiscoverySlot:discovery.slot}:{}),
+      ...(mcpTaskRegistry?{mcpTaskRegistry}:{}),
+      ...(nativeExtra?{trustedAdditionalReadOnlyRole:{
+       role:options.role,capabilities:[...pinned!.capabilities]
+      }}:{})})
     : undefined;
   const taskHandler: DeterministicTaskHandler | undefined = adkHandler
     ? async (context,signal) => {

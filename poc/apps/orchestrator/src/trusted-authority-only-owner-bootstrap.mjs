@@ -56,7 +56,6 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const ROLES=["backend","frontend","test","orchestrator"];
 const ADDITIONAL_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 const REQUIRED_ROLES=new Set(ROLES);
-const EXTRA_CAPABILITIES=new Set(["read_file"]);
 // A new specialist only gets a read ceiling here. Widening role operations
 // requires separately reviewed native owner/Gateway support, not a Card claim.
 function trustedRegistry(registry){
@@ -70,7 +69,7 @@ function trustedRegistry(registry){
  const dids=new Set();
  for(const role of roles){
   const p=registry[role];
-  const allowed=REQUIRED_ROLES.has(role)?AGENTS[role]:EXTRA_CAPABILITIES;
+  const allowed=REQUIRED_ROLES.has(role)?AGENTS[role]:["read_file"];
   if(!exact(p,["did","card_ref","capabilities"])||
      typeof p.did!=="string"||!/^did:ethr:[A-Za-z0-9:._%-]+$/u.test(p.did)||
      p.did!==process.env["ADAPTER_ID_"+role.toUpperCase()]||
@@ -78,10 +77,9 @@ function trustedRegistry(registry){
      typeof p.card_ref!=="string"||!p.card_ref.trim()||
      p.card_ref.length>256||
      !Array.isArray(p.capabilities)||!p.capabilities.length||
-     p.capabilities.length>allowed.size||
+     p.capabilities.length>allowed.length||
      new Set(p.capabilities).size!==p.capabilities.length||
-     p.capabilities.some(cap=>REQUIRED_ROLES.has(role)
-      ?!AGENTS[role].includes(cap):!EXTRA_CAPABILITIES.has(cap)))
+     p.capabilities.some(cap=>!allowed.includes(cap)))
    return false;
   dids.add(p.did);
  }

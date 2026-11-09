@@ -16,7 +16,9 @@ import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA
  type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 import {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
-import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
+import { createAdkSpecializedAgent, type AdkControlledToolOutcome,
+ type AdkGenerationConfig,type TrustedAdditionalReadOnlyAdkRole}
+ from "./adk-specialized-agents.ts";
 import {safeSignedTaskRef} from "./signed-task-diagnostic-ref.mjs";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
@@ -28,6 +30,8 @@ import {safeAdkResponseShape,classifyAdkResponseFailure,
 type FetchLike = typeof fetch;
 
 export interface AdkA2ATaskHandlerConfig {
+  /** Signed Worker startup only; not LLM/A2A-provided role metadata. */
+  trustedAdditionalReadOnlyRole?:TrustedAdditionalReadOnlyAdkRole;
   /** Owner-only registry of exact A2A Task/Child/operation bindings. */
   trustedEffectTaskRegistry?:TrustedEffectStagingTaskRegistry;
   model: BaseLlm;
@@ -351,6 +355,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
        evidenceHandler:discoveryEvidence??evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
+      ...(config.trustedAdditionalReadOnlyRole?{
+        trustedAdditionalReadOnlyRole:config.trustedAdditionalReadOnlyRole
+      }:{}),
       ...(signedTask&&context.role==="test"
         ?{trustedRunTestsAllowed:mayRunTests}:{}),
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
