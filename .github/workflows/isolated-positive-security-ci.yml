@@ -109,8 +109,11 @@ on:
       - '.github/workflows/r38513-native-strict-full-recovery.yml'
       - '.github/workflows/r3858-native-strict-postfail-diagnostic-probe.yml'
       - '.github/workflows/r3859-native-second-postfail-diagnostic-probe.yml'
-      - '.github/workflows/r387-native-test-agent-create-e2e.yml'
-      - '.github/workflows/r388-native-test-create-docker-e2e.yml'
+      # R439: standalone R387/R388 and R139 launchers retired; retain native-source CI triggers.
+      - 'poc/packages/orchestrator-runtime/test/r387-native-test-agent-create-e2e.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r388-native-test-create-docker-e2e.mjs'
+      - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.mjs'
+      - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.test.mjs'
       - 'poc/scripts/test/r3858-native-strict-postfail-wiring.test.mjs'
       - 'poc/scripts/test/r3859-native-second-postfail-wiring.test.mjs'
       # R422.1: old one-shot CI triggers are retired; source proofs stay native/manual.

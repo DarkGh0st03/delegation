@@ -60,6 +60,27 @@ test('R420 no obsolete paid workflow can be dispatched after physical retirement
  // R426 verifies the retired Signed-DAG pilot is also physically absent.
 });
 
+test('R439 superseded standalone manual E2E launchers stay retired while source proofs remain',()=>{
+ const cases=[
+  ['r139-real-docker-repair-e2e.yml','poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.mjs'],
+  ['r387-native-test-agent-create-e2e.yml','poc/packages/orchestrator-runtime/test/r387-native-test-agent-create-e2e.mjs'],
+  ['r388-native-test-create-docker-e2e.yml','poc/packages/orchestrator-runtime/test/r388-native-test-create-docker-e2e.mjs']
+ ];
+ const security=readFileSync(path('.github/workflows/isolated-positive-security-ci.yml'),'utf8');
+ for(const [launcher,proof] of cases){
+  assert.equal(existsSync(path('.github/workflows/'+launcher)),false,
+   'superseded manual-only launcher must remain absent: '+launcher);
+  assert.equal(existsSync(path(proof)),true,
+   'historical runnable proof source must be retained: '+proof);
+  assert.ok(security.includes("- '"+proof+"'"),
+   'native Security CI must observe preserved source changes: '+proof);
+ }
+ for(const retained of ['r38513-native-strict-full-recovery.yml','r395-native-a2a-runner-e2e.yml']){
+  assert.equal(existsSync(path('.github/workflows/'+retained)),true,
+   'canonical native security or A2A Test Runner regression must remain: '+retained);
+ }
+});
+
 test('R432 public runtime cannot load retired HTTP Adapter Engineer authority',()=>{
  const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
  const neutral=readFileSync(path('poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'),'utf8');
