@@ -61,7 +61,7 @@ test("R385.18 positive Security CI cannot omit canonical Rust/Child/VP reuse",()
   "uses: ./.github/workflows/r38513-native-strict-full-recovery.yml",
   "uses: ./.github/workflows/retired-shared-mcp.yml")},
   /positive Security CI must invoke canonical no-AI Rust\/Child\/VP full E2E/u);
- reject({positive:base.positive.replace(
+ reject({positive:base.positive.replaceAll(
   "'"+".github/workflows/r38513-native-strict-full-recovery.yml"+"'",
   "'"+".github/workflows/retired-workflow.yml"+"'")},
   /native reusable workflow changes must trigger positive Security CI/u);
