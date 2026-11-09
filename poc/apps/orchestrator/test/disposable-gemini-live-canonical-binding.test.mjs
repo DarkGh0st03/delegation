@@ -114,6 +114,29 @@ test("original Review Host, native transports and exactly three workers receive 
  assert.equal(Object.isFrozen(bound.operational.localWorkers.workers),true);
 });
 
+test("native rootGateway is bound without caller-owned provider callbacks",async t=>{
+ const f=fixture(),set=await models(t);
+ delete f.operational.workflow.createBranch.prepare;
+ delete f.operational.workflow.createBranch.execute;
+ delete f.operational.workflow.draftPullRequest.prepare;
+ delete f.operational.workflow.draftPullRequest.execute;
+ const native={audit:{},verifier:{},policy:{},executor:{}};
+ f.operational.rootGateway=native;
+ const bound=bindDisposableLiveGeminiCanonicalInputs({...f,models:set});
+ assert.equal(bound.operational.rootGateway,native);
+ assert.equal(bound.operational.nativeEffects,f.operational.nativeEffects);
+ assert.equal(bound.operational.workflow.createBranch.model,set.adaptive.model);
+ assert.equal(bound.operational.workflow.draftPullRequest.model,set.adaptive.model);
+ assert.equal("prepare" in bound.operational.workflow.createBranch,false);
+ assert.equal("execute" in bound.operational.workflow.draftPullRequest,false);
+ // A native Gateway transport and caller-defined prepare/execute must
+ // NEVER coexist: the latter could bypass the original Rust/OPA bridge.
+ f.operational.workflow.createBranch.prepare=noop;
+ assert.throws(()=>bindDisposableLiveGeminiCanonicalInputs({
+  ...f,models:set
+ }),/NO-GO/u);
+});
+
 test("a forged or hand-written model set cannot inject a provider into canonical authority",async t=>{
  const f=fixture(),set=await models(t);
  for(const fake of [

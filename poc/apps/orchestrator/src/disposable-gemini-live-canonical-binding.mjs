@@ -36,6 +36,13 @@ export function bindDisposableLiveGeminiCanonicalInputs({
  models,authority,operational
 }={}){
  assertIssuedDisposableLiveGeminiModelSet(models);
+ // The native rootGateway path intentionally has NO caller-defined
+ // provider callbacks. The original bootstrap installs exact trusted
+ // Rust/Gateway Prepare/Execute transports after Root admission.
+ const nativeGateway=Object.hasOwn(operational??{},"rootGateway");
+ const branchFields=["branch","baseBranch","permission","prepare","execute"];
+ const prFields=["headBranch","baseBranch","title","body","permission",
+  "prepare","execute"];
  if(!plain(authority)||!plain(operational)||
     !shape(authority.planner,["planId","onObservation"],["planId"])||
     typeof authority.planner.planId!=="string"||
@@ -63,21 +70,28 @@ export function bindDisposableLiveGeminiCanonicalInputs({
     (operational.workflow.adaptive.maxVerifiedFailures!==undefined&&
      operational.workflow.adaptive.maxVerifiedFailures!==
       models.adaptive.maxVerifiedFailures)||
-    !shape(operational.workflow.createBranch,[
-     "branch","baseBranch","permission","prepare","execute"
-    ])||
+    !shape(operational.workflow.createBranch,branchFields,
+     nativeGateway?branchFields.slice(0,3):branchFields)||
     operational.workflow.createBranch.branch!==authority.workBranch||
     operational.workflow.createBranch.baseBranch!=="main"||
-    !shape(operational.workflow.draftPullRequest,[
-     "headBranch","baseBranch","title","body","permission",
-     "prepare","execute"
-    ])||
+    !shape(operational.workflow.draftPullRequest,prFields,
+     nativeGateway?prFields.slice(0,5):prFields)||
     operational.workflow.draftPullRequest.headBranch!==authority.workBranch||
     operational.workflow.draftPullRequest.baseBranch!=="main"||
-    typeof operational.workflow.createBranch.prepare!=="function"||
-    typeof operational.workflow.createBranch.execute!=="function"||
-    typeof operational.workflow.draftPullRequest.prepare!=="function"||
-    typeof operational.workflow.draftPullRequest.execute!=="function"||
+    (nativeGateway?(
+      !shape(operational.rootGateway,["audit","verifier","policy","executor"])||
+      !Object.hasOwn(operational,"nativeEffects")||
+      ["audit","verifier","policy","executor"].some(
+       key=>!operational.rootGateway[key])||
+      [operational.workflow.createBranch,
+       operational.workflow.draftPullRequest].some(effect=>
+        Object.hasOwn(effect,"prepare")||Object.hasOwn(effect,"execute"))
+    ):(
+      typeof operational.workflow.createBranch.prepare!=="function"||
+      typeof operational.workflow.createBranch.execute!=="function"||
+      typeof operational.workflow.draftPullRequest.prepare!=="function"||
+      typeof operational.workflow.draftPullRequest.execute!=="function"
+    ))||
     !shape(operational.localWorkers,["directory","workers","a2aPolling"],
      ["directory","workers"])||
     !uniqueRoles(operational.localWorkers.workers)||
@@ -104,6 +118,8 @@ export function bindDisposableLiveGeminiCanonicalInputs({
  });
  // Branch and PR use the SAME owner-controlled generative orchestrator;
  // a scripted branch/PR model cannot silently remain in a "live" pilot.
+ // When rootGateway is present, these configs stay callback-free until the
+ // ORIGINAL trusted bootstrap creates native Rust/Gateway effect wrappers.
  const workflow=Object.freeze({
   ...operational.workflow,adaptive,
   createBranch:Object.freeze({...operational.workflow.createBranch,
