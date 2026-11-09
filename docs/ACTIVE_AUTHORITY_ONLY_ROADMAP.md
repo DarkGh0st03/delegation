@@ -1,5 +1,8 @@
 # Delegation — roadmap operativa (authority-only)
 
+**Hardening del boundary ADK sperimentale (9 novembre 2026, CI da verificare):** le risposte in streaming sono conservate solo in memoria con limite 128 chunk / 1 MB e non vengono inoltrate al Planner/Execution Loop finché l'intera chiamata, le risposte di errore e gli ultimi token cumulativi comunicati dal provider non siano stati verificati. Sforamento, interruzione o ambiguità sul provider reale sono fail-closed; nessun Task parziale può raggiungere ADK tramite questo wrapper. I token registrati restano solo dati di consumo *dichiarati*, non un blocco preventivo della fatturazione. Il profilo sperimentale non chiama Gemini.
+
+
 **Prova ADK→effetti nativi nello stesso processo (9 novembre 2026, CI nuova SHA in attesa).** Il test reale R375/R385.13 usa già il proprio Engineer simulato Ed25519 e genera una Root nativa Rust verificata prima dei Task. Per la sola modalità `strictFullRecovery` abbiamo collegato il *medesimo* adattatore `DisposableCIMeteredAdkModel` al Planner originale e al ciclo adattivo originale, senza toccare Root/Child/VP/Gateway o il percorso R5. L'evidenza finale viene emessa **solo dopo** le asserzioni esistenti su permessi, Task firmati, Gitea CAS, Docker FAIL→PASS, test di accettazione, Draft PR e `main` immutato; conterà 2 turni di Planning e 25 decisioni adattive dello **scripted** ADK eseguite nello stesso host. Questa è correlazione di *output scripted* con il percorso reale, **non** prova di produzione autonoma del codice da Gemini, né prova di billing/consenso umano. Nessuna chiamata Gemini o nuovo agente introdotto.
 
 

@@ -164,3 +164,55 @@ test("metered research no raw token, source, private model output or receipt in 
   "read_repository","hidden source","GEMINI_API_KEY"])
   assert.equal(summary.includes(forbidden),false,forbidden);
 });
+
+
+test("no model output escapes if cumulative token usage exceeds owner budget",async()=>{
+ class OverBudget extends BaseLlm{
+  constructor(){super({model:"scripted-over-budget-no-provider"});}
+  async *generateContentAsync(){
+   yield {content:{role:"model",parts:[{text:JSON.stringify(task())}]},
+    usageMetadata:{promptTokenCount:9,candidatesTokenCount:9,totalTokenCount:18}};
+  }
+  connect(){throw Error("No provider");}
+ }
+ const meter=new DisposableCIMeteredAdkModel({
+  delegate:new OverBudget(),phase:"adaptive-execution",
+  maxCalls:2,maxReportedTokens:16
+ });
+ const forwarded=[];
+ await assert.rejects(async()=>{
+  for await(const response of meter.generateContentAsync({}))
+   forwarded.push(response);
+ },/Disposable ADK research model boundary NO-GO/u);
+ assert.equal(forwarded.length,0,
+  "No untrusted Task may reach ADK before a final usage budget check");
+ assert.equal(meter.publicSummary().usage_complete,false);
+ await assert.rejects(async()=>{
+  for await(const _ of meter.generateContentAsync({})){}
+ },/NO-GO/u);
+});
+test("no partially streamed decision can escape an upstream failure",async()=>{
+ class FailingStream extends BaseLlm{
+  constructor(){super({model:"scripted-failing-stream-no-provider"});}
+  async *generateContentAsync(){
+   yield {content:{role:"model",parts:[{text:JSON.stringify(task())}]}};
+   throw Error("Model transport stopped");
+  }
+  connect(){throw Error("No provider");}
+ }
+ const meter=new DisposableCIMeteredAdkModel({
+  delegate:new FailingStream(),phase:"planning",
+  maxCalls:2
+ });
+ const forwarded=[];
+ await assert.rejects(async()=>{
+  for await(const response of meter.generateContentAsync({}))
+   forwarded.push(response);
+ },/Model transport stopped/u);
+ assert.deepEqual(forwarded,[],
+  "A model response must never be admitted until stream completion");
+ assert.equal(meter.publicSummary().usage_complete,false);
+ await assert.rejects(async()=>{
+  for await(const _ of meter.generateContentAsync({})){}
+ },/NO-GO/u);
+});

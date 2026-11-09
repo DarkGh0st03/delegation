@@ -1,5 +1,8 @@
 # Delegation — implementation state (authority-only)
 
+**Experimental ADK response gate hardening (new SHA, CI pending):** The research-only model wrapper buffers at most 128 responses / 1 MB *in memory*, withholding all ADK responses until the provider stream is complete and any reported cumulative usage is validated. Errors, over-budget usage, truncation and interrupted delivery fail closed before downstream tools/decisions receive partial model output. Token metadata is only post-hoc provider accounting, not a pre-charge spending cap. No new provider route is enabled.
+
+
 **Same-runtime scripted ADK model evidence (new SHA pending real CI):** The existing R375/R385.13 disposable native integration fixture now places `DisposableCIMeteredAdkModel` around its **original** ADK read-only Planning `BaseLlm` (two scripted responses) and its **original** adaptive decision `BaseLlm` (25 scripted decisions). The original Review Host consumes its own independently signed simulated Engineer receipt and issues the genuine scoped Rust Root and native Child/VP, followed by real OPA/Gitea CAS, Docker FAIL-to-PASS and inspected Draft PR. A new evidence field records 2 Planning and 25 adaptive calls **only after** all native assertions succeed, proving an on-process scripted model-to-native-effects chain. The receipt in the separate preflight GitHub job is **still not forwarded**. No Gemini inference, billable usage, real human review or model-authored source is claimed. No changes to the protected R5 execution route.
 
 

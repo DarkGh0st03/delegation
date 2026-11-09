@@ -89,31 +89,42 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
   const combined=AbortSignal.any([
    AbortSignal.timeout(60000),...(signal?[signal]:[])
   ]);
-  let lastUsage=null,responseCount=0,done=false;
+  // Buffer bounded *in memory* until the complete provider call, its
+  // last cumulative usage and its error state have been verified. Yielding
+  // partial ADK tool calls before this gate could execute an over-budget
+  // proposal or an incomplete response downstream.
+  let lastUsage=null,responseCount=0,responseBytes=0,done=false;
+  const buffered=[];
   try{
    for await(const response of this.#delegate.generateContentAsync(
     request,stream,combined
    )){
     if(combined.aborted||response?.errorCode||response?.errorMessage||
        ++responseCount>128)deny();
+    const bytes=Buffer.byteLength(JSON.stringify(response),"utf8");
+    if((responseBytes+=bytes)>1_000_000)deny();
     const metadata=response?.usageMetadata;
     if(metadata!==undefined){
      const observed=validUsage(metadata);
      if(!observed)deny();
+     if(this.#input+observed.input>this.#tokenLimit||
+        this.#output+observed.output>this.#tokenLimit||
+        this.#total+observed.total>this.#tokenLimit)deny();
      lastUsage=observed;
     }
-    yield response;
+    buffered.push(response);
    }
    if(combined.aborted)deny();
    // A missing usage record cannot be interpreted as a zero-token Gemini
    // request. No subsequent provider call is permitted after this ambiguity.
    if(this.#source==="gemini-live"&&!lastUsage)deny();
    if(lastUsage){
-    if(this.#input+lastUsage.input>this.#tokenLimit||
-       this.#output+lastUsage.output>this.#tokenLimit||
-       this.#total+lastUsage.total>this.#tokenLimit)deny();
     this.#input+=lastUsage.input;this.#output+=lastUsage.output;
     this.#total+=lastUsage.total;this.#withUsage++;
+   }
+   for(const response of buffered){
+    if(combined.aborted)deny();
+    yield response;
    }
    done=true;
   }finally{
