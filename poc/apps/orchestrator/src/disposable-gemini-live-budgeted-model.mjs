@@ -1,0 +1,144 @@
+/**
+ * Disposable PRIVATE OWNER model-call fence for real Google ADK Gemini.
+ *
+ * This module NEVER loads credentials, creates a Google provider, or
+ * authorizes a paid run. Constructing this wrapper makes no network call.
+ * The separately admitted owner-only path must supply a real Gemini model
+ * and keep this model outside agent-visible Tools/A2A/HTTP surfaces.
+ *
+ * A reported-token ceiling is NOT a monetary spending cap: provider charges
+ * may be incurred before a response is rejected, and even failed calls can
+ * be billed. An out-of-band Google project spending limit is required.
+ *
+ * Unlike the scripted-only DisposableCIMeteredAdkModel, this private wrapper
+ * MAY carry a real Gemini delegate. Never allow it in no-billing CI runs.
+ */
+import {BaseLlm} from "@google/adk";
+
+const PHASES=new Set(["planning","adaptive-execution","backend","frontend","test"]);
+const deny=()=>{throw Error("Disposable private Gemini request budget NO-GO");};
+const positive=(value,max)=>Number.isSafeInteger(value)&&value>=1&&value<=max;
+const nonnegative=value=>Number.isSafeInteger(value)&&value>=0;
+function usage(value){
+ if(!value||typeof value!=="object"||Array.isArray(value))return null;
+ const input=value.promptTokenCount;
+ const output=value.candidatesTokenCount;
+ const total=value.totalTokenCount;
+ if(!nonnegative(input)||!nonnegative(output)||!nonnegative(total)||
+    total<input+output)return null;
+ return {input,output,total};
+}
+
+/** Strict call gate; no SDK output reaches the trusted Planner/Task consumer
+ * until the complete response (including last cumulative usage) is checked.
+ */
+export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
+ #delegate;#phase;#maxCalls;#maxTokens;#maxPerCall;
+ #calls=0;#reportedTotal=0;#input=0;#output=0;
+ #busy=false;#blocked=false;
+ constructor({
+  delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens
+ }={}){
+  if(!(delegate instanceof BaseLlm)||typeof delegate.model!=="string"||
+     !delegate.model||!PHASES.has(phase)||
+     !positive(maxCalls,64)||!positive(maxReportedTokens,250000)||
+     !positive(maxPerCallTokens,65536)||
+     maxPerCallTokens>maxReportedTokens)
+   deny();
+  super({model:delegate.model});
+  this.#delegate=delegate;
+  this.#phase=phase;this.#maxCalls=maxCalls;
+  this.#maxTokens=maxReportedTokens;
+  this.#maxPerCall=maxPerCallTokens;
+ }
+ get phase(){return this.#phase;}
+ /** Public counters NEVER include API key, prompts, source or tool calls. */
+ publicSummary(){
+  return Object.freeze({
+   profile:"private-gemini-model-budget-not-proof-of-billing",
+   phase:this.#phase,model_name:this.model,
+   calls_started:this.#calls,
+   max_calls:this.#maxCalls,
+   reported_input_tokens:this.#input,
+   reported_output_tokens:this.#output,
+   reported_total_tokens:this.#reportedTotal,
+   max_reported_tokens:this.#maxTokens,
+   blocked:this.#blocked,
+   real_generated_source_proven:false,
+   billed_amount_measured:false,
+   monetary_cap_enforced:false
+  });
+ }
+ async *generateContentAsync(request,stream,signal){
+  if(this.#blocked||this.#busy||
+     this.#calls>=this.#maxCalls||
+     this.#reportedTotal>=this.#maxTokens)deny();
+  // One model instance accepts at most one in-flight request. Claim its
+  // per-session call slot synchronously before any provider interaction.
+  this.#busy=true;
+  this.#calls++;
+  const combined=AbortSignal.any([
+   AbortSignal.timeout(60000),
+   ...(signal?[signal]:[])
+  ]);
+  let last=null,chunks=0,bytes=0,finished=false;
+  const buffered=[];
+  try{
+   for await(const response of this.#delegate.generateContentAsync(
+    request,stream,combined
+   )){
+    if(combined.aborted||response?.errorCode||response?.errorMessage||
+       ++chunks>128)deny();
+    const data=JSON.stringify(response);
+    if(typeof data!=="string"||(bytes+=Buffer.byteLength(data))>1_000_000)
+     deny();
+    if(response?.usageMetadata!==undefined){
+     const next=usage(response.usageMetadata);
+     if(!next||last&&(next.input<last.input||
+        next.output<last.output||next.total<last.total))deny();
+     if(next.total>this.#maxPerCall||
+        this.#reportedTotal+next.total>this.#maxTokens)deny();
+     last=next;
+    }
+    buffered.push(response);
+   }
+   // No partial response (especially FunctionTool calls) may be executed
+   // without a final, valid provider-reported usage entry.
+   if(combined.aborted||!last)deny();
+   this.#reportedTotal+=last.total;
+   this.#input+=last.input;
+   this.#output+=last.output;
+   for(const response of buffered){
+    if(combined.aborted)deny();
+    yield response;
+   }
+   finished=true;
+  }finally{
+   this.#busy=false;
+   if(!finished)this.#blocked=true;
+  }
+ }
+ connect(){deny();}
+}
+
+/** Private-host default call budgets for one disposable session. These are
+ * ceilings on API calls and reported tokens, NOT guaranteed cost limits.
+ * The 3 specialist roles remain exactly Backend, Frontend and Test.
+ */
+export const PRIVATE_GEMINI_SESSION_LIMITS=Object.freeze({
+ planning:Object.freeze({
+  maxCalls:20,maxReportedTokens:100000,maxPerCallTokens:32000
+ }),
+ "adaptive-execution":Object.freeze({
+  maxCalls:25,maxReportedTokens:125000,maxPerCallTokens:32000
+ }),
+ backend:Object.freeze({
+  maxCalls:12,maxReportedTokens:90000,maxPerCallTokens:24000
+ }),
+ frontend:Object.freeze({
+  maxCalls:12,maxReportedTokens:90000,maxPerCallTokens:24000
+ }),
+ test:Object.freeze({
+  maxCalls:10,maxReportedTokens:80000,maxPerCallTokens:24000
+ })
+});

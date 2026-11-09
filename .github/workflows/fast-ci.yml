@@ -105,6 +105,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-private-key.test.mjs
           # OIDC HMAC one-use private-host simulation, real GitHub API mocked, no paid model or network.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-private-host-admission.test.mjs
+          # Bounded private Gemini ADK calls and cumulative provider-reported usage; synthetic BaseLlm only, no API key.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-budgeted-model.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-model-set.test.mjs
           # Experimental owner-only canonical model binding: synthetic key, no provider inference.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-canonical-binding.test.mjs

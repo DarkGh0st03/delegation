@@ -6,7 +6,9 @@ import {mkdtemp,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {dirname,join,resolve} from "node:path";
 import {fileURLToPath} from "node:url";
-import {Gemini} from "@google/adk";
+import {BaseLlm} from "@google/adk";
+import {DisposablePrivateBudgetedAdkModel}
+ from "../src/disposable-gemini-live-budgeted-model.mjs";
 import {TrustedGithubAdmissionReceiptStore}
  from "../../../packages/orchestrator-runtime/src/trusted-github-admission-store.ts";
 import {createDisposableLiveGeminiModelSetFromPrivateHostAdmission}
@@ -98,14 +100,22 @@ test("independently admitted private Engineer Host constructs all five Gemini mo
  const f=await fixture(t);
  const set=await createDisposableLiveGeminiModelSetFromPrivateHostAdmission(f);
  assert.equal(Object.keys(set).length,0);
- assert.ok(set.planner.model instanceof Gemini);
- assert.ok(set.adaptive.model instanceof Gemini);
+ assert.ok(set.planner.model instanceof DisposablePrivateBudgetedAdkModel);
+ assert.ok(set.adaptive.model instanceof DisposablePrivateBudgetedAdkModel);
  assert.deepEqual(Object.keys(set.workers).sort(),
   ["backend","frontend","test"]);
  for(const role of ["backend","frontend","test"]){
-  assert.ok(set.workers[role].model instanceof Gemini);
+  assert.ok(set.workers[role].model instanceof DisposablePrivateBudgetedAdkModel);
  }
  assert.equal(f.observed.calls,1);
+ assert.equal(set.planner.model.model,"gemini-3.8-flash");
+ assert.equal(set.planner.model.publicSummary().max_calls,20);
+ assert.equal(set.adaptive.model.publicSummary().max_calls,25);
+ assert.equal(set.workers.backend.model.publicSummary().max_calls,12);
+ assert.equal(set.workers.frontend.model.publicSummary().max_calls,12);
+ assert.equal(set.workers.test.model.publicSummary().max_calls,10);
+ assert.equal(set.planner.model.publicSummary().calls_started,0);
+ assert.ok(set.planner.model instanceof BaseLlm);
  assert.throws(()=>JSON.stringify(set),/must not be serialized/u);
  await assert.rejects(
   createDisposableLiveGeminiModelSetFromPrivateHostAdmission(f),
@@ -125,7 +135,7 @@ test("GitHub Actions cannot impersonate the private owner even with a real recei
  assert.equal(f.observed.calls,0);
  delete process.env.GITHUB_ACTIONS;
  const set=await createDisposableLiveGeminiModelSetFromPrivateHostAdmission(f);
- assert.ok(set.workers.backend.model instanceof Gemini);
+ assert.ok(set.workers.backend.model instanceof DisposablePrivateBudgetedAdkModel);
 });
 
 test("wrong source SHA and untrusted admission store fail before secret access",async t=>{
@@ -143,7 +153,7 @@ test("wrong source SHA and untrusted admission store fail before secret access",
  );
  assert.equal(f.observed.calls,0);
  const set=await createDisposableLiveGeminiModelSetFromPrivateHostAdmission(f);
- assert.ok(set.planner.model instanceof Gemini);
+ assert.ok(set.planner.model instanceof DisposablePrivateBudgetedAdkModel);
 });
 
 test("stale or canceled run is rejected after one-use HMAC consumption, never retried",async t=>{

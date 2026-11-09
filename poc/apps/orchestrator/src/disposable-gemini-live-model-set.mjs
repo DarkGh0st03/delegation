@@ -12,6 +12,8 @@
  * billing consent. Environment predicates alone do not prove isolation.
  */
 import {Gemini} from "@google/adk";
+import {DisposablePrivateBudgetedAdkModel,PRIVATE_GEMINI_SESSION_LIMITS}
+ from "./disposable-gemini-live-budgeted-model.mjs";
 import {execFileSync} from "node:child_process";
 import {dirname,resolve} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -132,17 +134,24 @@ function assembleVerifiedModels(privateKeyHandle,{fixtureOnly=false}={}){
  // The handle is consumed once BEFORE any SDK object is constructed.
  const privateApiKey=consumeProtectedDisposableGeminiKey(privateKeyHandle);
  if(fixtureOnly&&!OFFLINE_SYNTHETIC_KEYS.has(privateApiKey))deny();
- const create=()=>{
+ const create=phase=>{
   const model=createGeminiAdkModel({
    apiKey:privateApiKey,model:MODEL
   });
   if(!(model instanceof Gemini)||model.model!==MODEL)deny();
-  return model;
+  // Research CI constructors remain inert, with their synthetic-only key.
+  // The independently OIDC-admitted PRIVATE host wraps all FIVE models in
+  // genuine per-session call/usage ceilings. No wrapper authorizes billing,
+  // and constructor-only work never contacts the Gemini provider.
+  if(fixtureOnly)return model;
+  return new DisposablePrivateBudgetedAdkModel({
+   delegate:model,phase,...PRIVATE_GEMINI_SESSION_LIMITS[phase]
+  });
  };
- const planner=Object.freeze({...PLANNING,model:create()});
- const adaptive=Object.freeze({...ADAPTIVE,model:create()});
+ const planner=Object.freeze({...PLANNING,model:create("planning")});
+ const adaptive=Object.freeze({...ADAPTIVE,model:create("adaptive-execution")});
  const workers=Object.freeze(Object.fromEntries(
-  ROLES.map(role=>[role,Object.freeze({...WORKERS[role],model:create()})])
+  ROLES.map(role=>[role,Object.freeze({...WORKERS[role],model:create(role)})])
  ));
  const set=Object.create(null);
  for(const [key,value] of [
