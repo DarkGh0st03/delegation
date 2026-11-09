@@ -77,7 +77,9 @@ test('R384.9 public runtime cannot load historical HTTP Adapter Engineer authori
  assert.doesNotMatch(neutral,/authority-client|authority-adapter-transport|postCredential|fetch\(/u);
  assert.match(historic,/from "\.\/trusted-credential-contracts\.ts"/u);
  assert.doesNotMatch(historic,/from "\.\/authority-adapter-transport\.ts"/u);
- assert.match(historic,/export async function postCredential\(/u);
+ assert.match(historic,/async function postCredential\(/u);
+ assert.doesNotMatch(historic,/export (?:async )?function (?:postCredential|validateCommon)\(/u,
+  'historical helper functions must remain private to the legacy issuer');
  assert.match(historic,/class SoftwareEngineerAuthorityBootstrap/u);
  assert.match(historic,/Adapter root issuance response differs from exact trusted permissions/u);
  assert.match(historic,/Adapter root DC revocation not confirmed/u);
