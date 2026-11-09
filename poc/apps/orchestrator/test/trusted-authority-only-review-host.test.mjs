@@ -3205,7 +3205,11 @@ test('R435 the exact trusted SDK roster requires per-specialist endpoints and bo
   }]))
  };
  assert.deepEqual(assertTrustedSdkA2ARoster(registry,config),roles);
- const extended={...registry,invoice:{}};
+ const extraPin={did:'did:thesis:invoice-agent',name:'Invoice Specialist',
+  skillId:'invoice-engineering',capabilities:['read_file']};
+ const extended={...registry,invoice:{
+  did:extraPin.did,capabilities:['read_file']
+ }};
  for(const bad of [
   {registry:extended,config},
   {registry,config:{...config,agentBaseUrls:{
@@ -3220,12 +3224,29 @@ test('R435 the exact trusted SDK roster requires per-specialist endpoints and bo
   assert.throws(()=>assertTrustedSdkA2ARoster(bad.registry,bad.config),
    /Authority-only review host: /u);
  }
- // A complete four-role configuration passes this roster preflight,
- // but the canonical three-role SDK still fails closed until a fourth
- // private A2A process, card, signer and native role bind are implemented.
- const full=Object.fromEntries(['agentBaseUrls','stageChannels','agentBindingChannels']
-  .map(key=>[key,{...config[key],invoice:config[key].backend}]));
+ // Additional roles require an exact owner-approved Card DID/capability
+ // ceiling AND distinct role-specific channels. A name is not a credential.
+ const full={
+  agentBaseUrls:{...config.agentBaseUrls,invoice:'http://127.0.0.1:18903'},
+  stageChannels:{...config.stageChannels,invoice:{
+   socketPath:'/tmp/r435-invoice-stage.sock',secretFile:'/tmp/r435-invoice-stage.key'
+  }},
+  agentBindingChannels:{...config.agentBindingChannels,invoice:{
+   socketPath:'/tmp/r435-invoice-bind.sock',secretFile:'/tmp/r435-invoice-bind.key'
+  }},
+  additionalRolePins:{invoice:extraPin}
+ };
  assert.deepEqual(assertTrustedSdkA2ARoster(extended,full),
   [...roles,'invoice'].sort());
+ for(const invalid of [
+  {...full,additionalRolePins:undefined},
+  {...full,additionalRolePins:{invoice:{...extraPin,did:'did:thesis:other'}}},
+  {...full,additionalRolePins:{invoice:{...extraPin,
+   capabilities:['read_file','update_file']}}},
+  {...full,additionalRolePins:{invoice:extraPin,frontend:extraPin}}
+ ]){
+  assert.throws(()=>assertTrustedSdkA2ARoster(extended,invalid),
+   /additional SDK Card pins/u);
+ }
  assert.deepEqual(Object.keys(registry),roles,'preflight does not rewrite trusted pins');
 });
