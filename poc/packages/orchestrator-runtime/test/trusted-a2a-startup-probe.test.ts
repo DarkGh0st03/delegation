@@ -374,5 +374,5 @@ test("Owner-provisioned fourth synthetic A2A HTTP server publishes only its pinn
  await assert.rejects(startSpecializedAgentServer({
   role:"reviewer",host:"127.0.0.1",port:invalidPort,
   taskHandler:async()=>{throw Error("unexpected");}
- }),/Additional A2A specialist requires owner-pinned/u);
+ }),/Additional A2A specialist requires exact Owner Card pins/u);
 });
