@@ -10,7 +10,7 @@ test("R426 retired billed workflow is absent; signed-consent and Human Gate stay
  const guard=await readFile(new URL("../signed-gemini-pilot-consent.mjs",import.meta.url),"utf8");
  const protectedMerge=await readFile(new URL("../../../.github/workflows/human-approved-gitea-merge.yml",import.meta.url),"utf8");
  assert.match(guard,/DELEGATION_PINNED_COMMIT_SHA!==env\.GITHUB_SHA/u);
- assert.match(guard,/GITHUB_RUN_ATTEMPT!==\"1\"/u);
+ assert.match(guard,/GITHUB_RUN_ATTEMPT!=="1"/u);
  assert.match(guard,/DELEGATION_GEMINI_CHARGE_CONFIRMATION!==CONSENT/u);
  assert.match(protectedMerge,/^on:\s*\n  workflow_dispatch:/mu);
  assert.doesNotMatch(protectedMerge,/^  (?:push|schedule|pull_request|workflow_call|workflow_run):/mu);
