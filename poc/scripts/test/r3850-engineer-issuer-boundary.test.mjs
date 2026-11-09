@@ -16,7 +16,9 @@ test("R385.0 owner selector has no eager HTTP Adapter bootstrap or owner-private
  assert.match(legacy,/createLegacyOwnerPrivateMcpEngineerCredentialPort/u);
  assert.doesNotMatch(legacy,/import \{SoftwareEngineerAuthorityBootstrap\}/u);
  assert.match(legacy,/loaded\?\?=import\("\.\/authority-client\.ts"\)/u);
- assert.match(legacy,/new m\.SoftwareEngineerAuthorityBootstrap\(config\)/u);
+ assert.match(legacy,/new m\.SoftwareEngineerAuthorityBootstrap\(pinnedConfig\)/u);
+ assert.match(legacy,/const pinnedConfig:AdapterClientConfig=Object.freeze\(\{\.\.\.config\}\)/u,
+  "HTTP endpoint, token and transport must be immutable before async import");
  assert.match(legacy,/createOwnerPrivateCryptographicMcpSession\(/u);
 });
 
