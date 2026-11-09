@@ -133,6 +133,21 @@ test("Gemini secrets are never accepted from the shared GitHub Actions environme
  }),/NO-GO/u);
 });
 
+test("Actions research constructor refuses arbitrary API keys even with a private file",async t=>{
+ const directory=await mkdtemp(join(tmpdir(),"disposable-research-negative-"));
+ t.after(()=>rm(directory,{recursive:true,force:true}));
+ const keyFile=join(directory,"looks-like-a-live-secret");
+ await writeFile(keyFile,"an-arbitrary-private-credential-is-not-a-fixture\n",{
+  mode:0o600,flag:"wx"
+ });
+ await assert.rejects(
+  createDisposableLiveGeminiModelSetFromPrivateFile({
+   env:admitted(),checkoutSha:SHA,keyFile
+  }),
+  /Disposable live Gemini model admission NO-GO/u
+ );
+});
+
 test("safe evidence says no Gemini decisions or generative code have been proved",()=>{
  const result=describeDisposableLiveGeminiContract();
  assert.deepEqual(result.specialist_roles,["backend","frontend","test"]);

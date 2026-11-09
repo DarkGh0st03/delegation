@@ -12,6 +12,13 @@
  * billing consent. Environment predicates alone do not prove isolation.
  */
 import {Gemini} from "@google/adk";
+import {execFileSync} from "node:child_process";
+import {dirname,resolve} from "node:path";
+import {fileURLToPath} from "node:url";
+import {consumePinnedGithubAdmission}
+ from "../../../packages/orchestrator-runtime/src/trusted-github-admission-consumer.ts";
+import {verifyGithubManualRunViaApi}
+ from "../../../packages/orchestrator-runtime/src/trusted-github-run-identity.ts";
 import {createGeminiAdkModel}
  from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {loadProtectedDisposableGeminiKeyFile,
@@ -19,6 +26,7 @@ import {loadProtectedDisposableGeminiKeyFile,
  from "./disposable-gemini-private-key.mjs";
 
 const SHA=/^[0-9a-f]{40}$/u;
+const SOURCE_ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
 const REPO="DarkGh0st03/delegation";
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
 const WORKFLOW=".github/workflows/gemini-authority-only-live-ci-pilot.yml";
@@ -28,6 +36,10 @@ const CAP_ACK="I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
 const ROLES=Object.freeze(["backend","frontend","test"]);
 // In-process origin check: a plain object cannot impersonate a consented set.
 const ISSUED_SETS=new WeakSet();
+const OFFLINE_SYNTHETIC_KEYS=new Set([
+ "synthetic-not-a-real-provider-key",
+ "synthetic-no-network-key"
+]);
 const deny=()=>{throw Error("Disposable live Gemini model admission NO-GO");};
 
 // These are runtime instruction/call limits, NEVER a monetary guarantee.
@@ -104,10 +116,22 @@ export function createDisposableLiveGeminiModelSet({
  env,checkoutSha,privateKeyHandle
 }={}){
  assertDisposableLiveGeminiAdmission(env,checkoutSha);
+ // CI research construction is PERMANENTLY synthetic-only. Untrusted
+ // GitHub workflow inputs cannot use this method with a real provider key.
+ return assembleVerifiedModels(privateKeyHandle,{fixtureOnly:true});
+}
+
+/**
+ * Constructor-only shared implementation; NEVER a public provider gateway.
+ * A model set can be issued only by a verified research Actions fixture or
+ * by the independently admitted private Engineer-host path below.
+ */
+function assembleVerifiedModels(privateKeyHandle,{fixtureOnly=false}={}){
  // Only a key actually loaded by the owner-private filesystem reader is
  // accepted. A raw string or a forged handle is never sufficient.
  // The handle is consumed once BEFORE any SDK object is constructed.
  const privateApiKey=consumeProtectedDisposableGeminiKey(privateKeyHandle);
+ if(fixtureOnly&&!OFFLINE_SYNTHETIC_KEYS.has(privateApiKey))deny();
  const create=()=>{
   const model=createGeminiAdkModel({
    apiKey:privateApiKey,model:MODEL
@@ -148,6 +172,72 @@ export async function createDisposableLiveGeminiModelSetFromPrivateFile({
  return createDisposableLiveGeminiModelSet({
   env,checkoutSha,privateKeyHandle
  });
+}
+
+/**
+ * Private-host half of the disposable pilot. Unlike the runner-side
+ * assertDisposableLiveGeminiAdmission(), this is executed OUTSIDE Actions.
+ *
+ * The original OIDC intake must already have verified signed GitHub
+ * identity, the run and a one-use replay before recording the owner-only
+ * HMAC receipt. This function consumes that SAME receipt once, independently
+ * checks GitHub's current active run, and THEN opens the protected key file.
+ *
+ * This is not Engineer approval, grant selection, Root issuance, execution
+ * isolation, paid consent from a ChatGPT reply, or permission to bill.
+ * The referenced live workflow is not yet registered: the path remains
+ * operationally NO-GO until deployed with real native owner controls.
+ */
+export async function createDisposableLiveGeminiModelSetFromPrivateHostAdmission({
+ admissionStore,pins,checkoutSha,keyFile,githubApiToken,
+ githubApiFetchFn
+}={}){
+ if(process.env.GITHUB_ACTIONS==="true"||
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+    process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+    process.env.ENGINEER_CORE_NATIVE_MODE!=="1"||
+    process.env.GEMINI_API_KEY!==undefined||
+    process.env.GOOGLE_API_KEY!==undefined||
+    process.env.OPENAI_API_KEY!==undefined||
+    !pins||typeof pins!=="object"||
+    Object.keys(pins).sort().join(",")!==
+      "ref,repository,runId,sessionId,sourceSha"||
+    pins.repository!==REPO||pins.ref!==REF||
+    !SHA.test(checkoutSha??"")||
+    pins.sourceSha!==checkoutSha||
+    typeof githubApiToken!=="string"||githubApiToken.length<16)
+   deny();
+ // Prevent presenting an attacker-controlled expected SHA as verification.
+ // No dirty source checkout or foreign branch may construct a paid client.
+ try{
+  const current=execFileSync("git",["rev-parse","--verify","HEAD"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+  const dirty=execFileSync("git",["status","--porcelain",
+    "--untracked-files=all"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+  if(current!==checkoutSha||dirty)deny();
+ }catch{deny();}
+ // The store's HMAC, session/source pins and durable single-use marker
+ // are independently enforced. Even a failure below burns this admission.
+ const admitted=await consumePinnedGithubAdmission({admissionStore,pins});
+ if(admitted.model_name!==MODEL||
+    admitted.max_model_turns!==PLANNING.maxModelTurns||
+    admitted.max_output_tokens!==PLANNING.maxOutputTokens||
+    admitted.max_model_call_ms!==PLANNING.maxModelCallMs||
+    admitted.authorization_input!==CHARGE_CONSENT)deny();
+ // A valid but canceled/expired job must not reach secret loading.
+ await verifyGithubManualRunViaApi({
+  dispatch:{run_id:admitted.run_id,source_sha:admitted.source_sha},
+  pinned:{repository:REPO,ref:REF,workflowPath:WORKFLOW,
+   sourceSha:checkoutSha},
+  githubApiToken,fetchFn:githubApiFetchFn
+ });
+ const privateKeyHandle=await loadProtectedDisposableGeminiKeyFile(keyFile);
+ return assembleVerifiedModels(privateKeyHandle);
 }
 
 /** Strict origin check for owner-only zero-inference canonical binding. */
