@@ -165,7 +165,7 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/native-evm-adapter.pid
-      - name: R457 signed fourth specialist native Rust EVM OPA Gitea read (no AI)
+      - name: R457+R458 signed fourth specialist Rust EVM OPA Gitea and A2A read (no AI)
         run: |
           set -o pipefail
           set -a
@@ -186,11 +186,13 @@ jobs:
             "native_signed_vp","independent_rust_evm_status","native_verified_root_provenance",
             "real_opa_allow","gateway_read_executed","completion_attested",
             "unbound_child_denied","revoked_root_denied","fourth_role_native_cryptography",
-            "cross_role_vp_denied","reviewer_write_denied_at_gateway_opa_rust"])
+            "cross_role_vp_denied","reviewer_write_denied_at_gateway_opa_rust",
+            "r458_native_signed_child_a2a_http","r458_private_role_hmac_bind",
+            "r458_independent_gateway_read_attestation","r458_unbound_spoof_denied"])
             assert.equal(e[field],true,field);
-          assert.equal(e.provider_calls,1,"one READ, zero provider writes");
+          assert.equal(e.provider_calls,2,"two authentic READs, zero provider writes");
           assert.equal(e.paid_model_calls,0);
-          console.log("R457 native fourth-role EVM/OPA/Gitea evidence PASS");
+          console.log("R458 physical A2A plus signed fourth-role Rust/EVM/OPA/Gitea evidence PASS");
           ' "$RUNNER_TEMP/r457-native-read.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts

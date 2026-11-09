@@ -6,7 +6,8 @@
  * No paid models, production credentials, protected merge or writing.
  */
 import assert from "node:assert/strict";
-import {generateKeyPairSync,createHash} from "node:crypto";
+import {generateKeyPairSync,createHash,randomBytes} from "node:crypto";
+import {createServer} from "node:net";
 import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
@@ -44,6 +45,16 @@ import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 import {invokeNativeCrypto}
  from "../../agent-runtime/src/native-crypto-ipc.ts";
+import {startSpecializedAgentServer}
+ from "../../agent-runtime/src/server.ts";
+import {DeterministicA2AOrchestrator}
+ from "../../agent-runtime/src/orchestrator.ts";
+import {startTrustedAuthorityOnlySdkA2AOwner}
+ from "../src/trusted-authority-only-a2a-owner.ts";
+import {
+ TrustedEffectStagingTaskRegistry,createTrustedEffectAgentBindingServer,
+ connectTrustedOwnerEffectStagingClient
+} from "../../agent-runtime/src/index.ts";
 
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
@@ -317,6 +328,196 @@ try{
  await gate.attestTrustedTaskCompletion(taskId,runtimeTaskId);
  assert.equal(gate.stagedCompletedTaskCount,1);
 
+ // R458: the same signed, operational Root now authorizes ANOTHER exact
+ // read-only specialist Task. This time the real native Child travels over
+ // actual loopback A2A HTTP, with one-shot HMAC owner->agent and agent->owner
+ // IPC. The deterministic handler is a CI fixture (not a Gemini/ADK model).
+ // It may stage the one approved read, but only the real Rust+OPA+Gitea
+ // provider and independent Gateway observer can complete the Task.
+ const a2aTaskId="r458-reviewer-a2a-task";
+ const a2aRuntimeTaskId="dispatch_"+"R".repeat(22);
+ await coordinator.registerTask({
+  session_id:sessionId,requirement_sha256:createHash("sha256")
+   .update(requirement).digest("hex"),
+  base_revision:baseRevision,branch,task_id:a2aTaskId,epoch:2,
+  agent_id:"reviewer",depends_on:[taskId],permissions:[grantPermission]
+ });
+ await gate.bindTrustedTask(a2aTaskId,a2aRuntimeTaskId,"reviewer");
+ const a2aIssuedAt=new Date().toISOString().replace(/\.\d{3}Z$/u,"Z");
+ const nativeA2AChild=await issuer.issueForRegisteredTask(a2aTaskId,{
+  ...params("urn:r458:child:reviewer-a2a",45706,600),
+  valid_from:a2aIssuedAt
+ });
+ assert.equal(nativeA2AChild.agent_id,"reviewer");
+ assert.equal(nativeA2AChild.agent_did,reviewerDid);
+ await gate.enrollTrustedIssuedChild(a2aTaskId,a2aRuntimeTaskId,issuer);
+ const liveReadHead=await independentClient.getBranchMetadata(branch);
+ assert.equal(liveReadHead.commit_sha,baseRevision);
+ gate.pinTrustedSingleReadTask(a2aTaskId,a2aRuntimeTaskId,liveReadHead.commit_sha);
+ const a2aPrepared=prepareAuthorization({
+  task_id:a2aRuntimeTaskId,agent_role:"reviewer",tool:"read_file",
+  arguments:{branch,path:"README.md"}
+ },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+ {store,audit,authorityOnlyAdmissions:gate,nowMs});
+ assert.equal(store.get(a2aPrepared.request_id)?.pinned_revision,baseRevision);
+ const a2aSignedVp=await sign(nativeA2AChild.credential_id,a2aPrepared);
+ const channelRoles=["backend","frontend","test","reviewer"];
+ const stageChannels={},agentBindingChannels={},workerRegistries={};
+ const bindingServers=[],agentServers=[];
+ const agentBaseUrls={};
+ let a2aOwner,stagedReads=0,handlerCalls=0;
+ async function chooseA2APort(){
+  const listener=createServer();
+  await new Promise((resolve,reject)=>{
+   listener.once("error",reject);
+   listener.listen(0,"127.0.0.1",resolve);
+  });
+  const address=listener.address();
+  if(!address||typeof address==="string")throw Error("No R458 loopback port");
+  await new Promise((resolve,reject)=>listener.close(error=>
+   error?reject(error):resolve()));
+  return address.port;
+ }
+ try{
+  const ports=new Set();
+  for(const role of channelRoles){
+   const secrets=async direction=>{
+    const channel={socketPath:path("r458-"+role+"-"+direction+".sock"),
+     secretFile:path("r458-"+role+"-"+direction+".hex")};
+    await writeFile(channel.secretFile,randomBytes(32).toString("hex")+"\n",
+     {mode:0o600,flag:"wx"});
+    return channel;
+   };
+   stageChannels[role]=await secrets("stage");
+   agentBindingChannels[role]=await secrets("bind");
+  }
+  for(const role of channelRoles){
+   const registry=new TrustedEffectStagingTaskRegistry();
+   workerRegistries[role]=registry;
+   const server=await createTrustedEffectAgentBindingServer({
+    ...agentBindingChannels[role],registry,expectedRole:role,
+    ownerStageClient:await connectTrustedOwnerEffectStagingClient(stageChannels[role])
+   });
+   bindingServers.push(server);
+   await server.start();
+  }
+  for(const role of channelRoles){
+   let port=await chooseA2APort();
+   while(ports.has(port))port=await chooseA2APort();
+   ports.add(port);
+   const server=await startSpecializedAgentServer({
+    role,port,host:"127.0.0.1",capabilityProfile:"approved-plan",
+    delegatedAuthorization:true,
+    ...(role==="reviewer"?{ownerAdditionalCardPin:{
+     did:reviewerDid,name:"Owner Read-Only Reviewer",
+     skillId:"source-review",capabilities:["read_file"]
+    }}:{}),
+    taskHandler:async context=>{
+     handlerCalls++;
+     if(role!=="reviewer")throw Error("reviewer A2A Task reached foreign specialist");
+     assert.equal(context.role,"reviewer");
+     assert.equal(context.trusted_gateway_task_id,a2aRuntimeTaskId);
+     assert.equal(context.delegation_evidence.presenter_id,reviewerDid);
+     const conveyed=JSON.parse(context.delegation_evidence.credential);
+     assert.equal(conveyed.id,nativeA2AChild.credential_id);
+     assert.equal(conveyed.credentialSubject?.sub,reviewerDid);
+     assert.deepEqual(context.subtask.approved_file_permissions,
+      [{path:"README.md",operation:"read_file"}]);
+     assert.equal(context.subtask.approved_run_tests,false);
+     const stage=workerRegistries.reviewer.selectFor(context);
+     await stage.stage("req_r458_signed_read");
+     return {
+      role:"reviewer",summary:"Authentic signed read-only Task staged",
+      files_modified:[],files_created:[],branch,
+      revision:baseRevision,commit_sha:baseRevision,
+      test_outcome:"not_run",errors:[]
+     };
+    }
+   });
+   agentServers.push(server);
+   agentBaseUrls[role]=server.baseUrl;
+  }
+  // A2A metadata without an Owner-issued private bind cannot invoke
+  // the native Gateway even if it advertises the correct Agent DID.
+  const spoofed=new DeterministicA2AOrchestrator({
+   deadlineMs:5000,initialIntervalMs:10,maxIntervalMs:40
+  });
+  await assert.rejects(spoofed.sendProtectedTask({
+   agent_base_url:agentBaseUrls.reviewer,
+   trusted_gateway_task_id:a2aRuntimeTaskId,
+   delegation_evidence:{credential:"unsigned-spoof",
+    credential_id:nativeA2AChild.credential_id,presenter_id:reviewerDid},
+   subtask:{subtask_id:a2aTaskId,branch,
+    instruction:"Unsigned source read must not reach Gateway",
+    relevant_paths:["README.md"],
+    approved_file_permissions:[{path:"README.md",operation:"read_file"}],
+    approved_run_tests:false}
+  }),/Protected A2A task ended without completion/u);
+  assert.equal(providerCalls,1);
+  assert.equal(stagedReads,0);
+  a2aOwner=await startTrustedAuthorityOnlySdkA2AOwner({
+   coordinator,childIssuer:issuer,gateway:gate,
+   stageChannels,agentBindingChannels,agentBaseUrls,
+   additionalRolePins:{reviewer:{
+    did:reviewerDid,name:"Owner Read-Only Reviewer",
+    skillId:"source-review",capabilities:["read_file"]
+   }},
+   a2aPolling:{deadlineMs:5000,initialIntervalMs:10,maxIntervalMs:40}
+  });
+  assert.equal(a2aOwner.verifiedAgentProfiles?.reviewer?.did,reviewerDid);
+  const report=await a2aOwner.dispatchIssuedTask({
+   taskId:a2aTaskId,runtimeTaskId:a2aRuntimeTaskId,
+   instruction:"Read only the Owner-approved source at its current pinned HEAD",
+   effectStager:{
+    stagedTool:"read_file",
+    stage:async id=>{
+     assert.equal(id,"req_r458_signed_read");
+     assert.equal(stagedReads++,0,"A2A cannot repeat a Gateway read");
+     const validated=await verifier.verify({
+      presenter:"reviewer",audience:a2aPrepared.audience,
+      challenge:a2aPrepared.challenge,
+      required_permission:grantPermission,signed_vp:a2aSignedVp
+     });
+     assert.equal(validated.presenter_id,reviewerDid);
+     assert.equal(validated.credential_id,nativeA2AChild.credential_id);
+     await gate.stageTrustedTaskFlight(store.get(a2aPrepared.request_id));
+     await executeAuthorization({
+      request_id:a2aPrepared.request_id,signed_vp:a2aSignedVp
+     },deps);
+     assert.equal(audit.events.at(-1)?.decision,"allow");
+     return {provider_write_authorized:false};
+    }
+   }
+  });
+  assert.equal(report.role,"reviewer");
+  assert.equal(report.status,"a2a_report_not_gateway_completed");
+  assert.equal(report.provider_completion_attested,false);
+  assert.equal(report.artifact.test_outcome,"not_run");
+  assert.deepEqual(report.artifact.files_modified,[]);
+  assert.deepEqual(report.artifact.files_created,[]);
+  assert.equal(stagedReads,1);
+  assert.equal(handlerCalls,2,"unsigned spoof plus one native-bound A2A Task");
+  assert.equal(providerCalls,2);
+  const attested=await a2aOwner.attestIndependentGatewayCompletion(
+   a2aTaskId,a2aRuntimeTaskId);
+  assert.equal(attested.status,"owner_gateway_completion_independently_observed");
+  assert.equal(gate.stagedCompletedTaskCount,2);
+  await assert.rejects(a2aOwner.dispatchIssuedTask({
+   taskId:a2aTaskId,runtimeTaskId:a2aRuntimeTaskId,
+   instruction:"Replay completed native Task",
+   effectStager:{stagedTool:"read_file",
+    stage:async()=>{throw Error("replay");}}
+  }),/closed or malformed owner-selected Task/u);
+ }finally{
+  const results=await Promise.allSettled([
+   ...(a2aOwner?[a2aOwner.close()]:[]),
+   ...agentServers.reverse().map(server=>server.close()),
+   ...bindingServers.reverse().map(server=>server.close())
+  ]);
+  assert.equal(results.filter(r=>r.status==="rejected").length,0,
+   "all R458 owner, A2A and HMAC listeners must close");
+ }
+
  // An independently valid Child under the same root MUST NOT substitute
  // for the Child enrolled for this Task. This negative probe is test-only.
  const foreign=await nativePort.issueChild({
@@ -336,7 +537,7 @@ try{
  await assert.rejects(executeAuthorization({
   request_id:other.request_id,signed_vp:otherVp
  },deps),error=>error?.code==="authority_only_execution_not_enabled");
- assert.equal(providerCalls,1);
+ assert.equal(providerCalls,2);
 
  // An already-prepared and signed VP MUST be denied after EVM root
  // revocation (not simply because the Task registry is still loaded).
@@ -349,7 +550,7 @@ try{
  await assert.rejects(executeAuthorization({
   request_id:pending.request_id,signed_vp:pendingVp
  },deps),error=>error?.code==="verification_rejected");
- assert.equal(providerCalls,1);
+ assert.equal(providerCalls,2);
  process.stdout.write(JSON.stringify({
   event:"r457_authority_only_native_evm_staged",
   native_engineer_roots:true,native_child_ipc:true,
@@ -359,6 +560,10 @@ try{
   fourth_role_native_cryptography:true,
   cross_role_vp_denied:true,
   reviewer_write_denied_at_gateway_opa_rust:true,
+  r458_native_signed_child_a2a_http:true,
+  r458_private_role_hmac_bind:true,
+  r458_independent_gateway_read_attestation:true,
+  r458_unbound_spoof_denied:true,
   provider_calls:providerCalls,gateway_read_executed:true,completion_attested:true,
   paid_model_calls:0
  })+"\n");
