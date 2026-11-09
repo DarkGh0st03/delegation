@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 import {buildSafeDelegationFailureLedger as report,
  safePublishedNativeTrace} from "../safe-delegation-failure-ledger.mjs";
 const diagnostic={stage:"delegated_agents_gitea_docker",
@@ -94,15 +94,14 @@ test("Code site is a known module/line, never arbitrary stack content",()=>{
   stage:"delegated_agents_gitea_docker",category:"unclassified_failure",
   failure_trace:trace}}).observed_events.at(-1).source_sites,trace);
 });
-test("Paid workflow actually constructs the common ledger and runs without source leakage",()=>{
+test("R426 native safe-failure ledger remains tested and paid workflow absent",()=>{
  const root=new URL("../../../",import.meta.url);
- const workflow=readFileSync(new URL(
-  ".github/workflows/gemini-paid-shared-mcp-final.yml",root),"utf8");
  const child=readFileSync(new URL(
   "poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs",root),"utf8");
- assert.match(workflow,/buildSafeDelegationFailureLedger/);
- assert.match(workflow,/failure_ledger:failureLedger/);
+ assert.equal(existsSync(new URL(
+  ".github/workflows/gemini-paid-shared-mcp-final.yml",root)),false);
  assert.match(child,/safePublishedNativeTrace/);
+ assert.equal(typeof report,"function");
 });
 
 test("R153 cross-stage ledger identifies D0 and D1 as different opaque signed Tasks",()=>{

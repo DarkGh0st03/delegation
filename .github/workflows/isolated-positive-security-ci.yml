@@ -20,6 +20,7 @@ on:
       - '.github/workflows/gemini-paid-shared-mcp-final.yml'
       - 'poc/scripts/test/gemini-live-no-synthetic-merge.test.mjs'
       - 'poc/scripts/test/protected-gitea-bootstrap.test.mjs'
+      - 'poc/scripts/test/safe-delegation-failure-ledger.test.mjs'
       # R420.1: the protected merge offline regression must not regress to a runnable paid path.
       - '.github/workflows/merge-protection-offline.yml'
       # R400: native PR, exact-SHA read-only Gate or its original E2E
@@ -147,7 +148,7 @@ jobs:
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
           node --test poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
-          node --test poc/scripts/test/protected-gitea-bootstrap.test.mjs poc/scripts/test/gemini-live-no-synthetic-merge.test.mjs
+          node --test poc/scripts/test/protected-gitea-bootstrap.test.mjs poc/scripts/test/gemini-live-no-synthetic-merge.test.mjs poc/scripts/test/safe-delegation-failure-ledger.test.mjs
           node --check poc/apps/orchestrator/src/trusted-engineer-host.mjs
 
       - name: R410 Owner-only recovery source and fail-closed audit gates
