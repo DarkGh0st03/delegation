@@ -449,9 +449,10 @@ export async function connectTrustedEffectAgentBindingClient(
  const channel=await PrivateClient.connect("bind",config);
  return Object.freeze({
   async bindTask(pins:PublicPins):Promise<void>{
-   if(!validPins(pins,config.expectedRole)||
-      (config.expectedRole!==undefined&&pins.role!==config.expectedRole))
-    deny("malformed or wrong-role owner Task pins");
+   if(!validPins(pins,config.expectedRole))
+    deny("malformed owner Task pins");
+   if(config.expectedRole!==undefined&&pins.role!==config.expectedRole)
+    deny("wrong-role owner Task pins");
    const v=await channel.send({action:"bind",pins});
    if(!exactKeys(v,"ok,status")||v.status!=="task_prebound_not_authorized")
     deny("missing authenticated agent prebind ACK");

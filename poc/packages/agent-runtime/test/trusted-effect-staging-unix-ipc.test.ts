@@ -397,7 +397,7 @@ test("R437 provisioned invoice role can bind and stage only on its own private H
    operation:"read_file" as const,path:file};
   ownerRegistry.bindTask(runtime,{async stage(id:string){effects.push(id);}},"invoice");
   await assert.rejects(client.bindTask({...invoice,role:"backend"}),
-   /malformed or wrong-role owner Task pins/u);
+   /wrong-role owner Task pins/u);
   await client.bindTask(invoice);
   await assert.rejects(backend.stage(runtime,request),
    /Authenticated private effect operation denied/u);
@@ -429,7 +429,7 @@ test("R437 extra roles are rejected by an unpinned legacy agent socket",async()=
   const invoice={...pins,role:"invoice",planTaskId:"r437-extra",
    childCredentialId:"urn:r437:invoice",presenterId:"did:thesis:invoice"};
   await assert.rejects(x.client.bindTask(invoice),
-   /malformed or wrong-role owner Task pins/u);
+   /malformed owner Task pins/u);
   // The old fixed-role host remains usable; a rejected invoice must
   // never mint a prebound Gateway effect or consume a valid signed Task.
   x.owner.bindTask(runtime,{async stage(id){x.calls.push(id);}});
