@@ -93,6 +93,8 @@ jobs:
           node --test poc/apps/orchestrator/test/r460-gemini-three-agent-binding.test.mjs
           # R462: exact one-file private Gemini registration PR39 audit; fixture-only, no model, merge or dispatch.
           node --test poc/scripts/test/r462-gemini-registration-pr-audit.test.mjs
+          # R463: paid private Engineer Host OIDC/TLS and exact source pins, no host or model started.
+          node --test poc/scripts/test/r463-gemini-private-host-preflight.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
           # R384.6: no legacy billed pipeline may be re-enabled.

@@ -79,6 +79,10 @@ on:
       - 'poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs'
       - 'poc/apps/orchestrator/src/trusted-authority-only-gemini-owner-binding.mjs'
       - 'poc/apps/orchestrator/test/r460-gemini-three-agent-binding.test.mjs'
+      # R463: changes to the protected paid-Host preflight require real native no-AI Security CI.
+      - 'poc/scripts/r463-gemini-private-host-preflight.mjs'
+      - 'poc/scripts/test/r463-gemini-private-host-preflight.test.mjs'
+      - '.github/workflows/r463-paid-engineer-host-preflight.yml'
       # R434: trusted registry-derived specialist Task and read/no-change guards.
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs'
@@ -204,6 +208,7 @@ jobs:
           # No native Root signing, real Gitea provider, Gemini or merge here.
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs
           node --test poc/apps/orchestrator/test/r460-gemini-three-agent-binding.test.mjs
+          node --test poc/scripts/test/r463-gemini-private-host-preflight.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r409-owner-repair-core-migration.test.mjs
           node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs
