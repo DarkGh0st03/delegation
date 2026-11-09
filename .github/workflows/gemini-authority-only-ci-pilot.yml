@@ -1,0 +1,83 @@
+# Experimental research profile ONLY. Separate from R5 protected human Owner.
+# This workflow performs NO Gemini inference and does NOT automate R5 review.
+# The test signs a TEMPORARY Engineer decision with real Ed25519 and then
+# reuses the independent 3-agent native Rust/EVM/OPA/Gitea/Docker/PR E2E.
+# THESE ARE TWO SEPARATE PROOFS, NOT A UNIFIED GENERATIVE PILOT.
+name: Gemini Authority-Only Experimental CI Pilot (Scripted, No AI)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "No-billing scripted proof only; Gemini is NOT enabled"
+        type: choice
+        required: true
+        default: scripted-offline
+        options:
+          - scripted-offline
+permissions:
+  contents: read
+concurrency:
+  group: authority-only-disposable-pilot-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  disposable-engineer-decision:
+    name: Simulated-human decision, actual Ed25519 signed authorization (NO AI)
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'scripted-offline' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DELEGATION_DISPOSABLE_CI_MODE: ${{ inputs.mode }}
+    steps:
+      - name: Checkout reviewed SHA without checkout write credential
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install local packages only
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Verify exact clean SHA, no paid input, and signed-authority rejection cases
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test -z "${DELEGATION_SIGNED_GEMINI_PILOT:-}"
+          node --check poc/apps/orchestrator/src/run-disposable-gemini-ci-pilot.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs
+      - name: Simulate bounded Engineer decision, sign and verify real Ed25519
+        run: node --experimental-strip-types poc/apps/orchestrator/src/run-disposable-gemini-ci-pilot.mjs
+
+  native-three-specialist-e2e:
+    name: Independent native Rust/Child/VP/A2A/OPA/Gitea/Docker FAIL-PASS/Draft PR
+    needs: disposable-engineer-decision
+    uses: ./.github/workflows/r38513-native-strict-full-recovery.yml
+    permissions:
+      contents: read
+
+  record-experiment-boundary:
+    name: Declare genuine evidence scope (NO model, NO unified pilot)
+    needs: [disposable-engineer-decision, native-three-specialist-e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require both independent fixtures and refuse paid-success claim
+        env:
+          SIGNATURE_RESULT: ${{ needs.disposable-engineer-decision.result }}
+          NATIVE_RESULT: ${{ needs.native-three-specialist-e2e.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$SIGNATURE_RESULT" = success
+          test "$NATIVE_RESULT" = success
+          {
+            echo "# Disposable authority-only CI pilot: scripted phase C"
+            echo "- Simulated Engineer decision with verified ephemeral Ed25519: PASS"
+            echo "- Separate native 3-specialist E2E (Rust/OPA/Gitea/Docker/PR): PASS"
+            echo "- Unified simulated Engineer -> native Root authorization: NOT YET CONNECTED"
+            echo "- Real Gemini Planning and Execution: NOT EXECUTED"
+            echo "- R5 private human/runner identity: NOT PROVEN"
+            echo "- Billing and GitHub merge: NONE"
+          } >> "$GITHUB_STEP_SUMMARY"

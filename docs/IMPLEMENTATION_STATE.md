@@ -1,6 +1,12 @@
 # Delegation — implementation state (authority-only)
 
-**Updated:** 9 November 2026. This is the current architecture; the historical 15 October shared-MCP PoC is explicitly separated in [README](../README.md).
+**Updated:** 9 November 2026. This is the current architecture;
+
+**New research-roadmap A–F, experimental CI route (not protected R5):** Historic F1 and Signed-DAG tests are retained where they still prove independent properties; no speculative mass deletion, no fourth canonical Gemini agent. The new manual-only `gemini-authority-only-ci-pilot.yml` runs with a hardcoded `scripted-offline` choice and **zero Gemini secrets or calls**. `run-disposable-gemini-ci-pilot.mjs` locally signs and verifies a bounded, synthetic IAM Console permission grant with ephemeral Ed25519; it never claims real human review, native credential issuance or model behavior. Its distinct downstream reusable R385.13 native workflow tests Backend/Frontend/Test through Rust EVM, Gateway/OPA, Gitea, Docker FAIL→PASS and Draft PR in a disposable environment. These remain **two independently validated proofs**: a signed simulator authorization has **not** yet been consumed by the same native Root issuer, and no generative Gemini Planning or adaptive Execution has run. Actual GitHub manual registration requires review of a separate default-branch workflow-only PR; the CI workflow must not be merged automatically. The R5 real human approval, private Host and paid identity remain separate and unchanged. Real model execution is strictly prohibited until user-authorized budget/secret-isolation integration exists.
+
+**Historical checkpoint on R464 (18/18 SUCCESS):** Current SHA before the new experimental changes was `d741f242ebe15fd4f71455b3f9f91f5212a651b5`.
+
+This is the current architecture; the historical 15 October shared-MCP PoC is explicitly separated in [README](../README.md).
 
 **R464 paid-Gemini GitHub admin readiness (fixture and operator-only checker, CI pending):** `poc/scripts/r464-gemini-private-github-readiness.mjs` checks two independently pinned GitHub source/default SHA values, exact `r5-private-gemini-admission` reviewer protection with explicit no-admin-bypass, unambiguous non-paginated inventory with one online idle private-labeled runner, and the already defined exact paid-workflow default-branch registration. No write-capable GitHub route, model, OIDC or merge is invoked. CI tests only fake GET responses; actual admin inspection requires a protected read-only operator token outside Actions. Even a real operator PASS cannot establish installed runner trust, private Engineer deployment, human approval or paid Gemini R5 GO. The still-unmerged PR #39 keeps actual default workflow registration at NO-GO.
 
