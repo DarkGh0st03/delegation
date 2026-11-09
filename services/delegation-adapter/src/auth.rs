@@ -1,5 +1,5 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::Error as SerdeError;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 
 /// A bounded, inline role label retains Copy semantics for existing native
@@ -12,15 +12,26 @@ pub struct AdditionalSpecialistName {
 impl AdditionalSpecialistName {
     pub fn parse(name: &str) -> Result<Self, String> {
         let raw = name.as_bytes();
-        if raw.is_empty() || raw.len() > 24 ||
-           !raw[0].is_ascii_lowercase() ||
-           raw.iter().any(|byte| !byte.is_ascii_lowercase() &&
-               !byte.is_ascii_digit() && *byte != b'_' && *byte != b'-') {
-            return Err(String::from("Invalid owner-provisioned additional specialist role"));
+        if raw.is_empty()
+            || raw.len() > 24
+            || !raw[0].is_ascii_lowercase()
+            || raw.iter().any(|byte| {
+                !byte.is_ascii_lowercase()
+                    && !byte.is_ascii_digit()
+                    && *byte != b'_'
+                    && *byte != b'-'
+            })
+        {
+            return Err(String::from(
+                "Invalid owner-provisioned additional specialist role",
+            ));
         }
         let mut bytes = [0; 24];
         bytes[..raw.len()].copy_from_slice(raw);
-        Ok(Self { bytes, len: raw.len() as u8 })
+        Ok(Self {
+            bytes,
+            len: raw.len() as u8,
+        })
     }
     pub fn as_str(&self) -> &str {
         // Only ASCII bytes accepted in parse(), never from raw deserialization.
@@ -177,18 +188,26 @@ impl CallerRegistry {
     /// verifier, never a VP signer or a delegated identity.
     pub fn managed_identity_roles(&self) -> Result<Vec<CallerRole>, String> {
         let mut roles = vec![
-            CallerRole::Engineer, CallerRole::Orchestrator,
-            CallerRole::Backend, CallerRole::Frontend, CallerRole::Test
+            CallerRole::Engineer,
+            CallerRole::Orchestrator,
+            CallerRole::Backend,
+            CallerRole::Frontend,
+            CallerRole::Test,
         ];
         for role in &roles {
             self.record_for_role(*role)?;
         }
-        let mut additional: Vec<CallerRole> = self.by_role.keys()
+        let mut additional: Vec<CallerRole> = self
+            .by_role
+            .keys()
             .filter(|role| matches!(role, CallerRole::Additional(_)))
-            .copied().collect();
-        additional.sort_by(|a,b| a.as_str().cmp(b.as_str()));
+            .copied()
+            .collect();
+        additional.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         if additional.len() > 13 {
-            return Err(String::from("Additional specialist identity roster too large"));
+            return Err(String::from(
+                "Additional specialist identity roster too large",
+            ));
         }
         roles.extend(additional);
         Ok(roles)
@@ -314,41 +333,84 @@ mod additional_role_tests {
     use super::*;
     #[test]
     fn additional_role_roundtrip_is_bounded_and_does_not_impersonate_core_role() {
-        for name in ["reviewer","release_audit","r2","a-b","x".repeat(24).as_str()] {
-            let parsed=CallerRole::from_name(name).unwrap();
-            assert_eq!(parsed.as_str(),name);
-            let json=serde_json::to_string(&parsed).unwrap();
-            let restored:CallerRole=serde_json::from_str(&json).unwrap();
-            assert_eq!(restored,parsed);
-            assert!(matches!(restored,CallerRole::Additional(_)));
+        for name in [
+            "reviewer",
+            "release_audit",
+            "r2",
+            "a-b",
+            "x".repeat(24).as_str(),
+        ] {
+            let parsed = CallerRole::from_name(name).unwrap();
+            assert_eq!(parsed.as_str(), name);
+            let json = serde_json::to_string(&parsed).unwrap();
+            let restored: CallerRole = serde_json::from_str(&json).unwrap();
+            assert_eq!(restored, parsed);
+            assert!(matches!(restored, CallerRole::Additional(_)));
         }
-        for value in ["","Reviewer","orchestrator.hidden","../test","__proto__",
-            "x/y","a.b","x x","x".repeat(25).as_str()] {
+        for value in [
+            "",
+            "Reviewer",
+            "orchestrator.hidden",
+            "../test",
+            "__proto__",
+            "x/y",
+            "a.b",
+            "x x",
+            "x".repeat(25).as_str(),
+        ] {
             assert!(CallerRole::from_name(value).is_err());
         }
-        assert_eq!(CallerRole::from_name("test").unwrap(),CallerRole::Test);
+        assert_eq!(CallerRole::from_name("test").unwrap(), CallerRole::Test);
     }
     #[test]
     fn additional_role_requires_separate_authentication_and_has_no_issuer_power() {
-        let role=CallerRole::from_name("reviewer").unwrap();
-        let registry=CallerRegistry::new(vec![
-            CallerRecord::new(role,String::from("reviewer-token"),
+        let role = CallerRole::from_name("reviewer").unwrap();
+        let registry = CallerRegistry::new(vec![
+            CallerRecord::new(
+                role,
+                String::from("reviewer-token"),
                 String::from("did:thesis:reviewer"),
-                vec![CallerCapability::CreatePresentation]).unwrap(),
-            CallerRecord::new(CallerRole::Gateway,String::from("gateway-token"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Gateway,
+                String::from("gateway-token"),
                 String::from("did:thesis:gateway"),
-                vec![CallerCapability::VerifyPresentation]).unwrap()
-        ]).unwrap();
-        assert_eq!(registry.authenticate("reviewer-token").unwrap().role(),role);
-        assert!(!registry.authenticate("reviewer-token").unwrap()
-            .has_capability(CallerCapability::IssueChild));
+                vec![CallerCapability::VerifyPresentation],
+            )
+            .unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(
+            registry.authenticate("reviewer-token").unwrap().role(),
+            role
+        );
+        assert!(
+            !registry
+                .authenticate("reviewer-token")
+                .unwrap()
+                .has_capability(CallerCapability::IssueChild)
+        );
         assert!(registry.authenticate("wrong").is_err());
-        assert!(CallerRegistry::new(vec![
-            CallerRecord::new(role,String::from("same"),String::from("did:thesis:a"),
-                vec![CallerCapability::CreatePresentation]).unwrap(),
-            CallerRecord::new(CallerRole::Backend,String::from("same"),
-                String::from("did:thesis:b"),
-                vec![CallerCapability::CreatePresentation]).unwrap()
-        ]).is_err());
+        assert!(
+            CallerRegistry::new(vec![
+                CallerRecord::new(
+                    role,
+                    String::from("same"),
+                    String::from("did:thesis:a"),
+                    vec![CallerCapability::CreatePresentation]
+                )
+                .unwrap(),
+                CallerRecord::new(
+                    CallerRole::Backend,
+                    String::from("same"),
+                    String::from("did:thesis:b"),
+                    vec![CallerCapability::CreatePresentation]
+                )
+                .unwrap()
+            ])
+            .is_err()
+        );
     }
 }

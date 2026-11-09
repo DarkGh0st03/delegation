@@ -391,8 +391,10 @@ impl CryptoRuntime {
         }
         if !matches!(
             request.delegatee,
-            CallerRole::Backend | CallerRole::Frontend |
-            CallerRole::Test | CallerRole::Additional(_)
+            CallerRole::Backend
+                | CallerRole::Frontend
+                | CallerRole::Test
+                | CallerRole::Additional(_)
         ) {
             return Err(String::from(
                 "Child credentials may target only provisioned specialist roles",

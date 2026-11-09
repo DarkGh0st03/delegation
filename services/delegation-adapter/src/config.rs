@@ -74,9 +74,8 @@ impl EvmAdapterConfig {
             identity_private_keys.insert(role, required(name)?);
         }
         for role in additional {
-            let key="ADAPTER_EVM_PRIVATE_KEY_".to_owned()+
-                &role.as_str().to_ascii_uppercase();
-            identity_private_keys.insert(*role,required(&key)?);
+            let key = "ADAPTER_EVM_PRIVATE_KEY_".to_owned() + &role.as_str().to_ascii_uppercase();
+            identity_private_keys.insert(*role, required(&key)?);
         }
 
         Ok(Self {
@@ -108,7 +107,7 @@ pub struct AdapterConfig {
 
 impl AdapterConfig {
     pub fn from_env() -> Result<Self, String> {
-        let additional=additional_specialists_from_env()?;
+        let additional = additional_specialists_from_env()?;
         let bind_addr =
             env::var("ADAPTER_BIND_ADDR").unwrap_or_else(|_| String::from("0.0.0.0:8090"));
 
@@ -169,13 +168,17 @@ impl AdapterConfig {
         ];
 
         for role in &additional {
-            let suffix=role.as_str().to_ascii_uppercase();
-            let identity=required(&format!("ADAPTER_ID_{suffix}"))?;
+            let suffix = role.as_str().to_ascii_uppercase();
+            let identity = required(&format!("ADAPTER_ID_{suffix}"))?;
             if !identity.starts_with("did:") {
-                return Err(String::from("Additional specialist needs a provisioned DID"));
+                return Err(String::from(
+                    "Additional specialist needs a provisioned DID",
+                ));
             }
             records.push(CallerRecord::new(
-                *role,required(&format!("ADAPTER_CALLER_{suffix}"))?,identity,
+                *role,
+                required(&format!("ADAPTER_CALLER_{suffix}"))?,
+                identity,
                 vec![CallerCapability::CreatePresentation],
             )?);
         }
@@ -207,22 +210,22 @@ fn required(name: &str) -> Result<String, String> {
  * extra signer identities; Agent Cards, Task hints and A2A never reach here.
  * Unknown/duplicate/oversized rosters fail closed before native startup. */
 pub fn additional_specialists_from_env() -> Result<Vec<CallerRole>, String> {
-    let raw=env::var("ADAPTER_ADDITIONAL_SPECIALISTS").unwrap_or_default();
+    let raw = env::var("ADAPTER_ADDITIONAL_SPECIALISTS").unwrap_or_default();
     if raw.is_empty() {
         return Ok(Vec::new());
     }
-    let names=raw.split(',').collect::<Vec<_>>();
-    if names.len()>13 {
+    let names = raw.split(',').collect::<Vec<_>>();
+    if names.len() > 13 {
         return Err(String::from("Additional specialist role roster too large"));
     }
-    let mut roles=Vec::new();
+    let mut roles = Vec::new();
     for name in names {
-        let role=CallerRole::from_name(name)?;
-        if !matches!(role,CallerRole::Additional(_)) || roles.contains(&role) {
+        let role = CallerRole::from_name(name)?;
+        if !matches!(role, CallerRole::Additional(_)) || roles.contains(&role) {
             return Err(String::from("Invalid native additional specialist roster"));
         }
         roles.push(role);
     }
-    roles.sort_by(|a,b|a.as_str().cmp(b.as_str()));
+    roles.sort_by(|a, b| a.as_str().cmp(b.as_str()));
     Ok(roles)
 }
