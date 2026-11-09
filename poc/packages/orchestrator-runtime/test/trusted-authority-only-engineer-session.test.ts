@@ -55,7 +55,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator,
 import type {EngineerCredentialPort,TrustedPlanningSnapshot,RootParameters}
  from "../src/trusted-engineer-authority.ts";
 import type {DelegatedPermission} from "../src/delegated-permission.ts";
-import type {IssuedDelegationCredential} from "../src/authority-client.ts";
+import type {IssuedDelegationCredential} from "../src/trusted-credential-contracts.ts";
 
 const now="2026-11-05T07:10:00Z",nowMs=Date.parse(now);
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};

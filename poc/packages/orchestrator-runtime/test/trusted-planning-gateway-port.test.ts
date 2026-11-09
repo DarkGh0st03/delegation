@@ -39,7 +39,7 @@ import {
   type EngineerCredentialPort,type RootParameters
 } from "../src/trusted-engineer-authority.ts";
 import type {IssuedDelegationCredential}
-  from "../src/authority-client.ts";
+  from "../src/trusted-credential-contracts.ts";
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
 import {TrustedPlanningGatewayReadPort}

@@ -21,7 +21,7 @@ import {prepareTrustedRemoteRepairFeedback,
 import {validateWorkflowArtifact} from "./artifact-validation.ts";
 import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
 import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.mjs";
-import type {IssuedDelegationCredential} from "./authority-client.ts";
+import type {IssuedDelegationCredential} from "./trusted-credential-contracts.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer} from
  "./trusted-approved-child-issuer.ts";
 import type {ProtectedA2AClientPort,DelegatedA2ARoleTaskResult} from

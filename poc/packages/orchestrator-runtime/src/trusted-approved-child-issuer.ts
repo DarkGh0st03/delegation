@@ -20,7 +20,7 @@ import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {AuthenticatedPlanStore} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
-import type {ChildIssuanceInput,IssuedDelegationCredential} from "./authority-client.ts";
+import type {ChildIssuanceInput,IssuedDelegationCredential} from "./trusted-credential-contracts.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import {createRustAdapterChildCryptographyPort,
   type TrustedChildCryptographyPort} from "./trusted-child-crypto-port.ts";

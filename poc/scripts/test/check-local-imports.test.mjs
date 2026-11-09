@@ -442,11 +442,14 @@ test("R178 retired static issuer, fixed workflow, and write-Gateway code remain 
  assert.doesNotMatch(index,/sequential-coordinator|permission-templates|legacy-authority-client|legacy-orchestrator-gateway-client/u);
 });
 
-test("R178 generic signed authority imports neutral DelegatedPermission, not IAM templates",async()=>{
- const {readFileSync}=await import("node:fs");
+test("R432 canonical signed authority imports neutral DelegatedPermission, not IAM templates",async()=>{
+ const {readFileSync,existsSync}=await import("node:fs");
+ const {R6_RETIRED_TARGETS}=await import("../r6-legacy-references.mjs");
  const root=new URL("../../../",import.meta.url);
  const dir="poc/packages/orchestrator-runtime/src/";
- for(const file of ["authority-client.ts","trusted-engineer-authority.ts",
+ assert.ok(R6_RETIRED_TARGETS.includes(dir+"authority-client.ts"));
+ assert.equal(existsSync(new URL(dir+"authority-client.ts",root)),false);
+ for(const file of ["trusted-credential-contracts.ts","trusted-engineer-authority.ts",
   "trusted-approved-child-issuer.ts"]){
   const source=readFileSync(new URL(dir+file,root),"utf8");
   assert.match(source,/from\s+["']\.\/delegated-permission\.ts["']/u);

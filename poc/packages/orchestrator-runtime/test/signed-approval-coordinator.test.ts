@@ -31,7 +31,7 @@ import {prepareTrustedFreshPlanningIntake,
   beginTrustedFreshRepairApprovedExecution}
   from "../src/trusted-fresh-planning-intake.ts";
 import type {EngineerCredentialPort,RootParameters} from "../src/trusted-engineer-authority.ts";
-import type {IssuedDelegationCredential} from "../src/authority-client.ts";
+import type {IssuedDelegationCredential} from "../src/trusted-credential-contracts.ts";
 import type {DelegatedPermission} from "../src/delegated-permission.ts";
 
 const REPO={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};

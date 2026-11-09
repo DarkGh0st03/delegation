@@ -20,7 +20,7 @@ import {TrustedPlanIpcClient}
 import type {TrustedExecutionCoordinator}
  from "./trusted-execution-coordinator.ts";
 import type {ChildIssuanceInput,IssuedDelegationCredential}
- from "./authority-client.ts";
+ from "./trusted-credential-contracts.ts";
 
 type Role="backend"|"frontend"|"test";
 const ROLES=new Set<string>(["backend","frontend","test"]);

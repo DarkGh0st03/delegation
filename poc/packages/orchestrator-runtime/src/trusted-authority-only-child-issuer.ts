@@ -14,7 +14,7 @@ import {createOwnerPrivateChildMcpSession}
 import {createOwnerPrivateInterprocessMcpSession}
  from "../../../mcp-shared/src/owner-private-crypto-stdio.ts";
 import {isDeepStrictEqual} from "node:util";
-import type {IssuedDelegationCredential} from "./authority-client.ts";
+import type {IssuedDelegationCredential} from "./trusted-credential-contracts.ts";
 import type {RootParameters} from "./trusted-engineer-authority.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import type {TrustedChildCryptographyPort,ExactTrustedChildIssuance}

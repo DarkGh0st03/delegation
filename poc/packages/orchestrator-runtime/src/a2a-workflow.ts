@@ -7,7 +7,7 @@ import type {
 import type {
   ChildIssuanceInput,
   IssuedDelegationCredential
-} from "./authority-client.ts";
+} from "./trusted-credential-contracts.ts";
 import {
   validateWorkflowArtifact,
   type ValidatedWorkflowArtifact

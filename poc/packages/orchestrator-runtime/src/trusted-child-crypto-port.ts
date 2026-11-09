@@ -11,7 +11,7 @@
  * can replace this transport without adding a model-visible issuance tool.
  */
 import type {CredentialStatusInput,IssuedDelegationCredential}
-  from "./authority-client.ts";
+  from "./trusted-credential-contracts.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import {createOwnerPrivateChildMcpSession}
   from "../../../mcp-shared/src/owner-private-child-mcp.ts";
