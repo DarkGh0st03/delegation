@@ -176,7 +176,7 @@ test('R449 unique native negative and D1 CREATE launchers remain manually runnab
   assert.equal(existsSync(path(source)),true,
    'preserve standalone native evidence source: '+source);
   const workflow=readFileSync(path('.github/workflows/'+launcher),'utf8');
-  assert.match(workflow,/^on:\\s*\\n  workflow_dispatch:/mu,
+  assert.ok(workflow.includes('on:'+String.fromCharCode(10)+'  workflow_dispatch:'),
    'the retained native proof must be manually dispatchable: '+launcher);
   assert.doesNotMatch(workflow,/^  push:/mu,
    'the retained native proof must not auto-run on push: '+launcher);
