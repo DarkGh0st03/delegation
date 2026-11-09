@@ -87,7 +87,8 @@ const goodResponse=()=>{
 function fixture(patch?:{
  row?:typeof row;child?:typeof child;root?:typeof root;
  receipt?:typeof receipt;signed?:typeof signed;
- response?:unknown;failBind?:boolean;mixedComplete?:boolean;readComplete?:boolean
+ response?:unknown;failBind?:boolean;mixedComplete?:boolean;readComplete?:boolean;
+ extraRole?:boolean;verifiedExtra?:boolean
  }){
  const calls:string[]=[];
  let takes=0,roots=0;
@@ -144,7 +145,8 @@ function fixture(patch?:{
      presenter_id:string};
     trusted_gateway_task_id:string;agent_base_url:string};
   const isTest=patch?.row?.agent_id==="test";
-  assert.equal(sent.agent_base_url,isTest?
+  assert.equal(sent.agent_base_url,patch?.row?.agent_id==="reviewer"?
+   "http://127.0.0.1:8104":isTest?
    "http://127.0.0.1:8103":"http://127.0.0.1:8101");
   assert.equal(sent.trusted_gateway_task_id,runtimeTaskId);
   assert.equal(sent.subtask.branch,branch);
@@ -172,8 +174,15 @@ function fixture(patch?:{
   a2a:transport,agentBaseUrls:{
    backend:"http://127.0.0.1:8101/",
    frontend:"http://127.0.0.1:8102/",
-   test:"http://127.0.0.1:8103/"
-  }
+   test:"http://127.0.0.1:8103/",
+   ...(patch?.extraRole?{reviewer:"http://127.0.0.1:8104/"}:{})
+  },
+  ...(patch?.extraRole&&patch.verifiedExtra!==false?{verifiedAgentProfiles:{
+   backend:{did,capabilities:["read_file","update_file"]},
+   frontend:{did:"did:thesis:frontend-agent",capabilities:["read_file","update_file"]},
+   test:{did:"did:thesis:test-agent",capabilities:["read_file","run_tests"]},
+   reviewer:{did:"did:thesis:reviewer-agent",capabilities:["read_file"]}
+  }}:{})
  } as never);
  return {owner,gateway,calls,get takes(){return takes;},get roots(){return roots;}};
 }
@@ -594,4 +603,55 @@ test("R389 Test CREATE is a signed test-source mutation, never a Runner PASS",as
  assert.deepEqual(f.calls,["private_bind","a2a_send","gateway_independent_observer"]);
  await assert.rejects(f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
   /closed or repeated independent completion/u);
+});
+
+test("Owner-dispatched fourth read-only specialist binds one Child and reports without self-attesting",async()=>{
+ const reviewerDid="did:thesis:reviewer-agent";
+ const read={resource:canonicalFileUri(repo,branch,file),
+  operation:"read_file" as const};
+ const reviewerRow={...row,agent_id:"reviewer",agent_did:reviewerDid,
+  card_ref:"trusted:reviewer",permissions:[read]};
+ const reviewerChild={...child,agent_id:"reviewer",agent_did:reviewerDid,
+  permissions:[read]};
+ const reviewerReceipt={...receipt,agent_id:"reviewer",agent_did:reviewerDid};
+ const reviewerSigned={...signed,credentialSubject:{
+  ...signed.credentialSubject,sub:reviewerDid,per:[read]
+ }};
+ const reviewerArtifact={...artifact,role:"reviewer",files_modified:[],
+  summary:"Read authorized source; no repository write",test_outcome:"not_run"};
+ const response={card:{name:"Read-only Reviewer"},task:{
+  ...goodResponse().task,artifacts:[{parts:[{content:{
+   $case:"data",value:reviewerArtifact
+  }}]}]
+ }};
+ const configured={extraRole:true,root:{...root,root_permissions:[read]},
+  row:reviewerRow,child:reviewerChild,receipt:reviewerReceipt,
+  signed:reviewerSigned,response};
+ // A fourth URL without the same independent verified owner Card is not
+ // executable, even with a locally signed Child.
+ assert.throws(()=>fixture({...configured,verifiedExtra:false} as never),
+  /additional specialist lacks exactly matching verified owner Card pins/u);
+ const f=fixture(configured as never);
+ const report=await f.owner.dispatchIssuedTask(request());
+ assert.equal(report.role,"reviewer");
+ assert.equal(report.status,"a2a_report_not_gateway_completed");
+ assert.equal(report.provider_completion_attested,false);
+ assert.deepEqual(report.artifact.files_modified,[]);
+ assert.equal(report.artifact.test_outcome,"not_run");
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+ assert.equal(f.takes,1);
+ await f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId);
+ assert.deepEqual(f.calls,["private_bind","a2a_send","gateway_independent_observer"]);
+ // A forged or stale role cannot borrow the reviewer URL, Child or grant.
+ for(const mutation of [
+  {row:{...reviewerRow,agent_did:"did:thesis:forged"}},
+  {row:{...reviewerRow,permissions:[{...read,operation:"run_tests" as const}]}},
+  {response:{...response,task:{...response.task,artifacts:[{parts:[{
+   content:{$case:"data",value:{...reviewerArtifact,role:"backend"}}
+  }]}]}}}
+ ]){
+  const denied=fixture({...configured,...mutation} as never);
+  await assert.rejects(denied.owner.dispatchIssuedTask(request()));
+  assert.equal(denied.calls.includes("gateway_independent_observer"),false);
+ }
 });
