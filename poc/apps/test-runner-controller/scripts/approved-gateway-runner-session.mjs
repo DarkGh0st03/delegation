@@ -28,8 +28,8 @@ import {GatewayCorroboratedTaskAttestor} from
   "../../gateway/src/trusted-task-observation.ts";
 import {GatewayRuntime} from "../../gateway/src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../../gateway/src/direct-core-loader.ts";
-import {assertHistoricalRunnerEvmIssuerAllowed} from
-  "./approved-runner-historical-issuer-gate.mjs";
+import {createTrustedEngineerCredentialPort} from
+  "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from
@@ -219,14 +219,12 @@ export async function beginApprovedRealRunnerSession({
     let activeRootId="urn:fixture:operational-root";
     const unique=randomBytes(7).toString("hex");
     if(native){
-      // R407: only this explicit historical EVM fixture may load the old
-      // HTTP Adapter root issuer; the normal scripted fixture and canonical
-      // authority-only native Rust routes must never evaluate that module.
-      assertHistoricalRunnerEvmIssuerAllowed();
-      const {SoftwareEngineerAuthorityBootstrap}=await import(
-        "../../../packages/orchestrator-runtime/src/authority-client.ts");
-      const credentials=new SoftwareEngineerAuthorityBootstrap({
-        adapterBaseUrl:ADAPTER_BASE,
+      // R430: a native EVM Runner must use the same canonical Rust issuer
+      // as the Engineer/Gateway. No historical HTTP Root issuance, even
+      // when the EVM Adapter is running for signed Child/VP compatibility.
+      if(process.env.ADAPTER_TRUST_PROFILE!=="evm")
+        throw Error("Native Runner requires EVM-backed Rust trust");
+      const credentials=createTrustedEngineerCredentialPort({
         bearerToken:nativeEnv("ADAPTER_CALLER_ENGINEER"),
         timeoutMs:30000
       });

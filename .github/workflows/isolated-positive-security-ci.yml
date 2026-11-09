@@ -33,6 +33,9 @@ on:
       # R410: source-level Owner/DAG/legacy migration changes must automatically
       # invoke no-AI native Rust+MCP+OPA+Docker Security CI on the same SHA.
       - 'poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs'
+      - 'poc/apps/test-runner-controller/scripts/approved-runner-historical-issuer-gate.mjs'
+      - 'poc/scripts/test/r407-historical-runner-issuer-isolation.test.mjs'
+      - '.github/workflows/d1-private-assertion-e2e.yml'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-reviewed-dag-execution.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts'
       - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts'
@@ -146,6 +149,7 @@ jobs:
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/check-local-imports.test.mjs
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r412-engineer-http-lazy-loading.test.mjs
           node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
+          node --experimental-vm-modules --test poc/scripts/test/r407-historical-runner-issuer-isolation.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
           node --test poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
           node --test poc/scripts/test/protected-gitea-bootstrap.test.mjs poc/scripts/test/gemini-live-no-synthetic-merge.test.mjs poc/scripts/test/safe-delegation-failure-ledger.test.mjs

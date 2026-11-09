@@ -21,7 +21,6 @@ import {createLegacyOwnerPrivateMcpEngineerCredentialPort}
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const path="poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts";
 const issuer="poc/packages/orchestrator-runtime/src/authority-client.ts";
-const runner="poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs";
 const source=()=>readFileSync(resolve(root,path),"utf8");
 async function withFixtureEnv(fn){
  const keys=[
@@ -122,18 +121,22 @@ test("R429 historical HTTP issuer graph is limited to private legacy fixture and
  const inv=collectLegacyReferences(root,gitTrackedFiles(root),{candidates:[issuer]});
  const entry=inv.candidates[0];
  assert.equal(entry.exists,true);
- assert.ok(!entry.staticImporters.some(x=>x.source===path||x.source===runner));
+ assert.ok(!entry.staticImporters.some(x=>x.source===path));
  const dynamic=entry.runtimeIndirectionHints
   .filter(x=>x.kind==="dynamic-import").map(x=>x.source).sort();
  const historicalEvm=[
   "poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs",
   "poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs"
  ];
- assert.deepEqual(dynamic,[path,runner].sort(),
+ assert.deepEqual(dynamic,[path].sort(),
   "Real EVM Root/repair scenarios must call Rust native, not a legacy HTTP issuer");
  assert.deepEqual(entry.staticImporters.filter(x=>historicalEvm.includes(x.source)),[],
   "EVM regression cannot statically import old HTTP issuer");
  assert.equal(entry.configuredCallers.length,0);
+ const nativeRunner=readFileSync(resolve(root,
+  "poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs"),"utf8");
+ assert.doesNotMatch(nativeRunner,/authority-client\.ts|SoftwareEngineerAuthorityBootstrap/u,
+  "Runner must not resurrect HTTP issuer");
  assert.ok(inv.unresolvedRuntimeIndirections.length>0,
   "Potential computed/external historical imports remain unproven");
 });
@@ -151,7 +154,7 @@ test("R412 R385.17 disallows static regression even from exact allowed legacy fi
  };
  const clean=auditR38517CallerInventory(inventory);
  assert.equal(clean.status,"CALLER_INVENTORY_OK",clean.issues.join("\n"));
- for(const source of [path,runner]){
+ for(const source of [path]){
   const entry=inventory.legacyModules[0];
   entry.runtimeHints=entry.runtimeHints.filter(x=>x.source!==source);
   entry.staticImporters.push(source);

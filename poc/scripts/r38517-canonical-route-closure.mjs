@@ -32,7 +32,6 @@ const BOOTSTRAP="poc/apps/orchestrator/src/trusted-authority-only-owner-bootstra
  */
 export const R38518_ALLOWED_NONTEST_LEGACY_CALLERS=Object.freeze({
  "poc/packages/orchestrator-runtime/src/authority-client.ts":Object.freeze([
-  "poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs",
   "poc/packages/orchestrator-runtime/src/trusted-engineer-legacy-mcp-http-port.ts"
  ]),
  // R419: the split HTTP transport has been physically retired.
