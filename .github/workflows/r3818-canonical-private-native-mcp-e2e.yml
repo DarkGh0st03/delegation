@@ -7,10 +7,6 @@
 name: R3818 Canonical Private MCP Native Child + A2A VP EVM OPA Gitea Docker (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r3818-canonical-private-native-mcp-request.json'
 permissions:
   contents: read
 concurrency:

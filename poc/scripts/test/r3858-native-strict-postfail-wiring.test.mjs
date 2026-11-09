@@ -24,7 +24,8 @@ test("R385.8 native workflow must use real Rust MCP, postfail root and zero infe
   "authority-only must be on the owner step, not globally on legacy Adapter");
  assert.match(w,/test -z "\$\{GEMINI_API_KEY:-\}"/u);
  assert.doesNotMatch(w,/R376_NATIVE_DIAGNOSIS: "1"|R377_NATIVE_SPECIALIST_STOP_ROLE/u);
- assert.match(w,/r3858-native-strict-postfail-probe-request\.json/u);
+ assert.match(w,/workflow_dispatch:/u);
+ assert.doesNotMatch(w,/r3858-native-strict-postfail-probe-request\.json|^\s+push:/mu);
  assert.match(w,/r375-native-protected-main-functional-draft-pr-e2e\.mjs/u);
 });
 test("R385.8 first real native post-failure READ precedes strict owner repair; no false PASS/PR",()=>{

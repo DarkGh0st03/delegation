@@ -7,10 +7,6 @@
 name: R385.8 Native Strict Signed Post-FAIL Read and First Repair (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r3858-native-strict-postfail-probe-request.json'
 permissions:
   contents: read
 concurrency:

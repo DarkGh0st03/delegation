@@ -7,10 +7,6 @@
 name: R385.12 Native Signed Test Agent Post-FAIL Read and CAS (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r38512-native-test-agent-postfail-probe-request.json'
 permissions:
   contents: read
 concurrency:

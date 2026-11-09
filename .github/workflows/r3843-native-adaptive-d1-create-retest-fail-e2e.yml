@@ -6,10 +6,6 @@
 name: R384.3 Native A2A Adaptive CREATE D1 And Docker Retest FAIL (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r3843-native-adaptive-d1-create-retest-request.json'
 permissions:
   contents: read
 concurrency:

@@ -15,6 +15,18 @@ import {SourceTextModule} from "node:vm";
 import {fileURLToPath,pathToFileURL} from "node:url";
 
 export const R6_LEGACY_CANDIDATES=Object.freeze([
+  // R424: one-shot native CI request payloads retired; E2E workflows remain dispatchable.
+  ".github/ci-checkpoints/r3818-canonical-private-native-mcp-request.json",
+  ".github/ci-checkpoints/r384-native-evm-request.json",
+  ".github/ci-checkpoints/r3842-native-a2a-adk-create-request.json",
+  ".github/ci-checkpoints/r3843-native-adaptive-d1-create-retest-request.json",
+  ".github/ci-checkpoints/r3844-functional-create-d1-pass-request.json",
+  ".github/ci-checkpoints/r38512-native-test-agent-postfail-probe-request.json",
+  ".github/ci-checkpoints/r38513-native-strict-full-recovery-request.json",
+  ".github/ci-checkpoints/r3858-native-strict-postfail-probe-request.json",
+  ".github/ci-checkpoints/r3859-native-second-postfail-probe-request.json",
+  ".github/ci-checkpoints/r387-native-test-create-request.json",
+  ".github/ci-checkpoints/r388-native-test-create-docker-request.json",
   // Retired one-shot CI trigger payloads: original native/EVM test workflows
   // remain manual-only and runnable; these JSON requests must not resurrect.
   ".github/ci-checkpoints/r292-native-evm-request.json",
@@ -96,6 +108,18 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
 export const R6_RETIRED_TARGETS=Object.freeze([
+  // R424: one-shot native CI request payloads retired; E2E workflows remain dispatchable.
+  ".github/ci-checkpoints/r3818-canonical-private-native-mcp-request.json",
+  ".github/ci-checkpoints/r384-native-evm-request.json",
+  ".github/ci-checkpoints/r3842-native-a2a-adk-create-request.json",
+  ".github/ci-checkpoints/r3843-native-adaptive-d1-create-retest-request.json",
+  ".github/ci-checkpoints/r3844-functional-create-d1-pass-request.json",
+  ".github/ci-checkpoints/r38512-native-test-agent-postfail-probe-request.json",
+  ".github/ci-checkpoints/r38513-native-strict-full-recovery-request.json",
+  ".github/ci-checkpoints/r3858-native-strict-postfail-probe-request.json",
+  ".github/ci-checkpoints/r3859-native-second-postfail-probe-request.json",
+  ".github/ci-checkpoints/r387-native-test-create-request.json",
+  ".github/ci-checkpoints/r388-native-test-create-docker-request.json",
   // Retired one-shot CI trigger payloads: original native/EVM test workflows
   // remain manual-only and runnable; these JSON requests must not resurrect.
   ".github/ci-checkpoints/r292-native-evm-request.json",

@@ -7,10 +7,6 @@
 name: R384.4 Functional CREATE D1 Native Docker PASS Draft PR (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r3844-functional-create-d1-pass-request.json'
 permissions:
   contents: read
 concurrency:

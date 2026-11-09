@@ -6,10 +6,6 @@
 name: R387 Native Test Agent CREATE signed source Rust/OPA/Gitea (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r387-native-test-create-request.json'
 permissions:
   contents: read
 concurrency:

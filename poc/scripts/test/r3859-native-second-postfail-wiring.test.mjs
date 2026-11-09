@@ -8,11 +8,12 @@ test("R385.9 no paid model; genuine authority-only second signed read proof",()=
  for(const key of ['R3858_NATIVE_STRICT_POSTFAIL_PROBE: "1"',
   'R3859_NATIVE_SECOND_REPAIR_PROBE: "1"','R3818_CANONICAL_NATIVE_MCP: "1"',
   'DELEGATION_GATEWAY_ARCHITECTURE: authority-only',
-  'r3859-native-second-postfail-probe-request.json',
   'r3859_native_sequential_postfail_two_read_two_cas_no_false_pass',
   'signed_read_only_diagnostic_tasks":2','gateway_cas_writes":4',
   'further_tests_proven_pass":false','pr_created":false',
   'test -z "${GEMINI_API_KEY:-}"'])assert.ok(w.includes(key),key);
+ assert.match(w,/workflow_dispatch:/u);
+ assert.doesNotMatch(w,/r3859-native-second-postfail-probe-request\.json|^\s+push:/mu);
 });
 test("R385.9 sequential new source read precedes second CAS and avoids a false PASS",()=>{
  const s=read("poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs");

@@ -12,10 +12,6 @@ on:
   # CI on the exact same source SHA; no secrets/paid inference inputs.
   workflow_call:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r38513-native-strict-full-recovery-request.json'
 permissions:
   contents: read
 concurrency:

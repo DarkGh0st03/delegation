@@ -7,10 +7,6 @@
 name: R385.9 Native Sequential Signed Post-FAIL Reads and Repairs (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r3859-native-second-postfail-probe-request.json'
 permissions:
   contents: read
 concurrency:

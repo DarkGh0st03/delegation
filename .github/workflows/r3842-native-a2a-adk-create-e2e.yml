@@ -5,10 +5,6 @@
 name: R384.2 Native SDK A2A ADK CREATE CAS (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r3842-native-a2a-adk-create-request.json'
 permissions:
   contents: read
 concurrency:

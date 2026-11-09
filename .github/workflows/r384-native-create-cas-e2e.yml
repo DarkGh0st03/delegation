@@ -5,10 +5,6 @@
 name: R384 Native Rust EVM OPA Authorized Gitea Atomic CREATE (No AI)
 on:
   workflow_dispatch:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/ci-checkpoints/r384-native-evm-request.json'
 permissions:
   contents: read
 concurrency:
