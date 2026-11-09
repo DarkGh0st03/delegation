@@ -58,6 +58,11 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts'
       - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
       - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
+      # R437: extra trusted private IPC role pins; no unpinned fallback.
+      - 'poc/packages/agent-runtime/src/trusted-effect-staging-task-registry.ts'
+      - 'poc/packages/agent-runtime/src/trusted-effect-staging-unix-ipc.ts'
+      - 'poc/packages/agent-runtime/test/trusted-effect-staging-task-registry.test.ts'
+      - 'poc/packages/agent-runtime/test/trusted-effect-staging-unix-ipc.test.ts'
       # R436: owner-pinned additional Agent Card read-only verification (no new dispatcher).
       - 'poc/packages/orchestrator-runtime/src/trusted-a2a-startup-probe.ts'
       - 'poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts'

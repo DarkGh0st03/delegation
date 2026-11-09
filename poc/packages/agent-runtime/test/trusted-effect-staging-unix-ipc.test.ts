@@ -350,3 +350,102 @@ test("R390 Test CREATE exact source binds through private HMAC and stages once",
   assert.deepEqual(calls,["r390-test-create-1"]);
  }finally{await x.close();}
 });
+
+/** R437: an extra role is not an untrusted fallback route. The trusted
+ * Owner must provision distinct key+socket and locally pinned binding role.
+ * The original Child/Task and Gateway effect rights are still independent. */
+test("R437 provisioned invoice role can bind and stage only on its own private HMAC channels",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"r437-invoice-ipc-"));
+ const ownerRegistry=new TrustedOwnerEffectStagingRegistry();
+ const agentRegistry=new TrustedEffectStagingTaskRegistry(),effects:string[]=[];
+ const stageHex=join(dir,"invoice-stage.hex"),
+  stageSock=join(dir,"invoice-stage.sock"),
+  beHex=join(dir,"backend-stage.hex"),
+  beSock=join(dir,"backend-stage.sock"),
+  bindHex=join(dir,"invoice-bind.hex"),bindSock=join(dir,"invoice-bind.sock");
+ for(const key of [stageHex,beHex,bindHex])
+  await writeFile(key,randomBytes(32).toString("hex")+"\n",{mode:0o600,flag:"wx"});
+ const invoiceServer=await createTrustedOwnerEffectStagingServer({
+  registry:ownerRegistry,expectedRole:"invoice",
+  socketPath:stageSock,secretFile:stageHex
+ });
+ const backendServer=await createTrustedOwnerEffectStagingServer({
+  registry:ownerRegistry,expectedRole:"backend",
+  socketPath:beSock,secretFile:beHex
+ });
+ let binder;
+ try{
+  await invoiceServer.start();await backendServer.start();
+  const stage=await connectTrustedOwnerEffectStagingClient({
+   socketPath:stageSock,secretFile:stageHex
+  });
+  const backend=await connectTrustedOwnerEffectStagingClient({
+   socketPath:beSock,secretFile:beHex
+  });
+  binder=await createTrustedEffectAgentBindingServer({
+   registry:agentRegistry,expectedRole:"invoice",
+   socketPath:bindSock,secretFile:bindHex,ownerStageClient:stage
+  });
+  await binder.start();
+  const client=await connectTrustedEffectAgentBindingClient({
+   socketPath:bindSock,secretFile:bindHex,expectedRole:"invoice"
+  });
+  const file="apps/invoice.ts",request="r437-invoice-read";
+  const invoice={...pins,role:"invoice",planTaskId:"r437-invoice-task",
+   childCredentialId:"urn:r437:child:invoice",
+   presenterId:"did:thesis:invoice-agent",
+   operation:"read_file" as const,path:file};
+  ownerRegistry.bindTask(runtime,{async stage(id:string){effects.push(id);}},"invoice");
+  await assert.rejects(client.bindTask({...invoice,role:"backend"}),
+   /malformed or wrong-role owner Task pins/u);
+  await client.bindTask(invoice);
+  await assert.rejects(backend.stage(runtime,request),
+   /Authenticated private effect operation denied/u);
+  assert.deepEqual(effects,[]);
+  const ctx={...task(),role:"invoice",
+   subtask:{...task().subtask,subtask_id:invoice.planTaskId,
+    relevant_paths:[file],
+    approved_file_permissions:[{operation:"read_file" as const,path:file}]},
+   delegation_evidence:{...task().delegation_evidence,
+    credential_id:invoice.childCredentialId,presenter_id:invoice.presenterId}
+  } as unknown as AgentTaskContext;
+  const effect=agentRegistry.selectFor(ctx);
+  assert.deepEqual(await effect.stage(request),{provider_write_authorized:false});
+  assert.deepEqual(effects,[request]);
+  await assert.rejects(backend.stage(runtime,request),
+   /Authenticated private effect operation denied/u);
+  await client.fence(runtime);
+  assert.throws(()=>agentRegistry.selectFor(ctx),/already dispatched/u);
+ }finally{
+  await Promise.allSettled([
+   binder?.close(),backendServer.close(),invoiceServer.close()
+  ]);
+  await rm(dir,{recursive:true,force:true});
+ }
+});
+test("R437 extra roles are rejected by an unpinned legacy agent socket",async()=>{
+ const x=await fixtures();
+ try{
+  const invoice={...pins,role:"invoice",planTaskId:"r437-extra",
+   childCredentialId:"urn:r437:invoice",presenterId:"did:thesis:invoice"};
+  await assert.rejects(x.client.bindTask(invoice),
+   /malformed or wrong-role owner Task pins/u);
+  // The old fixed-role host remains usable; a rejected invoice must
+  // never mint a prebound Gateway effect or consume a valid signed Task.
+  x.owner.bindTask(runtime,{async stage(id){x.calls.push(id);}});
+  await x.client.bindTask(pins);
+  const effect=x.agent.selectFor(task());
+  await effect.stage("r437-canonical");
+  assert.deepEqual(x.calls,["r437-canonical"]);
+ }finally{await x.close();}
+});
+
+test("R437 unpinned legacy stage channel cannot execute an extra specialist effect",async()=>{
+ const x=await fixtures();
+ try{
+  x.owner.bindTask(runtime,{async stage(id){x.calls.push(id);}},"invoice");
+  await assert.rejects(x.remote.stage(runtime,"r437-unpinned-stage"),
+   /Authenticated private effect operation denied/u);
+  assert.deepEqual(x.calls,[]);
+ }finally{await x.close();}
+});

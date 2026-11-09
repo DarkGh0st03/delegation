@@ -304,3 +304,50 @@ test("R389 signed Test CREATE binding rejects application paths, acceptance and 
  await assert.rejects(selected.stage("r389-create"),/already consumed/u);
  assert.deepEqual(f.calls,["r389-create"]);
 });
+
+/** R437: additional specialist roles need an original owner-private Task
+ * pin. These regressions never create a signer, root or Gateway approval. */
+test("R437 owner-private registry selects an extra specialist only on exact signed Task hints",async()=>{
+ const registry=new TrustedEffectStagingTaskRegistry(),f=pins(),source="apps/invoice.ts";
+ const ownerPins={...f.binding,role:"invoice",planTaskId:"r437-invoice",
+  childCredentialId:"urn:r437:child:invoice",presenterId:"did:thesis:invoice-agent",
+  path:source};
+ registry.bindTask(ownerPins);
+ const ctx={...context(),role:"invoice",
+  subtask:{...context().subtask,subtask_id:ownerPins.planTaskId,
+   relevant_paths:[source],
+   approved_file_permissions:[{path:source,operation:"update_file" as const}]},
+  delegation_evidence:{...context().delegation_evidence,
+   credential_id:ownerPins.childCredentialId,presenter_id:ownerPins.presenterId}
+ } as unknown as AgentTaskContext;
+ const exact=registry.selectFor(ctx);
+ assert.deepEqual(await exact.stage("r437-gateway-request"),
+  {provider_write_authorized:false});
+ assert.deepEqual(f.calls,["r437-gateway-request"]);
+ await assert.rejects(exact.stage("r437-again"),/consumed or retired/u);
+ registry.retireFor(runtime);
+ assert.throws(()=>registry.selectFor(ctx),/already dispatched/u);
+});
+test("R437 extra specialist cannot impersonate Test or Orchestrator or skip exact Child pins",()=>{
+ for(const role of ["orchestrator","constructor","prototype","invoice..bad"]){
+  const registry=new TrustedEffectStagingTaskRegistry(),f=pins();
+  assert.throws(()=>registry.bindTask({...f.binding,role}),
+   /exact trusted owner Task\/Child/u);
+ }
+ const registry=new TrustedEffectStagingTaskRegistry(),f=pins();
+ assert.throws(()=>registry.bindTask({...f.binding,role:"invoice",
+  operation:"run_tests",path:undefined}),
+  /run_tests must be an exact Test Task/u);
+ const ownerPins={...f.binding,role:"invoice",planTaskId:"r437-invoice-foreign",
+  presenterId:"did:thesis:invoice-agent"};
+ registry.bindTask(ownerPins);
+ const wrong={...context(),role:"invoice",
+  subtask:{...context().subtask,subtask_id:ownerPins.planTaskId},
+  delegation_evidence:{...context().delegation_evidence,
+   presenter_id:ownerPins.presenterId,credential_id:"urn:foreign:child"}
+ } as unknown as AgentTaskContext;
+ assert.throws(()=>registry.selectFor(wrong),
+  /A2A identity\/operation differs from trusted owner Task pins/u);
+ assert.equal(f.calls.length,0);
+ assert.throws(()=>registry.selectFor(wrong),/already dispatched/u);
+});

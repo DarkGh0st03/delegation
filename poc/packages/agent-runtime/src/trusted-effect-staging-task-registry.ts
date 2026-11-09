@@ -12,7 +12,7 @@ import {isProjectTestSource} from "../../plan-contracts/src/gitea-permission-con
  * request store and preflight, native Rust Child VP, OPA and the provider.
  * This registry alone neither issues a DC nor authorizes an effect.
  */
-import type {AgentTaskContext, SpecializedAgentRole} from "./contracts.ts";
+import type {AgentTaskContext} from "./contracts.ts";
 import {validatePrivateApprovedBranch} from "./approved-branch.ts";
 import type {TrustedEffectStagingPort} from "./gateway-tool-client.ts";
 
@@ -20,13 +20,19 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const DID=/^did:[A-Za-z0-9:._-]{6,240}$/u;
 const PATH=/^[^\\%\x00-\x1f\x7f]{1,240}$/u;
+/** A new role is accepted only as a private owner Task pin. It is NOT a
+ * production A2A worker or a self-signed grant. Keep Orchestrator reserved. */
+const ROLE=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const trustedFileRole=(role:unknown):role is string=>
+ typeof role==="string"&&ROLE.test(role)&&!role.includes("..")&&
+ role!=="orchestrator"&&role!=="constructor"&&role!=="prototype";
 function deny(reason:string):never{
  throw Error("Trusted ADK effect Task binding NO-GO: "+reason);
 }
 export interface TrustedEffectTaskOwnerPins {
   runtimeTaskId:string;
   planTaskId:string;
-  role:SpecializedAgentRole;
+  role:string;
   childCredentialId:string;
   presenterId:string;
   branch:string;
@@ -56,7 +62,7 @@ export class TrustedEffectStagingTaskRegistry {
   if(!input||!DISPATCH.test(input.runtimeTaskId)||
      !ID.test(input.planTaskId)||!ID.test(input.childCredentialId)||
      !DID.test(input.presenterId)||
-     !["backend","frontend","test"].includes(input.role)||
+     !trustedFileRole(input.role)||
      !["read_file","update_file","create_file","run_tests","read_then_update"].includes(input.operation)||
       (input.operation==="create_file"&&
        (input.effectStager.stagedTool!=="create_file"||
