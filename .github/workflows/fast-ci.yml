@@ -108,6 +108,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-model-set.test.mjs
           # Experimental owner-only canonical model binding: synthetic key, no provider inference.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-canonical-binding.test.mjs
+          # Integration against ORIGINAL typed native Gateway/Root provisioning with synthetic ADK models. No Root reservation or provider call.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-native-provision-offline.test.mjs
           # Private original Engineer Review Host composition: negative-only tests, NEVER launch inference.
           # Original Backend signer: pinned Ed25519 private key plus original checkpoint store, no inference.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-checkpoint-signer.test.mjs
