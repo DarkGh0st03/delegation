@@ -161,6 +161,30 @@ test('R444 old R384.2 manual A2A CREATE launcher stays retired with native proof
   'native Security CI must not watch a missing launcher');
 });
 
+test('R449 unique native negative and D1 CREATE launchers remain manually runnable',()=>{
+ const protectedCases=[
+  ['r292-authority-only-native-evm-e2e.yml',
+   'poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs'],
+  ['r302-gitea-atomic-cas-e2e.yml',
+   'poc/apps/gateway/native-test/r302-gitea-atomic-head-cas-e2e.mjs'],
+  ['r3844-functional-create-d1-pass-native-e2e.yml',
+   'poc/packages/orchestrator-runtime/test/r3844-native-functional-create-d1-docker-pass-e2e.mjs']
+ ];
+ for(const [launcher,source] of protectedCases){
+  assert.equal(existsSync(path('.github/workflows/'+launcher)),true,
+   'preserve distinct native negative/CREATE launcher: '+launcher);
+  assert.equal(existsSync(path(source)),true,
+   'preserve standalone native evidence source: '+source);
+  const workflow=readFileSync(path('.github/workflows/'+launcher),'utf8');
+  assert.match(workflow,/^on:\\s*\\n  workflow_dispatch:/mu,
+   'the retained native proof must be manually dispatchable: '+launcher);
+  assert.doesNotMatch(workflow,/^  push:/mu,
+   'the retained native proof must not auto-run on push: '+launcher);
+  assert.ok(workflow.includes(source),
+   'the launcher must execute its actual negative/CREATE source: '+launcher);
+ }
+});
+
 test('R432 public runtime cannot load retired HTTP Adapter Engineer authority',()=>{
  const index=readFileSync(path('poc/packages/orchestrator-runtime/src/index.ts'),'utf8');
  const neutral=readFileSync(path('poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'),'utf8');

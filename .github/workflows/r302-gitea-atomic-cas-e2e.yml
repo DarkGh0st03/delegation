@@ -1,0 +1,47 @@
+# R302: disposable Gitea-only proof of old-branch-SHA CAS.
+# No Rust build, no EVM/Anvil, no OPA, no Gemini or provider writes outside CI.
+name: R302 Disposable Gitea Atomic Branch CAS (No AI)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r302-gitea-cas-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  disposable-gitea-cas:
+    name: Real Gitea commit CAS, stale HEAD and concurrent writer rejection
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Refuse paid AI and initialize disposable environment
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          node poc/scripts/init-local-env.mjs --force
+      - name: Start ONLY isolated disposable Gitea
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea
+          bash poc/scripts/bootstrap-gitea.sh
+      - name: R302 verify real Gitea CAS and concurrent writer denial
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          node --check poc/apps/gateway/native-test/r302-gitea-atomic-head-cas-e2e.mjs
+          node --experimental-strip-types poc/apps/gateway/native-test/r302-gitea-atomic-head-cas-e2e.mjs
+      - name: Destroy disposable Gitea on every result
+        if: always()
+        run: |
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v || true
+          fi
