@@ -52,3 +52,17 @@ test("R278 F1 issuer pins DID publisher and resolver to absolute checked-out pat
  const issuer=read("services/delegation-adapter/src/evm_profile.rs");
  assert.match(issuer,/\.arg\(&config.did_publisher_script\)/u);
 });
+
+test("R442 F1 live native Gitea planning is manual-only after old checkpoint retirement",()=>{
+ const workflow=read(".github/workflows/f1-real-gitea-planning-parity.yml");
+ const events=/^on:\s*\n([\s\S]*?)^permissions:/mu.exec(workflow)?.[1];
+ assert.ok(events,"F1 event block must exist");
+ const names=[...events.matchAll(/^  ([a-z_]+):/gmu)].map(match=>match[1]);
+ assert.deepEqual(names,["workflow_dispatch"],
+  "F1 Rust/EVM/Gitea/Docker parity must not start on push/PR or a stale request");
+ assert.doesNotMatch(workflow,/r3803-native-planning-read-request\.json/u);
+ assert.match(workflow,/GEMINI_API_KEY: ""/u);
+ assert.match(workflow,/DELEGATION_SIGNED_GEMINI_PILOT: "0"/u);
+ assert.match(workflow,/APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY: "1"/u);
+ assert.match(workflow,/^jobs:\s*$/mu,"preserve real native planning job");
+});

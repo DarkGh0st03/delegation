@@ -1,13 +1,8 @@
 name: F1 Real Gitea Pilot-Equivalent Planning (No AI)
+# R442: the one-shot R3803 JSON request was retired. Keep the expensive
+# disposable Rust/EVM/Gitea planning parity job explicitly manual-only.
+# Normal source pushes remain covered by Fast CI and offline planner preflight.
 on:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    # Anvil/Rust/EVM/Gitea Docker suite is deliberately opt-in per
-    # checkpoint, not rerun for every incremental runtime/test edit.
-    # Fast CI and the cheap offline Planner preflight cover source pushes.
-    paths:
-      - '.github/workflows/f1-real-gitea-planning-parity.yml'
-      - '.github/ci-checkpoints/r3803-native-planning-read-request.json'
   workflow_dispatch:
 permissions:
   contents: read
