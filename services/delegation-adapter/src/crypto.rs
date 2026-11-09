@@ -869,6 +869,65 @@ mod tests {
         .unwrap()
     }
 
+    fn reviewer_callers() -> CallerRegistry {
+        CallerRegistry::new(vec![
+            CallerRecord::new(
+                CallerRole::Engineer,
+                String::from("engineer-token"),
+                String::from("did:thesis:engineer"),
+                vec![CallerCapability::IssueRoot, CallerCapability::ManageStatus],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Orchestrator,
+                String::from("orchestrator-token"),
+                String::from("did:thesis:orchestrator"),
+                vec![
+                    CallerCapability::IssueChild,
+                    CallerCapability::ManageStatus,
+                    CallerCapability::CreatePresentation,
+                ],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Backend,
+                String::from("backend-token"),
+                String::from("did:thesis:backend"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Frontend,
+                String::from("frontend-token"),
+                String::from("did:thesis:frontend"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Test,
+                String::from("test-token"),
+                String::from("did:thesis:test"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::from_name("reviewer").unwrap(),
+                String::from("reviewer-token"),
+                String::from("did:thesis:reviewer"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Gateway,
+                String::from("gateway-token"),
+                String::from("urn:thesis:gateway"),
+                vec![CallerCapability::VerifyPresentation],
+            )
+            .unwrap(),
+        ])
+        .unwrap()
+    }
+
     fn permission(operation: Operation) -> Permission {
         Permission::new(
             String::from("gitea://gitea.local/thesis/iam-console-poc"),
@@ -1202,6 +1261,108 @@ mod tests {
             verified.permissions(),
             &vec![permission(Operation::ReadFile)]
         );
+    }
+
+
+    /// R456 native cryptographic positive: a dynamically provisioned
+    /// specialist is a distinct Rust issuer/presenter, not Backend's key.
+    /// This uses real in-memory Rust Core signatures/status, NOT EVM/OPA.
+    #[test]
+    fn additional_reviewer_signed_child_and_vp_verify_with_own_role_only() -> Result<(), String> {
+        let registry = reviewer_callers();
+        let mut runtime = CryptoRuntime::new(&registry)?;
+        issue_root(&mut runtime, &registry);
+        let role = CallerRole::from_name("reviewer")?;
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator)?;
+        let child = runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:reviewer"),
+                delegatee: role,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(157),
+                permissions: vec![permission(Operation::ReadFile)],
+            },
+        )?;
+        assert_eq!(child.credential().delegatee_id(), "did:thesis:reviewer");
+
+        let rejected_write = runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:reviewer-write"),
+                delegatee: role,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(158),
+                permissions: vec![permission(Operation::UpdateFile)],
+            },
+        );
+        assert!(rejected_write.is_err());
+
+        let signer = registry.record_for_role(role)?;
+        assert!(!signer.has_capability(CallerCapability::IssueChild));
+        assert!(!signer.has_capability(CallerCapability::IssueRoot));
+        let presenter = runtime.create_presentation(
+            signer,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:reviewer"),
+                disclosed_permissions: vec![permission(Operation::ReadFile)],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("r456-unique-gateway-challenge"),
+            },
+        )?;
+        let gateway = registry.record_for_role(CallerRole::Gateway)?;
+        let verified = runtime.verify_presentation(
+            gateway,
+            &registry,
+            VerifyPresentationRequest {
+                presenter: role,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("r456-unique-gateway-challenge"),
+                required_permission: permission(Operation::ReadFile),
+                signed_vp: presenter.signed_vp.clone(),
+            },
+        )?;
+        assert_eq!(verified.presenter_id(), "did:thesis:reviewer");
+        assert_eq!(verified.hierarchy_depth(), 1);
+        assert_eq!(verified.permissions(), &vec![permission(Operation::ReadFile)]);
+
+        for (presenter_role, challenge, operation) in [
+            (CallerRole::Backend, "r456-unique-gateway-challenge", Operation::ReadFile),
+            (CallerRole::Frontend, "r456-unique-gateway-challenge", Operation::ReadFile),
+            (role, "r456-forged-challenge", Operation::ReadFile),
+            (role, "r456-unique-gateway-challenge", Operation::UpdateFile),
+        ] {
+            let invalid = runtime.verify_presentation(
+                gateway,
+                &registry,
+                VerifyPresentationRequest {
+                    presenter: presenter_role,
+                    audience: String::from("cloud-access-gateway"),
+                    challenge: String::from(challenge),
+                    required_permission: permission(operation),
+                    signed_vp: presenter.signed_vp.clone(),
+                },
+            );
+            assert!(invalid.is_err(), "wrong role, nonce or operation must be rejected");
+        }
+
+        let other = registry.record_for_role(CallerRole::Backend)?;
+        assert!(runtime.create_presentation(
+            other,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:reviewer"),
+                disclosed_permissions: vec![permission(Operation::ReadFile)],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("r456-stolen-role-token"),
+            },
+        ).is_err());
+        Ok(())
     }
 
     #[test]
