@@ -450,20 +450,24 @@ mod additional_role_authority_isolation_tests {
             );
             assert!(attempt.is_err());
         }
-        assert!(CallerRecord::new(
-            role,
-            String::from("reviewer-token"),
-            String::from("did:thesis:reviewer"),
-            vec![CallerCapability::IssueChild],
-        )
-        .is_err());
-        assert!(CallerRecord::new(
-            role,
-            String::from("reviewer-token"),
-            String::from("urn:thesis:service:gateway"),
-            vec![CallerCapability::CreatePresentation],
-        )
-        .is_err());
+        assert!(
+            CallerRecord::new(
+                role,
+                String::from("reviewer-token"),
+                String::from("did:thesis:reviewer"),
+                vec![CallerCapability::IssueChild],
+            )
+            .is_err()
+        );
+        assert!(
+            CallerRecord::new(
+                role,
+                String::from("reviewer-token"),
+                String::from("urn:thesis:service:gateway"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .is_err()
+        );
     }
 
     #[test]
