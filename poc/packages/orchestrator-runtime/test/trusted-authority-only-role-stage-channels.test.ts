@@ -81,30 +81,39 @@ const task=()=>({
  delegation_evidence:{credential:"R333_FIXTURE_NOT_A_NATIVE_DC",
   credential_id:child.credential_id,presenter_id:child.agent_did}
 });
-async function setup(){
+async function setup(extra=false){
+ const activeRoles=extra?[...roles,"reviewer"] as const:roles;
+ const readOnly=extra?{...permission,operation:"read_file" as const}:permission;
+ const reviewerDid="did:thesis:reviewer-agent";
+ const rootFor=extra?{...root,root_permissions:[readOnly]}:root;
+ const rowFor=extra?{...row,agent_id:"reviewer",agent_did:reviewerDid,
+  permissions:[readOnly]}:row;
+ const childFor=extra?{...child,agent_id:"reviewer",agent_did:reviewerDid,
+  permissions:[readOnly]}:child;
+ const receiptFor=extra?{...gatewayProof,agent_id:"reviewer",agent_did:reviewerDid}:gatewayProof;
  const dir=await mkdtemp(join(tmpdir(),"r333-"));
- const stageChannels={} as Record<Role,{socketPath:string;secretFile:string}>;
- const agentBindingChannels={} as Record<Role,{socketPath:string;secretFile:string}>;
- const registries={} as Record<Role,TrustedEffectStagingTaskRegistry>;
+ const stageChannels={} as Record<string,{socketPath:string;secretFile:string}>;
+ const agentBindingChannels={} as Record<string,{socketPath:string;secretFile:string}>;
+ const registries={} as Record<string,TrustedEffectStagingTaskRegistry>;
  const bindServers:Awaited<ReturnType<typeof createTrustedEffectAgentBindingServer>>[]=[];
  let host:TrustedAuthorityOnlyRemoteEffectBootstrap|undefined;
  const coord=Object.assign(Object.create(
   TrustedAuthorityOnlyExecutionCoordinator.prototype),{
-   assertTrustedGatewayAuthorityBinding:()=>root,
-   assertTrustedGatewayRegisteredTask:()=>row
+   assertTrustedGatewayAuthorityBinding:()=>rootFor,
+   assertTrustedGatewayRegisteredTask:()=>rowFor
   });
  Object.defineProperty(coord,"phase",{value:"active"});
  const issuer=Object.assign(Object.create(
   TrustedAuthorityOnlyChildIssuer.prototype),{
-   assertTrustedIssuedChild:()=>child
+   assertTrustedIssuedChild:()=>childFor
   });
  const gateway=Object.assign(Object.create(
   TrustedAuthorityOnlyGatewayAdmissions.prototype),{
-   assertTrustedOwnerRemoteEffectBinding:()=>gatewayProof
+   assertTrustedOwnerRemoteEffectBinding:()=>receiptFor
   });
  Object.defineProperty(gateway,"phase",{value:"active"});
  try{
-  for(const role of roles){
+  for(const role of activeRoles){
    const sc={socketPath:join(dir,role+"-stage.sock"),
     secretFile:join(dir,role+"-stage.hex")};
    const bc={socketPath:join(dir,role+"-bind.sock"),
@@ -119,7 +128,7 @@ async function setup(){
    agentBindingChannels,stageChannels
   };
   const startBind=async()=>{
-   for(const role of roles){
+   for(const role of activeRoles){
     const reg=new TrustedEffectStagingTaskRegistry();
     registries[role]=reg;
     const ownerStageClient=await connectTrustedOwnerEffectStagingClient(
@@ -139,7 +148,7 @@ async function setup(){
    await rm(dir,{recursive:true,force:true});
   };
   return {dir,stageChannels,agentBindingChannels,registries,
-   config,startBind,start:async()=>host=await
+   activeRoles,config,startBind,start:async()=>host=await
     TrustedAuthorityOnlyRemoteEffectBootstrap.start(config as never),
    close
   };
@@ -216,5 +225,56 @@ test("R333 cannot downgrade three-role staging to a partially specified shared s
     ...f.config,stageChannels:{backend:f.stageChannels.backend}
    } as never),
    /exactly one legacy stage or three role-pinned stage/u);
+ }finally{await f.close();}
+});
+
+test("Owner-provisioned fourth read-only specialist has a distinct signed HMAC route",async()=>{
+ const f=await setup(true);
+ try{
+  await f.startBind();
+  const owner=await f.start();
+  const foreign=await connectTrustedOwnerEffectStagingClient(f.stageChannels.backend);
+  const nativeRead=await connectTrustedOwnerEffectStagingClient(f.stageChannels.reviewer);
+  let staged=0;
+  const requestId="req_reviewer_native_read";
+  const result=await owner.dispatchApprovedTask({
+   taskId,runtimeTaskId,
+   effectStager:{stage:async id=>{
+    assert.equal(id,requestId);
+    staged++;
+    return {provider_write_authorized:false};
+   }},
+   dispatch:async()=>{
+    await assert.rejects(foreign.stage(runtimeTaskId,requestId),
+     /Authenticated private effect operation denied/u);
+    assert.equal(staged,0);
+    const original=task();
+    const context={...original,role:"reviewer",
+     subtask:{...original.subtask,approved_file_permissions:[
+      {path:file,operation:"read_file" as const}
+     ]},
+     delegation_evidence:{...original.delegation_evidence,
+      presenter_id:"did:thesis:reviewer-agent"}
+    };
+    const selected=f.registries.reviewer.selectFor(context as never);
+    assert.deepEqual(await selected.stage(requestId),
+     {provider_write_authorized:false});
+    await assert.rejects(nativeRead.stage(runtimeTaskId,requestId),
+     /Authenticated private effect operation denied/u);
+    return {bound:"reviewer",attestedProviderEffect:false};
+   }
+  });
+  assert.deepEqual(result,{bound:"reviewer",attestedProviderEffect:false});
+  assert.equal(staged,1);
+ }finally{await f.close();}
+});
+test("Extra private binder without the matching per-role staging channel is denied",async()=>{
+ const f=await setup(true);
+ try{
+  const stageChannels={...f.stageChannels};
+  delete stageChannels.reviewer;
+  await assert.rejects(TrustedAuthorityOnlyRemoteEffectBootstrap.start({
+   ...f.config,stageChannels
+  } as never),/exactly one legacy stage or three role-pinned stage/u);
  }finally{await f.close();}
 });

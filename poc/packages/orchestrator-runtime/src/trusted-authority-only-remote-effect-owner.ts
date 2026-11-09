@@ -30,6 +30,7 @@ import {isProjectTestRepairGrant,isProjectTestCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 type Role="backend"|"frontend"|"test";
 const ROLES=["backend","frontend","test"] as const;
+const ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 function validBinder(b:unknown):b is AgentBinder{
  return !!b&&typeof (b as AgentBinder).bindTask==="function"&&
   typeof (b as AgentBinder).fence==="function";
@@ -44,7 +45,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
  readonly #gateway:TrustedAuthorityOnlyGatewayAdmissions;
  readonly #registry:TrustedOwnerEffectStagingRegistry;
  readonly #agent:AgentBinder|null;
- readonly #agents:Readonly<Record<Role,AgentBinder>>|null;
+ readonly #agents:Readonly<Record<string,AgentBinder>>|null;
  readonly #routing=new Map<string,AgentBinder>();
  readonly #attempted=new Set<string>();
  constructor(config:{
@@ -53,12 +54,16 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   gateway:TrustedAuthorityOnlyGatewayAdmissions;
   ownerStageRegistry:TrustedOwnerEffectStagingRegistry;
   agentBindingClient?:AgentBinder;
-  agentBindingClients?:Readonly<Record<Role,AgentBinder>>;
+  agentBindingClients?:Readonly<Record<string,AgentBinder>>;
  }){
   const multi=config?.agentBindingClients;
   const hasSingle=config?.agentBindingClient!==undefined;
-  const validMulti=!!multi&&Object.keys(multi).sort().join(",")==="backend,frontend,test"&&
-   ROLES.every(role=>validBinder(multi[role]));
+  const keys=multi?Object.keys(multi):[];
+  const validMulti=!!multi&&keys.length>=3&&keys.length<=16&&
+   ROLES.every(role=>Object.hasOwn(multi,role))&&
+   keys.every(role=>ROLE.test(role)&&
+    !["orchestrator","constructor","prototype"].includes(role)&&
+    validBinder(multi[role]));
   if(hasSingle===!!multi||!(validMulti||validBinder(config?.agentBindingClient)))
    deny("exactly one owner-selected single or three-role IPC binder configuration required");
   if(!(config?.coordinator instanceof TrustedAuthorityOnlyExecutionCoordinator)||
@@ -173,12 +178,14 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    if(row.agent_id!=="test"||effect.resource!==branchUri)
     deny("Test Runner must be branch-bound to exact signed Test Task");
   }
-  if(!["backend","frontend","test"].includes(row.agent_id))
-   deny("unsupported specialized Agent role");
+  if(!ROLE.test(row.agent_id)||
+     (this.#agents?!Object.hasOwn(this.#agents,row.agent_id):
+      !ROLES.includes(row.agent_id as Role)))
+   deny("unsupported or unprovisioned specialized Agent role");
   // Only immutable derived pins are sent across the private Unix binding.
   const pins={
    runtimeTaskId,planTaskId:taskId,
-   role:row.agent_id as "backend"|"frontend"|"test",
+   role:row.agent_id,
    childCredentialId:issued.credential_id,presenterId:row.agent_did,
    branch,operation:typedMixed?"read_then_update" as const:
     effect.operation as "read_file"|"update_file"|"create_file"|"run_tests",
@@ -186,7 +193,9 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   };
   // R328: each role has a separate authenticated owner->agent socket.
   // Only the signed Coordinator row selects the route: never an A2A payload.
-  const binder=this.#agents?this.#agents[pins.role]:this.#agent!;
+  const binder=this.#agents?this.#agents[pins.role]:this.#agent;
+  if(!validBinder(binder))
+   deny("signed specialist has no original owner-pinned bind IPC route");
   this.#routing.set(runtimeTaskId,binder);
   this.#registry.bindTask(runtimeTaskId,effectStager,pins.role);
   try{await binder.bindTask(pins);}

@@ -32,11 +32,27 @@ import type {TrustedEffectStagingPort}
  from "../../agent-runtime/src/gateway-tool-client.ts";
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
-type Role="backend"|"frontend"|"test";
-const ROLES=["backend","frontend","test"] as const;
-export type TrustedRoleBindingChannels=Readonly<Record<Role,Readonly<{
+const CORE_ROLES=["backend","frontend","test"] as const;
+const ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+export type TrustedRoleBindingChannels=Readonly<Record<string,Readonly<{
  socketPath:string;secretFile:string
 }>>>;
+/** Extra roles are provisioned only through an owner-held, fully matched
+ * channel inventory. Keep all three original workers for compatibility. */
+function trustedRoleChannels(value:unknown):value is TrustedRoleBindingChannels{
+ if(!value||typeof value!=="object"||Array.isArray(value))return false;
+ const entries=value as Record<string,unknown>;
+ const names=Object.keys(entries);
+ return names.length>=CORE_ROLES.length&&names.length<=16&&
+  CORE_ROLES.every(role=>Object.hasOwn(entries,role))&&
+  names.every(role=>{
+   const ch=entries[role] as Record<string,unknown>|undefined;
+   return ROLE.test(role)&&!["orchestrator","constructor","prototype"].includes(role)&&
+    !!ch&&typeof ch==="object"&&!Array.isArray(ch)&&
+    Object.keys(ch).sort().join(",")==="secretFile,socketPath"&&
+    typeof ch.secretFile==="string"&&typeof ch.socketPath==="string";
+  });
+}
 function deny(message:string):never{
  throw Error("Authority-only remote owner bootstrap NO-GO: "+message);
 }
@@ -92,16 +108,12 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   const hasSingle=opts.agentBindingSocketPath!==undefined||
     opts.agentBindingSecretFile!==undefined;
   if(!!multi===hasSingle||
-     (multi&&(
-      Object.keys(multi).sort().join(",")!=="backend,frontend,test"||
-      ROLES.some(role=>!multi[role]||
-       typeof multi[role].socketPath!=="string"||
-       typeof multi[role].secretFile!=="string")
-     ))||
+     (multi&&!trustedRoleChannels(multi))||
      (!multi&&(typeof opts.agentBindingSocketPath!=="string"||
                typeof opts.agentBindingSecretFile!=="string")))
    deny("exactly one legacy binder or three per-role bind IPC channels required");
-  const bindingChannels=multi?ROLES.map(r=>multi[r]):[{
+  const liveRoles=multi?Object.keys(multi).sort():[...CORE_ROLES];
+  const bindingChannels=multi?liveRoles.map(role=>multi[role]!):[{
    socketPath:opts.agentBindingSocketPath!,
    secretFile:opts.agentBindingSecretFile!
   }];
@@ -109,17 +121,12 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   const legacyStage=opts.stageSocketPath!==undefined||
     opts.stageSecretFile!==undefined;
   if(!!roleStages===legacyStage||
-     (roleStages&&(
-      !multi||Object.keys(roleStages).sort().join(",")!==
-       "backend,frontend,test"||
-      ROLES.some(role=>!roleStages[role]||
-       typeof roleStages[role].socketPath!=="string"||
-       typeof roleStages[role].secretFile!=="string")
-     ))||
+     (roleStages&&(!multi||!trustedRoleChannels(roleStages)||
+      Object.keys(roleStages).sort().join(",")!==liveRoles.join(",")))||
      (!roleStages&&(typeof opts.stageSocketPath!=="string"||
        typeof opts.stageSecretFile!=="string")))
    deny("exactly one legacy stage or three role-pinned stage IPC channels required");
-  const stageChannels=roleStages?ROLES.map(r=>roleStages[r]):[{
+  const stageChannels=roleStages?liveRoles.map(role=>roleStages[role]!):[{
    socketPath:opts.stageSocketPath!,
    secretFile:opts.stageSecretFile!
   }];
@@ -149,7 +156,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   try{
    for(let i=0;i<stageChannels.length;i++){
     const stage=stageChannels[i]!;
-    const role=roleStages?ROLES[i]:undefined;
+    const role=roleStages?liveRoles[i]:undefined;
     const server=await createTrustedOwnerEffectStagingServer({
      socketPath:stage.socketPath,secretFile:stage.secretFile,
      registry,...(role?{expectedRole:role}:{})
@@ -164,8 +171,8 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
    ));
    const binders=multi
     ?{agentBindingClients:Object.fromEntries(
-      ROLES.map((role,i)=>[role,clients[i]!])
-     ) as Record<Role,(typeof clients)[number]>}
+      liveRoles.map((role,i)=>[role,clients[i]!])
+     ) as Record<string,(typeof clients)[number]>}
     :{agentBindingClient:clients[0]!};
    const owner=new TrustedAuthorityOnlyRemoteEffectOwner({
     coordinator:opts.coordinator,childIssuer:opts.childIssuer,
