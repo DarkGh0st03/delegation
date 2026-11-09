@@ -30,6 +30,8 @@ import {bindDisposableLiveGeminiCanonicalInputs}
  from "./disposable-gemini-live-canonical-binding.mjs";
 import {bindOriginalBackendCheckpointSigner}
  from "./disposable-gemini-original-checkpoint-signer.mjs";
+import {createDisposableOriginalGithubRunWatch}
+ from "./disposable-gemini-original-github-run-watch.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const CONFIRM="I AUTHORIZE GEMINI API CHARGES";
@@ -110,23 +112,63 @@ export async function startDisposableGeminiOriginalReviewSession({
   signedAuthority,bound.operational
  );
 
- // POTENTIALLY BILLABLE: original Review Host starts real ADK Planning.
- // Do not invoke this method without explicit user authorization.
- const host=await startTrustedAuthorityOnlyReviewHost(signedAuthority);
+ // A one-use OIDC admission is NOT lasting permission to execute.
+ // Revalidate the active GitHub job BEFORE launching paid Planning, then
+ // every 15 seconds while the original Host and Root may remain active.
+ // GitHub cancellation/error fences the same original Host (never an
+ // alternate Root or a replacement approved DAG).
+ let host,handoff,starting;
+ const watch=createDisposableOriginalGithubRunWatch({
+  pins,githubApiToken,
+  onClose:async()=>{
+   // Planning startup may be in flight when GitHub cancels the job. The
+   // original host is closed as soon as its one-shot startup settles.
+   if(starting)try{await starting;}catch{/* original startup failed */}
+   await (handoff?.close()??host?.close());
+  }
+ });
  try{
-  const handoff=host.createReviewedCanonicalHandoff({provision});
+  await watch.start();
+  // POTENTIALLY BILLABLE: original Review Host starts real ADK Planning.
+  // No CI test invokes this function with a valid native owner manifest.
+  starting=startTrustedAuthorityOnlyReviewHost(signedAuthority);
+  host=await starting;
+  starting=undefined;
+  await watch.checkNow();
+  handoff=host.createReviewedCanonicalHandoff({provision});
+  await watch.checkNow();
   return Object.freeze({
    status:"disposable_original_planning_awaiting_signed_engineer_review",
    engineerUrl:host.engineerUrl,
    get phase(){return host.phase;},
+   get githubRunStatus(){return watch.status;},
    // The same original Review Host verifies actual Ed25519 approval at
    // every activation; authenticated GitHub identity is NOT approval.
-   reviewReadiness:()=>handoff.reviewReadiness(),
-   runApprovedCanonical:()=>handoff.runApprovedCanonical(),
-   close:()=>handoff.close()
+   reviewReadiness:async()=>{
+    await watch.checkNow();
+    const reviewed=await handoff.reviewReadiness();
+    await watch.checkNow();
+    return reviewed;
+   },
+   runApprovedCanonical:async()=>{
+    await watch.checkNow();
+    try{
+     const result=await handoff.runApprovedCanonical();
+     await watch.checkNow();
+     return result;
+    }catch(error){
+     // An ambiguous activation may have issued the original Rust Root.
+     // Never return success or retry without confirmed original close.
+     await watch.close();
+     throw error;
+    }
+   },
+   close:()=>watch.close()
   });
  }catch(error){
-  try{await host.close();}catch{deny();}
+  // The interval is fenced immediately. Root retirement belongs to the
+  // ORIGINAL reviewed handoff/host; uncertainty must propagate.
+  await watch.close();
   throw error;
  }
 }

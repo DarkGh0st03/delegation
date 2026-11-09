@@ -111,6 +111,8 @@ jobs:
           # Private original Engineer Review Host composition: negative-only tests, NEVER launch inference.
           # Original Backend signer: pinned Ed25519 private key plus original checkpoint store, no inference.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-checkpoint-signer.test.mjs
+          # Original GitHub run liveness: offline REST stubs and original-owner shutdown, no paid inference.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-github-run-watch.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-original-review-session.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-native-create-effects.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-gemini-owner-binding.test.mjs
