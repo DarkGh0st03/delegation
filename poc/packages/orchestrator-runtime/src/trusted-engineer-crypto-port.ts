@@ -16,12 +16,16 @@ import type {EngineerCredentialPort}
 export function createTrustedEngineerCredentialPort(
  config:TrustedEngineerCoreConfig
 ):EngineerCredentialPort{
- const path=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const ambient=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const pinned=config.nativeSocketPath;
+ if(ambient!==undefined&&pinned!==undefined&&ambient!==pinned)
+  throw Error("Conflicting trusted Engineer native Rust socket selection");
+ const path=ambient??pinned;
  const direct=process.env.ENGINEER_CORE_NATIVE_MODE;
  if(direct!==undefined&&direct!=="1")
   throw Error("Unknown trusted Engineer Core mode");
  if(direct==="1"){
-  if(!path||!path.startsWith("/")||path.length>100||path.trim()!==path)
+  if(!ambient||!ambient.startsWith("/")||ambient.length>100||ambient.trim()!==ambient)
    throw Error("Direct Engineer Core requires sole native Rust delegate socket");
   // This is an in-process Node-API call to the sole Rust issuer owned by
   // the Engineer host; the socket remains for Orchestrator/Agent only.

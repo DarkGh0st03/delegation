@@ -802,7 +802,12 @@ async function strictRecoveringHost(config){
   // No HTTP fallback: a missing/invalid native Rust issuer fails closed,
   // even when an operator sets an obsolete historical fixture flag.
   const credentials=createTrustedEngineerCredentialPort({
-    bearerToken:recovery.adapterToken
+    bearerToken:recovery.adapterToken,
+    // Trusted operator config only. Native selection is not derived from
+    // Planner output, a signed Task, GitHub OIDC or delegated Agent metadata.
+    ...(recovery.nativeEngineerSocketPath===undefined?{}:{
+      nativeSocketPath:recovery.nativeEngineerSocketPath
+    })
   });
   return startTrustedEngineerLocalHost({
     ...config,recovery:{

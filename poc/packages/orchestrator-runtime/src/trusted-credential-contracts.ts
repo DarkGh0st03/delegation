@@ -50,4 +50,6 @@ export interface IssuedDelegationCredential {
 export interface TrustedEngineerCoreConfig {
  readonly bearerToken:string;
  readonly timeoutMs?:number;
+ /** Operator-pinned native Unix socket; never an LLM/Task parameter. */
+ readonly nativeSocketPath?:string;
 }

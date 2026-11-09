@@ -463,3 +463,28 @@ test("R415 canonical Engineer never chooses HTTP, native direct still needs a so
   else process.env.APPROVED_RUNNER_NATIVE_MCP=priorFlag;
  }
 });
+
+// R428.2: the operator-owned socket must not be overridden by ambient state.
+test("R428.2 pinned native Engineer socket is accepted only without conflicting global mode",()=>{
+ const keys=["ADAPTER_ENGINEER_NATIVE_SOCKET","ENGINEER_CORE_NATIVE_MODE"];
+ const old=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+ try{
+  for(const key of keys)delete process.env[key];
+  const owner={bearerToken:"PRIVATE_ENGINEER_BEARER",
+   nativeSocketPath:"/tmp/r4282-native-operator.sock"};
+  const port=createTrustedEngineerCredentialPort(owner);
+  assert.equal(typeof port.revokeRoot,"function");
+  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET="/tmp/untrusted-other.sock";
+  assert.throws(()=>createTrustedEngineerCredentialPort(owner),
+   /Conflicting trusted Engineer native Rust socket selection/u);
+  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  process.env.ENGINEER_CORE_NATIVE_MODE="1";
+  assert.throws(()=>createTrustedEngineerCredentialPort(owner),
+   /Direct Engineer Core requires sole native Rust delegate socket/u);
+ }finally{
+  for(const key of keys){
+   if(old[key]===undefined)delete process.env[key];
+   else process.env[key]=old[key];
+  }
+ }
+});

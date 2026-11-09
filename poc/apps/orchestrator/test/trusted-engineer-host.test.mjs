@@ -1011,15 +1011,8 @@ test("same-process live Planning host preserves provisional root for review then
 test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gateway planning and operational fences",async t=>{
   const f=await fixture(t);
   const base=await mkdtemp(join(tmpdir(),"live-real-engineer-ipc-"));
-  // The original Coordinator owns the already-active Planning root.
-  // The strict Engineer recovery port still MUST be native Rust only;
-  // no native call is needed in this UI/Gateway consistency test.
-  const originalSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
-  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=join(base,"unused-native-engineer.sock");
-  t.after(()=>{
-    if(originalSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
-    else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=originalSocket;
-  });
+  // No ambient socket selection during Planning/UI setup. The Engineer
+  // recovery port is bound only to this trusted host configuration.
   t.after(()=>rm(base,{recursive:true,force:true}));
   const dirs={};
   for(const name of ["planning","operational","checkpoints","ipc",
@@ -1128,6 +1121,7 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   const recovery={
     directory:dirs.operational,planningDirectory:dirs.planning,
     gatewaySocketPath:socketPath,gatewaySecretFile:secretFile,
+    nativeEngineerSocketPath:join(base,"unused-native-engineer.sock"),
     adapterToken:"offline-private-adapter"
   };
   const host=await startTrustedEngineerLivePlanningHost({

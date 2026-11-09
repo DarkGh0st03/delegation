@@ -220,6 +220,11 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
      // Historical fixture URL validation is performed by strictRecoveringHost.
      (recovery.adapterBaseUrl!==undefined&&
       typeof recovery.adapterBaseUrl!=="string")||
+     (recovery.nativeEngineerSocketPath!==undefined&&
+      (typeof recovery.nativeEngineerSocketPath!=="string"||
+       !isAbsolute(recovery.nativeEngineerSocketPath)||
+       recovery.nativeEngineerSocketPath.length>100||
+       recovery.nativeEngineerSocketPath.trim()!==recovery.nativeEngineerSocketPath))||
      typeof recovery.gatewaySocketPath!=="string"||
      !isAbsolute(recovery.gatewaySocketPath))
     denied();

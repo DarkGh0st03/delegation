@@ -1888,12 +1888,9 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
     const positiveHome=await mkdtemp(join(tmpdir(),"r49-live-review-"));
     const positiveDecisionDir=await mkdtemp(join(tmpdir(),"r49-disposition-"));
     let positiveHost:any,privateIpc:any;
-    // R428: positive UI review reuses its existing owner Coordinator.
-    // A cold reconciliation port may only be native Rust; no synthetic
-    // HTTP issuer is allowed back into the operational Engineer path.
-    // A non-listening socket deliberately fails closed if used.
-    const previousNativeSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
-    process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=join(positiveHome,"unused-native-engineer.sock");
+    // R428.2: private operator config pins the native recovery socket
+    // independently of the read-only ADK Planning execution environment.
+    // This non-listening port fails closed if unexpectedly invoked.
     try{
       const {configPath,protectedConfig,credentialFiles}=
         await makeProtectedOwnerServiceConfig(positive,positiveHome,"fresh_repair");
@@ -1904,6 +1901,8 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
       const password="r49-offline-human-review";
       await writeFile(configPath,JSON.stringify({
         ...protectedConfig,planningMode:"fresh_repair",
+        recovery:{...protectedConfig.recovery,
+          nativeEngineerSocketPath:join(positiveHome,"unused-native-engineer.sock")},
         approval:{...protectedConfig.approval,
           passwordScryptHex:scryptSync(password,
             Buffer.from(protectedConfig.approval.passwordSaltHex,"hex"),64)
@@ -2036,18 +2035,12 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
       assert.equal(positive.observed.revoked,1);
       await positive.planningRecovery.assertClean();
     }finally{
-      try{
-        try{await positiveHost?.close();}finally{
-          try{await privateIpc?.close();}finally{
-            await rm(positiveHome,{recursive:true,force:true});
-            await rm(positiveDecisionDir,{recursive:true,force:true});
-            await positive.cleanup();
-          }
+      try{await positiveHost?.close();}finally{
+        try{await privateIpc?.close();}finally{
+          await rm(positiveHome,{recursive:true,force:true});
+          await rm(positiveDecisionDir,{recursive:true,force:true});
+          await positive.cleanup();
         }
-      }finally{
-        if(previousNativeSocket===undefined)
-          delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
-        else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=previousNativeSocket;
       }
     }
   }finally{
