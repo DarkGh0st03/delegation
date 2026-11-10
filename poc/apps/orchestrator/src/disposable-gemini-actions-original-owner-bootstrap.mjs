@@ -39,6 +39,9 @@ const SHA=/^[0-9a-f]{40}$/u;
 const RUN=/^[1-9][0-9]{0,19}$/u;
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
 const deny=()=>{throw Error("Disposable Actions original owner bootstrap NO-GO");};
+// A verified admission, model binding and native provision may enter exactly
+// ONE original Review Host. Free tests cannot forge this in-memory capability.
+const PREPARED_ORIGINAL_HOSTS=new WeakSet();
 
 /** Defense-in-depth runtime gate. The model-set constructor independently
  * validates live GitHub REST run identity and the clean checkout before
@@ -129,8 +132,22 @@ export async function prepareDisposableActionsOriginalOwnerBootstrap({
  const {provision}=await prepareDisposableOriginalGeminiNativeProvision({
   bound,signedAuthority
  });
- return Object.freeze({
+ const prepared=Object.freeze({
   status:"actions_original_host_inputs_prepared_no_inference",
   authority:signedAuthority,provision
  });
+ PREPARED_ORIGINAL_HOSTS.add(prepared);
+ return prepared;
+}
+
+/** Consume once before starting the ORIGINAL Review Host. An attempt that
+ * fails after this call can never reuse the same Actions admission. */
+export function claimDisposableActionsOriginalOwnerBootstrap(prepared){
+ if(!prepared||typeof prepared!=="object"||
+    !PREPARED_ORIGINAL_HOSTS.delete(prepared)||
+    prepared.status!=="actions_original_host_inputs_prepared_no_inference"||
+    typeof prepared.provision!=="function"||
+    !prepared.authority||typeof prepared.authority!=="object")
+  deny();
+ return prepared;
 }
