@@ -50,11 +50,14 @@ class ScriptedBackendUpdate extends BaseLlm {
    }}]}};
   else yield {content:{role:"model",parts:[{text:"Completed authorized change"}]}};
  }
+ publicSummary(){return Object.freeze({calls_started:this.requests.length});}
  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
   return Promise.reject(Error("R321 no live model connection"));
  }
 }
-function fixture(){
+function fixture(observe?:(w:{task_id:string;credential_id:string;
+ runtime_task_id:string;role:string;call_index_before:number;
+ call_index_after:number})=>void|Promise<void>){
  const registry=new TrustedEffectStagingTaskRegistry();
  const calls:string[]=[];
  registry.bindTask({
@@ -73,6 +76,7 @@ function fixture(){
   adapterBaseUrl:"http://native-signer.r321.invalid",
   maxModelTurns:4,scopeModelPaths:true,
   trustedEffectTaskRegistry:registry,
+  ...(observe?{trustedOriginalModelCallWindow:observe}:{}),
   fetchFn:(async(url:unknown,options?:RequestInit)=>{
    const u=String(url),body=JSON.parse(String(options?.body));
    if(u.endsWith("/v1/authorization/prepare")){
@@ -147,4 +151,36 @@ test("R321 malicious A2A task metadata cannot select owner effect port or trigge
   assert.deepEqual(x.calls,[]);
   assert.equal(x.model.requests.length,0);
  }
+});
+
+test("original Gateway-confirmed signed A2A Task produces one owner call window",async()=>{
+ const seen:Array<{task_id:string;credential_id:string;runtime_task_id:string;
+  role:string;call_index_before:number;call_index_after:number}>=[];
+ const x=fixture(w=>{seen.push(w);});
+ assert.deepEqual(seen,[]);
+ const result=await x.handler(context());
+ assert.equal(result.commit_sha,SHA);
+ assert.deepEqual(seen,[{task_id:PLAN,credential_id:CHILD,
+  runtime_task_id:RUNTIME,role:"backend",call_index_before:0,call_index_after:2}]);
+ assert.equal(Object.isFrozen(seen[0]),true);
+ assert.deepEqual(x.calls,["gateway_prepare","owner_stage","private_vp","gateway_execute"]);
+ for(const secret of [SECRET,VP,"PRIVATE_CHILD_DC_NOT_FOR_MODEL"])
+  assert.equal(JSON.stringify(seen).includes(secret),false);
+ await assert.rejects(x.handler(context()),/not prebound or was already dispatched/u);
+ assert.equal(seen.length,1);
+});
+test("forged Child cannot record original model call window",async()=>{
+ const seen:unknown[]=[];
+ const x=fixture(w=>{seen.push(w);});
+ await assert.rejects(x.handler({...context(),delegation_evidence:{
+  ...context().delegation_evidence,credential_id:"urn:foreign:child"
+ }}),/Trusted ADK effect Task binding NO-GO/u);
+ assert.deepEqual(seen,[]);
+ assert.equal(x.model.requests.length,0);
+});
+test("owner call-window store failure makes authenticated A2A Task incomplete",async()=>{
+ const x=fixture(()=>{throw Error("Owner call window store unavailable");});
+ await assert.rejects(x.handler(context()),/Owner call window store unavailable/u);
+ assert.equal(x.model.requests.length,2);
+ assert.deepEqual(x.calls,["gateway_prepare","owner_stage","private_vp","gateway_execute"]);
 });

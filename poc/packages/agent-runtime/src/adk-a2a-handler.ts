@@ -28,12 +28,32 @@ import {safeAdkResponseShape,classifyAdkResponseFailure,
   type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
 
 type FetchLike = typeof fetch;
+/** Content-free owner observation, NOT model provenance or signed proof. */
+export interface TrustedOriginalModelCallWindow {
+ readonly task_id:string;readonly credential_id:string;
+ readonly runtime_task_id:string;readonly role:"backend"|"frontend"|"test";
+ readonly call_index_before:number;readonly call_index_after:number;
+}
+function originalModelCalls(model:BaseLlm):number{
+ const read=(model as BaseLlm & {
+  publicSummary?:()=>{calls_started?:unknown}
+ }).publicSummary;
+ if(typeof read!=="function")throw Error("Original A2A model call witness NO-GO");
+ const n=read.call(model)?.calls_started;
+ if(typeof n!=="number"||!Number.isSafeInteger(n)||n<0)
+  throw Error("Original A2A model call witness NO-GO");
+ return n;
+}
 
 export interface AdkA2ATaskHandlerConfig {
   /** Signed Worker startup only; not LLM/A2A-provided role metadata. */
   trustedAdditionalReadOnlyRole?:TrustedAdditionalReadOnlyAdkRole;
   /** Owner-only registry of exact A2A Task/Child/operation bindings. */
   trustedEffectTaskRegistry?:TrustedEffectStagingTaskRegistry;
+  /** Original trusted owner only, emitted after a Gateway-confirmed Task. */
+  trustedOriginalModelCallWindow?:(
+   witness:Readonly<TrustedOriginalModelCallWindow>
+  )=>void|Promise<void>;
   model: BaseLlm;
   gatewayBaseUrl: string;
   /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
@@ -198,6 +218,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
        process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
        !config.trustedEffectTaskRegistry||!config.mcpTaskRegistry))
     throw Error("private_native_mcp_requires_owner_bound_task");
+  if(config.trustedOriginalModelCallWindow&&(
+     !config.trustedEffectTaskRegistry||
+     typeof config.trustedOriginalModelCallWindow!=="function"))
+    throw Error("Original A2A model call witness requires owner-pinned Task registry");
   if(config.trustedBackendDiscovery)
     validateTrustedBackendDiscoveryA2ABinding(config.trustedBackendDiscovery);
   if(config.trustedBackendDiscovery&&config.trustedBackendDiscoverySlot)
@@ -262,6 +286,11 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // A forged A2A Task fails here without falling back to shared effects.
     const ownerEffect=config.trustedEffectTaskRegistry?.selectFor(context);
     try{
+    // Signed Task/Child/role/operation pins were already matched by selectFor.
+    const beforeCalls=config.trustedOriginalModelCallWindow
+      ?originalModelCalls(config.model):null;
+    if(config.trustedOriginalModelCallWindow&&!ownerEffect)
+      throw Error("Original A2A model call witness requires a signed Task");
     const taskStart = performance.now();
     // A signed Test preparation Task may create/update tests without owning
     // the separate final Docker run_tests grant. Never infer the runner
@@ -595,6 +624,19 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       if(!mayRunTests && (testOutcome!=="not_run"||
          (filesModified.size+filesCreated.size===0&&readEvidenceCount===0)))
         throw new Error("ADK Test preparation Task requires verified Gateway file operations without Runner");
+    }
+    if(config.trustedOriginalModelCallWindow){
+      const afterCalls=originalModelCalls(config.model);
+      if(beforeCalls===null||afterCalls<=beforeCalls||
+         afterCalls-beforeCalls!==model.turns)
+        throw Error("Original A2A model call witness NO-GO");
+      await config.trustedOriginalModelCallWindow(Object.freeze({
+       task_id:context.subtask.subtask_id,
+       credential_id:context.delegation_evidence.credential_id,
+       runtime_task_id:context.trusted_gateway_task_id!,
+       role:context.role,call_index_before:beforeCalls,
+       call_index_after:afterCalls
+      }));
     }
     process.stdout.write(JSON.stringify({
       event:"adk_role_timing",role:context.role,
