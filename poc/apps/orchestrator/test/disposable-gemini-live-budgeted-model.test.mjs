@@ -501,3 +501,40 @@ test("successful STOP remains permitted only after full provider-reported usage"
  assert.equal(model.publicSummary().reported_total_tokens,7);
  assert.equal(model.publicSummary().blocked,false);
 });
+
+test("owner cancellation interrupts a non-cooperative in-flight model without releasing provider output",async()=>{
+ let started;
+ const entered=new Promise(resolve=>{started=resolve;});
+ const delegate=new OfflineDelegate(async function*(){
+  started();
+  await new Promise(()=>{}); // The provider intentionally ignores abort.
+  yield response("NEVER RELEASE TO ADK",reported(3,4));
+ });
+ const model=wrapped(delegate);
+ const next=model.generateContentAsync({contents:[]}).next();
+ await entered;
+ model.fenceOwnerCancellation();
+ await assert.rejects(next,DENY);
+ assert.equal(model.publicSummary().blocked,true);
+ assert.equal(model.publicSummary().reported_total_tokens,0);
+ await assert.rejects(collect(model),DENY);
+});
+
+test("owner model cancellation blocks all models sharing the private session budget",async()=>{
+ const shared=new DisposablePrivateSessionUsageBudget();
+ const a=new OfflineDelegate(async function*(){
+  yield response("planning",reported(2,3));
+ });
+ const b=new OfflineDelegate(async function*(){
+  yield response("backend",reported(2,3));
+ });
+ const planner=wrapped(a,{phase:"planning",sessionBudget:shared});
+ const backend=wrapped(b,{phase:"backend",sessionBudget:shared});
+ planner.fenceOwnerCancellation();
+ planner.fenceOwnerCancellation();
+ assert.equal(shared.publicSummary().blocked,true);
+ await assert.rejects(collect(planner),DENY);
+ await assert.rejects(collect(backend),DENY);
+ assert.equal(a.calls,0);
+ assert.equal(b.calls,0);
+});

@@ -133,6 +133,8 @@ const SESSION_MAX_CALLS=160;
 const SESSION_MAX_REPORTED_TOKENS=1_000_000;
 export class DisposablePrivateSessionUsageBudget{
  #calls=0;#tokens=0;#active;#blocked=false;
+ #ownerCancellation=new AbortController();
+ get ownerSignal(){return this.#ownerCancellation.signal;}
  begin(){
   if(this.#blocked||this.#active||
      this.#calls>=SESSION_MAX_CALLS||
@@ -162,6 +164,7 @@ export class DisposablePrivateSessionUsageBudget{
   // Used when the same ADK model is re-entered before its prior request
   // finishes. A local denial must also invalidate every other role.
   this.#blocked=true;
+  this.#ownerCancellation.abort();
  }
  abandon(claim){
   this.#blocked=true;
@@ -188,6 +191,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  #calls=0;#reportedTotal=0;#input=0;#output=0;
  #busy=false;#blocked=false;#sessionBudget;#proposedWrites=[];
  #claimedWrites=new WeakSet();#claimedGatewayEvidence=new Set();
+ #ownerCancellation=new AbortController();
  constructor({
   delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens,sessionBudget
  }={}){
@@ -207,6 +211,16 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
   this.#sessionBudget=sessionBudget;
  }
  get phase(){return this.#phase;}
+ /**
+  * Terminal owner cancellation. It synchronously poisons all five models
+  * sharing the private session budget, and aborts THIS instance's pending
+  * response stream. Already dispatched Google calls MAY remain billable.
+  */
+ fenceOwnerCancellation(){
+  this.#blocked=true;
+  this.#ownerCancellation.abort();
+  this.#sessionBudget?.fence();
+ }
  /** Public counters NEVER include API key, prompts, source or tool calls. */
  publicSummary(){
   return Object.freeze({
@@ -279,6 +293,8 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    // Original paid A2A/Planning budget: up to three minutes per call.
    // All partial responses remain buffered and fenced on abort.
    AbortSignal.timeout(180000),
+   this.#ownerCancellation.signal,
+   ...(this.#sessionBudget?[this.#sessionBudget.ownerSignal]:[]),
    ...(signal?[signal]:[])
   ]);
   let last=null,chunks=0,bytes=0,finished=false;
