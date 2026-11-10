@@ -44,8 +44,12 @@ export class DisposablePrivateSessionUsageBudget{
  begin(){
   if(this.#blocked||this.#active||
      this.#calls>=SESSION_MAX_CALLS||
-     this.#tokens>=SESSION_MAX_REPORTED_TOKENS)
+     this.#tokens>=SESSION_MAX_REPORTED_TOKENS){
+   // A competing role trying to use the same provider session poisons
+   // the already active request too: its inspect/commit must now reject.
+   if(this.#active)this.#blocked=true;
    deny();
+  }
   const claim=Object.freeze(Object.create(null));
   this.#active=claim;
   this.#calls++;
@@ -61,6 +65,11 @@ export class DisposablePrivateSessionUsageBudget{
   this.inspect(claim,reportedTokens);
   this.#tokens+=reportedTokens;
   this.#active=undefined;
+ }
+ fence(){
+  // Used when the same ADK model is re-entered before its prior request
+  // finishes. A local denial must also invalidate every other role.
+  this.#blocked=true;
  }
  abandon(claim){
   this.#blocked=true;
@@ -123,8 +132,14 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
   });
  }
  async *generateContentAsync(request,stream,signal){
-  if(this.#blocked||this.#busy||
-     this.#calls>=this.#maxCalls||
+  if(this.#busy){
+   // Reject BOTH overlapping consumers, not just the second one. The
+   // first may still be waiting for provider bytes when this happens.
+   this.#blocked=true;
+   this.#sessionBudget?.fence();
+   deny();
+  }
+  if(this.#blocked||this.#calls>=this.#maxCalls||
      this.#reportedTotal>=this.#maxTokens)deny();
   // One model instance accepts at most one in-flight request. Claim its
   // per-session call slot synchronously before any provider interaction.
@@ -148,7 +163,8 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    for await(const response of this.#delegate.generateContentAsync(
     request,stream,combined
    )){
-    if(combined.aborted||response?.errorCode||response?.errorMessage||
+    if(this.#blocked||combined.aborted||
+       response?.errorCode||response?.errorMessage||
        ++chunks>128)deny();
     const data=JSON.stringify(response);
     if(typeof data!=="string"||(bytes+=Buffer.byteLength(data))>1_000_000)
@@ -166,13 +182,13 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    }
    // No partial response (especially FunctionTool calls) may be executed
    // without a final, valid provider-reported usage entry.
-   if(combined.aborted||!last)deny();
+   if(this.#blocked||combined.aborted||!last)deny();
    if(sessionClaim)this.#sessionBudget.commit(sessionClaim,last.total);
    this.#reportedTotal+=last.total;
    this.#input+=last.input;
    this.#output+=last.output;
    for(const response of buffered){
-    if(combined.aborted)deny();
+    if(this.#blocked||combined.aborted)deny();
     yield response;
    }
    finished=true;

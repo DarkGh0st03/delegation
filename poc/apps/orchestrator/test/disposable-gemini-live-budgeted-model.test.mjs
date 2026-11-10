@@ -116,12 +116,12 @@ test("provider exception after an early proposal does not admit any partial acti
  assert.equal(model.publicSummary().blocked,true);
 });
 
-test("simultaneous ADK requests on one specialist cannot bypass per-session call checks",async()=>{
+test("simultaneous ADK requests on one specialist terminally fence both outputs",async()=>{
  let unblock;
  const wait=new Promise(resolve=>{unblock=resolve;});
  const delegate=new OfflineDelegate(async function*(){
   await wait;
-  yield response("complete response",reported(3,4));
+  yield response("MUST-NOT-REACH-AGENT",reported(3,4));
  });
  const model=wrapped(delegate);
  const first=model.generateContentAsync({}),second=model.generateContentAsync({});
@@ -129,10 +129,10 @@ test("simultaneous ADK requests on one specialist cannot bypass per-session call
  await assert.rejects(second.next(),DENY);
  assert.equal(delegate.calls,1);
  unblock();
- const value=await firstNext;
- assert.equal(value.value.content.parts[0].text,"complete response");
- await first.next();
- assert.equal(model.publicSummary().reported_total_tokens,7);
+ await assert.rejects(firstNext,DENY);
+ assert.equal(model.publicSummary().reported_total_tokens,0);
+ assert.equal(model.publicSummary().blocked,true);
+ await assert.rejects(collect(model),DENY);
 });
 
 test("aborted provider and explicit provider errors block all outputs and further calls",async()=>{
@@ -265,14 +265,14 @@ test("an ambiguous provider failure blocks all other original roles in the same 
  assert.equal(healthy.publicSummary().calls_started,0);
 });
 
-test("global in-flight lock prevents simultaneous paid requests across distinct roles",async()=>{
+test("cross-role overlap permanently invalidates both private Gemini requests",async()=>{
  const budget=new DisposablePrivateSessionUsageBudget();
  let unblock;
  const signal=new Promise(resolve=>{unblock=resolve;});
  const waiting=new DisposablePrivateBudgetedAdkModel({
   delegate:new OfflineDelegate(async function*(){
    await signal;
-   yield response("first model",reported(1,2));
+   yield response("MUST-NOT-REACH-AGENT",reported(1,2));
   }),
   phase:"adaptive-execution",maxCalls:2,
   maxReportedTokens:1000,maxPerCallTokens:100,sessionBudget:budget
@@ -287,10 +287,30 @@ test("global in-flight lock prevents simultaneous paid requests across distinct 
  const flight=waiting.generateContentAsync({}),pending=flight.next();
  await assert.rejects(collect(competing),DENY);
  assert.equal(budget.publicSummary().calls_started,1);
+ assert.equal(budget.publicSummary().blocked,true);
  unblock();
- const observed=await pending;
- assert.equal(observed.value.content.parts[0].text,"first model");
- await flight.next();
- assert.equal(budget.publicSummary().reported_total_tokens,3);
- assert.equal(budget.publicSummary().blocked,false);
+ await assert.rejects(pending,DENY);
+ assert.equal(budget.publicSummary().reported_total_tokens,0);
+ await assert.rejects(collect(waiting),DENY);
+ await assert.rejects(collect(competing),DENY);
+});
+
+test("same-model overlap poisons the shared budget for every other original role",async()=>{
+ const budget=new DisposablePrivateSessionUsageBudget();
+ let release;
+ const waiting=new Promise(resolve=>{release=resolve;});
+ const backend=wrapped(new OfflineDelegate(async function*(){
+  await waiting;
+  yield response("MUST-NOT-REACH-AGENT",reported(1,2));
+ }),{sessionBudget:budget});
+ const workerTest=wrapped(new OfflineDelegate(async function*(){
+  yield response("MUST-NOT-BE-CHARGED",reported(1,2));
+ }),{phase:"test",sessionBudget:budget});
+ const active=backend.generateContentAsync({}).next();
+ await assert.rejects(backend.generateContentAsync({}).next(),DENY);
+ assert.equal(budget.publicSummary().blocked,true);
+ release();
+ await assert.rejects(active,DENY);
+ assert.equal(budget.publicSummary().reported_total_tokens,0);
+ await assert.rejects(collect(workerTest),DENY);
 });
