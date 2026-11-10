@@ -218,9 +218,11 @@ test("original owner close rejects an in-flight synthetic model response",async 
   await new Promise(()=>{}); // upstream ignores interruption
   return {chunks:[{text:"NOT_RELEASED"}]};
  }});
- const pending=rpc(f.client);
+ // Attach the rejection handler immediately: the RPC socket can close
+ // before the asynchronous native owner close() promise settles.
+ const rejected=assert.rejects(rpc(f.client),DENY);
  await active;
  await f.server.close();
- await assert.rejects(pending,DENY);
+ await rejected;
  assert.equal(f.server.status(),"closed_or_closing");
 });
