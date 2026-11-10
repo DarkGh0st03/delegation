@@ -25,6 +25,8 @@ import {assertDisposableActionsOriginalOwnerContext,
  from "./disposable-gemini-actions-original-owner-bootstrap.mjs";
 import {createDisposableActionsOriginalGithubRunWatch}
  from "./disposable-gemini-actions-original-github-run-watch.mjs";
+import {writeOriginalDisposableActionsEngineerReceipt}
+ from "./disposable-ci-original-signed-review.mjs";
 
 const CONFIRM="I AUTHORIZE GEMINI API CHARGES";
 const CAP="I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
@@ -77,6 +79,7 @@ export async function runOneOriginalReviewHostWithWatch({
    get phase(){return host.phase;},
    get githubRunStatus(){return watch.status;},
    get engineerUrl(){return host.engineerUrl;},
+   checkGithubRunActive:()=>watch.checkNow(),
    reviewReadiness:async()=>{
     await watch.checkNow();
     const result=await handoff.reviewReadiness();
@@ -120,11 +123,55 @@ export async function startDisposableActionsOriginalReviewSession({
  try{assertDisposableActionsOriginalOwnerContext(process.env,sourceSha);}
  catch{deny();}
  const claimed=claimDisposableActionsOriginalOwnerBootstrap(prepared);
- return runOneOriginalReviewHostWithWatch({
+ // Original signed Planning completes within startTrustedAuthorityOnlyReviewHost.
+ // The following review MUST be selected from its authentic persisted
+ // checkpoint, never from an unsigned model-selected permissions object.
+ const session=await runOneOriginalReviewHostWithWatch({
   authority:claimed.authority,provision:claimed.provision,
   startOriginalHost:startTrustedAuthorityOnlyReviewHost,
   watchFactory:onClose=>createDisposableActionsOriginalGithubRunWatch({
    runId,sourceSha,githubApiToken,onClose
   })
  });
+ try{
+  await session.checkGithubRunActive();
+  const authority=claimed.authority;
+  const originalReview=await writeOriginalDisposableActionsEngineerReceipt({
+   checkpointStore:authority.checkpoint.store,
+   snapshot:authority.snapshot,
+   workBranch:authority.workBranch,
+   requirement:authority.requirement,
+   receiptDirectory:authority.approval.receiptDirectory,
+   privateKeyFile:authority.approval.privateKeyFile,
+   engineerDid:authority.approval.engineerDid,
+   keyId:authority.approval.keyId,
+   publicKeyPem:authority.approval.publicKeyPem,
+   githubApiToken
+  });
+  if(originalReview.review!=="SIMULATED_NOT_HUMAN"||
+     !originalReview.original_receipt_written_and_independently_verified||
+     !originalReview.checkpoint_from_original_planning||
+     originalReview.native_root_issued_here!==false||
+     originalReview.gemini_called_here!==false||
+     originalReview.human_approval_verified_here!==false)deny();
+  // Revalidate the live job AND the ORIGINAL Host's Ed25519 receipt,
+  // permission subset and immutable planning digest before any Root issue.
+  await session.checkGithubRunActive();
+  const readiness=await session.reviewReadiness();
+  if(readiness?.operational_root_issued!==false)deny();
+  return Object.freeze({
+   status:"actions_original_ci_simulated_engineer_review_signed_post_planning",
+   original_engineer_decision:"SIMULATED_NOT_HUMAN",
+   original_review_verified:true,
+   ...{get phase(){return session.phase;},
+       get engineerUrl(){return session.engineerUrl;},
+       get githubRunStatus(){return session.githubRunStatus;}},
+   reviewReadiness:()=>session.reviewReadiness(),
+   runApprovedCanonical:()=>session.runApprovedCanonical(),
+   close:()=>session.close()
+  });
+ }catch(error){
+  await session.close();
+  throw error;
+ }
 }

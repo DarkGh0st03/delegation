@@ -176,3 +176,13 @@ test("public Actions entrypoint is NO-GO without explicit billing approval",asyn
   prepared:{status:"unissued"}
  }),DENY);
 });
+
+test("read-only verified GitHub liveness stays independently checked before a signed review",async()=>{
+ const f=fixture();
+ const s=await runOneOriginalReviewHostWithWatch(f.options);
+ const count=f.calls.filter(x=>x==="watch.check").length;
+ await s.checkGithubRunActive();
+ assert.equal(f.calls.filter(x=>x==="watch.check").length,count+1);
+ assert.equal(f.executions(),0);
+ await s.close();
+});

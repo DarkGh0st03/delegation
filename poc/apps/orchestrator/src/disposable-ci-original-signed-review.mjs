@@ -24,6 +24,10 @@ import {SignedAuthorityOnlyFileStore}
 import {selectAuthorityOnlyGrant,signAuthorityOnlyGrant,authorityOnlyDigest}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 import {RUST_OPERATIONS} from "../../gateway/src/operation-catalog.ts";
+import {verifyGithubManualRunViaApi}
+ from "../../../packages/orchestrator-runtime/src/trusted-github-run-identity.ts";
+import {assertDisposableActionsOriginalOwnerContext}
+ from "./disposable-gemini-actions-original-owner-bootstrap.mjs";
 import {scriptedResearchProposal} from "./run-disposable-gemini-ci-pilot.mjs";
 
 const OPS=new Set(RUST_OPERATIONS);
@@ -134,14 +138,54 @@ async function readOwnerKey(path){
  * No API key, model output authority, workflow input or Task supplies a
  * permission ceiling. Only exact IAM Console pairs are eligible.
  */
-export async function writeOriginalDisposableCiEngineerReceipt({
+export async function writeOriginalDisposableCiEngineerReceipt(input={}){
+ // The FREE native path must remain permanently no-provider and separate
+ // from the Gemini-paid experimental profile.
+ assertOriginalDisposableCiReviewOrigin(process.env,checkedSourceSha());
+ return signOriginalDisposableReviewedCheckpoint(input);
+}
+
+/**
+ * Explicitly permitted ONLY inside the independently GitHub-verified manual
+ * Actions paid owner, after actual model-generated Planning has persisted the
+ * ORIGINAL Backend-signed checkpoint. This simulates the Engineer DECISION
+ * while retaining the same Ed25519 key, permission ceiling and verified
+ * receipt store as the FREE original native path. It is not a human review.
+ *
+ * This function performs ONLY an authenticated GitHub REST read and a local
+ * one-use signature. It never calls Gemini, issues a Root or starts an agent.
+ * No current GitHub workflow enables it; actual billing requires separate
+ * operator consent and spend isolation.
+ */
+export async function writeOriginalDisposableActionsEngineerReceipt(input={}){
+ const sourceSha=checkedSourceSha();
+ try{assertDisposableActionsOriginalOwnerContext(process.env,sourceSha);}
+ catch{deny();}
+ if(!input||typeof input!=="object"||Array.isArray(input)||
+    Object.hasOwn(input,"nowMs")||
+    typeof input.githubApiToken!=="string"||
+    input.githubApiToken.length<16||
+    input.githubApiToken.length>512||
+    /\s/u.test(input.githubApiToken))deny();
+ await verifyGithubManualRunViaApi({
+  dispatch:{run_id:process.env.GITHUB_RUN_ID,source_sha:sourceSha},
+  pinned:{repository:REPO,ref:EXPERIMENT,
+   workflowPath:".github/workflows/gemini-authority-only-live-ci-pilot.yml",
+   sourceSha},
+  githubApiToken:input.githubApiToken
+ });
+ return signOriginalDisposableReviewedCheckpoint(input);
+}
+
+/** The single original receipt-store implementation for both CI profiles.
+ * The two separate public entrypoints each enforce their own trusted
+ * source, run, billing mode and authority before reaching this signer.
+ */
+async function signOriginalDisposableReviewedCheckpoint({
  checkpointStore,snapshot,workBranch,requirement,
  receiptDirectory,privateKeyFile,engineerDid,keyId,publicKeyPem,
  nowMs=Date.now()
 }={}){
- // Reject any call from a private Engineer Host, foreign GitHub run,
- // live billing mode or dirty/foreign source before touching the key.
- assertOriginalDisposableCiReviewOrigin(process.env,checkedSourceSha());
  if(!(checkpointStore instanceof AuthorityPlanningCheckpointStore)||
     !snapshot||typeof snapshot!=="object"||
     typeof workBranch!=="string"||typeof requirement!=="string"||
@@ -221,6 +265,7 @@ export async function writeOriginalDisposableCiEngineerReceipt({
   permission_count:grant.permissions.length,
   delegated_roles:["backend","frontend","test"],
   native_root_issued_here:false,
-  gemini_called_here:false
+  gemini_called_here:false,
+  human_approval_verified_here:false
  });
 }
