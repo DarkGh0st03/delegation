@@ -99,6 +99,10 @@ test("actual specialized Backend A2A server starts in a second sanitized Node PI
  assert.notEqual(child.pid,process.pid);
  assert.equal(child.role,"backend");
  assert.equal(child.osIsolationVerified,false);
+ assert.equal(child.nativeRustSignerVerified,false);
+ assert.equal(child.ownerCanaryReadableFromWorker,true);
+ if(process.platform==="linux"&&typeof process.getuid==="function")
+  assert.equal(child.ownerAndWorkerShareUid,true);
  assert.equal(child.originalNativeTaskBindingPresent,false);
  assert.equal(child.originalTaskBindingChannelReady,true);
  const response=await fetch(new URL(AGENT_CARD_PATH,child.baseUrl+'/').href);
@@ -258,4 +262,16 @@ test("two sequential protected A2A requests reuse the SAME Backend PID and owner
  }),/without completion/u);
  assert.equal(f.modelCalls(),2,
   "replaying a retired Task must not initiate an owner model call");
+});
+
+test("the actual offline A2A worker can open an owner 0600 canary: PID separation is NOT secret isolation",async t=>{
+ const f=await fixture(t);
+ const child=await startDisposableOriginalA2aWorkerSubprocess(f.config);
+ t.after(()=>child.close().catch(()=>{}));
+ assert.notEqual(child.pid,process.pid);
+ assert.equal(child.ownerCanaryReadableFromWorker,true);
+ assert.equal(child.osIsolationVerified,false);
+ assert.equal(child.nativeRustSignerVerified,false);
+ assert.equal(f.modelCalls(),0);
+ await child.close();
 });

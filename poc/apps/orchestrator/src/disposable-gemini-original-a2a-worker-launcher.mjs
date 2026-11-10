@@ -8,6 +8,10 @@
  * different-UID/mount boundary are required before lifting the paid gate.
  */
 import {fork} from "node:child_process";
+import {randomBytes} from "node:crypto";
+import {mkdtemp,writeFile,rm,readFile} from "node:fs/promises";
+import {join} from "node:path";
+import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 
 const ROLE=new Set(["backend","frontend","test"]);
@@ -42,6 +46,17 @@ export async function startDisposableOriginalA2aWorkerSubprocess(config){
  const entry=fileURLToPath(new URL(
   "./disposable-gemini-original-a2a-worker-child.mjs",import.meta.url
  ));
+ // The owner-created random canary is harmless, mode 0600 in mode 0700.
+ // It is intentionally NOT an Engineer key, Gemini key or bearer token.
+ const probeDir=await mkdtemp(join(tmpdir(),"delegation-owner-canary-"));
+ const ownerCanaryPath=join(probeDir,"canary.bin");
+ try{
+  await writeFile(ownerCanaryPath,randomBytes(32),
+   {mode:0o600,flag:"wx"});
+ }catch{
+  await rm(probeDir,{recursive:true,force:true}).catch(()=>{});
+  deny();
+ }
  // Explicit allowlist: never spread process.env (provider key, Github token,
  // NODE_OPTIONS, credential discovery variables, native owner socket).
  const child=fork(entry,[],{
@@ -105,25 +120,46 @@ export async function startDisposableOriginalA2aWorkerSubprocess(config){
    child.on("message",onMessage);
    child.once("exit",onExit);
    child.once("error",onError);
-   child.send({type:"start",config});
+   child.send({type:"start",config,ownerCanaryPath});
   });
+  // Read real kernel credentials, rather than trusting the worker's
+  // self-reported UID. This is evidence of a boundary failure only.
+  let workerUid=null;
+  if(process.platform==="linux"&&child.pid){
+   try{
+    const status=await readFile("/proc/"+child.pid+"/status","utf8");
+    const m=status.match(/^Uid:\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/mu);
+    const p=status.match(/^Pid:\s*(\d+)/mu);
+    if(m&&p&&Number(p[1])===child.pid&&
+       [2,3,4].every(i=>m[i]===m[1]))workerUid=Number(m[1]);
+   }catch{workerUid=null;}
+  }
   if(ready?.type!=="ready"||ready.pid!==child.pid||
      ready.role!==config.role||
      ready.baseUrl!==`http://127.0.0.1:${config.port}`||
      ready.providerCredentialPresent!==false||
      ready.originalNativeTaskBindingPresent!==false||
      ready.originalTaskBindingChannelReady!==true||
+     typeof ready.ownerCanaryReadable!=="boolean"||
      ready.osIsolationVerified!==false)deny();
   return Object.freeze({
    role:config.role,pid:child.pid,baseUrl:ready.baseUrl,
    originalNativeTaskBindingPresent:false,
    originalTaskBindingChannelReady:true,
    osIsolationVerified:false,
+   ownerCanaryReadableFromWorker:ready.ownerCanaryReadable,
+   ownerAndWorkerShareUid:workerUid===null||
+    typeof process.getuid!=="function"?null:
+    workerUid===process.getuid(),
+   nativeRustSignerVerified:false,
    close
   });
  }catch{
   if(child.exitCode===null)child.kill("SIGKILL");
   await close().catch(()=>{});
   deny();
+ }finally{
+  // Probe does not outlive child startup or an error path.
+  await rm(probeDir,{recursive:true,force:true}).catch(()=>{});
  }
 }

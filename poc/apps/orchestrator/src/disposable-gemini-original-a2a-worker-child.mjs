@@ -9,6 +9,8 @@
  * prebinding has independently authorized each MODEL RPC call.
  */
 import {generateKeyPairSync} from "node:crypto";
+import {constants} from "node:fs";
+import {open} from "node:fs/promises";
 import {connectDisposableWorkerModelIpcClient}
  from "./disposable-gemini-owner-worker-ipc.mjs";
 import {createDisposableOriginalWorkerIpcAdkModel}
@@ -31,6 +33,20 @@ const mustBeClean=()=>{
   if(Object.hasOwn(process.env,key))deny();
  }
 };
+/** Probe a NON-SECRET random owner canary from the actual worker PID.
+ * Never read API keys or Engineer private keys and never return bytes. */
+async function canOpenOwnerCanary(path){
+ if(typeof path!=="string"||!path.startsWith("/")||
+    path.length>240||path.includes("\0"))deny();
+ try{
+  const fd=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+  await fd.close();
+  return true;
+ }catch(e){
+  if(e?.code==="EACCES"||e?.code==="EPERM")return false;
+  deny();
+ }
+}
 let server,model,binder,active=false,stopping=false;
 const send=message=>{
  if(process.connected&&typeof process.send==="function")process.send(message);
@@ -58,6 +74,9 @@ const start=async message=>{
   deny();
  active=true;
  mustBeClean();
+ // Same-UID processes can normally open owner 0600 files. This probe
+ // provides negative isolation evidence without reading any secret.
+ const ownerCanaryReadable=await canOpenOwnerCanary(message.ownerCanaryPath);
  const cfg=message.config;
  if(!ROLES.has(cfg.role)||!Number.isSafeInteger(cfg.port)||
     cfg.port<1024||cfg.port>65535||
@@ -126,6 +145,7 @@ const start=async message=>{
   providerCredentialPresent:false,
   originalNativeTaskBindingPresent:false,
   originalTaskBindingChannelReady:true,
+  ownerCanaryReadable,
   osIsolationVerified:false});
 };
 mustBeClean();
