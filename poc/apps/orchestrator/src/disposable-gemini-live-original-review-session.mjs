@@ -145,10 +145,10 @@ export async function startDisposableGeminiOriginalReviewSession({
  // The wrapper passes a one-use, owner-minted reconciliation capability.
  const provision=async()=>{
   const ready=await nativeProvision();
-  if(typeof bound.reconcileVerifiedOriginalWorkerUpdate!=="function")
+  if(typeof bound.reconcileVerifiedOriginalWorkerFileEffect!=="function")
    deny();
   return Object.freeze({...ready,
-   ownerSourceGate:bound.reconcileVerifiedOriginalWorkerUpdate});
+   ownerSourceGate:bound.reconcileVerifiedOriginalWorkerFileEffect});
  };
 
  // A one-use OIDC admission is NOT lasting permission to execute.

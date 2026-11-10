@@ -14,7 +14,8 @@ import {DisposablePrivateBudgetedAdkModel}
  from "./disposable-gemini-live-budgeted-model.mjs";
 import {DisposableOriginalA2AModelCallWindowStore}
  from "./disposable-gemini-original-task-call-window.mjs";
-import {reconcileOriginalOwnerTaskWriteFromStore}
+import {reconcileOriginalOwnerTaskWriteFromStore,
+ reconcileOriginalOwnerTaskCreateFromStore}
  from "./disposable-gemini-gitea-write-reconcile.mjs";
 
 // The brand is shared with the original offline-capable Review Host through
@@ -171,18 +172,22 @@ export function bindDisposableLiveGeminiCanonicalInputs({
  const allMetered=ROLES.every(role=>
   models.workers[role].model instanceof DisposablePrivateBudgetedAdkModel);
  const ownerReconcile=allMetered?async({
-  role,mutationObserver,completionExpectation
+  role,operation,mutationObserver,createObserver,completionExpectation
  }={})=>{
   if(!ROLES.includes(role)||
+     !["update_file","create_file"].includes(operation)||
      !nextAuthority.trustedAgentRegistry[role]?.did||
      completionExpectation?.agent_did!==
       nextAuthority.trustedAgentRegistry[role].did)deny();
-  return reconcileOriginalOwnerTaskWriteFromStore({
+  const inputs={
    model:models.workers[role].model,
    ownerWindowStore:ownerModelTaskWindowStores[role],
-   mutationObserver,completionExpectation,role,
+   completionExpectation,role,
    registeredAgentDid:nextAuthority.trustedAgentRegistry[role].did
-  });
+  };
+  return operation==="create_file"?
+   reconcileOriginalOwnerTaskCreateFromStore({...inputs,createObserver}):
+   reconcileOriginalOwnerTaskWriteFromStore({...inputs,mutationObserver});
  }:undefined;
  if(ownerReconcile)mintDisposableOwnerSourceGate(ownerReconcile);
  // Claim only AFTER the entire original-host configuration validates.
@@ -193,6 +198,6 @@ export function bindDisposableLiveGeminiCanonicalInputs({
   ownerModelTaskWindowStores:Object.freeze(ownerModelTaskWindowStores),
   ...(ownerReconcile?{
    // Host-only: before the next independently signed Task changes Gitea HEAD.
-   reconcileVerifiedOriginalWorkerUpdate:ownerReconcile
+   reconcileVerifiedOriginalWorkerFileEffect:ownerReconcile
   }:{})});
 }

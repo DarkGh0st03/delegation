@@ -325,11 +325,11 @@ test("GitHub Actions one-use consented owner models bind every ORIGINAL typed na
   assert.ok(bound.ownerModelTaskWindowStores[role] instanceof
    DisposableOriginalA2AModelCallWindowStore);
  }
- assert.equal(typeof bound.reconcileVerifiedOriginalWorkerUpdate,"function");
- await assert.rejects(bound.reconcileVerifiedOriginalWorkerUpdate({
+ assert.equal(typeof bound.reconcileVerifiedOriginalWorkerFileEffect,"function");
+ await assert.rejects(bound.reconcileVerifiedOriginalWorkerFileEffect({
   role:"reviewer"
  }),/Disposable live canonical binding NO-GO/u);
- await assert.rejects(bound.reconcileVerifiedOriginalWorkerUpdate({
+ await assert.rejects(bound.reconcileVerifiedOriginalWorkerFileEffect({
   role:"backend",completionExpectation:{agent_did:"did:attacker:forged"}
  }),/Disposable live canonical binding NO-GO/u);
  assert.equal(admitted.planner.model.publicSummary().calls_started,0);

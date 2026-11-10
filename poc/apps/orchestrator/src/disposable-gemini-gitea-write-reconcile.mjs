@@ -88,6 +88,7 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
  return Object.freeze({
   status:"signed_gateway_gitea_cas_matches_model_proposed_bytes_only",
   task_id:mutation.task_id,
+  branch:mutation.branch,path:mutation.path,
   commit_sha:mutation.commit_sha,
   source_sha256:mutation.source_sha256,
   source_bytes:mutation.source_bytes,
@@ -222,7 +223,8 @@ export async function reconcileOriginalModelCreateWithVerifiedGitea({
  }catch{deny();}
  return Object.freeze({
   status:"signed_gateway_gitea_create_cas_matches_model_proposed_bytes_only",
-  task_id:created.task_id,commit_sha:created.commit_sha,
+  task_id:created.task_id,branch:created.branch,path:created.path,
+  commit_sha:created.commit_sha,
   source_sha256:created.source_sha256,source_bytes:created.source_bytes,
   gateway_evidence_sha256:created.evidence_sha256,
   matched_model_call_index:matches[0].call_index,

@@ -1862,25 +1862,32 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        // completed Task/Child state, never from A2A or model arguments.
        // No successor Task may be scheduled until this check succeeds.
        const ownerGate=nativeEffectBinding?.ownerSourceGate;
-       if(ownerGate&&pin.operation==='update_file'){
-        const mutation=gateway.assertTrustedCompletedMutationObservationBinding(
-         input.taskId,input.runtimeTaskId);
+       if(ownerGate&&(pin.operation==='update_file'||
+                      pin.operation==='create_file')){
+        const isCreate=pin.operation==='create_file';
+        const sourceBinding=isCreate?
+         gateway.assertTrustedCompletedCreateObservationBinding(
+          input.taskId,input.runtimeTaskId):
+         gateway.assertTrustedCompletedMutationObservationBinding(
+          input.taskId,input.runtimeTaskId);
         const matched=await ownerGate({
-         role:pin.agent_id,
+         role:pin.agent_id,operation:pin.operation,
          mutationObserver:nativeEffectBinding.mutationObserver,
-         completionExpectation:mutation.expectation
+         createObserver:nativeEffectBinding.createObserver,
+         completionExpectation:sourceBinding.expectation
         });
-        if(matched?.status!==
-            'signed_gateway_gitea_cas_matches_model_proposed_bytes_only'||
+        if(matched?.status!==(isCreate?
+            'signed_gateway_gitea_create_cas_matches_model_proposed_bytes_only':
+            'signed_gateway_gitea_cas_matches_model_proposed_bytes_only')||
            matched.task_id!==input.taskId||
-           matched.gateway_evidence_sha256!==mutation.evidence_sha256||
+           matched.gateway_evidence_sha256!==sourceBinding.evidence_sha256||
            matched.model_emitted_write_matches_committed_bytes!==true||
-           matched.model_write_and_gateway_receipt_replay_fenced!==true)
-         deny('model proposed source differs from signed Gitea mutation');
-       }else if(ownerGate&&pin.operation==='create_file'){
-        // CREATE needs its own independently verified model-byte witness.
-        // Fail closed instead of silently reporting generative provenance.
-        deny('model CREATE provenance is not yet attestable');
+           matched.model_write_and_gateway_receipt_replay_fenced!==true||
+           matched.branch!==branch||
+           canonicalFileUri(snapshot.repository,branch,matched.path)!==
+            sourceBinding.permission_resource||
+           (isCreate&&matched.old_path_absent_at_pinned_head!==true))
+         deny('model source differs from original signed Gitea file effect');
        }
        gatewayAttestedTaskIds.set(input.taskId,Object.freeze({
         task_id:pin.task_id,agent_id:pin.agent_id
