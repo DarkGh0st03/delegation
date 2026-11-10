@@ -107,6 +107,7 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-private-host-admission.test.mjs
           # Bounded private Gemini ADK calls and cumulative provider-reported usage; synthetic BaseLlm only, no API key.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-budgeted-model.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-task-call-window.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-ci-original-signed-review.test.mjs
           node --test poc/apps/orchestrator/test/disposable-gemini-ci-preflight.test.mjs
           # Original owner Task proposal uses LOW thinking for Gemini 3.8, but retains legacy fixture behavior.
