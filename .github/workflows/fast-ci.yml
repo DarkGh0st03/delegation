@@ -128,6 +128,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-worker-ipc-adk-model.test.mjs
           # Real A2A specialist subprocess starts in a separate PID with only owner model IPC; no live Gemini.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-a2a-worker-launcher.test.mjs
+          # Three original specialist subprocesses and owner Stage/Bind IPC SDK shape, strictly offline.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-offline-subprocess-workers.test.mjs
           # No-inference GitHub Actions liveness/cancellation/revocation fence for the original owner.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-original-github-run-watch.test.mjs
           # Review Host lifecycle: cancellation/Root retirement and single-use startup, no Gemini billing.
