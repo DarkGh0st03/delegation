@@ -143,3 +143,155 @@ test("role expansion, weak host directory, paid mode and missing owner Model aut
   else process.env.DELEGATION_DISPOSABLE_LIVE_MODE=before;
  }
 });
+
+test("original typed Coordinator/Child/Gateway prebind drives one real subprocess A2A model call and terminally fences it",async t=>{
+ // A genuine ORIGINAL bootstrap class and owner prebind are exercised here;
+ // Coordinator/Child/Gateway replies are deterministic offline fixtures,
+ // NOT actual signed Ed25519/Rust artifacts or a successful Gitea/Docker E2E.
+ const {TrustedAuthorityOnlyRemoteEffectBootstrap}=await import(
+  "../../../packages/orchestrator-runtime/src/trusted-authority-only-remote-effect-bootstrap.ts");
+ const {TrustedAuthorityOnlyExecutionCoordinator}=await import(
+  "../../../packages/orchestrator-runtime/src/trusted-authority-only-execution-coordinator.ts");
+ const {TrustedAuthorityOnlyChildIssuer}=await import(
+  "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts");
+ const {TrustedAuthorityOnlyGatewayAdmissions}=await import(
+  "../../gateway/src/trusted-authority-only-admissions.ts");
+ const {canonicalFileUri}=await import(
+  "../../gateway/src/canonical.ts");
+ const {DeterministicA2AOrchestrator}=await import(
+  "../../../packages/agent-runtime/src/orchestrator.ts");
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../src/disposable-gemini-original-ipc-task-admission.mjs");
+ const f=await fixture(t);
+ const role="backend",taskId="original-real-a2a-native-prebind-1";
+ const runtimeTaskId="dispatch_"+"N".repeat(22);
+ const branch="feature/account-suspension";
+ const file="apps/backend/account.ts";
+ const repository={authority:"gitea.local",owner:"thesis",
+  repository:"iam-console-poc"};
+ const permission={resource:canonicalFileUri(repository,branch,file),
+  operation:"read_file"};
+ const root={session_id:"original-session-offline-01",
+  repository,branch,authority_digest:"a".repeat(64),
+  root_credential_id:"synthetic-rust-root",base_revision:"b".repeat(40),
+  requirement_sha256:"c".repeat(64),
+  engineer_did:"did:thesis:engineer",
+  expires_at:new Date(Date.now()+60_000).toISOString(),
+  root_expires_at:new Date(Date.now()+60_000).toISOString(),
+  root_permissions:[permission]};
+ const row={status:"task_registered_preflight_only",
+  session_id:root.session_id,task_id:taskId,epoch:1,agent_id:role,
+  agent_did:"did:thesis:backend-agent",card_ref:"trusted:backend",
+  depends_on:[],permissions:[permission],
+  root_credential_id:root.root_credential_id,
+  authority_digest:root.authority_digest,execution_authorized:false,
+  child_credential_issued:false,gateway_registered:false};
+ const child={status:"native_child_response_verified_staged",
+  session_id:root.session_id,task_id:taskId,epoch:1,
+  agent_id:role,agent_did:row.agent_did,
+  root_credential_id:root.root_credential_id,
+  credential_id:"urn:offline:original-child:backend",
+  authority_digest:root.authority_digest,permissions:[permission],
+  status_list_credential:"status",status_list_index:"0",
+  expires_at:new Date(Date.now()+60_000).toISOString(),
+  gateway_execution_authorized:false};
+ const gatewayProof={status:"gateway_owner_child_task_preflight_only",
+  task_id:taskId,runtime_task_id:runtimeTaskId,
+  agent_id:role,agent_did:row.agent_did,
+  credential_id:child.credential_id,
+  authority_digest:root.authority_digest,
+  gateway_execution_authorized:false};
+ const coordinator=Object.assign(Object.create(
+  TrustedAuthorityOnlyExecutionCoordinator.prototype),{
+   assertTrustedGatewayAuthorityBinding:()=>root,
+   assertTrustedGatewayRegisteredTask:()=>row
+  });
+ Object.defineProperty(coordinator,"phase",{value:"active"});
+ const issuer=Object.assign(Object.create(
+  TrustedAuthorityOnlyChildIssuer.prototype),{
+   assertTrustedIssuedChild:()=>child
+  });
+ const gateway=Object.assign(Object.create(
+  TrustedAuthorityOnlyGatewayAdmissions.prototype),{
+   assertTrustedOwnerRemoteEffectBinding:()=>gatewayProof
+  });
+ Object.defineProperty(gateway,"phase",{value:"active"});
+ const ledger=createDisposableOriginalNativeIpcTaskAdmission({
+  role,assertOriginalRootActive:()=>root
+ });
+ let modelCalls=0;
+ f.handlers.backend={
+  authorizeSignedTask:ledger.authorizeSignedTask,
+  invokeModel:async()=>{
+   modelCalls++;
+   return {chunks:[{content:{role:"model",
+    parts:[{text:"synthetic native-bound readonly response"}]},
+    usageMetadata:{promptTokenCount:5,candidatesTokenCount:3,
+     totalTokenCount:8}}],
+    metered_calls_started:modelCalls,
+    metered_total_tokens:modelCalls*8,
+    owner_original_signed_task_verified_here:false,
+    provider_billed_amount_verified:false,
+    model_generated_source_proven:false};
+  }
+ };
+ const workers=await startDisposableOriginalOfflineSubprocessWorkers({
+  directory:f.directory,sessionId:root.session_id,
+  workers:f.workers,offlineModelHandlers:f.handlers,
+  offlineSyntheticOnly:true
+ });
+ let native;
+ t.after(async()=>{
+  ledger.retireAll();
+  await native?.close().catch(()=>{});
+  await workers.close().catch(()=>{});
+ });
+ native=await TrustedAuthorityOnlyRemoteEffectBootstrap.start({
+  coordinator,childIssuer:issuer,gateway,
+  stageChannels:workers.sdk.stageChannels,
+  agentBindingChannels:workers.sdk.agentBindingChannels
+ });
+ const client=new DeterministicA2AOrchestrator({
+  deadlineMs:15_000,initialIntervalMs:30,maxIntervalMs:100
+ });
+ let staged=0,prebound=false;
+ await assert.rejects(native.dispatchApprovedTask({
+  taskId,runtimeTaskId,
+  effectStager:{async stage(){staged++;}},
+  onNativeOriginalTaskPrebound:receipt=>{
+   ledger.bindOriginalReceipt(receipt,{maxCalls:1});
+   prebound=true;
+   return ()=>ledger.retireTask(runtimeTaskId);
+  },
+  dispatch:()=>client.sendProtectedTask({
+   agent_base_url:workers.sdk.agentBaseUrls.backend,
+   subtask:{
+    subtask_id:taskId,branch,
+    instruction:"Read the single approved path and report observations",
+    relevant_paths:[file],
+    approved_file_permissions:[{path:file,operation:"read_file"}],
+    approved_run_tests:false
+   },
+   delegation_evidence:{
+    credential:"synthetic-offline-DC-no-real-signature",
+    credential_id:child.credential_id,
+    presenter_id:child.agent_did
+   },
+   trusted_gateway_task_id:runtimeTaskId
+  })
+ }),/without completion/u);
+ assert.equal(prebound,true);
+ assert.equal(modelCalls,1);
+ assert.equal(staged,0,
+  "model response is not a Gateway-approved file effect");
+ await assert.rejects(ledger.authorizeSignedTask({
+  role,task:{task_id:taskId,runtime_task_id:runtimeTaskId,
+   credential_id:child.credential_id,session_id:root.session_id},
+  callId:"after-original-native-retirement-01"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(native.dispatchApprovedTask({
+  taskId,runtimeTaskId,effectStager:{async stage(){staged++;}},
+  dispatch:async()=>{}
+ }),/duplicate or invalid owner dispatch/u);
+ assert.equal(modelCalls,1);
+});
