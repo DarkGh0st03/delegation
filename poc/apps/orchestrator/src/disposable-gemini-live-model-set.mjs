@@ -16,7 +16,9 @@ import {DisposablePrivateBudgetedAdkModel,PRIVATE_GEMINI_SESSION_LIMITS,
  DisposablePrivateSessionUsageBudget}
  from "./disposable-gemini-live-budgeted-model.mjs";
 import {execFileSync} from "node:child_process";
-import {dirname,resolve} from "node:path";
+import {dirname,join,resolve,sep} from "node:path";
+import {constants} from "node:fs";
+import {lstat,open,realpath} from "node:fs/promises";
 import {fileURLToPath} from "node:url";
 import {consumePinnedGithubAdmission}
  from "../../../packages/orchestrator-runtime/src/trusted-github-admission-consumer.ts";
@@ -198,6 +200,111 @@ export async function createDisposableLiveGeminiModelSetFromPrivateFile({
  return createDisposableLiveGeminiModelSet({
   env,checkoutSha,privateKeyHandle
  });
+}
+
+/**
+ * ACTIONS-ONLY owner admission. This does not execute any model turn.
+ * Unlike the research-only synthetic constructor, the returned five models
+ * MAY carry a real provider key, but ONLY after the independently checked
+ * manual Actions source/run, an owner-private one-use run marker and explicit
+ * billing confirmations. The workflow currently exposes ONLY preflight-only,
+ * so no deployed Actions path can select this live constructor.
+ *
+ * Do not call this function from A2A, MCP, Docker, generated source or a
+ * workflow step that puts GH_TOKEN/GEMINI_API_KEY in process.env. The future
+ * trusted runner must supply both credentials through isolated owner-only
+ * input, and never pass them on to children or test containers.
+ *
+ * IMPORTANT: model construction and reported-token fences do NOT prove a
+ * monetary cap or permit billing without a separate operator decision.
+ */
+const ACTIONS_LIVE_REF="refs/heads/experiment/disposable-gemini-live-20261109";
+function actionsLivePins(env,checkoutSha){
+ if(!env||typeof env!=="object"||Array.isArray(env)||
+    env.GITHUB_ACTIONS!=="true"||
+    env.GITHUB_REPOSITORY!==REPO||
+    env.GITHUB_EVENT_NAME!=="workflow_dispatch"||
+    env.GITHUB_REF!==ACTIONS_LIVE_REF||
+    env.GITHUB_WORKFLOW_REF!==REPO+"/"+WORKFLOW+"@"+ACTIONS_LIVE_REF||
+    env.GITHUB_RUN_ATTEMPT!=="1"||
+    !/^[1-9][0-9]{0,19}$/u.test(env.GITHUB_RUN_ID??"")||
+    !SHA.test(env.GITHUB_SHA??"")||
+    checkoutSha!==env.GITHUB_SHA||
+    env.DELEGATION_DISPOSABLE_LIVE_MODE!=="gemini-real"||
+    env.DELEGATION_GEMINI_CHARGE_CONFIRMATION!==CHARGE_CONSENT||
+    env.DELEGATION_BILLING_CAP_ACK!==CAP_ACK||
+    env.DELEGATION_LIVE_CI_PREFLIGHT_MODE!==undefined||
+    env.DELEGATION_DISPOSABLE_CI_MODE!==undefined||
+    env.DELEGATION_SIGNED_GEMINI_PILOT!==undefined||
+    env.GEMINI_API_KEY!==undefined||
+    env.GOOGLE_API_KEY!==undefined||
+    env.OPENAI_API_KEY!==undefined||
+    env.GH_TOKEN!==undefined||
+    env.GITHUB_TOKEN!==undefined)deny();
+ return Object.freeze({
+  runId:env.GITHUB_RUN_ID,sourceSha:checkoutSha,ref:ACTIONS_LIVE_REF
+ });
+}
+function observedCleanCheckoutSha(){
+ try{
+  const head=execFileSync("git",["rev-parse","--verify","HEAD"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+  const dirty=execFileSync("git",["status","--porcelain",
+   "--untracked-files=all"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+  if(!SHA.test(head)||dirty)deny();
+  return head;
+ }catch{deny();}
+}
+async function consumeActionsOwnerSessionMarker(keyFile,pins){
+ if(typeof keyFile!=="string"||!keyFile.startsWith("/")||
+    resolve(keyFile)!==keyFile)deny();
+ const parent=dirname(keyFile);
+ if(parent===SOURCE_ROOT||parent.startsWith(SOURCE_ROOT+sep))deny();
+ try{
+  const stat=await lstat(parent);
+  if(!stat.isDirectory()||stat.isSymbolicLink()||
+     (stat.mode&0o777)!==0o700||
+     (typeof process.getuid==="function"&&stat.uid!==process.getuid())||
+     await realpath(parent)!==parent)deny();
+  // Claim is durable. Any failure after O_EXCL burns this run; the owner
+  // must not restart with an ambiguous provider call or a new model set.
+  const marker=join(parent,
+   "delegation-live-"+pins.runId+"-"+pins.sourceSha+".claimed");
+  const fd=await open(marker,constants.O_WRONLY|constants.O_CREAT|
+   constants.O_EXCL|constants.O_NOFOLLOW,0o600);
+  try{
+   await fd.writeFile("claimed;no-proof-of-billing\n");
+   await fd.sync();
+  }finally{await fd.close();}
+ }catch{deny();}
+}
+/**
+ * ZERO inference. The GitHub REST response must independently corroborate
+ * the active workflow_dispatch (including its exact source commit).
+ * The one-use marker is acquired BEFORE opening the Gemini key.
+ * Returned models are one-shot bound by claimIssuedDisposableLiveGeminiModelSet.
+ */
+export async function createDisposableActionsOwnerGeminiModelsFromPrivateFile({
+ keyFile,githubApiToken
+}={}){
+ const checkoutSha=observedCleanCheckoutSha();
+ const pins=actionsLivePins(process.env,checkoutSha);
+ if(typeof githubApiToken!=="string"||githubApiToken.length<16||
+    typeof keyFile!=="string")deny();
+ await verifyGithubManualRunViaApi({
+  dispatch:{run_id:pins.runId,source_sha:pins.sourceSha},
+  pinned:{repository:REPO,ref:pins.ref,
+   workflowPath:WORKFLOW,sourceSha:pins.sourceSha},
+  githubApiToken
+ });
+ await consumeActionsOwnerSessionMarker(keyFile,pins);
+ const handle=await loadProtectedDisposableGeminiKeyFile(keyFile);
+ return assembleVerifiedModels(handle);
 }
 
 /**

@@ -112,6 +112,7 @@ jobs:
           # Original owner Task proposal uses LOW thinking for Gemini 3.8, but retains legacy fixture behavior.
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/disposable-gemini-low-thinking-task-choice.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-model-set.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-owner-models.test.mjs
           # Experimental owner-only canonical model binding: synthetic key, no provider inference.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-live-canonical-binding.test.mjs
           # Integration against ORIGINAL typed native Gateway/Root provisioning with synthetic ADK models. No Root reservation or provider call.
