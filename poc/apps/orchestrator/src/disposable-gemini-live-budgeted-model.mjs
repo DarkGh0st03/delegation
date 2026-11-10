@@ -202,7 +202,9 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
   }
   this.#calls++;
   const combined=AbortSignal.any([
-   AbortSignal.timeout(60000),
+   // Original paid A2A/Planning budget: up to three minutes per call.
+   // All partial responses remain buffered and fenced on abort.
+   AbortSignal.timeout(180000),
    ...(signal?[signal]:[])
   ]);
   let last=null,chunks=0,bytes=0,finished=false;

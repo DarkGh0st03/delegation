@@ -15,15 +15,25 @@ const exact=(obj,fields)=>obj&&typeof obj==='object'&&!Array.isArray(obj)&&
 const pair=p=>JSON.stringify([p.operation,p.resource]);
 // Roles are owner-provisioned. Orchestrator and Test remain privileged exceptions.
 const isFileSpecialist=role=>role!=='orchestrator'&&role!=='test';
+// Deliberate research-only timing policy: a model label cannot change
+// delegated permissions, and non-Gemini scripted legacy tests retain the
+// original 25s/30s limits. The private Gemini budget wrapper separately
+// imposes the same 180s per-call maximum.
+export function originalAuthorityOnlyDecisionTimeouts(modelName){
+ return modelName==="gemini-3.8-flash"?
+  Object.freeze({modelCallMs:180000,decisionMs:190000}):
+  Object.freeze({modelCallMs:25000,decisionMs:30000});
+}
 class SingleDecisionModel extends BaseLlm{
- constructor(delegate,deadline){
+ constructor(delegate,deadline,modelCallMs){
   super({model:delegate.model});
-  this.delegate=delegate;this.deadline=deadline;this.calls=0;
+  this.delegate=delegate;this.deadline=deadline;
+  this.modelCallMs=modelCallMs;this.calls=0;
  }
  async *generateContentAsync(req,stream,signal){
   if(++this.calls!==1||this.deadline.aborted)fail();
   const bounded=AbortSignal.any([this.deadline,
-   AbortSignal.timeout(25000),...(signal?[signal]:[])]);
+   AbortSignal.timeout(this.modelCallMs),...(signal?[signal]:[])]);
   for await(const response of this.delegate.generateContentAsync(req,stream,bounded)){
    if(bounded.aborted||response.errorCode||response.errorMessage)fail();
    yield response;
@@ -212,8 +222,10 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
  async propose(){
   if(this.#attempted)fail();
   this.#attempted=true;
-  const deadline=AbortSignal.timeout(30000);
-  const model=new SingleDecisionModel(this.model,deadline);
+  const {modelCallMs,decisionMs}=
+   originalAuthorityOnlyDecisionTimeouts(this.model.model);
+  const deadline=AbortSignal.timeout(decisionMs);
+  const model=new SingleDecisionModel(this.model,deadline,modelCallMs);
   const agent=new LlmAgent({
    name:'owner_authority_only_task_decider',
    description:'Suggest one Task; trusted Coordinator validates and owns all grants',
