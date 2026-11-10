@@ -27,6 +27,8 @@ import {createDisposableActionsOriginalGithubRunWatch}
  from "./disposable-gemini-actions-original-github-run-watch.mjs";
 import {writeOriginalDisposableActionsEngineerReceipt}
  from "./disposable-ci-original-signed-review.mjs";
+import {attestDisposableActionsOriginalPlanningCompletion}
+ from "./disposable-gemini-actions-original-planning-evidence.mjs";
 
 const CONFIRM="I AUTHORIZE GEMINI API CHARGES";
 const CAP="I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
@@ -136,6 +138,13 @@ export async function startDisposableActionsOriginalReviewSession({
  try{
   await session.checkGithubRunActive();
   const authority=claimed.authority;
+  // The original Review Host has now completed its signed Planning. Refuse
+  // a signed simulated Engineer receipt if the actual model had no complete,
+  // metered response (a timed-out call counter is not such evidence).
+  const planningEvidence=attestDisposableActionsOriginalPlanningCompletion(
+   authority
+  );
+  await session.checkGithubRunActive();
   const originalReview=await writeOriginalDisposableActionsEngineerReceipt({
    checkpointStore:authority.checkpoint.store,
    snapshot:authority.snapshot,
@@ -163,6 +172,11 @@ export async function startDisposableActionsOriginalReviewSession({
    status:"actions_original_ci_simulated_engineer_review_signed_post_planning",
    original_engineer_decision:"SIMULATED_NOT_HUMAN",
    original_review_verified:true,
+   original_planning_metered_calls:planningEvidence.calls_started,
+   original_planning_reported_total_tokens:planningEvidence.reported_total_tokens,
+   model_authored_code_proven:false,
+   provider_billing_verified:false,
+   monetary_cap_enforced:false,
    get phase(){return session.phase;},
    get engineerUrl(){return session.engineerUrl;},
    get githubRunStatus(){return session.githubRunStatus;},

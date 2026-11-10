@@ -123,6 +123,8 @@ jobs:
           # No-inference GitHub Actions liveness/cancellation/revocation fence for the original owner.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-original-github-run-watch.test.mjs
           # Review Host lifecycle: cancellation/Root retirement and single-use startup, no Gemini billing.
+          # Actual owner-memory Planning completion is required before simulated Engineer signing (synthetic ADK only).
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-original-planning-evidence.test.mjs
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-original-review-session.test.mjs
           # Private original Engineer Review Host composition: negative-only tests, NEVER launch inference.
           # Original Backend signer: pinned Ed25519 private key plus original checkpoint store, no inference.
