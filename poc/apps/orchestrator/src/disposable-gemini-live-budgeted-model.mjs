@@ -14,6 +14,7 @@
  * MAY carry a real Gemini delegate. Never allow it in no-billing CI runs.
  */
 import {BaseLlm} from "@google/adk";
+import {createHash} from "node:crypto";
 
 const PHASES=new Set(["planning","adaptive-execution","backend","frontend","test"]);
 const deny=()=>{throw Error("Disposable private Gemini request budget NO-GO");};
@@ -54,6 +55,49 @@ function nextBeforeAbort(iterator,signal){
    return iterator.next();
   }).then(value=>finish(resolve,value),error=>finish(reject,error));
  });
+}
+/**
+ * Owner-memory fingerprint of a model-proposed file write, NOT an executed
+ * Gateway mutation or evidence of which service generated the model output.
+ *
+ * Only read after a WHOLE metered provider response completes. Never store
+ * full source, API keys, prompts, function-call IDs or Gateway credentials.
+ * The existing authenticated Gateway mutation receipt carries the same
+ * SHA-256 of the successfully committed UTF-8 content. A future original
+ * owner may reconcile the two only AFTER independent receipt verification.
+ */
+function fingerprintModelWrites(buffered,phase,callIndex){
+ const observed=[];
+ for(const response of buffered){
+  const parts=response?.content?.parts;
+  if(!Array.isArray(parts))continue; // usage-only responses are allowed
+  for(const part of parts){
+   const call=part?.functionCall;
+   if(!call||!["update_file","create_file"].includes(call.name))continue;
+   const args=call.args;
+   if(!["backend","frontend","test"].includes(phase)||
+      !args||typeof args!=="object"||Array.isArray(args)||
+      Object.keys(args).sort().join(",")!=="branch,content,path"||
+      args.branch!=="feature/account-suspension"||
+      typeof args.path!=="string"||
+      args.path.length<1||args.path.length>512||
+      args.path.startsWith("/")||
+      args.path.split("/").some(segment=>
+       !segment||segment==="."||segment===".."||
+       segment.includes("%")||segment.includes("\\\\"))||
+      typeof args.content!=="string")deny();
+   const size=Buffer.byteLength(args.content,"utf8");
+   if(size<1||size>2_000_000)deny();
+   observed.push(Object.freeze({
+    role:phase,call_index:callIndex,operation:call.name,
+    branch:args.branch,path:args.path,
+    source_sha256:createHash("sha256").update(args.content,"utf8")
+     .digest("hex"),
+    source_bytes:size
+   }));
+  }
+ }
+ return observed;
 }
 async function* boundedResponses(source,signal){
  const iterator=source?.[Symbol.asyncIterator]?.();
@@ -142,7 +186,7 @@ export class DisposablePrivateSessionUsageBudget{
 export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  #delegate;#phase;#maxCalls;#maxTokens;#maxPerCall;
  #calls=0;#reportedTotal=0;#input=0;#output=0;
- #busy=false;#blocked=false;#sessionBudget;
+ #busy=false;#blocked=false;#sessionBudget;#proposedWrites=[];
  constructor({
   delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens,sessionBudget
  }={}){
@@ -176,8 +220,19 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    blocked:this.#blocked,
    real_generated_source_proven:false,
    billed_amount_measured:false,
-   monetary_cap_enforced:false
+   monetary_cap_enforced:false,
+   model_proposed_write_fingerprints:this.#proposedWrites.length,
+   independently_attested_gitea_mutations:0
   });
+ }
+ /**
+  * Original trusted owner may compare these hashes against an independently
+  * authenticated Gateway/Gitea mutation receipt. Hash coincidence alone is
+  * NOT proof of live Gemini provenance, successful tool execution or billing.
+  * No raw code or model reasoning is returned.
+  */
+ proposedSourceWriteFingerprints(){
+  return Object.freeze([...this.#proposedWrites]);
  }
  async *generateContentAsync(request,stream,signal){
   if(this.#busy){
@@ -233,7 +288,10 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    // No partial response (especially FunctionTool calls) may be executed
    // without a final, valid provider-reported usage entry.
    if(this.#blocked||combined.aborted||!last)deny();
+   const proposedWrites=fingerprintModelWrites(buffered,this.#phase,this.#calls);
+   if(this.#proposedWrites.length+proposedWrites.length>256)deny();
    if(sessionClaim)this.#sessionBudget.commit(sessionClaim,last.total);
+   this.#proposedWrites.push(...proposedWrites);
    this.#reportedTotal+=last.total;
    this.#input+=last.input;
    this.#output+=last.output;

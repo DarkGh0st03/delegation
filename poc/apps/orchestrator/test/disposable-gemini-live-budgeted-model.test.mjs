@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {BaseLlm} from "@google/adk";
+import {createHash} from "node:crypto";
 import {
  DisposablePrivateBudgetedAdkModel,
  DisposablePrivateSessionUsageBudget,
@@ -384,4 +385,79 @@ test("session worker slots allow repeated original per-Task turn budgets",()=>{
  assert.equal(summary.max_calls,160);
  assert.equal(summary.max_reported_tokens,1_000_000);
  assert.equal(summary.monetary_cap_enforced,false);
+});
+
+test("complete metered ADK write records only SHA-256, not source code or fake Gitea provenance",async()=>{
+ const source="export const accountSuspended = true;\n";
+ const write={content:{role:"model",parts:[{functionCall:{
+  id:"not-logged",name:"update_file",
+  args:{branch:"feature/account-suspension",
+   path:"apps/backend/src/users/user.service.ts",content:source}
+ }}]},usageMetadata:reported(3,5)};
+ const model=wrapped(new OfflineDelegate(async function*(){yield write;}));
+ assert.deepEqual(model.proposedSourceWriteFingerprints(),[]);
+ const received=await collect(model);
+ assert.equal(received.length,1);
+ const [record]=model.proposedSourceWriteFingerprints();
+ assert.deepEqual(Object.keys(record).sort(),[
+  "branch","call_index","operation","path","role","source_bytes",
+  "source_sha256"
+ ]);
+ assert.equal(record.role,"backend");
+ assert.equal(record.call_index,1);
+ assert.equal(record.operation,"update_file");
+ assert.equal(record.branch,"feature/account-suspension");
+ assert.equal(record.source_bytes,Buffer.byteLength(source,"utf8"));
+ assert.equal(record.source_sha256,
+  createHash("sha256").update(source,"utf8").digest("hex"));
+ assert.equal(Object.isFrozen(record),true);
+ assert.equal(Object.isFrozen(model.proposedSourceWriteFingerprints()),true);
+ assert.equal(model.publicSummary().model_proposed_write_fingerprints,1);
+ assert.equal(model.publicSummary().independently_attested_gitea_mutations,0);
+ assert.equal(model.publicSummary().real_generated_source_proven,false);
+ assert.equal(model.publicSummary().monetary_cap_enforced,false);
+ const logged=JSON.stringify(model.publicSummary())+
+  JSON.stringify(model.proposedSourceWriteFingerprints());
+ assert.ok(!logged.includes(source));
+ assert.ok(!logged.includes("not-logged"));
+});
+
+test("unmetered or aborted tool proposal is never recorded as a completed model output",async()=>{
+ const proposed={content:{role:"model",parts:[{functionCall:{
+  name:"update_file",args:{branch:"feature/account-suspension",
+   path:"apps/frontend/src/api/users-api.ts",content:"attempted"}
+ }}]}};
+ for(const failure of ["missing-usage","provider-exception"]){
+  const model=wrapped(new OfflineDelegate(async function*(){
+   yield proposed;
+   if(failure==="provider-exception")throw Error("provider interrupted");
+  }));
+  await assert.rejects(collect(model),
+   failure==="provider-exception"?/provider interrupted/u:DENY);
+  assert.deepEqual(model.proposedSourceWriteFingerprints(),[]);
+  assert.equal(model.publicSummary().model_proposed_write_fingerprints,0);
+  assert.equal(model.publicSummary().blocked,true);
+ }
+});
+
+test("invalid model write arguments and orchestrator writes deny before any ADK tool effect",async()=>{
+ const good={branch:"feature/account-suspension",
+  path:"packages/shared/src/account-status.ts",content:"valid"};
+ const variants=[
+  {phase:"backend",args:{...good,branch:"main"}},
+  {phase:"backend",args:{...good,path:"../exfiltrate"}},
+  {phase:"backend",args:{...good,extra:"unreviewed"}},
+  {phase:"backend",args:{...good,content:45}},
+  {phase:"adaptive-execution",args:good}
+ ];
+ for(const testCase of variants){
+  const model=wrapped(new OfflineDelegate(async function*(){
+   yield {content:{role:"model",parts:[{functionCall:{
+    name:"update_file",args:testCase.args
+   }}]},usageMetadata:reported(1,2)};
+  }),{phase:testCase.phase});
+  await assert.rejects(collect(model),DENY);
+  assert.deepEqual(model.proposedSourceWriteFingerprints(),[]);
+  assert.equal(model.publicSummary().blocked,true);
+ }
 });
