@@ -12,8 +12,9 @@ import {fileURLToPath} from "node:url";
 
 const ROLE=new Set(["backend","frontend","test"]);
 const KEYS=[
- "adapterBaseUrl","adapterToken","gatewayBaseUrl","maxCalls",
- "modelSecretFile","modelSocketPath","port","role","task"
+ "adapterBaseUrl","adapterToken","bindSecretFile","bindSocketPath",
+ "gatewayBaseUrl","maxCalls","modelSecretFile","modelSocketPath",
+ "port","role","stageSecretFile","stageSocketPath","task"
 ];
 const deny=()=>{throw Error("Disposable original A2A subprocess launcher NO-GO");};
 export async function startDisposableOriginalA2aWorkerSubprocess(config){
@@ -28,7 +29,16 @@ export async function startDisposableOriginalA2aWorkerSubprocess(config){
     typeof config.gatewayBaseUrl!=="string"||
     typeof config.adapterBaseUrl!=="string"||
     typeof config.modelSocketPath!=="string"||
-    typeof config.modelSecretFile!=="string")deny();
+    typeof config.modelSecretFile!=="string"||
+    typeof config.bindSocketPath!=="string"||
+    typeof config.bindSecretFile!=="string"||
+    typeof config.stageSocketPath!=="string"||
+    typeof config.stageSecretFile!=="string"||
+    new Set([
+     config.modelSocketPath,config.modelSecretFile,
+     config.bindSocketPath,config.bindSecretFile,
+     config.stageSocketPath,config.stageSecretFile
+    ]).size!==6)deny();
  const entry=fileURLToPath(new URL(
   "./disposable-gemini-original-a2a-worker-child.mjs",import.meta.url
  ));
@@ -38,7 +48,11 @@ export async function startDisposableOriginalA2aWorkerSubprocess(config){
   execArgv:["--experimental-strip-types"],
   env:{
    PATH:process.env.PATH??"/usr/bin:/bin",
-   LANG:"C.UTF-8",TZ:"UTC",HOME:"/nonexistent"
+   LANG:"C.UTF-8",TZ:"UTC",HOME:"/nonexistent",
+   // Require the ORIGINAL per-Task authenticated registry inside A2A,
+   // even in an offline subprocess. Native Rust MCP remains disabled
+   // until the complete privileged OS isolation is established.
+   DELEGATION_GATEWAY_ARCHITECTURE:"authority-only"
   },
   stdio:["ignore","ignore","ignore","ipc"],
   windowsHide:true
@@ -98,10 +112,12 @@ export async function startDisposableOriginalA2aWorkerSubprocess(config){
      ready.baseUrl!==`http://127.0.0.1:${config.port}`||
      ready.providerCredentialPresent!==false||
      ready.originalNativeTaskBindingPresent!==false||
+     ready.originalTaskBindingChannelReady!==true||
      ready.osIsolationVerified!==false)deny();
   return Object.freeze({
    role:config.role,pid:child.pid,baseUrl:ready.baseUrl,
    originalNativeTaskBindingPresent:false,
+   originalTaskBindingChannelReady:true,
    osIsolationVerified:false,
    close
   });

@@ -15,6 +15,11 @@ import {createDisposableOriginalWorkerIpcAdkModel}
  from "./disposable-gemini-original-worker-ipc-adk-model.mjs";
 import {startSpecializedAgentServer}
  from "../../../packages/agent-runtime/src/server.ts";
+import {TrustedEffectStagingTaskRegistry}
+ from "../../../packages/agent-runtime/src/trusted-effect-staging-task-registry.ts";
+import {connectTrustedOwnerEffectStagingClient,
+ createTrustedEffectAgentBindingServer}
+ from "../../../packages/agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 const ROLES=new Set(["backend","frontend","test"]);
 const deny=()=>{throw Error("Disposable original A2A child process NO-GO");};
@@ -26,7 +31,7 @@ const mustBeClean=()=>{
   if(Object.hasOwn(process.env,key))deny();
  }
 };
-let server,model,active=false,stopping=false;
+let server,model,binder,active=false,stopping=false;
 const send=message=>{
  if(process.connected&&typeof process.send==="function")process.send(message);
 };
@@ -34,11 +39,16 @@ const shutdown=async()=>{
  if(stopping)return;
  stopping=true;
  model?.retire();
- if(server)await server.close();
+ // Revoking the original owner->agent Task/Child binder retires all
+ // one-shot effects even when the A2A listener has already stopped.
+ const closing=[server?.close(),binder?.close()].filter(Boolean);
+ const outcomes=await Promise.allSettled(closing);
+ if(outcomes.some(outcome=>outcome.status==="rejected"))deny();
 };
 const configKeys=[
- "adapterBaseUrl","adapterToken","gatewayBaseUrl","maxCalls",
- "modelSecretFile","modelSocketPath","port","role","task"
+ "adapterBaseUrl","adapterToken","bindSecretFile","bindSocketPath",
+ "gatewayBaseUrl","maxCalls","modelSecretFile","modelSocketPath",
+ "port","role","stageSecretFile","stageSocketPath","task"
 ];
 const start=async message=>{
  if(active||stopping||!message||message.type!=="start"||
@@ -58,7 +68,16 @@ const start=async message=>{
     typeof cfg.adapterToken!=="string"||
     cfg.adapterToken.length<8||cfg.adapterToken.length>512||
     typeof cfg.modelSocketPath!=="string"||
-    typeof cfg.modelSecretFile!=="string")deny();
+    typeof cfg.modelSecretFile!=="string"||
+    typeof cfg.bindSocketPath!=="string"||
+    typeof cfg.bindSecretFile!=="string"||
+    typeof cfg.stageSocketPath!=="string"||
+    typeof cfg.stageSecretFile!=="string"||
+    new Set([
+     cfg.modelSocketPath,cfg.modelSecretFile,
+     cfg.bindSocketPath,cfg.bindSecretFile,
+     cfg.stageSocketPath,cfg.stageSecretFile
+    ]).size!==6)deny();
  const client=await connectDisposableWorkerModelIpcClient({
   role:cfg.role,socketPath:cfg.modelSocketPath,
   secretFile:cfg.modelSecretFile
@@ -66,6 +85,21 @@ const start=async message=>{
  model=createDisposableOriginalWorkerIpcAdkModel({
   role:cfg.role,task:cfg.task,client,maxCalls:cfg.maxCalls
  });
+ // ORIGINAL owner->agent binding and owner staging transports, previously
+ // hosted in the same PID as the owner. Now the Task registry and binder
+ // live in THIS A2A specialist PID; the owner retains its Stage registry.
+ // An A2A request cannot bind itself. Only the owner's HMAC-protected
+ // bind socket can prebind the exact signed Child/Task pins.
+ const trustedEffectTaskRegistry=new TrustedEffectStagingTaskRegistry();
+ const ownerStageClient=await connectTrustedOwnerEffectStagingClient({
+  socketPath:cfg.stageSocketPath,secretFile:cfg.stageSecretFile
+ });
+ binder=await createTrustedEffectAgentBindingServer({
+  socketPath:cfg.bindSocketPath,secretFile:cfg.bindSecretFile,
+  expectedRole:cfg.role,registry:trustedEffectTaskRegistry,
+  ownerStageClient
+ });
+ await binder.start();
  // This private per-worker MCP key is NOT the Engineer approval signing
  // key. The original native authority/Gateway remains separate.
  const ephemeral=generateKeyPairSync("ed25519");
@@ -74,7 +108,8 @@ const start=async message=>{
   capabilityProfile:"approved-plan",delegatedAuthorization:true,
   adk:{model,gatewayBaseUrl:cfg.gatewayBaseUrl,
    adapterBaseUrl:cfg.adapterBaseUrl,
-   adapterToken:cfg.adapterToken,maxModelTurns:cfg.maxCalls},
+   adapterToken:cfg.adapterToken,maxModelTurns:cfg.maxCalls,
+   trustedEffectTaskRegistry},
   mcpTaskSigning:{
    signingPrivateKeyPem:ephemeral.privateKey.export({
     format:"pem",type:"pkcs8"}).toString(),
@@ -86,6 +121,7 @@ const start=async message=>{
   baseUrl:server.baseUrl,
   providerCredentialPresent:false,
   originalNativeTaskBindingPresent:false,
+  originalTaskBindingChannelReady:true,
   osIsolationVerified:false});
 };
 mustBeClean();

@@ -10,6 +10,11 @@ import {startDisposableOwnerModelIpcServer}
  from "../src/disposable-gemini-owner-worker-ipc.mjs";
 import {startDisposableOriginalA2aWorkerSubprocess}
  from "../src/disposable-gemini-original-a2a-worker-launcher.mjs";
+import {TrustedOwnerEffectStagingRegistry,
+ createTrustedOwnerEffectStagingServer,
+ connectTrustedEffectAgentBindingClient,
+ connectTrustedOwnerEffectStagingClient}
+ from "../../../packages/agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 const task=Object.freeze({
  session_id:"offline-owner-session-1",
@@ -29,8 +34,19 @@ async function fixture(t){
  const dir=await mkdtemp(join(tmpdir(),"disposable-worker-a2a-"));
  const modelSocketPath=join(dir,"model.sock");
  const modelSecretFile=join(dir,"model.hex");
- await writeFile(modelSecretFile,randomBytes(32).toString("hex")+"\n",
-  {mode:0o600,flag:"wx"});
+ const bindSocketPath=join(dir,"bind.sock");
+ const bindSecretFile=join(dir,"bind.hex");
+ const stageSocketPath=join(dir,"stage.sock");
+ const stageSecretFile=join(dir,"stage.hex");
+ for(const file of [modelSecretFile,bindSecretFile,stageSecretFile])
+  await writeFile(file,randomBytes(32).toString("hex")+"\n",
+   {mode:0o600,flag:"wx"});
+ const ownerStageRegistry=new TrustedOwnerEffectStagingRegistry();
+ const stageServer=await createTrustedOwnerEffectStagingServer({
+  socketPath:stageSocketPath,secretFile:stageSecretFile,
+  expectedRole:"backend",registry:ownerStageRegistry
+ });
+ await stageServer.start();
  let modelCalls=0;
  const owner=await startDisposableOwnerModelIpcServer({
   role:"backend",socketPath:modelSocketPath,secretFile:modelSecretFile,
@@ -51,16 +67,26 @@ async function fixture(t){
  });
  t.after(async()=>{
   await owner.close().catch(()=>{});
+  await stageServer.close().catch(()=>{});
   await rm(dir,{recursive:true,force:true});
  });
  const config={
   role:"backend",port:await port(),task,maxCalls:2,
   modelSocketPath,modelSecretFile,
+  bindSocketPath,bindSecretFile,stageSocketPath,stageSecretFile,
   adapterToken:"offline-adapter-token",
   gatewayBaseUrl:"http://127.0.0.1:19121",
   adapterBaseUrl:"http://127.0.0.1:19122"
  };
- return {config,modelCalls:()=>modelCalls};
+ return {config,modelCalls:()=>modelCalls,ownerStageRegistry,
+  connectBinder:()=>connectTrustedEffectAgentBindingClient({
+   socketPath:bindSocketPath,secretFile:bindSecretFile,
+   expectedRole:"backend"
+  }),
+  connectStage:()=>connectTrustedOwnerEffectStagingClient({
+   socketPath:stageSocketPath,secretFile:stageSecretFile
+  })
+ };
 }
 test("actual specialized Backend A2A server starts in a second sanitized Node PID",async t=>{
  const f=await fixture(t);
@@ -70,6 +96,7 @@ test("actual specialized Backend A2A server starts in a second sanitized Node PI
  assert.equal(child.role,"backend");
  assert.equal(child.osIsolationVerified,false);
  assert.equal(child.originalNativeTaskBindingPresent,false);
+ assert.equal(child.originalTaskBindingChannelReady,true);
  const response=await fetch(new URL(AGENT_CARD_PATH,child.baseUrl+'/').href);
  assert.equal(response.status,200);
  const card=await response.json();
@@ -102,4 +129,43 @@ test("offline A2A subprocess refuses paid mode and forged specialist role",async
   if(previous===undefined)delete process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
   else process.env.DELEGATION_DISPOSABLE_LIVE_MODE=previous;
  }
+});
+
+test("ORIGINAL owner HMAC-binds a signed-Task claim into separate Backend A2A PID, stages exactly once and fences it",async t=>{
+ const f=await fixture(t);
+ const child=await startDisposableOriginalA2aWorkerSubprocess(f.config);
+ t.after(()=>child.close().catch(()=>{}));
+ const owner=await f.connectBinder();
+ const stage=await f.connectStage();
+ let staged=0;
+ const pins={
+  runtimeTaskId:task.runtime_task_id,
+  planTaskId:task.task_id,
+  childCredentialId:task.credential_id,
+  presenterId:"did:thesis:backend-agent",
+  branch:"feature/account-suspension",
+  role:"backend",operation:"read_file",
+  path:"apps/backend/account.ts"
+ };
+ f.ownerStageRegistry.bindTask(task.runtime_task_id,{
+  async stage(requestId){
+   assert.equal(requestId,"owner-pinned-original-read-01");
+   staged++;
+  }
+ },"backend");
+ await assert.rejects(owner.bindTask({...pins,role:"frontend"}),
+  /wrong-role owner Task pins|malformed owner Task pins/u);
+ await owner.bindTask(pins); // original HMAC -> worker process registry
+ await assert.rejects(owner.bindTask(pins),
+  /Authenticated private effect operation denied/u);
+ // The parent owner Stage channel remains a distinct authorized RPC.
+ await stage.stage(task.runtime_task_id,"owner-pinned-original-read-01");
+ assert.equal(staged,1);
+ await owner.fence(task.runtime_task_id);
+ await assert.rejects(owner.fence(task.runtime_task_id),
+  /Authenticated private effect operation denied/u);
+ assert.equal(child.osIsolationVerified,false);
+ assert.equal(child.originalNativeTaskBindingPresent,false);
+ // No Task has been dispatched or model called by this prebind proof.
+ assert.equal(f.modelCalls(),0);
 });
