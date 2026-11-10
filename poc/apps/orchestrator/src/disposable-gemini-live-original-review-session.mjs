@@ -19,9 +19,10 @@
  * registered workflow, physical host isolation and explicit user consent.
  */
 import {loadProtectedCanonicalOwnerManifest,
- assembleProtectedCanonicalOwnerAuthority,
- createProtectedCanonicalOperationalProvision}
+ assembleProtectedCanonicalOwnerAuthority}
  from "./trusted-authority-only-owner-bootstrap.mjs";
+import {prepareDisposableOriginalGeminiNativeProvision}
+ from "./disposable-gemini-original-native-provision.mjs";
 import {startTrustedAuthorityOnlyReviewHost}
  from "./trusted-authority-only-review-host.mjs";
 import {createDisposableLiveGeminiModelSetFromPrivateHostAdmission}
@@ -136,20 +137,12 @@ export async function startDisposableGeminiOriginalReviewSession({
   forbiddenFiles:[configPath,keyFile]
  });
 
- // All native transports are prepared by the original bootstrap. The
- // callbacks do not execute Git mutations; only reviewed execution can.
- const nativeProvision=await createProtectedCanonicalOperationalProvision(
-  signedAuthority,bound.operational
- );
- // Same original reviewed host, no alternate Root or Engineeer grant.
- // The wrapper passes a one-use, owner-minted reconciliation capability.
- const provision=async()=>{
-  const ready=await nativeProvision();
-  if(typeof bound.reconcileVerifiedOriginalWorkerFileEffect!=="function")
-   deny();
-  return Object.freeze({...ready,
-   ownerSourceGate:bound.reconcileVerifiedOriginalWorkerFileEffect});
- };
+ // The exact same original native provision is now reusable by the future
+ // disposable Actions owner. No second signer, Root, worker or effect path.
+ // This only prepares a one-shot owner capability, never issues the Root.
+ const {provision}=await prepareDisposableOriginalGeminiNativeProvision({
+  bound,signedAuthority
+ });
 
  // A one-use OIDC admission is NOT lasting permission to execute.
  // Revalidate the active GitHub job BEFORE launching paid Planning, then

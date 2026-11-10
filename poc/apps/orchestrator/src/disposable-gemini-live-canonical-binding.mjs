@@ -25,6 +25,7 @@ import {mintDisposableOwnerSourceGate}
 export {isIssuedDisposableOwnerSourceGate}
  from "./disposable-gemini-owner-source-gate-brand.mjs";
 const ROLES=Object.freeze(["backend","frontend","test"]);
+const ISSUED_BINDINGS=new WeakSet();
 const deny=()=>{throw Error("Disposable live canonical binding NO-GO");};
 const plain=x=>!!x&&typeof x==="object"&&!Array.isArray(x)&&
  Object.getPrototypeOf(x)===Object.prototype;
@@ -194,10 +195,19 @@ export function bindDisposableLiveGeminiCanonicalInputs({
  // One OIDC-admitted set may bind only ONE owner session; no model reuse
  // as a second parallel Root/Planning launch with the same admission.
  claimIssuedDisposableLiveGeminiModelSet(models);
- return Object.freeze({authority:nextAuthority,operational:nextOperational,
+ const issued=Object.freeze({authority:nextAuthority,operational:nextOperational,
   ownerModelTaskWindowStores:Object.freeze(ownerModelTaskWindowStores),
   ...(ownerReconcile?{
    // Host-only: before the next independently signed Task changes Gitea HEAD.
    reconcileVerifiedOriginalWorkerFileEffect:ownerReconcile
   }:{})});
+ ISSUED_BINDINGS.add(issued);
+ return issued;
+}
+/** Consume a genuine, original owner-local binding once per native provision.
+ * A plain object containing copied models or a forged callback cannot pass. */
+export function claimDisposableOriginalOwnerBinding(candidate){
+ if(!candidate||typeof candidate!=="object"||
+    !ISSUED_BINDINGS.delete(candidate))deny();
+ return candidate;
 }

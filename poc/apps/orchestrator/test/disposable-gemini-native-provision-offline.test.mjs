@@ -31,6 +31,8 @@ import {bindDisposableLiveGeminiCanonicalInputs}
  from "../src/disposable-gemini-live-canonical-binding.mjs";
 import {DisposableOriginalA2AModelCallWindowStore}
  from "../src/disposable-gemini-original-task-call-window.mjs";
+import {prepareDisposableOriginalGeminiNativeProvision}
+ from "../src/disposable-gemini-original-native-provision.mjs";
 
 const SHA="a".repeat(40);
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -118,7 +120,13 @@ async function fixture(t){
    }
   },
   planner:{planId:"original-plan"},
-  checkpoint:{backendKeyId:"original-backend-id",store:{original:true}},
+  checkpoint:{backendKeyId:"original-backend-id",store:{
+   original:true,
+   assertSigner(id,pem){
+    assert.equal(id,"original-backend-id");
+    assert.equal(pem,"synthetic-backend-signature-key-fixture");
+   }
+  }},
   workBranch:"feature/account-suspension",
   trustedAgentRegistry:{
    orchestrator:{did:"did:original:orchestrator"},
@@ -349,8 +357,33 @@ test("GitHub Actions one-use consented owner models bind every ORIGINAL typed na
   bound.authority,bound.operational
  );
  assert.equal(typeof provision,"function");
+ // The new ORIGINAL owner provision stage consumes the same issued
+ // action-owner binding, original checkpoint store and trusted Gateway.
+ // This test uses a synthetic signer fixture: it never calls provision().
+ const signedAuthority=Object.freeze({...bound.authority,
+  checkpoint:Object.freeze({...bound.authority.checkpoint,
+   backendPrivateKeyPem:"synthetic-backend-signature-key-fixture"})
+ });
+ const prepared=await prepareDisposableOriginalGeminiNativeProvision({
+  bound,signedAuthority
+ });
+ assert.equal(typeof prepared.provision,"function");
+ assert.ok(Object.isFrozen(prepared));
+ await assert.rejects(prepareDisposableOriginalGeminiNativeProvision({
+  bound,signedAuthority
+ }),/Disposable live canonical binding NO-GO/u);
  assert.deepEqual(await readdir(f.dirs["status-index"]),[]);
  assert.deepEqual(await readdir(f.dirs.sessions),[]);
  assert.equal(f.getEffects(),0);
  assert.equal(f.getObservations(),0);
+});
+
+test("unissued original native provision cannot accept arbitrary owner options",async()=>{
+ await assert.rejects(prepareDisposableOriginalGeminiNativeProvision({
+  bound:{authority:{},operational:{},
+   reconcileVerifiedOriginalWorkerFileEffect:()=>{}},
+  signedAuthority:{}
+ }),/Disposable live canonical binding NO-GO/u);
+ await assert.rejects(prepareDisposableOriginalGeminiNativeProvision(),
+  /Disposable live canonical binding NO-GO/u);
 });
