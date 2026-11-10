@@ -15,6 +15,8 @@ import {createHash,createHmac,randomBytes,timingSafeEqual} from "node:crypto";
 import {constants} from "node:fs";
 import {open,lstat,realpath,chmod,unlink} from "node:fs/promises";
 import {dirname,isAbsolute,resolve} from "node:path";
+import {readOriginalScopedModelSecret,assertOriginalScopedModelSocket}
+ from "./disposable-gemini-original-scoped-model-channel.mjs";
 
 const ROLES=new Set(["backend","frontend","test"]);
 const PATH="/v1/private-disposable-model-call";
@@ -96,11 +98,20 @@ function rejectReply(res,status=403){
  * No model is constructed or invoked while the listener is created.
  */
 export async function startDisposableOwnerModelIpcServer({
- role,socketPath,secretFile,authorizeSignedTask,invokeModel
+ role,socketPath,secretFile,authorizeSignedTask,invokeModel,
+ originalScopedModelRole
 }={}){
  if(!ROLES.has(role)||typeof authorizeSignedTask!=="function"||
     typeof invokeModel!=="function")deny();
- const secret=await readRoleSecret(socketPath,secretFile);
+ // Default owner-only mode remains UNCHANGED. Explicit scoped mode
+ // requires actual distinct Linux UIDs, dedicated role group, strict
+ // HMAC owner and fd metadata: never infer permission from a boolean.
+ const scoped=originalScopedModelRole!==undefined;
+ const secret=scoped?
+  await readOriginalScopedModelSecret({
+   role,scope:originalScopedModelRole,side:"owner",
+   socketPath,secretFile
+  }):await readRoleSecret(socketPath,secretFile);
  try{await lstat(socketPath);deny();}
  catch(error){
   if(error?.code!=="ENOENT")deny();
@@ -162,7 +173,13 @@ export async function startDisposableOwnerModelIpcServer({
    server.off("error",rejectReady);resolveReady();
   });
  });
- try{await chmod(socketPath,0o600);}
+ try{
+  await chmod(socketPath,scoped?0o660:0o600);
+  if(scoped)await assertOriginalScopedModelSocket({
+   role,scope:originalScopedModelRole,side:"owner",
+   socketPath,secretFile
+  });
+ }
  catch{
   server.closeAllConnections();
   await new Promise(resolveDone=>server.close(()=>resolveDone()));
@@ -191,13 +208,25 @@ export async function startDisposableOwnerModelIpcServer({
  * OS principal/container is still required to prevent same-UID file reads.
  */
 export async function connectDisposableWorkerModelIpcClient({
- role,socketPath,secretFile
+ role,socketPath,secretFile,originalScopedModelRole
 }={}){
  if(!ROLES.has(role))deny();
- const secret=await readRoleSecret(socketPath,secretFile);
- const socket=await lstat(socketPath);
- if(!socket.isSocket()||socket.isSymbolicLink()||
-    (socket.mode&0o777)!==0o600)deny();
+ const scoped=originalScopedModelRole!==undefined;
+ const secret=scoped?
+  await readOriginalScopedModelSecret({
+   role,scope:originalScopedModelRole,side:"worker",
+   socketPath,secretFile
+  }):await readRoleSecret(socketPath,secretFile);
+ if(scoped){
+  await assertOriginalScopedModelSocket({
+   role,scope:originalScopedModelRole,side:"worker",
+   socketPath,secretFile
+  });
+ }else{
+  const socket=await lstat(socketPath);
+  if(!socket.isSocket()||socket.isSymbolicLink()||
+     (socket.mode&0o777)!==0o600)deny();
+ }
  const call=({task,callId,payload,signal}={})=>new Promise((resolveCall,rejectCall)=>{
   const data={version:1,role,task,call_id:callId,payload};
   if(!validInput(data,role)){rejectCall(Error("Disposable owner-worker model IPC NO-GO"));return;}
