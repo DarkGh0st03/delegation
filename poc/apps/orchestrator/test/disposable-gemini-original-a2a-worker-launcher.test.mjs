@@ -5,6 +5,8 @@ import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {createServer} from "node:net";
+import {DeterministicA2AOrchestrator}
+ from "../../../packages/agent-runtime/src/orchestrator.ts";
 import {AGENT_CARD_PATH} from "@a2a-js/sdk";
 import {startDisposableOwnerModelIpcServer}
  from "../src/disposable-gemini-owner-worker-ipc.mjs";
@@ -30,7 +32,7 @@ async function port(){
  await new Promise(resolve=>server.close(resolve));
  return p;
 }
-async function fixture(t){
+async function fixture(t,{authorizeSignedTask}={}){
  const dir=await mkdtemp(join(tmpdir(),"disposable-worker-a2a-"));
  const modelSocketPath=join(dir,"model.sock");
  const modelSecretFile=join(dir,"model.hex");
@@ -50,9 +52,11 @@ async function fixture(t){
  let modelCalls=0;
  const owner=await startDisposableOwnerModelIpcServer({
   role:"backend",socketPath:modelSocketPath,secretFile:modelSecretFile,
-  authorizeSignedTask:async({role,task:claim})=>
-   role==="backend"&&claim.runtime_task_id===task.runtime_task_id&&
-   claim.credential_id===task.credential_id,
+  authorizeSignedTask:async input=>authorizeSignedTask?
+   authorizeSignedTask(input):
+   input.role==="backend"&&
+    input.task.runtime_task_id===task.runtime_task_id&&
+    input.task.credential_id===task.credential_id,
   invokeModel:async()=>({
    chunks:[{content:{role:"model",
     parts:[{text:"offline only; no authorized Gateway file writes"}]},
@@ -173,4 +177,85 @@ test("ORIGINAL owner HMAC-binds a signed-Task claim into separate Backend A2A PI
  assert.equal(child.originalNativeTaskBindingPresent,false);
  // No Task has been dispatched or model called by this prebind proof.
  assert.equal(f.modelCalls(),0);
+});
+
+test("two sequential protected A2A requests reuse the SAME Backend PID and owner model RPC; failed work never stages effects",async t=>{
+ // Real A2A HTTP transport, original authenticated Task-binding and
+ // owner HMAC model IPC. Child signatures/Gateway responses are intentionally
+ // synthetic; this is NOT the paid/native Gitea/Docker E2E.
+ const second={...task,task_id:"second-backend-task",
+  credential_id:"urn:offline:child:backend:2",
+  runtime_task_id:"dispatch_"+"c".repeat(22)};
+ const allowed=new Set([task.runtime_task_id,second.runtime_task_id]);
+ const f=await fixture(t,{authorizeSignedTask:({role,task:claim})=>
+  role==="backend"&&allowed.has(claim.runtime_task_id)&&
+  [task,second].some(pin=>pin.runtime_task_id===claim.runtime_task_id&&
+   pin.credential_id===claim.credential_id&&
+   pin.session_id===claim.session_id&&pin.task_id===claim.task_id)
+ });
+ const child=await startDisposableOriginalA2aWorkerSubprocess(f.config);
+ t.after(()=>child.close().catch(()=>{}));
+ const firstPid=child.pid;
+ const binder=await f.connectBinder();
+ const a2a=new DeterministicA2AOrchestrator({
+  deadlineMs:15_000,initialIntervalMs:30,maxIntervalMs:100
+ });
+ for(const [i,identity] of [task,second].entries()){
+  const pins={
+   runtimeTaskId:identity.runtime_task_id,
+   planTaskId:identity.task_id,
+   childCredentialId:identity.credential_id,
+   presenterId:"did:thesis:backend-agent",
+   branch:"feature/account-suspension",
+   role:"backend",operation:"read_file",
+   path:"apps/backend/account.ts"
+  };
+  let staged=0;
+  f.ownerStageRegistry.bindTask(identity.runtime_task_id,{
+   async stage(){staged++;}
+  },"backend");
+  await binder.bindTask(pins);
+  await assert.rejects(a2a.sendProtectedTask({
+   agent_base_url:child.baseUrl,
+   subtask:{
+    subtask_id:identity.task_id,
+    instruction:"Read the approved file only; no changes.",
+    branch:pins.branch,relevant_paths:[pins.path],
+    approved_file_permissions:[{operation:"read_file",path:pins.path}],
+    approved_run_tests:false
+   },
+   // Offline fixture: synthetic non-secret string, never a real signed DC.
+   delegation_evidence:{
+    credential:"offline-synthetic-evidence-only",
+    credential_id:identity.credential_id,
+    presenter_id:pins.presenterId
+   },
+   trusted_gateway_task_id:identity.runtime_task_id
+  }),/without completion/u);
+  assert.equal(f.modelCalls(),i+1,
+   "the original owner model must be invoked exactly once for each admitted Task");
+  assert.equal(staged,0,
+   "plain LLM output is never Gateway-approved repository evidence");
+  assert.equal(child.pid,firstPid);
+  await binder.fence(identity.runtime_task_id);
+ }
+ await assert.rejects(a2a.sendProtectedTask({
+  agent_base_url:child.baseUrl,
+  subtask:{
+   subtask_id:task.task_id,instruction:"Repeat an already retired Task",
+   branch:"feature/account-suspension",
+   relevant_paths:["apps/backend/account.ts"],
+   approved_file_permissions:[{
+    operation:"read_file",path:"apps/backend/account.ts"
+   }],approved_run_tests:false
+  },
+  delegation_evidence:{
+   credential:"offline-synthetic-evidence-only",
+   credential_id:task.credential_id,
+   presenter_id:"did:thesis:backend-agent"
+  },
+  trusted_gateway_task_id:task.runtime_task_id
+ }),/without completion/u);
+ assert.equal(f.modelCalls(),2,
+  "replaying a retired Task must not initiate an owner model call");
 });
