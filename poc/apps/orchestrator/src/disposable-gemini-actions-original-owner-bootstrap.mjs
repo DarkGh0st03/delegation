@@ -31,6 +31,9 @@ import {bindOriginalBackendCheckpointSigner}
  from "./disposable-gemini-original-checkpoint-signer.mjs";
 import {prepareDisposableOriginalGeminiNativeProvision}
  from "./disposable-gemini-original-native-provision.mjs";
+import {loadProtectedDisposableActionsCanonicalOwnerManifest,
+ assembleProtectedCanonicalOwnerAuthority}
+ from "./trusted-authority-only-owner-bootstrap.mjs";
 
 const REPO="DarkGh0st03/delegation";
 const REF="refs/heads/experiment/disposable-gemini-live-20261109";
@@ -173,4 +176,39 @@ export function claimDisposableActionsOriginalOwnerBootstrap(prepared){
     !prepared.authority||typeof prepared.authority!=="object")
   deny();
  return prepared;
+}
+
+/** Complete, ZERO-INFERENCE Actions bootstrap from the ORIGINAL protected
+ * 0600 manifest. The native authority is assembled by the SAME R5 classes
+ * after a distinct Actions-only Github REST check and clean source pin.
+ *
+ * This method does NOT start the billable Host: the prepared object remains
+ * explicitly non-isolated and the paid entrypoint rejects it before Planning.
+ * A future worker/owner separate-process IPC transport must be audited
+ * before lifting that denial. No alternate Rust Root/Gateway/Engineer grant.
+ */
+export async function prepareDisposableActionsOriginalOwnerFromManifest({
+ models,manifestFile,operational,backendPrivateKeyFile,
+ geminiKeyFile,expectedSourceSha,githubApiToken
+}={}){
+ const current=observedCleanSourceSha();
+ assertDisposableActionsOriginalOwnerContext(process.env,current);
+ assertIssuedDisposableActionsOwnerGeminiModelSet(models);
+ if(expectedSourceSha!==current||
+    typeof manifestFile!=="string"||
+    typeof backendPrivateKeyFile!=="string"||
+    typeof geminiKeyFile!=="string"||
+    backendPrivateKeyFile===manifestFile||
+    geminiKeyFile===manifestFile||
+    backendPrivateKeyFile===geminiKeyFile)deny();
+ const verified=await loadProtectedDisposableActionsCanonicalOwnerManifest(
+  manifestFile,{expectedSourceSha,githubApiToken}
+ );
+ // Only a verified R5-compatible loaded object can build this original
+ // typed authority, using the original Gateway IPC and Rust credential port.
+ const authority=await assembleProtectedCanonicalOwnerAuthority(verified);
+ return prepareDisposableActionsOriginalOwnerBootstrap({
+  models,authority,operational,backendPrivateKeyFile,geminiKeyFile,
+  backendPublicKeyPem:verified.backendPublicKeyPem
+ });
 }

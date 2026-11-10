@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {assertDisposableActionsOriginalOwnerContext}
+import {assertDisposableActionsOriginalOwnerContext,
+ prepareDisposableActionsOriginalOwnerFromManifest}
  from "../src/disposable-gemini-actions-original-owner-bootstrap.mjs";
 
 const SHA="a".repeat(40);
@@ -71,4 +72,34 @@ test("foreign workflow, relaunch, stale checkout, secret leakage and scripted CI
   good(),"invalid"),DENY,"invalid HEAD");
  assert.throws(()=>assertDisposableActionsOriginalOwnerContext(
   null,SHA),DENY,"missing environment");
+});
+
+test("Actions protected-manifest composition is permanently NO-GO in free CI and with forged provider model sets",async()=>{
+ await assert.rejects(prepareDisposableActionsOriginalOwnerFromManifest(),
+  DENY);
+ const fake={
+  planner:{model:{}},adaptive:{model:{}},
+  workers:{backend:{model:{}},frontend:{model:{}},test:{model:{}}}
+ };
+ const keys=[
+  ...Object.keys(good()),
+  "GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY","GH_TOKEN",
+  "GITHUB_TOKEN","DELEGATION_LIVE_CI_PREFLIGHT_MODE"
+ ];
+ const previous=new Map(keys.map(k=>[k,process.env[k]]));
+ for(const k of keys)delete process.env[k];
+ Object.assign(process.env,good());
+ try{
+  await assert.rejects(prepareDisposableActionsOriginalOwnerFromManifest({
+   models:fake,manifestFile:"/tmp/forged-owner.json",
+   backendPrivateKeyFile:"/tmp/backend.key",
+   geminiKeyFile:"/tmp/gemini.key",
+   expectedSourceSha:SHA,githubApiToken:"synthetic-readonly-gh-token"
+  }));
+ }finally{
+  for(const [key,value] of previous){
+   if(value===undefined)delete process.env[key];
+   else process.env[key]=value;
+  }
+ }
 });
