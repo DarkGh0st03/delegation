@@ -10,6 +10,10 @@
 import {assertIssuedDisposableLiveGeminiModelSet,
  claimIssuedDisposableLiveGeminiModelSet}
  from "./disposable-gemini-live-model-set.mjs";
+import {DisposablePrivateBudgetedAdkModel}
+ from "./disposable-gemini-live-budgeted-model.mjs";
+import {DisposableOriginalA2AModelCallWindowStore}
+ from "./disposable-gemini-original-task-call-window.mjs";
 
 const ROLES=Object.freeze(["backend","frontend","test"]);
 const deny=()=>{throw Error("Disposable live canonical binding NO-GO");};
@@ -104,7 +108,8 @@ export function bindDisposableLiveGeminiCanonicalInputs({
   if(!shape(w,["port","adk"])||
      !boundedPort(w.port)||ports.has(w.port)||!plain(w.adk)||
      ["model","maxModelTurns","maxModelCallMs",
-      "generateContentConfig","ownerAdditionalCardPin"].some(key=>
+      "generateContentConfig","ownerAdditionalCardPin",
+      "trustedOriginalModelCallWindow"].some(key=>
        Object.hasOwn(w.adk,key))||
      typeof w.adk.gatewayBaseUrl!=="string"||
      !w.adk.gatewayBaseUrl.startsWith("http://127.0.0.1:")||
@@ -129,10 +134,22 @@ export function bindDisposableLiveGeminiCanonicalInputs({
    ...operational.workflow.draftPullRequest,model:models.adaptive.model
   })
  });
+ // Original owner-local call-window collectors: never A2A, ADK, model,
+ // workflow input, signed grant or unauthenticated event payload.
+ // Synthetic research-only Gemini constructors have NO budgeted wrapper,
+ // so receive no callback and cannot claim provenance.
+ const ownerModelTaskWindowStores={};
  const workers=Object.freeze(Object.fromEntries(ROLES.map(role=>{
   const current=operational.localWorkers.workers[role];
+  const model=models.workers[role].model;
+  let audit={};
+  if(model instanceof DisposablePrivateBudgetedAdkModel){
+   const store=new DisposableOriginalA2AModelCallWindowStore({role,model});
+   ownerModelTaskWindowStores[role]=store;
+   audit={trustedOriginalModelCallWindow:store.callbackForOriginalA2A()};
+  }
   return [role,Object.freeze({
-   ...current,adk:Object.freeze({...current.adk,...models.workers[role]})
+   ...current,adk:Object.freeze({...current.adk,...models.workers[role],...audit})
   })];
  })));
  const nextAuthority=Object.freeze({...authority,planner});
@@ -144,5 +161,6 @@ export function bindDisposableLiveGeminiCanonicalInputs({
  // One OIDC-admitted set may bind only ONE owner session; no model reuse
  // as a second parallel Root/Planning launch with the same admission.
  claimIssuedDisposableLiveGeminiModelSet(models);
- return Object.freeze({authority:nextAuthority,operational:nextOperational});
+ return Object.freeze({authority:nextAuthority,operational:nextOperational,
+  ownerModelTaskWindowStores:Object.freeze(ownerModelTaskWindowStores)});
 }
