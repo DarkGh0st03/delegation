@@ -11,6 +11,8 @@ import {DisposablePrivateBudgetedAdkModel}
  from "./disposable-gemini-live-budgeted-model.mjs";
 import {AuthenticatedGiteaMutationCompletionObserver}
  from "../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
+import {AuthenticatedGiteaCreateCompletionObserver}
+ from "../../gateway/src/trusted-authority-only-gitea-create-evidence.ts";
 import {DisposableOriginalA2AModelCallWindowStore,
  isIssuedOriginalA2ACallWindow,claimIssuedOriginalA2ACallWindow}
  from "./disposable-gemini-original-task-call-window.mjs";
@@ -154,6 +156,125 @@ export async function reconcileOriginalOwnerTaskWriteFromStore({
  }catch{deny();}
  return reconcileOriginalModelWriteWithVerifiedGitea({
   model,mutationObserver,completionExpectation,
+  role,registeredAgentDid,ownerObservedTaskCallWindow:window
+ });
+}
+
+/**
+ * Original owner-only CREATE comparator. A real native Rust/OPA admitted,
+ * MAC-authenticated, independently reread Gitea CREATE receipt MUST match
+ * precisely one model FunctionTool proposal within the original signed
+ * Task/Child A2A call window. Does not approve an operation, issue a Root,
+ * attest Gemini provenance or infer billable API costs.
+ */
+export async function reconcileOriginalModelCreateWithVerifiedGitea({
+ model,createObserver,completionExpectation,role,registeredAgentDid,
+ ownerObservedTaskCallWindow
+}={}){
+ if(!(model instanceof DisposablePrivateBudgetedAdkModel)||
+    !(createObserver instanceof AuthenticatedGiteaCreateCompletionObserver)||
+    !roles.has(role)||model.phase!==role||
+    typeof registeredAgentDid!=="string"||
+    !registeredAgentDid.startsWith("did:")||
+    !completionExpectation||typeof completionExpectation!=="object"||
+    completionExpectation.agent_did!==registeredAgentDid||
+    !isIssuedOriginalA2ACallWindow(model,ownerObservedTaskCallWindow)||
+    !ownerObservedTaskCallWindow||
+    typeof ownerObservedTaskCallWindow!=="object"||
+    Array.isArray(ownerObservedTaskCallWindow)||
+    Object.keys(ownerObservedTaskCallWindow).sort().join(",")!==
+     "call_index_after,call_index_before,credential_id,role,runtime_task_id,task_id"||
+    ownerObservedTaskCallWindow.task_id!==completionExpectation.task_id||
+    ownerObservedTaskCallWindow.runtime_task_id!==
+     completionExpectation.runtime_task_id||
+    ownerObservedTaskCallWindow.credential_id!==
+     completionExpectation.credential_id||
+    ownerObservedTaskCallWindow.role!==role||
+    !Number.isSafeInteger(ownerObservedTaskCallWindow.call_index_before)||
+    !Number.isSafeInteger(ownerObservedTaskCallWindow.call_index_after)||
+    ownerObservedTaskCallWindow.call_index_before<0||
+    ownerObservedTaskCallWindow.call_index_after<=
+     ownerObservedTaskCallWindow.call_index_before||
+    ownerObservedTaskCallWindow.call_index_after>
+     model.publicSummary().calls_started)
+  deny();
+ const created=await createObserver.observeAuthenticatedSourceDigest(
+  completionExpectation);
+ if(created.status!=="owner_verified_gateway_gitea_create_digest_only"||
+    created.old_path_absent_at_pinned_head!==true||
+    created.task_id!==completionExpectation.task_id||
+    created.runtime_task_id!==completionExpectation.runtime_task_id||
+    created.credential_id!==completionExpectation.credential_id||
+    created.agent_did!==registeredAgentDid)
+  deny();
+ const matches=model.proposedSourceWriteFingerprints().filter(row=>
+  row.role===role&&row.operation==="create_file"&&
+  row.call_index>ownerObservedTaskCallWindow.call_index_before&&
+  row.call_index<=ownerObservedTaskCallWindow.call_index_after&&
+  row.branch===created.branch&&row.path===created.path&&
+  row.source_sha256===created.source_sha256&&
+  row.source_bytes===created.source_bytes
+ );
+ if(matches.length!==1)deny();
+ try{
+  claimIssuedOriginalA2ACallWindow(model,ownerObservedTaskCallWindow);
+  model.claimOriginalGatewayMatchedWrite(matches[0],created.evidence_sha256);
+ }catch{deny();}
+ return Object.freeze({
+  status:"signed_gateway_gitea_create_cas_matches_model_proposed_bytes_only",
+  task_id:created.task_id,commit_sha:created.commit_sha,
+  source_sha256:created.source_sha256,source_bytes:created.source_bytes,
+  gateway_evidence_sha256:created.evidence_sha256,
+  matched_model_call_index:matches[0].call_index,
+  old_path_absent_at_pinned_head:true,
+  owner_asserted_task_call_window_checked:true,
+  model_write_and_gateway_receipt_replay_fenced:true,
+  model_emitted_write_matches_committed_bytes:true,
+  provider_origin_independently_verified:false,
+  model_generated_source_proven:false,
+  billing_amount_verified:false,
+  approved_permissions_expanded:false
+ });
+}
+/** Never accept a model-supplied Task window or source SHA as input. */
+export async function reconcileOriginalOwnerTaskCreateFromStore({
+ model,ownerWindowStore,createObserver,completionExpectation,
+ role,registeredAgentDid
+}={}){
+ if(!(model instanceof DisposablePrivateBudgetedAdkModel)||
+    !(ownerWindowStore instanceof DisposableOriginalA2AModelCallWindowStore)||
+    !(createObserver instanceof AuthenticatedGiteaCreateCompletionObserver)||
+    !roles.has(role)||model.phase!==role||
+    !completionExpectation||typeof completionExpectation!=="object"||
+    completionExpectation.agent_did!==registeredAgentDid||
+    typeof registeredAgentDid!=="string"||
+    !registeredAgentDid.startsWith("did:"))deny();
+ const created=await createObserver.observeAuthenticatedSourceDigest(
+  completionExpectation);
+ if(created.status!=="owner_verified_gateway_gitea_create_digest_only"||
+    created.old_path_absent_at_pinned_head!==true||
+    created.agent_did!==registeredAgentDid||
+    created.task_id!==completionExpectation.task_id||
+    created.runtime_task_id!==completionExpectation.runtime_task_id||
+    created.credential_id!==completionExpectation.credential_id)
+  deny();
+ const candidates=model.proposedSourceWriteFingerprints().filter(row=>
+  row.role===role&&row.operation==="create_file"&&
+  row.branch===created.branch&&row.path===created.path&&
+  row.source_sha256===created.source_sha256&&
+  row.source_bytes===created.source_bytes
+ );
+ if(candidates.length===0)deny();
+ let window;
+ try{
+  window=ownerWindowStore.takeOriginalWindow({
+   task_id:completionExpectation.task_id,
+   runtime_task_id:completionExpectation.runtime_task_id,
+   credential_id:completionExpectation.credential_id
+  });
+ }catch{deny();}
+ return reconcileOriginalModelCreateWithVerifiedGitea({
+  model,createObserver,completionExpectation,
   role,registeredAgentDid,ownerObservedTaskCallWindow:window
  });
 }
