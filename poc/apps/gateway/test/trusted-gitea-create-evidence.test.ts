@@ -159,3 +159,35 @@ test("R383.6 observer rechecks current feature HEAD even after MAC receipt",asyn
  await assert.rejects(f.observer.observe(binding));
  assert.equal(f.stats().writes,0);
 });
+
+test("R383.6 owner-only CREATE digest matches authenticated independent receipt without disclosing source",async t=>{
+ const f=await fixture(t);
+ const evidence=await f.publisher.publish(intent,binding,result,"opa");
+ const digest=await f.observer.observeAuthenticatedSourceDigest(binding);
+ assert.equal(digest.status,"owner_verified_gateway_gitea_create_digest_only");
+ assert.equal(digest.task_id,binding.task_id);
+ assert.equal(digest.runtime_task_id,binding.runtime_task_id);
+ assert.equal(digest.agent_did,binding.agent_did);
+ assert.equal(digest.credential_id,binding.credential_id);
+ assert.equal(digest.branch,branch);
+ assert.equal(digest.path,path);
+ assert.equal(digest.previous_head_sha,OLD);
+ assert.equal(digest.commit_sha,NEW);
+ assert.equal(digest.old_path_absent_at_pinned_head,true);
+ assert.equal(digest.source_sha256,sha(content));
+ assert.equal(digest.source_bytes,Buffer.byteLength(content));
+ assert.equal(digest.evidence_sha256,evidence);
+ assert.equal(JSON.stringify(digest).includes(content),false);
+ assert.equal("mac_sha256" in digest,false);
+ assert.equal(f.stats().writes,0);
+});
+test("R383.6 owner-only CREATE digest refuses forged Task and stale HEAD",async t=>{
+ const f=await fixture(t);
+ await f.publisher.publish(intent,binding,result,"opa");
+ await assert.rejects(f.observer.observeAuthenticatedSourceDigest({
+  ...binding,credential_id:"urn:foreign-child"
+ }),/original signed Task\/Child/u);
+ f.setHead("d".repeat(40));
+ await assert.rejects(f.observer.observeAuthenticatedSourceDigest(binding));
+ assert.equal(f.stats().writes,0);
+});

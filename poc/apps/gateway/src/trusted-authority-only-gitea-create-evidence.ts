@@ -210,8 +210,10 @@ export class AuthenticatedGiteaCreateCompletionObserver{
  isIndependentOf(client:GiteaClient):boolean{
   return this.#reader!==client;
  }
- async observe(expected:TrustedCompletionExpectation):
- Promise<ObservedTrustedTaskCompletion>{
+ /** Read back the independent pinned old-absence, single parent and
+  * current HEAD evidence before exposing any CREATE file fingerprint.
+  * Never return source bytes, credentials or the original MAC. */
+ async #verifiedCreate(expected:TrustedCompletionExpectation){
   const raw=await readReceipt(this.#dir,filename(expected));
   const receipt=validateReceipt(raw,expected,this.#repository,this.#branch);
   const {mac_sha256,...unsigned}=receipt;
@@ -225,10 +227,35 @@ export class AuthenticatedGiteaCreateCompletionObserver{
      Math.abs(now-receipt.completed_at_ms)>30*60_000)
    deny("stale or future-dated create receipt");
   await independentlyVerify(this.#reader,receipt);
+  return receipt;
+ }
+ async observe(expected:TrustedCompletionExpectation):
+ Promise<ObservedTrustedTaskCompletion>{
+  const receipt=await this.#verifiedCreate(expected);
   return Object.freeze({...expected,
    status:"owner_verified_provider_result" as const,
    evidence_sha256:sha(canonical(receipt)),
    completed_at_ms:receipt.completed_at_ms
+  });
+ }
+ /**
+  * Read-only owner fingerprint of a real, independently verified CREATE.
+  * The original authenticated Task/Child and Gitea old-absence proof are
+  * required. This is byte identity only, not proof of model origin.
+  */
+ async observeAuthenticatedSourceDigest(expected:TrustedCompletionExpectation){
+  const receipt=await this.#verifiedCreate(expected);
+  return Object.freeze({
+   status:"owner_verified_gateway_gitea_create_digest_only" as const,
+   task_id:receipt.task_id,runtime_task_id:receipt.runtime_task_id,
+   credential_id:receipt.credential_id,agent_did:receipt.agent_did,
+   branch:receipt.branch,path:receipt.path,
+   previous_head_sha:receipt.previous_head_sha,
+   old_path_absent_at_pinned_head:true as const,
+   commit_sha:receipt.commit_sha,blob_sha:receipt.blob_sha,
+   source_sha256:receipt.source_sha256,
+   source_bytes:receipt.source_bytes,
+   evidence_sha256:sha(canonical(receipt))
   });
  }
  toTrustedObserver():TrustedAuthorityOnlyCompletionObserver{
