@@ -7,8 +7,11 @@
  * The task identifiers supplied to this constructor are only claims:
  * ONLY the original native owner/Child/Gateway admission validates them.
  *
- * This is one specialized Task per adapter, with a bounded number of turns.
- * No multi-Task ambient state, remote model selection, HTTP open proxy or
+ * Each Task is bound only after the ORIGINAL owner HMAC bind/ADK registry
+ * has selected the exact signed Child. One worker PID can accept sequential
+ * Tasks of the SAME owner-pinned session with independent model-turn limits.
+ * Concurrent Task replacement and identity replay fail closed.
+ * No multi-Task ambient inference, remote model selection, HTTP open proxy or
  * direct fallback to Google. Paid startup remains explicitly DISABLED:
  * this adapter does not establish OS-level process/UID isolation.
  */
@@ -75,37 +78,67 @@ function snapshotRequest(request){
  * binding (not from incoming A2A text). The owner separately validates
  * every IPC call against the one-use native prebind and live Root. */
 export class DisposableOriginalWorkerIpcAdkModel extends BaseLlm {
- #role;#task;#client;#limit;#started=0;#retired=false;
+ #role;#task=null;#sessionId;#staticTask;#client;#limit;
+ #started=0;#taskStarted=0;#retired=false;#inFlight=false;
  #lastOwnerCalls=0;#lastOwnerTokens=0;
- constructor({role,task,client,maxCalls}={}){
+ #usedTaskIds=new Set();#usedChildIds=new Set();#usedRuntimeIds=new Set();
+ constructor({role,task,sessionId,client,maxCalls}={}){
   if(!Object.hasOwn(ROLES,role??"")||
-     !validClaim(task)||
+     (task===undefined?!(typeof sessionId==="string"&&ID.test(sessionId)):
+      !validClaim(task)||sessionId!==undefined)||
      !client||client.role!==role||typeof client.call!=="function"||
      !Number.isSafeInteger(maxCalls)||
      maxCalls<1||maxCalls>ROLES[role])deny();
   super({model:MODEL});
-  this.#role=role;
-  this.#task=Object.freeze({...task});
-  this.#client=client;
-  this.#limit=maxCalls;
+  this.#role=role;this.#staticTask=task!==undefined;
+  this.#sessionId=task?.session_id??sessionId;
+  this.#task=task?Object.freeze({...task}):null;
+  this.#client=client;this.#limit=maxCalls;
  }
  get role(){return this.#role;}
  get retired(){return this.#retired;}
  get callsStarted(){return this.#started;}
- retire(){this.#retired=true;}
+ get activeTask(){return this.#task?.runtime_task_id??null;}
+ /**
+  * Original A2A handler calls this ONLY after the authenticated
+  * TrustedEffectStagingTaskRegistry.selectFor has matched exact owner-pinned
+  * Task/Child/role/operation. The session comes from the trusted bootstrap,
+  * not A2A text, Gemini responses or a provider configuration.
+  */
+ beginOwnerBoundTask({role,task_id,credential_id,runtime_task_id}={}){
+  if(this.#staticTask||this.#retired||this.#inFlight||this.#task||
+     role!==this.#role||this.#usedRuntimeIds.size>=64)deny();
+  const task={task_id,credential_id,runtime_task_id,session_id:this.#sessionId};
+  if(!validClaim(task)||this.#usedTaskIds.has(task_id)||
+     this.#usedChildIds.has(credential_id)||
+     this.#usedRuntimeIds.has(runtime_task_id))deny();
+  const pin=Object.freeze(task);
+  this.#usedTaskIds.add(task_id);this.#usedChildIds.add(credential_id);
+  this.#usedRuntimeIds.add(runtime_task_id);
+  this.#task=pin;this.#taskStarted=0;
+  let released=false;
+  return ()=>{
+   if(released)return;
+   released=true;
+   // In-flight replies may never be attributed to a subsequent Child.
+   if(this.#task!==pin||this.#inFlight)this.#retired=true;
+   if(this.#task===pin)this.#task=null;
+  };
+ }
+ retire(){this.#retired=true;this.#task=null;}
  async *generateContentAsync(request,stream,signal){
-  if(this.#retired||this.#started>=this.#limit||signal?.aborted||
+  if(this.#retired||!this.#task||this.#inFlight||
+     this.#taskStarted>=this.#limit||signal?.aborted||
      (stream!==undefined&&typeof stream!=="boolean"))deny();
-  // Both the local attempt and original native owner call budget are
-  // one-way. Never retry after a timed-out, truncated or ambiguous call.
-  this.#started++;
+  const boundTask=this.#task;
+  // Local per-Task budget is distinct from the original owner-wide budget.
+  // Every ambiguous attempt consumes a slot with no automatic retry.
+  this.#started++;this.#taskStarted++;this.#inFlight=true;
   try{
    const payload=snapshotRequest(request);
    const callId="modelcall-"+randomBytes(16).toString("hex");
-   const result=await this.#client.call({
-    task:this.#task,callId,payload,signal
-   });
-   if(this.#retired||signal?.aborted||
+   const result=await this.#client.call({task:boundTask,callId,payload,signal});
+   if(this.#retired||this.#task!==boundTask||signal?.aborted||
       !result||typeof result!=="object"||Array.isArray(result)||
       !Array.isArray(result.chunks)||
       result.chunks.length<1||result.chunks.length>128||
@@ -119,7 +152,6 @@ export class DisposableOriginalWorkerIpcAdkModel extends BaseLlm {
    const chunks=result.chunks.map(chunk=>{
     if(!chunk||typeof chunk!=="object"||Array.isArray(chunk)||
        !chunk.content||typeof chunk.content!=="object")deny();
-    // Pass plain model responses only; no RPC metadata/owner objects.
     const json=JSON.stringify(chunk);
     if(typeof json!=="string"||Buffer.byteLength(json)>128*1024)deny();
     return JSON.parse(json);
@@ -127,12 +159,13 @@ export class DisposableOriginalWorkerIpcAdkModel extends BaseLlm {
    this.#lastOwnerCalls=result.metered_calls_started;
    this.#lastOwnerTokens=result.metered_total_tokens;
    for(const chunk of chunks){
-    if(this.#retired||signal?.aborted)deny();
+    if(this.#retired||this.#task!==boundTask||signal?.aborted)deny();
     yield chunk;
    }
   }catch{
-   this.#retired=true;
-   deny();
+   this.#retired=true;deny();
+  }finally{
+   this.#inFlight=false;
   }
  }
  connect(){deny();}

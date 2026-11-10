@@ -82,8 +82,11 @@ const start=async message=>{
   role:cfg.role,socketPath:cfg.modelSocketPath,
   secretFile:cfg.modelSecretFile
  });
+ // Trusted parent pins the session once. Signed Task/Child is activated
+ // only through the authenticated ORIGINAL registry after A2A dispatch.
  model=createDisposableOriginalWorkerIpcAdkModel({
-  role:cfg.role,task:cfg.task,client,maxCalls:cfg.maxCalls
+  role:cfg.role,sessionId:cfg.task?.session_id,
+  client,maxCalls:cfg.maxCalls
  });
  // ORIGINAL owner->agent binding and owner staging transports, previously
  // hosted in the same PID as the owner. Now the Task registry and binder
@@ -109,7 +112,8 @@ const start=async message=>{
   adk:{model,gatewayBaseUrl:cfg.gatewayBaseUrl,
    adapterBaseUrl:cfg.adapterBaseUrl,
    adapterToken:cfg.adapterToken,maxModelTurns:cfg.maxCalls,
-   trustedEffectTaskRegistry},
+   trustedEffectTaskRegistry,
+   trustedOriginalWorkerIpcTaskBinding:pin=>model.beginOwnerBoundTask(pin)},
   mcpTaskSigning:{
    signingPrivateKeyPem:ephemeral.privateKey.export({
     format:"pem",type:"pkcs8"}).toString(),

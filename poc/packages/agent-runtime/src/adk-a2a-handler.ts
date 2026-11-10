@@ -54,6 +54,12 @@ export interface AdkA2ATaskHandlerConfig {
   trustedOriginalModelCallWindow?:(
    witness:Readonly<TrustedOriginalModelCallWindow>
   )=>void|Promise<void>;
+  /** Offline worker only: owner-pinned Task selected by the ORIGINAL
+   * authenticated effect registry, never selected by A2A/model claims. */
+  trustedOriginalWorkerIpcTaskBinding?:(
+    pin:Readonly<{role:"backend"|"frontend"|"test";
+      task_id:string;credential_id:string;runtime_task_id:string}>
+  )=>()=>void;
   model: BaseLlm;
   gatewayBaseUrl: string;
   /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
@@ -222,6 +228,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
      !config.trustedEffectTaskRegistry||
      typeof config.trustedOriginalModelCallWindow!=="function"))
     throw Error("Original A2A model call witness requires owner-pinned Task registry");
+  if(config.trustedOriginalWorkerIpcTaskBinding&&(
+     !config.trustedEffectTaskRegistry||
+     typeof config.trustedOriginalWorkerIpcTaskBinding!=="function"))
+    throw Error("Original worker model IPC requires owner-pinned Task registry");
   if(config.trustedBackendDiscovery)
     validateTrustedBackendDiscoveryA2ABinding(config.trustedBackendDiscovery);
   if(config.trustedBackendDiscovery&&config.trustedBackendDiscoverySlot)
@@ -285,7 +295,25 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // This port is claimed once, before model or FunctionTools can run.
     // A forged A2A Task fails here without falling back to shared effects.
     const ownerEffect=config.trustedEffectTaskRegistry?.selectFor(context);
+    let releaseOriginalWorkerIpcTask:(()=>void)|undefined;
     try{
+    // AFTER the original authenticated owner->agent Task/Child binding
+    // matched the exact A2A context, allow one Task to use the worker model.
+    if(config.trustedOriginalWorkerIpcTaskBinding){
+      if(!ownerEffect||!context.trusted_gateway_task_id||
+         !["backend","frontend","test"].includes(context.role))
+        throw Error("Original worker model IPC Task is not authenticated");
+      releaseOriginalWorkerIpcTask=config.trustedOriginalWorkerIpcTaskBinding(
+        Object.freeze({
+          role:context.role as "backend"|"frontend"|"test",
+          task_id:context.subtask.subtask_id,
+          credential_id:context.delegation_evidence.credential_id,
+          runtime_task_id:context.trusted_gateway_task_id
+        })
+      );
+      if(typeof releaseOriginalWorkerIpcTask!=="function")
+        throw Error("Original worker model IPC Task release missing");
+    }
     // Signed Task/Child/role/operation pins were already matched by selectFor.
     const beforeCalls=config.trustedOriginalModelCallWindow
       ?originalModelCalls(config.model):null;
@@ -660,10 +688,13 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     };
     }finally{
       // Active-task revocation cannot be inferred from model output.
-      try{selectedDiscovery?.fence();}
+      try{releaseOriginalWorkerIpcTask?.();}
       finally{
-        if(ownerEffect)
-          config.trustedEffectTaskRegistry!.retireFor(context.trusted_gateway_task_id!);
+        try{selectedDiscovery?.fence();}
+        finally{
+          if(ownerEffect)
+            config.trustedEffectTaskRegistry!.retireFor(context.trusted_gateway_task_id!);
+        }
       }
     }
   };

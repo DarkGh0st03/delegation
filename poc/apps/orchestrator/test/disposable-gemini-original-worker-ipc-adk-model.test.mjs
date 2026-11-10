@@ -282,3 +282,63 @@ test("ADK local toolsDict and live-connect settings never cross IPC or select a 
  assert.equal(f.lastPayload().previousInteractionId,"interaction_0001");
  assert.equal(JSON.stringify(f.lastPayload()).includes(sentinel),false);
 });
+
+test("one worker model supports two sequential owner-authenticated Tasks in the same original session",async t=>{
+ const f=await fixture(t,{authorize:()=>true});
+ const model=createDisposableOriginalWorkerIpcAdkModel({
+  role:"backend",sessionId:task.session_id,client:f.client,maxCalls:1
+ });
+ await assert.rejects(collect(model),DENY);
+ const first=model.beginOwnerBoundTask({
+  role:"backend",task_id:task.task_id,
+  credential_id:task.credential_id,runtime_task_id:task.runtime_task_id
+ });
+ assert.equal(model.activeTask,task.runtime_task_id);
+ assert.throws(()=>model.beginOwnerBoundTask({
+  role:"backend",task_id:"concurrent-task",
+  credential_id:"urn:concurrent",runtime_task_id:"dispatch_"+"C".repeat(22)
+ }),DENY);
+ assert.deepEqual(await collect(model),[response]);
+ await assert.rejects(collect(model),DENY);
+ first();first();
+ assert.equal(model.activeTask,null);
+ const next={role:"backend",task_id:"second-original-task",
+  credential_id:"urn:child:backend:second",
+  runtime_task_id:"dispatch_"+"B".repeat(22)};
+ assert.throws(()=>model.beginOwnerBoundTask({...next,role:"frontend"}),DENY);
+ assert.throws(()=>model.beginOwnerBoundTask({
+  ...next,credential_id:task.credential_id}),DENY);
+ const finish=model.beginOwnerBoundTask(next);
+ assert.deepEqual(await collect(model),[response]);
+ assert.equal(model.callsStarted,2);
+ assert.equal(f.calls(),2);
+ assert.equal(f.admitted(),2);
+ finish();
+ assert.throws(()=>model.beginOwnerBoundTask(next),DENY);
+ assert.throws(()=>model.beginOwnerBoundTask({...next,
+  task_id:task.task_id,credential_id:"urn:different-child"}),DENY);
+ await assert.rejects(collect(model),DENY);
+});
+test("retiring a Task while its model RPC is in flight prevents later Task reassignment",async()=>{
+ let resume;
+ const promise=new Promise(resolve=>resume=resolve);
+ const model=createDisposableOriginalWorkerIpcAdkModel({
+  role:"backend",sessionId:task.session_id,
+  client:{role:"backend",call:()=>promise},maxCalls:2
+ });
+ const release=model.beginOwnerBoundTask({role:"backend",
+  task_id:task.task_id,credential_id:task.credential_id,
+  runtime_task_id:task.runtime_task_id
+ });
+ const pending=collect(model);
+ await Promise.resolve();
+ release();
+ assert.throws(()=>model.beginOwnerBoundTask({role:"backend",
+  task_id:"next-task",credential_id:"urn:next-child",
+  runtime_task_id:"dispatch_"+"D".repeat(22)}),DENY);
+ resume({chunks:[response],metered_calls_started:1,
+  metered_total_tokens:5,owner_original_signed_task_verified_here:false,
+  provider_billed_amount_verified:false,model_generated_source_proven:false});
+ await assert.rejects(pending,DENY);
+ assert.equal(model.retired,true);
+});
