@@ -19,7 +19,19 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const TASK=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const CLAIM_KEYS="credential_id,runtime_task_id,session_id,task_id";
 const MODEL="gemini-3.8-flash";
-const REQUEST_KEYS=new Set(["contents","config","tools","systemInstruction"]);
+const REQUEST_KEYS=new Set([
+ "contents","config","tools","systemInstruction",
+ "allowedTools","previousInteractionId"
+]);
+const ADK_INTERNAL_ONLY=new Set([
+ // @google/adk LlmRequest v2.2.1: toolsDict maps trusted local
+ // FunctionTool implementations with closures; never serialize this.
+ "toolsDict",
+ // connect() is permanently disabled: no live/realtime transport.
+ "liveConnectConfig",
+ // Provider selection is owner-pinned, never from a worker request.
+ "model"
+]);
 const deny=()=>{throw Error("Disposable original worker ADK IPC model NO-GO");};
 function validClaim(v){
  return !!v&&typeof v==="object"&&!Array.isArray(v)&&
@@ -33,7 +45,7 @@ function snapshotRequest(request){
  // Never forward request-selected provider model, API credentials or
  // network overrides. No automatic inclusion of new SDK fields.
  for(const [key,value] of Object.entries(request)){
-  if(key==="model")continue;
+  if(ADK_INTERNAL_ONLY.has(key))continue;
   if(!REQUEST_KEYS.has(key))deny();
   if(value!==undefined)raw[key]=value;
  }
@@ -45,7 +57,17 @@ function snapshotRequest(request){
  try{result=JSON.parse(json);}
  catch{deny();}
  if(!Array.isArray(result.contents)||
-    result.contents.length<1||result.contents.length>128)deny();
+    result.contents.length<1||result.contents.length>128||
+    (result.allowedTools!==undefined&&
+     (!Array.isArray(result.allowedTools)||
+      result.allowedTools.length>64||
+      result.allowedTools.some(name=>typeof name!=="string"||
+       !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u.test(name))))||
+    (result.previousInteractionId!==undefined&&
+     (typeof result.previousInteractionId!=="string"||
+      !ID.test(result.previousInteractionId))))deny();
+ // SDK session metadata may restrict functions but never supplies any
+ // privileged owner callback, authorization proof or provider credentials.
  return result;
 }
 

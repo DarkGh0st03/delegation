@@ -36,12 +36,13 @@ async function fixture(t,options={}){
  const secretFile=join(dir,"backend.hex");
  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
   {mode:0o600,flag:"wx"});
- let admitted=0,calls=0,lastTask;
+ let admitted=0,calls=0,lastTask,lastPayload;
  const server=await startDisposableOwnerModelIpcServer({
   role:"backend",socketPath,secretFile,
   authorizeSignedTask:async input=>{
    admitted++;
    lastTask=input.task;
+   lastPayload=input.payload;
    return options.authorize?options.authorize(input):
     input.task.credential_id===task.credential_id;
   },
@@ -62,7 +63,8 @@ async function fixture(t,options={}){
   role:"backend",socketPath,secretFile
  });
  return {client,server,socketPath,secretFile,
-  admitted:()=>admitted,calls:()=>calls,lastTask:()=>lastTask};
+  admitted:()=>admitted,calls:()=>calls,
+  lastTask:()=>lastTask,lastPayload:()=>lastPayload};
 }
 test("actual worker BaseLlm talks to owner via authenticated Unix socket without constructing a Gemini client",async t=>{
  const f=await fixture(t);
@@ -255,4 +257,28 @@ test("real Google ADK Runner -> worker model proxy -> Unix RPC -> original meter
  assert.equal(original.publicSummary().reported_total_tokens,17);
  assert.equal(original.publicSummary().blocked,false);
  assert.equal(ownerAdapter.retired,false);
+});
+
+test("ADK local toolsDict and live-connect settings never cross IPC or select a provider",async t=>{
+ const f=await fixture(t);
+ const model=createDisposableOriginalWorkerIpcAdkModel({
+  role:"backend",task,client:f.client,maxCalls:1
+ });
+ const sentinel="LOCAL_TOOL_SECRET_MUST_NEVER_LEAVE_WORKER";
+ const sdkRequest={
+  contents:request.contents,model:"forged-other-model",
+  toolsDict:{read_file:{ownerPrivateClosure:sentinel}},
+  liveConnectConfig:{authToken:sentinel},
+  allowedTools:["read_file"],previousInteractionId:"interaction_0001"
+ };
+ const chunks=[];
+ for await(const chunk of model.generateContentAsync(sdkRequest))
+  chunks.push(chunk);
+ assert.deepEqual(chunks,[response]);
+ assert.equal(f.lastPayload().model,undefined);
+ assert.equal(f.lastPayload().toolsDict,undefined);
+ assert.equal(f.lastPayload().liveConnectConfig,undefined);
+ assert.deepEqual(f.lastPayload().allowedTools,["read_file"]);
+ assert.equal(f.lastPayload().previousInteractionId,"interaction_0001");
+ assert.equal(JSON.stringify(f.lastPayload()).includes(sentinel),false);
 });
