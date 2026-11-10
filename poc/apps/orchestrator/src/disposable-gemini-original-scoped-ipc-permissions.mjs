@@ -112,6 +112,62 @@ export function evaluateDisposableOriginalScopedIpcPermissions({
  });
 }
 
+/**
+ * Owner-only aggregate validation: three specialists mean three DIFFERENT
+ * unprivileged UIDs and three DIFFERENT role GIDs. An individual channel
+ * audit would otherwise miss cross-role group reuse or aliasing.
+ *
+ * This function is a pure contract, NOT authorization and NOT evidence
+ * that any OS process/mount exists. A privileged launcher must later call
+ * the real lstat/proc inspectors on each live PID and reconcile all three.
+ */
+export function evaluateDisposableOriginalThreeRoleIpcPermissions({
+ workers
+}={}){
+ if(!exact(workers,["backend","frontend","test"]))deny();
+ const audits={};
+ const identities=[],roleGids=[],directories=[],secretAndSocketPaths=[];
+ const ownerUids=[],ownerPrimaryGids=[],ownerPrivateKeyPaths=[];
+ for(const role of ["backend","frontend","test"]){
+  const info=workers[role];
+  if(!info||typeof info!=="object"||info.role!==role)deny();
+  audits[role]=evaluateDisposableOriginalScopedIpcPermissions(info);
+  identities.push(info.workerUid);roleGids.push(info.roleGid);
+  ownerUids.push(info.ownerUid);ownerPrimaryGids.push(info.ownerPrimaryGid);
+  ownerPrivateKeyPaths.push(info.ownerPrivate.keyFile.path);
+  for(const channel of CHANNELS){
+   directories.push(info.channels[channel].directory.path);
+   secretAndSocketPaths.push(info.channels[channel].secretFile.path,
+    info.channels[channel].socket.path);
+  }
+ }
+ const conditions=Object.freeze({
+  eachRolePermissionLayout:CHANNELS.length===3&&
+   Object.values(audits).every(a=>a.layoutPotentiallyUsable),
+  oneOwnerUid:new Set(ownerUids).size===1,
+  oneOwnerPrimaryGid:new Set(ownerPrimaryGids).size===1,
+  threeDistinctWorkerUids:new Set(identities).size===3,
+  threeDistinctWorkerGroups:new Set(roleGids).size===3,
+  threeOwnerPrivateKeyPathsConsistent:
+   new Set(ownerPrivateKeyPaths).size===1,
+  nineSeparateChannelDirectories:new Set(directories).size===9,
+  eighteenSeparateChannelPaths:
+   new Set(secretAndSocketPaths).size===18
+ });
+ return Object.freeze({
+  status:Object.values(conditions).every(Boolean)?
+   "three_role_layout_well_formed_not_kernel_attestation":
+   "three_role_layout_no_go",
+  conditions,
+  layouts:Object.freeze(audits),
+  threeRoleLayoutPotentiallyUsable:Object.values(conditions).every(Boolean),
+  // No proof of Rust identities, peer credentials or owner key isolation.
+  signedOriginalRootVerified:false,
+  kernelNamespaceIsolationVerified:false,
+  paidGeminiAdmission:false
+ });
+}
+
 const kernelStat=async path=>{
  const st=await lstat(path);
  const kind=st.isSymbolicLink()?"symlink":st.isDirectory()?"directory":

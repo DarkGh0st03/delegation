@@ -133,3 +133,79 @@ test("live audit cannot use its own PID or an unrelated unbound process as a sig
   ownerPrivateDirectory:"/tmp",ownerPrivateKeyFile:"/tmp/no-key"
  }),DENY);
 });
+
+const threeRoleContracts=()=>{
+ const out={};
+ const roles=["backend","frontend","test"];
+ for(let i=0;i<roles.length;i++){
+  const role=roles[i];
+  const row=structuredClone(fixture());
+  row.role=role;
+  row.workerUid=1002+i;
+  row.workerPrimaryGid=2301+i;
+  row.roleGid=2301+i;
+  row.ownerGroups=[1001,2301,2302,2303];
+  row.workerGroups=[row.roleGid];
+  for(const kind of ["model","stage","bind"]){
+   const ch=row.channels[kind];
+   for(const part of ["directory","secretFile","socket"]){
+    ch[part].path=ch[part].path.replace("-backend","-"+role);
+    ch[part].stat.gid=row.roleGid;
+   }
+   if(kind==="bind"){
+    ch.directory.stat.uid=row.workerUid;
+    ch.socket.stat.uid=row.workerUid;
+   }
+  }
+  out[role]=row;
+ }
+ return out;
+};
+test("the ORIGINAL three workers need three distinct OS principals and role groups, not just three PIDs",async()=>{
+ const {evaluateDisposableOriginalThreeRoleIpcPermissions}=await import(
+  "../src/disposable-gemini-original-scoped-ipc-permissions.mjs");
+ const result=evaluateDisposableOriginalThreeRoleIpcPermissions({
+  workers:threeRoleContracts()
+ });
+ assert.equal(result.threeRoleLayoutPotentiallyUsable,true);
+ assert.equal(result.status,
+  "three_role_layout_well_formed_not_kernel_attestation");
+ assert.equal(result.kernelNamespaceIsolationVerified,false);
+ assert.equal(result.signedOriginalRootVerified,false);
+ assert.equal(result.paidGeminiAdmission,false);
+});
+test("three-role validation detects role group sharing, duplicated UIDs and a fourth specialist",async()=>{
+ const {evaluateDisposableOriginalThreeRoleIpcPermissions}=await import(
+  "../src/disposable-gemini-original-scoped-ipc-permissions.mjs");
+ for(const issue of ["gid","uid","channelAlias"]){
+  const workers=threeRoleContracts();
+  if(issue==="gid"){
+   workers.frontend.roleGid=workers.backend.roleGid;
+   workers.frontend.workerPrimaryGid=workers.backend.roleGid;
+   workers.frontend.workerGroups=[workers.backend.roleGid];
+   for(const kind of ["model","stage","bind"])
+    for(const part of ["directory","secretFile","socket"])
+     workers.frontend.channels[kind][part].stat.gid=workers.backend.roleGid;
+  }
+  if(issue==="uid"){
+   workers.test.workerUid=workers.backend.workerUid;
+   workers.test.channels.bind.directory.stat.uid=workers.backend.workerUid;
+   workers.test.channels.bind.socket.stat.uid=workers.backend.workerUid;
+  }
+  if(issue==="channelAlias"){
+   workers.test.channels.model.directory.path=
+    workers.backend.channels.model.directory.path;
+   workers.test.channels.model.socket.path=
+    workers.backend.channels.model.socket.path;
+   workers.test.channels.model.secretFile.path=
+    workers.backend.channels.model.secretFile.path;
+  }
+  const result=evaluateDisposableOriginalThreeRoleIpcPermissions({workers});
+  assert.equal(result.threeRoleLayoutPotentiallyUsable,false,issue);
+ }
+ const workers=threeRoleContracts();
+ workers.reviewer=workers.backend;
+ assert.throws(()=>evaluateDisposableOriginalThreeRoleIpcPermissions({
+  workers
+ }),DENY);
+});
