@@ -111,6 +111,7 @@ test("original Review Host, native transports and exactly three workers receive 
    f.operational.localWorkers.workers[role].adk.adapterToken);
  }
  assert.equal("reviewer" in bound.operational.localWorkers.workers,false);
+ assert.equal(bound.reconcileVerifiedOriginalWorkerUpdate,undefined);
  assert.equal(Object.isFrozen(bound.operational.workflow),true);
  assert.equal(Object.isFrozen(bound.operational.localWorkers.workers),true);
 });

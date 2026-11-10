@@ -325,6 +325,13 @@ test("GitHub Actions one-use consented owner models bind every ORIGINAL typed na
   assert.ok(bound.ownerModelTaskWindowStores[role] instanceof
    DisposableOriginalA2AModelCallWindowStore);
  }
+ assert.equal(typeof bound.reconcileVerifiedOriginalWorkerUpdate,"function");
+ await assert.rejects(bound.reconcileVerifiedOriginalWorkerUpdate({
+  role:"reviewer"
+ }),/Disposable live canonical binding NO-GO/u);
+ await assert.rejects(bound.reconcileVerifiedOriginalWorkerUpdate({
+  role:"backend",completionExpectation:{agent_did:"did:attacker:forged"}
+ }),/Disposable live canonical binding NO-GO/u);
  assert.equal(admitted.planner.model.publicSummary().calls_started,0);
  assert.equal(admitted.adaptive.model.publicSummary().calls_started,0);
  // Same original owner provision validates typed native dependencies. Do

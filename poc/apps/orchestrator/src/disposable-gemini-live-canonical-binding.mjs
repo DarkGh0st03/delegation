@@ -14,6 +14,8 @@ import {DisposablePrivateBudgetedAdkModel}
  from "./disposable-gemini-live-budgeted-model.mjs";
 import {DisposableOriginalA2AModelCallWindowStore}
  from "./disposable-gemini-original-task-call-window.mjs";
+import {reconcileOriginalOwnerTaskWriteFromStore}
+ from "./disposable-gemini-gitea-write-reconcile.mjs";
 
 const ROLES=Object.freeze(["backend","frontend","test"]);
 const deny=()=>{throw Error("Disposable live canonical binding NO-GO");};
@@ -157,10 +159,33 @@ export function bindDisposableLiveGeminiCanonicalInputs({
   ...operational,workflow,
   localWorkers:Object.freeze({...operational.localWorkers,workers})
  });
+ // A host-only reconciler closes over the signed roster, models and private
+ // call-window stores. The LLM/A2A Task cannot inject an agent DID, model
+ // instance, read witness or window. No provider or Gateway call here.
+ const allMetered=ROLES.every(role=>
+  models.workers[role].model instanceof DisposablePrivateBudgetedAdkModel);
+ const ownerReconcile=allMetered?async({
+  role,mutationObserver,completionExpectation
+ }={})=>{
+  if(!ROLES.includes(role)||
+     !nextAuthority.trustedAgentRegistry[role]?.did||
+     completionExpectation?.agent_did!==
+      nextAuthority.trustedAgentRegistry[role].did)deny();
+  return reconcileOriginalOwnerTaskWriteFromStore({
+   model:models.workers[role].model,
+   ownerWindowStore:ownerModelTaskWindowStores[role],
+   mutationObserver,completionExpectation,role,
+   registeredAgentDid:nextAuthority.trustedAgentRegistry[role].did
+  });
+ }:undefined;
  // Claim only AFTER the entire original-host configuration validates.
  // One OIDC-admitted set may bind only ONE owner session; no model reuse
  // as a second parallel Root/Planning launch with the same admission.
  claimIssuedDisposableLiveGeminiModelSet(models);
  return Object.freeze({authority:nextAuthority,operational:nextOperational,
-  ownerModelTaskWindowStores:Object.freeze(ownerModelTaskWindowStores)});
+  ownerModelTaskWindowStores:Object.freeze(ownerModelTaskWindowStores),
+  ...(ownerReconcile?{
+   // Host-only: before the next independently signed Task changes Gitea HEAD.
+   reconcileVerifiedOriginalWorkerUpdate:ownerReconcile
+  }:{})});
 }
