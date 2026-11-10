@@ -103,7 +103,7 @@ export async function writeOriginalDisposableCiEngineerReceipt({
      !createPublicKey(signer).equals(pinned))deny();
  }catch{deny();}
  const issuedAt=new Date(nowMs).toISOString().replace(/\.\d{3}Z$/u,"Z");
- const expiresAt=new Date(nowMs+30*60_000).toISOString()
+ const expiresAt=new Date(nowMs+55*60_000).toISOString()
   .replace(/\.\d{3}Z$/u,"Z");
  const receipt=signAuthorityOnlyGrant({
   authorization:grant,engineerDid,keyId,privateKeyPem:pem,

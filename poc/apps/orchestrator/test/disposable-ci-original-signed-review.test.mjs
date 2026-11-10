@@ -106,3 +106,20 @@ test("CI approval rejects foreign Engineer key and foreign work context",async t
  }),DENY);
  await assert.rejects(access(join(f.receipts,f.sessionId+".json")));
 });
+
+test("native R385.13 experimental switch reuses the same post-Planning signed receipt, never a second Root",async()=>{
+ const {readFile}=await import("node:fs/promises");
+ const e2e=await readFile(new URL(
+  "../../../packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs",
+  import.meta.url),"utf8");
+ const yml=await readFile(new URL(
+  "../../../../.github/workflows/r38513-native-strict-full-recovery.yml",
+  import.meta.url),"utf8");
+ assert.match(e2e,/if\(ciApprovalAfterPlanning\)\{/u);
+ assert.match(e2e,/writeOriginalDisposableCiEngineerReceipt\(\{/u);
+ assert.match(e2e,/checkpointStore:checkpoints,snapshot,workBranch:branch/u);
+ assert.match(e2e,/if\(!ciApprovalAfterPlanning\)await writeFile/u);
+ assert.match(yml,/R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING:/u);
+ assert.match(yml,/original_ci_engineer_after_planning:/u);
+ assert.equal(e2e.includes("ciApprovalAfterPlanning?null:signAuthorityOnlyGrant"),true);
+});

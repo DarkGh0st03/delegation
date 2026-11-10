@@ -145,6 +145,17 @@ const strictReadProbe=process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1";
 const secondReadProbe=process.env.R3859_NATIVE_SECOND_REPAIR_PROBE==="1";
 const testAgentProbe=process.env.R38512_NATIVE_TEST_AGENT_SOURCE_PROBE==="1";
 const strictFullRecovery=process.env.R38513_NATIVE_STRICT_FULL_RECOVERY==="1";
+// In the experimental CI-only profile, approval is selected AFTER the
+// original backend-signed Planning checkpoint, not pre-written as a fixture.
+// Default original tests remain untouched unless the explicit opt-in is set.
+const ciApprovalAfterPlanning=
+ process.env.R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING==="1";
+if(ciApprovalAfterPlanning){
+ assert.equal(strictFullRecovery,true);
+ assert.equal(process.env.GITHUB_ACTIONS,"true");
+ for(const key of ["GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY"])
+  assert.equal(process.env[key],undefined);
+}
 const r399NativeSamePrGate=process.env.R399_NATIVE_SAME_PR_GATE==="1";
 assert.ok(!r399NativeSamePrGate||strictFullRecovery,
  "R399 native same-PR Security CI must use strict R385.13 original owner");
@@ -356,7 +367,7 @@ const proposed={
 const grant=selectAuthorityOnlyGrant(proposed,grantPermissions,{
  allowedOperations:new Set(RUST_OPERATIONS)
 });
-const receipt=signAuthorityOnlyGrant({
+const receipt=ciApprovalAfterPlanning?null:signAuthorityOnlyGrant({
  authorization:grant,engineerDid,keyId:authKey,
  privateKeyPem:privateKey.export({format:"pem",type:"pkcs8"}),
  issuedAt,expiresAt:approvalExpiresAt,
@@ -375,7 +386,8 @@ const names=["approvals","keys","checkpoints","recovery","root-journal","coordin
  "runner-intent","runner-receipts","runner-fail-receipts","runner-logs"];
 try{
  for(const name of names)await mkdir(path(name),{mode:0o700});
- await writeFile(path("approvals")+"/"+sessionId+".json",
+ if(!ciApprovalAfterPlanning)await writeFile(
+  path("approvals")+"/"+sessionId+".json",
   JSON.stringify(receipt),{mode:0o600,flag:"wx"});
   // R375.2: the original Engineer Review Host owns Planning, root,
   // Coordinator, Gateway, Child issuer and every model-selected Task.
@@ -540,6 +552,22 @@ try{
     adapterToken:tokens.orchestrator,fetchFn:planningTransport,
     timeoutMs:60000}
   });
+  if(ciApprovalAfterPlanning){
+   // Sign the actual original backend-signed Planner proposal. This file
+   // is consumed by the SAME Review Host before Rust Root activation.
+   const {writeOriginalDisposableCiEngineerReceipt}=await import(
+    "../../../apps/orchestrator/src/disposable-ci-original-signed-review.mjs"
+   );
+   const review=await writeOriginalDisposableCiEngineerReceipt({
+    checkpointStore:checkpoints,snapshot,workBranch:branch,requirement,
+    receiptDirectory:path("approvals"),privateKeyFile:engineerFile,
+    engineerDid,keyId:authKey,
+    publicKeyPem:publicKey.export({format:"pem",type:"spki"}).toString()
+   });
+   assert.equal(review.original_receipt_written_and_independently_verified,true);
+   assert.equal(review.permission_count,23);
+   assert.equal(review.native_root_issued_here,false);
+  }
   assert.equal(planningModel.calls,2);
   if(strictFullRecovery){
    assert.equal(researchPlanningModel.observedCalls,2);
@@ -1664,6 +1692,8 @@ const tool=record?.request?.tool,role=record?.agent_role;
     no_extra_child_for_terminal_decision:true
    }:{}),
    original_main_immutable:true,
+   original_engineer_ci_approval_from_actual_planning_checkpoint:
+    ciApprovalAfterPlanning,
    ...(strictFullRecovery?{
     // Same-process SCRIPTED ADK Planning + adaptive decision counters,
     // linked to the original native credential/Gitea/Docker assertions.

@@ -11,7 +11,18 @@ on:
   # R385.18: native full E2E may be reused by disposable positive Security
   # CI on the exact same source SHA; no secrets/paid inference inputs.
   workflow_call:
+    inputs:
+      original_ci_engineer_after_planning:
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
+    inputs:
+      original_ci_engineer_after_planning:
+        description: "Free original same-session Engineer approval AFTER Planning"
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -29,6 +40,7 @@ jobs:
       R3858_NATIVE_STRICT_POSTFAIL_PROBE: "1"
       R38512_NATIVE_TEST_AGENT_SOURCE_PROBE: "1"
       R38513_NATIVE_STRICT_FULL_RECOVERY: "1"
+      R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING: ${{ inputs.original_ci_engineer_after_planning && '1' || '0' }}
       # The canonical native strict E2E also verifies Security CI's
       # exact status on its OWN generated Draft PR (no merge/no paid AI).
       R399_NATIVE_SAME_PR_GATE: "1"
