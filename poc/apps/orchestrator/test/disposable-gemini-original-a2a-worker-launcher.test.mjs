@@ -162,8 +162,13 @@ test("ORIGINAL owner HMAC-binds a signed-Task claim into separate Backend A2A PI
  await stage.stage(task.runtime_task_id,"owner-pinned-original-read-01");
  assert.equal(staged,1);
  await owner.fence(task.runtime_task_id);
- await assert.rejects(owner.fence(task.runtime_task_id),
+ // The ORIGINAL private binder intentionally supports idempotent fencing.
+ // A repeated revocation cannot re-enable an already retired Task.
+ await owner.fence(task.runtime_task_id);
+ await assert.rejects(stage.stage(task.runtime_task_id,
+  "owner-pinned-original-read-02"),
   /Authenticated private effect operation denied/u);
+ assert.equal(staged,1);
  assert.equal(child.osIsolationVerified,false);
  assert.equal(child.originalNativeTaskBindingPresent,false);
  // No Task has been dispatched or model called by this prebind proof.
