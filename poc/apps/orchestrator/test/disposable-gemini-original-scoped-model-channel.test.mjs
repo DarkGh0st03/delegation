@@ -41,11 +41,11 @@ test("same UID, role spoof, supplemental privileged groups and untrusted caller 
   const args={role:"backend",scope,side:"worker",
    actualUid:1102,actualPrimaryGid:2201,actualGroups:[2201],
    ...invalid};
-  if(invalid.actualUid===1101||
-     invalid.actualGroups||invalid.actualPrimaryGid===1101)
-   assert.equal(assessOriginalScopedModelRoleProcess(args).matches,
-    false);
-  else assert.throws(()=>assessOriginalScopedModelRoleProcess(args),DENY);
+  if(invalid.actualGroups?.includes(0)||
+     invalid.role||invalid.scope||invalid.side)
+   assert.throws(()=>assessOriginalScopedModelRoleProcess(args),DENY);
+  else assert.equal(assessOriginalScopedModelRoleProcess(args).matches,
+   false);
  }
 });
 test("original private 0700/0600 model channel is never silently reinterpreted as a 2750/0640 cross-UID channel",async t=>{
