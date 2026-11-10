@@ -73,8 +73,9 @@ test("actual specialized Backend A2A server starts in a second sanitized Node PI
  const response=await fetch(child.baseUrl+AGENT_CARD_PATH);
  assert.equal(response.status,200);
  const card=await response.json();
- assert.equal(card.url,child.baseUrl);
- assert.equal(card.name.includes("Backend"),true);
+ assert.equal(card.supportedInterfaces?.[0]?.url,
+  child.baseUrl+"/a2a/rest");
+ assert.equal(card.name,"Backend Development Agent");
  await child.close();
  await assert.rejects(fetch(child.baseUrl+AGENT_CARD_PATH));
  assert.equal(f.modelCalls(),0);
