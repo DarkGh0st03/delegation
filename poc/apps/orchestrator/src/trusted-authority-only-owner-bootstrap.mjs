@@ -9,6 +9,10 @@
  * after all local data has been verified. No API model calls or Root issue.
  */
 import {constants} from "node:fs";
+import {execFileSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
+import {verifyGithubManualRunViaApi}
+ from "../../../packages/orchestrator-runtime/src/trusted-github-run-identity.ts";
 import {lstat,open,realpath} from "node:fs/promises";
 import {isAbsolute,dirname,join,resolve} from "node:path";
 import {createPublicKey,createPrivateKey,randomUUID,timingSafeEqual} from "node:crypto";
@@ -51,6 +55,13 @@ import {persistStatusIndexReservation}
  from "../../../packages/orchestrator-runtime/src/trusted-status-index-reservation.ts";
 
 const SHA=/^[0-9a-f]{40}$/u;
+const ACTIONS_REPO="DarkGh0st03/delegation";
+const ACTIONS_REF="refs/heads/experiment/disposable-gemini-live-20261109";
+const ACTIONS_WORKFLOW=".github/workflows/gemini-authority-only-live-ci-pilot.yml";
+const SOURCE_ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
+const ACTIONS_CONFIRM="I AUTHORIZE GEMINI API CHARGES";
+const ACTIONS_CAP="I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
+const RUN=/^[1-9][0-9]{0,19}$/u;
 const HEX=/^[0-9a-f]+$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const ROLES=["backend","frontend","test","orchestrator"];
@@ -215,8 +226,84 @@ function assertManifest(x,expectedSourceSha){
 export async function loadProtectedCanonicalOwnerManifest(
  configPath,{expectedSourceSha}={}
 ){
- if(process.env.GITHUB_ACTIONS==="true"||
-    process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+ // R5 private signed-Engineer owner is NEVER admitted by GitHub Actions.
+ if(process.env.GITHUB_ACTIONS==="true")deny();
+ return loadVerifiedOriginalCanonicalManifest(configPath,expectedSourceSha);
+}
+
+/** Actions-only original native authority manifest (ZERO inference).
+ *
+ * Distinct from the R5 private-human admission, but the actual protected
+ * manifest verification, typed checkpoint, Engineer keys, Rust port,
+ * Gateway IPC and single-use assembler are IDENTICAL to R5. The one-use
+ * original assembler accepts only objects minted by that same verifier.
+ * This is source/run admission, NOT credential process isolation, spending
+ * authorization or an implementation of an independent authority.
+ *
+ * No current workflow invokes this; the manual CI remains free-only.
+ */
+export async function loadProtectedDisposableActionsCanonicalOwnerManifest(
+ configPath,{expectedSourceSha,githubApiToken}={}
+){
+ let head,dirty;
+ try{
+  head=execFileSync("git",["rev-parse","--verify","HEAD"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+  dirty=execFileSync("git",["status","--porcelain",
+   "--untracked-files=all"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+ }catch{deny();}
+ const e=process.env;
+ if(e.GITHUB_ACTIONS!=="true"||
+    e.GITHUB_REPOSITORY!==ACTIONS_REPO||
+    e.GITHUB_EVENT_NAME!=="workflow_dispatch"||
+    e.GITHUB_REF!==ACTIONS_REF||
+    e.GITHUB_WORKFLOW_REF!==
+     ACTIONS_REPO+"/"+ACTIONS_WORKFLOW+"@"+ACTIONS_REF||
+    e.GITHUB_RUN_ATTEMPT!=="1"||
+    !RUN.test(e.GITHUB_RUN_ID??"")||
+    !SHA.test(expectedSourceSha??"")||
+    expectedSourceSha!==e.GITHUB_SHA||
+    expectedSourceSha!==head||dirty||
+    e.DELEGATION_DISPOSABLE_LIVE_MODE!=="gemini-real"||
+    e.DELEGATION_GEMINI_CHARGE_CONFIRMATION!==ACTIONS_CONFIRM||
+    e.DELEGATION_BILLING_CAP_ACK!==ACTIONS_CAP||
+    e.DELEGATION_LIVE_CI_PREFLIGHT_MODE!==undefined||
+    e.DELEGATION_DISPOSABLE_CI_MODE!==undefined||
+    e.DELEGATION_SIGNED_GEMINI_PILOT!==undefined||
+    e.R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING!==undefined||
+    e.R38513_NATIVE_STRICT_FULL_RECOVERY!==undefined||
+    e.GEMINI_API_KEY!==undefined||
+    e.GOOGLE_API_KEY!==undefined||
+    e.OPENAI_API_KEY!==undefined||
+    e.GH_TOKEN!==undefined||
+    e.GITHUB_TOKEN!==undefined||
+    e.ADAPTER_ADDITIONAL_SPECIALISTS!==undefined&&
+     e.ADAPTER_ADDITIONAL_SPECIALISTS!==""||
+    typeof githubApiToken!=="string"||
+    githubApiToken.length<16||githubApiToken.length>512||
+    /\s/u.test(githubApiToken))deny();
+ try{
+  await verifyGithubManualRunViaApi({
+   dispatch:{run_id:e.GITHUB_RUN_ID,source_sha:head},
+   pinned:{repository:ACTIONS_REPO,ref:ACTIONS_REF,
+    workflowPath:ACTIONS_WORKFLOW,sourceSha:head},
+   githubApiToken
+  });
+ }catch{deny();}
+ // Use the EXACT R5 file validator and the EXACT original one-shot
+ // authority assembler, not a parallel Actions manifest or gateway.
+ return loadVerifiedOriginalCanonicalManifest(configPath,expectedSourceSha);
+}
+
+async function loadVerifiedOriginalCanonicalManifest(
+ configPath,expectedSourceSha
+){
+ if(process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
     process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
     process.env.ENGINEER_CORE_NATIVE_MODE!=="1"||
     !path(process.env.ADAPTER_ENGINEER_NATIVE_SOCKET)||

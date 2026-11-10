@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync,randomBytes} from "node:crypto";
+import {execFileSync} from "node:child_process";
 import {mkdtemp,mkdir,writeFile,chmod,symlink,rm,readdir} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {
- loadProtectedCanonicalOwnerManifest,assembleProtectedCanonicalOwnerAuthority,
+ loadProtectedCanonicalOwnerManifest,
+ loadProtectedDisposableActionsCanonicalOwnerManifest,
+ assembleProtectedCanonicalOwnerAuthority,
  createProtectedCanonicalOperationalProvision
 } from "../src/trusted-authority-only-owner-bootstrap.mjs";
 
@@ -380,4 +383,108 @@ test("Protected 0600 manifest admits one Owner-pinned additional read specialist
  await assert.rejects(f.load(),/Protected canonical authority bootstrap denied/u);
  process.env.ADAPTER_CALLER_REVIEWER="PRIVATE_NATIVE_REVIEWER_TOKEN";
  assert.ok((await f.load()).pins.trustedAgentRegistry.reviewer);
+});
+
+test("Actions owner reuses the ORIGINAL protected native manifest verifier and one-shot authority without paid inference",async t=>{
+ const f=await fixture(t);
+ const sha=execFileSync("git",["rev-parse","--verify","HEAD"],{
+  encoding:"utf8",cwd:new URL("../../../../",import.meta.url)
+ }).trim();
+ const ref="refs/heads/experiment/disposable-gemini-live-20261109";
+ const workflow=".github/workflows/gemini-authority-only-live-ci-pilot.yml";
+ const e={
+  GITHUB_ACTIONS:"true",GITHUB_REPOSITORY:"DarkGh0st03/delegation",
+  GITHUB_EVENT_NAME:"workflow_dispatch",GITHUB_REF:ref,
+  GITHUB_WORKFLOW_REF:"DarkGh0st03/delegation/"+workflow+"@"+ref,
+  GITHUB_SHA:sha,GITHUB_RUN_ID:"42845911223",
+  GITHUB_RUN_ATTEMPT:"1",
+  DELEGATION_DISPOSABLE_LIVE_MODE:"gemini-real",
+  DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
+  DELEGATION_BILLING_CAP_ACK:
+   "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES"
+ };
+ const forbidden=["GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY",
+  "GH_TOKEN","GITHUB_TOKEN","DELEGATION_LIVE_CI_PREFLIGHT_MODE",
+  "DELEGATION_DISPOSABLE_CI_MODE","DELEGATION_SIGNED_GEMINI_PILOT",
+  "R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING",
+  "R38513_NATIVE_STRICT_FULL_RECOVERY"];
+ const restore=new Map([...Object.keys(e),...forbidden]
+  .map(k=>[k,process.env[k]]));
+ const oldFetch=globalThis.fetch;
+ t.after(()=>{
+  globalThis.fetch=oldFetch;
+  for(const [key,value] of restore)
+   if(value===undefined)delete process.env[key];
+   else process.env[key]=value;
+ });
+ for(const key of forbidden)delete process.env[key];
+ Object.assign(process.env,e);
+ const config={...f.config,source_sha:sha};
+ await f.save(config);
+ let reads=0;
+ globalThis.fetch=async(url,options)=>{
+  reads++;
+  assert.equal(url,"https://api.github.com/repos/DarkGh0st03/delegation/actions/runs/"+e.GITHUB_RUN_ID);
+  assert.equal(options.headers.authorization,
+   "Bearer synthetic-test-Github-readonly-token");
+  return {ok:true,async json(){return {
+   id:e.GITHUB_RUN_ID,run_attempt:1,event:"workflow_dispatch",
+   status:"in_progress",head_sha:sha,
+   head_branch:"experiment/disposable-gemini-live-20261109",
+   path:workflow,head_repository:{full_name:e.GITHUB_REPOSITORY},
+   created_at:new Date().toISOString()
+  };}};
+ };
+ await assert.rejects(loadProtectedCanonicalOwnerManifest(f.configPath,{
+  expectedSourceSha:sha
+ }),/Protected canonical authority bootstrap denied/u,
+ "R5 private human-review loader must reject all Actions runs");
+ const load=()=>loadProtectedDisposableActionsCanonicalOwnerManifest(
+  f.configPath,{expectedSourceSha:sha,
+   githubApiToken:"synthetic-test-Github-readonly-token"});
+ const result=await load();
+ assert.equal(reads,1);
+ assert.equal(result.pins.source_sha,sha);
+ assert.equal(result.pins.snapshot.session_id,config.snapshot.session_id);
+ assert.deepEqual(Object.keys(result.pins.trustedAgentRegistry).sort(),
+  ["backend","frontend","orchestrator","test"]);
+ assert.equal(result.passwordSaltHex.length,32);
+ assert.equal(result.passwordScryptHex.length,128);
+ assert.equal(result.backendPublicKeyPem.includes("PUBLIC KEY"),true);
+ assert.equal(result.engineerPublicKeyPem.includes("PUBLIC KEY"),true);
+ assert.equal(result.geminiApiKey,undefined);
+ assert.equal(result.engineerPrivateKeyPem,undefined);
+ assert.deepEqual(await readdir(config.directories.activation),[]);
+ assert.deepEqual(await readdir(config.directories.checkpoint),[]);
+
+ // No GitHub REST request or protected-file read may follow a bad run,
+ // wrong checkout, injected provider env or inherited free CI profile.
+ const variants=[
+  ["GITHUB_RUN_ATTEMPT","2"],["GITHUB_REF","refs/heads/main"],
+  ["GITHUB_SHA","b".repeat(40)],
+  ["DELEGATION_LIVE_CI_PREFLIGHT_MODE","preflight-only"],
+  ["GEMINI_API_KEY","forbidden"],["GITHUB_TOKEN","forbidden"],
+  ["ADAPTER_ADDITIONAL_SPECIALISTS","fourth"]
+ ];
+ for(const [key,value] of variants){
+  const previous=process.env[key];
+  const previousReads=reads;
+  process.env[key]=value;
+  await assert.rejects(load(),
+   /Protected canonical authority bootstrap denied/u,key);
+  assert.equal(reads,previousReads,key+" must reject locally");
+  if(previous===undefined)delete process.env[key];
+  else process.env[key]=previous;
+ }
+ const oldStatus="in_progress";
+ let status=oldStatus;
+ globalThis.fetch=async()=>({ok:true,async json(){return {
+   id:e.GITHUB_RUN_ID,run_attempt:1,event:"workflow_dispatch",
+   status,head_sha:sha,
+   head_branch:"experiment/disposable-gemini-live-20261109",
+   path:workflow,head_repository:{full_name:e.GITHUB_REPOSITORY},
+   created_at:new Date().toISOString()
+  };}});
+ status="completed";
+ await assert.rejects(load(),/Protected canonical authority bootstrap denied/u);
 });
