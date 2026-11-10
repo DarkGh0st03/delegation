@@ -124,6 +124,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-owner-worker-ipc.test.mjs
           # Owner-only metered ADK callback over role-HMAC IPC: synthetic BaseLlm, no provider key or paid call.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-owner-ipc-model-adapter.test.mjs
+          # Actual separate Node PID running ADK BaseLlm over owner socket; synthetic usage, no paid Gemini.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-worker-ipc-adk-model.test.mjs
           # No-inference GitHub Actions liveness/cancellation/revocation fence for the original owner.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-original-github-run-watch.test.mjs
           # Review Host lifecycle: cancellation/Root retirement and single-use startup, no Gemini billing.
