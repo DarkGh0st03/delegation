@@ -70,14 +70,14 @@ test("actual specialized Backend A2A server starts in a second sanitized Node PI
  assert.equal(child.role,"backend");
  assert.equal(child.osIsolationVerified,false);
  assert.equal(child.originalNativeTaskBindingPresent,false);
- const response=await fetch(child.baseUrl+AGENT_CARD_PATH);
+ const response=await fetch(new URL(AGENT_CARD_PATH,child.baseUrl+'/').href);
  assert.equal(response.status,200);
  const card=await response.json();
  assert.equal(card.supportedInterfaces?.[0]?.url,
   child.baseUrl+"/a2a/rest");
  assert.equal(card.name,"Backend Development Agent");
  await child.close();
- await assert.rejects(fetch(child.baseUrl+AGENT_CARD_PATH));
+ await assert.rejects(fetch(new URL(AGENT_CARD_PATH,child.baseUrl+'/').href));
  assert.equal(f.modelCalls(),0);
 });
 test("offline A2A subprocess refuses paid mode and forged specialist role",async()=>{
