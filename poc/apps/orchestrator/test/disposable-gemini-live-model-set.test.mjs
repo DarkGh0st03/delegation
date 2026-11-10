@@ -103,11 +103,18 @@ test("real ADK Gemini instances bind to ORIGINAL Planner, adaptive loop and exac
   assert.ok(models.workers[role].model instanceof Gemini);
   assert.notEqual(models.workers[role].model,models.planner.model);
   assert.equal(models.workers[role].model.model,"gemini-3.8-flash");
-  assert.equal(models.workers[role].maxModelCallMs,60000);
+  assert.equal(models.workers[role].maxModelCallMs,180000);
  }
  assert.notEqual(models.planner.model,models.adaptive.model);
- assert.equal(models.planner.maxModelTurns,20);
- assert.equal(models.planner.maxPlanningMs,180000);
+ assert.equal(models.planner.maxModelTurns,24);
+ assert.equal(models.planner.maxModelCallMs,180000);
+ assert.equal(models.planner.maxOutputTokens,12288);
+ assert.equal(models.planner.maxPlanningMs,600000);
+ assert.equal(models.workers.backend.maxModelTurns,20);
+ assert.equal(models.workers.frontend.maxModelTurns,14);
+ assert.equal(models.workers.test.maxModelTurns,10);
+ assert.equal(models.workers.backend.generateContentConfig.maxOutputTokens,20480);
+ assert.equal(models.workers.frontend.generateContentConfig.maxOutputTokens,20480);
  assert.equal(models.adaptive.maxSteps,25);
  assert.equal(models.adaptive.maxVerifiedFailures,2);
  assert.equal(models.workers.test.generateContentConfig.maxOutputTokens,12288);

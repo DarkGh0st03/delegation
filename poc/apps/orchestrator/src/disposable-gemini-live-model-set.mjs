@@ -48,8 +48,8 @@ const deny=()=>{throw Error("Disposable live Gemini model admission NO-GO");};
 // These are runtime instruction/call limits, NEVER a monetary guarantee.
 // Existing Planner and ADK worker code must enforce them at invocation.
 const PLANNING=Object.freeze({
- maxModelTurns:20,maxModelCallMs:60000,maxOutputTokens:12000,
- maxPlanningMs:180000,maxProposalRevisions:2,thinkingLevel:"LOW"
+ maxModelTurns:24,maxModelCallMs:180000,maxOutputTokens:12288,
+ maxPlanningMs:600000,maxProposalRevisions:2,thinkingLevel:"LOW"
 });
 const ADAPTIVE=Object.freeze({maxSteps:25,maxVerifiedFailures:2});
 // Gemini 3.8 defaults to MEDIUM thinking. Force LOW for all original
@@ -58,15 +58,15 @@ const ADAPTIVE=Object.freeze({maxSteps:25,maxVerifiedFailures:2});
 // separately pinned to LOW in this experimental branch.
 const LOW_THINKING=Object.freeze({thinkingLevel:"LOW"});
 const WORKERS=Object.freeze({
- backend:Object.freeze({maxModelTurns:12,maxModelCallMs:60000,
+ backend:Object.freeze({maxModelTurns:20,maxModelCallMs:180000,
   generateContentConfig:Object.freeze({
-   maxOutputTokens:16384,thinkingConfig:LOW_THINKING
+   maxOutputTokens:20480,thinkingConfig:LOW_THINKING
   })}),
- frontend:Object.freeze({maxModelTurns:12,maxModelCallMs:60000,
+ frontend:Object.freeze({maxModelTurns:14,maxModelCallMs:180000,
   generateContentConfig:Object.freeze({
-   maxOutputTokens:16384,thinkingConfig:LOW_THINKING
+   maxOutputTokens:20480,thinkingConfig:LOW_THINKING
   })}),
- test:Object.freeze({maxModelTurns:10,maxModelCallMs:60000,
+ test:Object.freeze({maxModelTurns:10,maxModelCallMs:180000,
   generateContentConfig:Object.freeze({
    maxOutputTokens:12288,thinkingConfig:LOW_THINKING
   })})

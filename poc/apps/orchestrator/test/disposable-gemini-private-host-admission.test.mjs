@@ -63,7 +63,7 @@ async function fixture(t,{runId="987654321",model="gemini-3.8-flash"}={}){
   status:"manual_workflow_input_only_not_authorized",
   source_repository:REPO,source_ref:REF,source_sha:SHA,
   run_id:runId,model_name:model,
-  max_model_turns:20,max_output_tokens:12000,max_model_call_ms:60000,
+  max_model_turns:24,max_output_tokens:12288,max_model_call_ms:180000,
   authorization_input:CONSENT
  };
  // Synthetic OFFLINE receipt: no live OIDC JWT is received in this test.

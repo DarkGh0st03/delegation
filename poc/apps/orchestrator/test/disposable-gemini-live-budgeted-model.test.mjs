@@ -194,38 +194,38 @@ test("a single private-session call budget is shared across Planner, Orchestrato
  assert.equal(budget.publicSummary().calls_started,5);
  assert.equal(budget.publicSummary().reported_total_tokens,75);
  assert.equal(budget.publicSummary().blocked,false);
- assert.equal(budget.publicSummary().max_calls,45);
- assert.equal(budget.publicSummary().max_reported_tokens,200000);
+ assert.equal(budget.publicSummary().max_calls,160);
+ assert.equal(budget.publicSummary().max_reported_tokens,1_000_000);
  assert.equal(budget.publicSummary().monetary_cap_enforced,false);
 });
 
-test("global session budget is independent of per-model token counters and fails closed on overflow",async()=>{
+test("global session reported token cap rejects even across alternating roles",async()=>{
  const budget=new DisposablePrivateSessionUsageBudget();
  const mk=phase=>new DisposablePrivateBudgetedAdkModel({
   delegate:new OfflineDelegate(async function*(){
-   yield response("never execute unverified proposal",reported(56000,0));
+   yield response("never execute unverified proposal",reported(64000,0));
   }),
-  phase,maxCalls:10,maxReportedTokens:250000,
-  maxPerCallTokens:60000,sessionBudget:budget
+  phase,maxCalls:32,maxReportedTokens:1_000_000,
+  maxPerCallTokens:65536,sessionBudget:budget
  });
  const planner=mk("planning"),backend=mk("backend");
- for(const m of [planner,backend,planner]){
-  const responseList=await collect(m);
-  assert.equal(responseList.length,1);
+ for(let i=0;i<15;i++){
+  const out=await collect(i%2?backend:planner);
+  assert.equal(out.length,1);
  }
- const output=[];
+ const forbidden=[];
  await assert.rejects(async()=>{
-  for await(const message of backend.generateContentAsync({}))
-   output.push(message);
+  for await(const event of backend.generateContentAsync({}))
+   forbidden.push(event);
  },DENY);
- assert.equal(output.length,0);
- assert.equal(budget.publicSummary().calls_started,4);
- assert.equal(budget.publicSummary().reported_total_tokens,168000);
+ assert.deepEqual(forbidden,[]);
+ assert.equal(budget.publicSummary().calls_started,16);
+ assert.equal(budget.publicSummary().reported_total_tokens,960000);
  assert.equal(budget.publicSummary().blocked,true);
  await assert.rejects(collect(planner),DENY);
 });
 
-test("global call cap stops switching roles after 45 calls even when each model is below its local cap",async()=>{
+test("global call cap stops switching roles after 160 calls even when each model is below its local cap",async()=>{
  const budget=new DisposablePrivateSessionUsageBudget();
  const build=phase=>new DisposablePrivateBudgetedAdkModel({
   delegate:new OfflineDelegate(async function*(){
@@ -235,9 +235,9 @@ test("global call cap stops switching roles after 45 calls even when each model 
   maxPerCallTokens:60000,sessionBudget:budget
  });
  const models=["planning","adaptive-execution","backend","frontend","test"].map(build);
- for(let i=0;i<45;i++)await collect(models[i%5]);
- assert.equal(budget.publicSummary().calls_started,45);
- assert.equal(budget.publicSummary().reported_total_tokens,45);
+ for(let i=0;i<160;i++)await collect(models[i%5]);
+ assert.equal(budget.publicSummary().calls_started,160);
+ assert.equal(budget.publicSummary().reported_total_tokens,160);
  await assert.rejects(collect(models[0]),DENY);
  assert.equal(models[0].publicSummary().blocked,true);
 });
@@ -370,4 +370,18 @@ test("buffered partial provider decision stays hidden after ignored cancellation
  assert.deepEqual(received,[]);
  assert.equal(model.publicSummary().reported_total_tokens,0);
  assert.equal(budget.publicSummary().blocked,true);
+});
+
+test("session worker slots allow repeated original per-Task turn budgets",()=>{
+ const limits=PRIVATE_GEMINI_SESSION_LIMITS;
+ assert.equal(limits.planning.maxCalls,24);
+ assert.equal(limits["adaptive-execution"].maxCalls,27);
+ assert.equal(limits.backend.maxCalls,24*20);
+ assert.equal(limits.frontend.maxCalls,24*14);
+ assert.equal(limits.test.maxCalls,24*10);
+ assert.equal(limits.backend.maxPerCallTokens,65536);
+ const summary=new DisposablePrivateSessionUsageBudget().publicSummary();
+ assert.equal(summary.max_calls,160);
+ assert.equal(summary.max_reported_tokens,1_000_000);
+ assert.equal(summary.monetary_cap_enforced,false);
 });

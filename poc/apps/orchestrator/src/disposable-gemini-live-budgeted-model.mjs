@@ -81,8 +81,12 @@ async function* boundedResponses(source,signal){
  * Limits are fixed in audited source, never selected by a model, prompt,
  * worker Task or GitHub workflow input. No monetary ceiling is guaranteed.
  */
-const SESSION_MAX_CALLS=45;
-const SESSION_MAX_REPORTED_TOKENS=200000;
+// Candidate disposable session ceiling. The original A2A BoundedModel
+// enforces separate turns PER TASK; the shared 160-call / 1M-token gate
+// prevents an unbounded sequence of delegated Tasks. This is post-response
+// reported usage, NEVER a guaranteed monetary spending limit.
+const SESSION_MAX_CALLS=160;
+const SESSION_MAX_REPORTED_TOKENS=1_000_000;
 export class DisposablePrivateSessionUsageBudget{
  #calls=0;#tokens=0;#active;#blocked=false;
  begin(){
@@ -144,7 +148,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  }={}){
   if(!(delegate instanceof BaseLlm)||typeof delegate.model!=="string"||
      !delegate.model||!PHASES.has(phase)||
-     !positive(maxCalls,64)||!positive(maxReportedTokens,250000)||
+     !positive(maxCalls,512)||!positive(maxReportedTokens,1_000_000)||
      !positive(maxPerCallTokens,65536)||
      maxPerCallTokens>maxReportedTokens||
      (sessionBudget!==undefined&&
@@ -247,24 +251,26 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  connect(){deny();}
 }
 
-/** Private-host default call budgets for one disposable session. These are
- * ceilings on API calls and reported tokens, NOT guaranteed cost limits.
- * The 3 specialist roles remain exactly Backend, Frontend and Test.
+/** Limits per model INSTANCE and entire SESSION, not per Task.
+ * The original A2A BoundedModel has separate 20/14/10 turns PER Task.
+ * Worst-case worker slot count is 24 signed Child-consuming Tasks.
+ * Adaptive model is shared by 25 decisions plus Branch and PR proposals.
+ * The independent global call/token gate ALWAYS remains authoritative.
  */
 export const PRIVATE_GEMINI_SESSION_LIMITS=Object.freeze({
  planning:Object.freeze({
-  maxCalls:20,maxReportedTokens:100000,maxPerCallTokens:32000
+  maxCalls:24,maxReportedTokens:450000,maxPerCallTokens:48000
  }),
  "adaptive-execution":Object.freeze({
-  maxCalls:25,maxReportedTokens:125000,maxPerCallTokens:32000
+  maxCalls:27,maxReportedTokens:500000,maxPerCallTokens:48000
  }),
  backend:Object.freeze({
-  maxCalls:12,maxReportedTokens:90000,maxPerCallTokens:24000
+  maxCalls:480,maxReportedTokens:1_000_000,maxPerCallTokens:65536
  }),
  frontend:Object.freeze({
-  maxCalls:12,maxReportedTokens:90000,maxPerCallTokens:24000
+  maxCalls:336,maxReportedTokens:1_000_000,maxPerCallTokens:65536
  }),
  test:Object.freeze({
-  maxCalls:10,maxReportedTokens:80000,maxPerCallTokens:24000
+  maxCalls:240,maxReportedTokens:1_000_000,maxPerCallTokens:65536
  })
 });
