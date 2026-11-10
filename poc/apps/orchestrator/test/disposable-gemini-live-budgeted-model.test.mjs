@@ -463,3 +463,41 @@ test("invalid model write arguments and orchestrator writes deny before any ADK 
   assert.equal(model.publicSummary().blocked,true);
  }
 });
+
+test("late MAX_TOKENS, safety and malformed finish reasons fence an earlier model write",async()=>{
+ const proposal={content:{role:"model",parts:[{functionCall:{
+  id:"must-not-be-executed",name:"update_file",
+  args:{branch:"feature/account-suspension",
+   path:"apps/backend/src/users/user.service.ts",
+   content:"export const attempted = true;\n"}
+ }}]},usageMetadata:reported(3,4)};
+ for(const finishReason of [
+  "MAX_TOKENS","SAFETY","MALFORMED_FUNCTION_CALL","OTHER",
+  "UNEXPECTED_TOOL_CALL","INVENTED_STATUS",42
+ ]){
+  const model=wrapped(new OfflineDelegate(async function*(){
+   yield proposal;
+   yield {finishReason,usageMetadata:reported(4,6)};
+  }));
+  const out=[];
+  await assert.rejects(async()=>{
+   for await(const event of model.generateContentAsync({}))out.push(event);
+  },DENY,String(finishReason));
+  assert.deepEqual(out,[]);
+  assert.deepEqual(model.proposedSourceWriteFingerprints(),[]);
+  assert.equal(model.publicSummary().reported_total_tokens,0);
+  assert.equal(model.publicSummary().blocked,true);
+ }
+});
+
+test("successful STOP remains permitted only after full provider-reported usage",async()=>{
+ const model=wrapped(new OfflineDelegate(async function*(){
+  yield {content:{role:"model",parts:[{text:"bounded"}]},
+   usageMetadata:reported(2,3)};
+  yield {finishReason:"STOP",usageMetadata:reported(3,4)};
+ }));
+ const out=await collect(model);
+ assert.equal(out.length,2);
+ assert.equal(model.publicSummary().reported_total_tokens,7);
+ assert.equal(model.publicSummary().blocked,false);
+});

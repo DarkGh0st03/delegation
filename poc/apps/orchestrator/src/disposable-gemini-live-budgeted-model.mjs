@@ -271,6 +271,13 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
     if(this.#blocked||combined.aborted||
        response?.errorCode||response?.errorMessage||
        ++chunks>128)deny();
+    // Before releasing buffered FunctionTool calls, inspect the ENTIRE
+    // provider stream. A truncated/safety-blocked final event must not
+    // permit an earlier write proposal to execute. The worker's
+    // BoundedModel also checks MAX_TOKENS, but it sees yielded chunks
+    // sequentially and may be too late to stop the first tool call.
+    const reason=response?.finishReason;
+    if(reason!==undefined&&reason!==null&&reason!=="STOP")deny();
     const data=JSON.stringify(response);
     if(typeof data!=="string"||(bytes+=Buffer.byteLength(data))>1_000_000)
      deny();
