@@ -29,6 +29,8 @@ import {createDisposableLiveGeminiModelSetFromPrivateFile,
  from "../src/disposable-gemini-live-model-set.mjs";
 import {bindDisposableLiveGeminiCanonicalInputs}
  from "../src/disposable-gemini-live-canonical-binding.mjs";
+import {DisposableOriginalA2AModelCallWindowStore}
+ from "../src/disposable-gemini-original-task-call-window.mjs";
 
 const SHA="a".repeat(40);
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -318,6 +320,10 @@ test("GitHub Actions one-use consented owner models bind every ORIGINAL typed na
   const model=bound.operational.localWorkers.workers[role].adk.model;
   assert.equal(model,admitted.workers[role].model);
   assert.equal(model.publicSummary().calls_started,0);
+  assert.equal(typeof bound.operational.localWorkers.workers[role].adk
+   .trustedOriginalModelCallWindow,"function");
+  assert.ok(bound.ownerModelTaskWindowStores[role] instanceof
+   DisposableOriginalA2AModelCallWindowStore);
  }
  assert.equal(admitted.planner.model.publicSummary().calls_started,0);
  assert.equal(admitted.adaptive.model.publicSummary().calls_started,0);
