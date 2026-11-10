@@ -2,7 +2,8 @@ import test from "node:test";
 import {BaseLlm} from "@google/adk";
 import {DisposablePrivateBudgetedAdkModel}
  from "../../orchestrator/src/disposable-gemini-live-budgeted-model.mjs";
-import {reconcileOriginalModelWriteWithVerifiedGitea}
+import {reconcileOriginalModelWriteWithVerifiedGitea,
+ reconcileOriginalOwnerTaskWriteFromStore}
  from "../../orchestrator/src/disposable-gemini-gitea-write-reconcile.mjs";
 import {DisposableOriginalA2AModelCallWindowStore}
  from "../../orchestrator/src/disposable-gemini-original-task-call-window.mjs";
@@ -237,5 +238,71 @@ test("metered model write bytes match the ORIGINAL independently authenticated G
    completionExpectation:expected,role:"backend",
    registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:staleWindow
   }),/feature HEAD is not/u);
+ });
+});
+
+test("original owner auto-reconciles only a signed Gateway/Gitea mutation against its consumed Task window",async()=>{
+ await fixture(async({publisher,observer,setHead,dir})=>{
+  class LocalModel extends BaseLlm{
+   constructor(){super({model:"offline-original-owner-window-e2e"});}
+   async *generateContentAsync(){
+    yield {content:{role:"model",parts:[{functionCall:{
+     name:"update_file",args:{branch,path,content}
+    }}]},usageMetadata:{promptTokenCount:2,candidatesTokenCount:4,
+     totalTokenCount:6}};
+   }
+  }
+  const model=new DisposablePrivateBudgetedAdkModel({
+   delegate:new LocalModel(),phase:"backend",
+   maxCalls:3,maxReportedTokens:100,maxPerCallTokens:20
+  });
+  for await(const _ of model.generateContentAsync({})){}
+  const store=new DisposableOriginalA2AModelCallWindowStore({
+   role:"backend",model
+  });
+  const record={task_id:expected.task_id,
+   credential_id:expected.credential_id,
+   runtime_task_id:expected.runtime_task_id,role:"backend",
+   call_index_before:0,call_index_after:1};
+  store.callbackForOriginalA2A()(record);
+  const inputs={model,ownerWindowStore:store,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did};
+  await assert.rejects(reconcileOriginalOwnerTaskWriteFromStore(inputs));
+  await publisher.publish(intent,expected,result,"opa-r302");
+  // Forged Task expectation cannot consume the only permitted model window.
+  await assert.rejects(reconcileOriginalOwnerTaskWriteFromStore({
+   ...inputs,completionExpectation:{...expected,task_id:"attacker-task"}
+  }),/receipt differs/u);
+  // A stale Gitea head must also be rejected before consuming that window.
+  setHead(oldHead);
+  await assert.rejects(reconcileOriginalOwnerTaskWriteFromStore(inputs),
+   /feature HEAD is not/u);
+  setHead(nextHead);
+  const proof=await reconcileOriginalOwnerTaskWriteFromStore(inputs);
+  assert.equal(proof.status,
+   "signed_gateway_gitea_cas_matches_model_proposed_bytes_only");
+  assert.equal(proof.matched_model_call_index,1);
+  assert.equal(proof.commit_sha,nextHead);
+  assert.equal(proof.provider_origin_independently_verified,false);
+  assert.equal(proof.model_generated_source_proven,false);
+  assert.equal(model.publicSummary().model_proposed_write_fingerprints,1);
+  assert.equal((await readdir(dir)).length,1);
+  await assert.rejects(reconcileOriginalOwnerTaskWriteFromStore(inputs),
+   /reconciliation NO-GO/u);
+  // Cloned owner store class does not have the matching model's call
+  // window. A different model cannot impersonate this completed Task.
+  const foreign=new DisposablePrivateBudgetedAdkModel({
+   delegate:new LocalModel(),phase:"backend",
+   maxCalls:3,maxReportedTokens:100,maxPerCallTokens:20
+  });
+  for await(const _ of foreign.generateContentAsync({})){}
+  const foreignStore=new DisposableOriginalA2AModelCallWindowStore({
+   role:"backend",model:foreign
+  });
+  foreignStore.callbackForOriginalA2A()(record);
+  await assert.rejects(reconcileOriginalOwnerTaskWriteFromStore({
+   ...inputs,ownerWindowStore:foreignStore
+  }),/reconciliation NO-GO/u);
  });
 });

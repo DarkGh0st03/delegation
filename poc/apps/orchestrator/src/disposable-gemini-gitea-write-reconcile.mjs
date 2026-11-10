@@ -11,7 +11,8 @@ import {DisposablePrivateBudgetedAdkModel}
  from "./disposable-gemini-live-budgeted-model.mjs";
 import {AuthenticatedGiteaMutationCompletionObserver}
  from "../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
-import {isIssuedOriginalA2ACallWindow,claimIssuedOriginalA2ACallWindow}
+import {DisposableOriginalA2AModelCallWindowStore,
+ isIssuedOriginalA2ACallWindow,claimIssuedOriginalA2ACallWindow}
  from "./disposable-gemini-original-task-call-window.mjs";
 
 const deny=()=>{throw Error("Disposable original model/Gitea digest reconciliation NO-GO");};
@@ -97,5 +98,59 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
   model_generated_source_proven:false,
   billing_amount_verified:false,
   approved_permissions_expanded:false
+ });
+}
+
+/**
+ * One original OWNER-only entrypoint for a signed Task's completed UPDATE.
+ * The caller supplies its trusted roster DID, immutable Task expectation and
+ * the per-role bound model/store; no caller-supplied or model-supplied call
+ * index is allowed. Authenticated Gateway receipt + independent Gitea CAS
+ * are verified BEFORE claiming the one-shot model call window.
+ *
+ * The lower-level comparator performs a SECOND independent read immediately
+ * before consuming the issued window, so a changed HEAD still fails closed.
+ * This is not model-origin proof, durable audit, paid consent or Root issuance.
+ */
+export async function reconcileOriginalOwnerTaskWriteFromStore({
+ model,ownerWindowStore,mutationObserver,completionExpectation,
+ role,registeredAgentDid
+}={}){
+ if(!(model instanceof DisposablePrivateBudgetedAdkModel)||
+    !(ownerWindowStore instanceof DisposableOriginalA2AModelCallWindowStore)||
+    !(mutationObserver instanceof AuthenticatedGiteaMutationCompletionObserver)||
+    !roles.has(role)||model.phase!==role||
+    !completionExpectation||typeof completionExpectation!=="object"||
+    completionExpectation.agent_did!==registeredAgentDid||
+    typeof registeredAgentDid!=="string"||
+    !registeredAgentDid.startsWith("did:"))deny();
+
+ // Do not consume a signed Task window for a forged/missing receipt, stale
+ // Gitea HEAD or a different file's bytes. A matching SHA alone does NOT
+ // authorize another write; the original Gateway CAS already did.
+ const mutation=await mutationObserver.observeAuthenticatedSourceDigest(
+  completionExpectation);
+ const candidates=model.proposedSourceWriteFingerprints().filter(row=>
+  row.role===role&&row.operation==="update_file"&&
+  row.branch===mutation.branch&&row.path===mutation.path&&
+  row.source_sha256===mutation.source_sha256&&
+  row.source_bytes===mutation.source_bytes
+ );
+ if(candidates.length!==1)deny();
+
+ // The model/store pair is checked again by the private WeakMap provenance
+ // proof within the comparator; a swapped store can never authorize a
+ // foreign model. The only accepted Task and Child IDs are receipt-pinned.
+ let window;
+ try{
+  window=ownerWindowStore.takeOriginalWindow({
+   task_id:completionExpectation.task_id,
+   credential_id:completionExpectation.credential_id,
+   runtime_task_id:completionExpectation.runtime_task_id
+  });
+ }catch{deny();}
+ return reconcileOriginalModelWriteWithVerifiedGitea({
+  model,mutationObserver,completionExpectation,
+  role,registeredAgentDid,ownerObservedTaskCallWindow:window
  });
 }
