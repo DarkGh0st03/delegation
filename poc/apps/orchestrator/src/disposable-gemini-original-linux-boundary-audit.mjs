@@ -26,8 +26,8 @@ const decimal=s=>{
  return n;
 };
 const credentials=text=>{
- const values=line(text,"Uid").split(/\\s+/u).map(decimal);
- const groups=line(text,"Gid").split(/\\s+/u).map(decimal);
+ const values=line(text,"Uid").split(/\s+/u).map(decimal);
+ const groups=line(text,"Gid").split(/\s+/u).map(decimal);
  if(values.length!==4||groups.length!==4)deny();
  const caps=line(text,"CapEff");
  if(!/^[a-fA-F0-9]{1,32}$/u.test(caps))deny();
@@ -57,9 +57,9 @@ export function evaluateDisposableOriginalLinuxBoundary({
  const parent=credentials(ownerStatus);
  const worker=credentials(workerStatus);
  if(typeof ownerMountNs!=="string"||
-    !/^mnt:\\[[0-9]+\\]$/u.test(ownerMountNs)||
+    !/^mnt:\[[0-9]+\]$/u.test(ownerMountNs)||
     typeof workerMountNs!=="string"||
-    !/^mnt:\\[[0-9]+\\]$/u.test(workerMountNs))deny();
+    !/^mnt:\[[0-9]+\]$/u.test(workerMountNs))deny();
  const sameUid=parent.uids[1]===worker.uids[1];
  const conditions=Object.freeze({
   parentPidMatches:parent.pid===ownerPid&&worker.ppid===ownerPid&&
@@ -99,6 +99,7 @@ export async function inspectDisposableOriginalLinuxBoundary({
     typeof process.getuid!=="function"||
     typeof process.geteuid!=="function"||
     !Number.isSafeInteger(workerPid)||workerPid<1||
+    workerPid===process.pid||
     typeof ownerCanaryReadable!=="boolean")deny();
  try{
   const ownerPid=process.pid;
