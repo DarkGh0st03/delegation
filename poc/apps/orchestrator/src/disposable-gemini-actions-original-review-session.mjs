@@ -124,6 +124,13 @@ export async function startDisposableActionsOriginalReviewSession({
 }={}){
  if(operatorChargeAuthorization!==CONFIRM||
     operatorSpendCapAcknowledgement!==CAP)deny();
+ // The CURRENT native local worker helper passes actual Gemini model
+ // objects to startSpecializedAgentServer in the owner PID. A real paid
+ // startup here would violate the promised owner/worker secret boundary.
+ // Do NOT initiate billable Planning, sign Engineer consent or issue Root
+ // until a separately audited, process-isolated worker transport exists.
+ // The original one-use bootstrap brand is checked separately on claim.
+ if(prepared?.worker_process_isolation_verified!==true)deny();
  try{assertDisposableActionsOriginalOwnerContext(process.env,sourceSha);}
  catch{deny();}
  const claimed=claimDisposableActionsOriginalOwnerBootstrap(prepared);

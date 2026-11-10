@@ -147,9 +147,16 @@ export async function prepareDisposableActionsOriginalOwnerBootstrap({
   fenced=true;
   for(const model of metered)model.fenceOwnerCancellation();
  };
+ // CRITICAL: the ORIGINAL local A2A helper starts all three worker
+ // ADK model objects IN THIS SAME Node process. In paid Actions the
+ // delegates contain owner-only Google credentials. A sanitized Docker
+ // environment does NOT isolate these credentials from same-process JS.
+ // Keep the owner bootstrap testable, but REFUSE any paid host start until
+ // a separate-process/IPC worker runtime is independently implemented.
  const prepared=Object.freeze({
   status:"actions_original_host_inputs_prepared_no_inference",
-  authority:signedAuthority,provision,fenceProviderCalls
+  authority:signedAuthority,provision,fenceProviderCalls,
+  worker_process_isolation_verified:false
  });
  PREPARED_ORIGINAL_HOSTS.add(prepared);
  return prepared;

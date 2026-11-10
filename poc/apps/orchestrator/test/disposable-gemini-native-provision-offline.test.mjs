@@ -38,6 +38,8 @@ import {prepareDisposableOriginalGeminiNativeProvision}
  from "../src/disposable-gemini-original-native-provision.mjs";
 import {prepareDisposableActionsOriginalOwnerBootstrap}
  from "../src/disposable-gemini-actions-original-owner-bootstrap.mjs";
+import {startDisposableActionsOriginalReviewSession}
+ from "../src/disposable-gemini-actions-original-review-session.mjs";
 
 const SHA="a".repeat(40);
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -469,6 +471,16 @@ test("Actions admitted models prepare the ORIGINAL signed host inputs without in
  assert.equal(prepared.status,
   "actions_original_host_inputs_prepared_no_inference");
  assert.equal(typeof prepared.fenceProviderCalls,"function");
+ assert.equal(prepared.worker_process_isolation_verified,false);
+ // The trusted original worker helper runs same-process. Billed startup is
+ // hard-blocked BEFORE Planning and before the source-branded grant is
+ // consumed; explicit charge strings cannot bypass this isolation fence.
+ await assert.rejects(startDisposableActionsOriginalReviewSession({
+  prepared,sourceSha:sha,runId:pins.GITHUB_RUN_ID,
+  githubApiToken:"synthetic-github-reader-token",
+  operatorChargeAuthorization:pins.DELEGATION_GEMINI_CHARGE_CONFIRMATION,
+  operatorSpendCapAcknowledgement:pins.DELEGATION_BILLING_CAP_ACK
+ }),/Disposable Actions original reviewed session NO-GO/u);
  assert.equal(prepared.authority.checkpoint.store,
   f.authority.checkpoint.store);
  assert.equal(prepared.authority.checkpoint.backendKeyId,
