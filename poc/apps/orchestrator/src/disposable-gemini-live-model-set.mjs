@@ -41,6 +41,9 @@ const CAP_ACK="I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
 const ROLES=Object.freeze(["backend","frontend","test"]);
 // In-process origin check: a plain object cannot impersonate a consented set.
 const ISSUED_SETS=new WeakSet();
+// A research-only synthetic constructor or a private R5-host admission may
+// NOT impersonate the independently GitHub-admitted Actions owner.
+const ACTIONS_ISSUED_SETS=new WeakSet();
 const OFFLINE_SYNTHETIC_KEYS=new Set([
  "synthetic-not-a-real-provider-key",
  "synthetic-no-network-key"
@@ -304,7 +307,9 @@ export async function createDisposableActionsOwnerGeminiModelsFromPrivateFile({
  });
  await consumeActionsOwnerSessionMarker(keyFile,pins);
  const handle=await loadProtectedDisposableGeminiKeyFile(keyFile);
- return assembleVerifiedModels(handle);
+ const issued=assembleVerifiedModels(handle);
+ ACTIONS_ISSUED_SETS.add(issued);
+ return issued;
 }
 
 /**
@@ -370,6 +375,15 @@ export async function createDisposableLiveGeminiModelSetFromPrivateHostAdmission
  });
  const privateKeyHandle=await loadProtectedDisposableGeminiKeyFile(keyFile);
  return assembleVerifiedModels(privateKeyHandle);
+}
+
+/** Only models assembled AFTER Actions GitHub REST/one-use marker admission
+ * may enter the disposable original Actions Review Host's native bootstrap.
+ * The regular synthetic research and private-host models cannot pass. */
+export function assertIssuedDisposableActionsOwnerGeminiModelSet(candidate){
+ assertIssuedDisposableLiveGeminiModelSet(candidate);
+ if(!ACTIONS_ISSUED_SETS.has(candidate))deny();
+ return candidate;
 }
 
 /** Strict origin check for owner-only zero-inference canonical binding. */

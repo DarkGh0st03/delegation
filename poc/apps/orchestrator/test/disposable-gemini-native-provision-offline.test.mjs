@@ -16,9 +16,12 @@ import {mkdtemp,mkdir,readdir,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {execFileSync} from "node:child_process";
+import {generateKeyPairSync} from "node:crypto";
 import {Gemini} from "@google/adk";
 import {TrustedOperationalSessionStore}
  from "../../gateway/src/trusted-operational-session-store.ts";
+import {AuthorityPlanningCheckpointStore}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts";
 import {TrustedAuthorityOnlyCompletionObserver}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
 import {createProtectedCanonicalOperationalProvision,
@@ -33,6 +36,8 @@ import {DisposableOriginalA2AModelCallWindowStore}
  from "../src/disposable-gemini-original-task-call-window.mjs";
 import {prepareDisposableOriginalGeminiNativeProvision}
  from "../src/disposable-gemini-original-native-provision.mjs";
+import {prepareDisposableActionsOriginalOwnerBootstrap}
+ from "../src/disposable-gemini-actions-original-owner-bootstrap.mjs";
 
 const SHA="a".repeat(40);
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -102,6 +107,17 @@ async function fixture(t){
    "Forbidden independent completion read in no-inference test");
   }
  });
+ const backendKey=generateKeyPairSync("ed25519");
+ const backendPrivateKeyPem=backendKey.privateKey.export({
+  format:"pem",type:"pkcs8"
+ }).toString();
+ const backendPublicKeyPem=backendKey.publicKey.export({
+  format:"pem",type:"spki"
+ }).toString();
+ const backendPrivateKeyFile=folder("original-backend.pem");
+ await writeFile(backendPrivateKeyFile,backendPrivateKeyPem,{
+  mode:0o600,flag:"wx"
+ });
  const authority={
   snapshot:{
    session_id:"disposable-owner-native-integration",
@@ -120,13 +136,7 @@ async function fixture(t){
    }
   },
   planner:{planId:"original-plan"},
-  checkpoint:{backendKeyId:"original-backend-id",store:{
-   original:true,
-   assertSigner(id,pem){
-    assert.equal(id,"original-backend-id");
-    assert.equal(pem,"synthetic-backend-signature-key-fixture");
-   }
-  }},
+  checkpoint:{backendKeyId:"original-backend-id",store:undefined},
   workBranch:"feature/account-suspension",
   trustedAgentRegistry:{
    orchestrator:{did:"did:original:orchestrator"},
@@ -136,6 +146,18 @@ async function fixture(t){
   },
   operationalSessionStore:originalStore
  };
+ authority.checkpoint.store=new AuthorityPlanningCheckpointStore({
+  directory:root,trust:{
+   trustedKeys:{"original-backend-id":{
+    public_key_pem:backendPublicKeyPem
+   }},
+   expectedSessionId:authority.snapshot.session_id,
+   expectedRepository:authority.snapshot.repository,
+   expectedBaseRevision:authority.snapshot.base_revision,
+   expectedWorkBranch:authority.workBranch,
+   expectedRequirement:"Suspend accounts"
+  }
+ });
  const resource="gitea://gitea.local/thesis/iam";
  const effectsConfig={
   store:{original:true},
@@ -190,6 +212,7 @@ async function fixture(t){
   }
  };
  return {root,dirs,secret,models,authority,operational,observer,originalStore,
+  backendPrivateKeyPem,backendPrivateKeyFile,backendPublicKeyPem,
   getEffects:()=>effects,getObservations:()=>observations};
 }
 
@@ -362,7 +385,7 @@ test("GitHub Actions one-use consented owner models bind every ORIGINAL typed na
  // This test uses a synthetic signer fixture: it never calls provision().
  const signedAuthority=Object.freeze({...bound.authority,
   checkpoint:Object.freeze({...bound.authority.checkpoint,
-   backendPrivateKeyPem:"synthetic-backend-signature-key-fixture"})
+   backendPrivateKeyPem:f.backendPrivateKeyPem})
  });
  const prepared=await prepareDisposableOriginalGeminiNativeProvision({
   bound,signedAuthority
@@ -386,4 +409,85 @@ test("unissued original native provision cannot accept arbitrary owner options",
  }),/Disposable live canonical binding NO-GO/u);
  await assert.rejects(prepareDisposableOriginalGeminiNativeProvision(),
   /Disposable live canonical binding NO-GO/u);
+});
+
+test("Actions admitted models prepare the ORIGINAL signed host inputs without inference, Root or worker start",async t=>{
+ const f=await fixture(t);
+ const repo="DarkGh0st03/delegation";
+ const ref="refs/heads/experiment/disposable-gemini-live-20261109";
+ const workflow=".github/workflows/gemini-authority-only-live-ci-pilot.yml";
+ const sha=execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"})
+  .trim();
+ const pins={
+  GITHUB_ACTIONS:"true",
+  GITHUB_REPOSITORY:repo,GITHUB_EVENT_NAME:"workflow_dispatch",
+  GITHUB_REF:ref,GITHUB_WORKFLOW_REF:repo+"/"+workflow+"@"+ref,
+  GITHUB_SHA:sha,GITHUB_RUN_ID:"42784699654",GITHUB_RUN_ATTEMPT:"1",
+  DELEGATION_DISPOSABLE_LIVE_MODE:"gemini-real",
+  DELEGATION_GEMINI_CHARGE_CONFIRMATION:
+   "I AUTHORIZE GEMINI API CHARGES",
+  DELEGATION_BILLING_CAP_ACK:
+   "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES"
+ };
+ const envNames=[...Object.keys(pins),"GH_TOKEN","GITHUB_TOKEN",
+  "GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY",
+  "DELEGATION_DISPOSABLE_CI_MODE","DELEGATION_LIVE_CI_PREFLIGHT_MODE",
+  "DELEGATION_SIGNED_GEMINI_PILOT"];
+ const previous=new Map(envNames.map(key=>[key,process.env[key]]));
+ const oldFetch=globalThis.fetch;
+ for(const key of envNames)delete process.env[key];
+ Object.assign(process.env,pins);
+ let githubReads=0;
+ globalThis.fetch=async url=>{
+  githubReads++;
+  assert.equal(url,"https://api.github.com/repos/"+repo+
+   "/actions/runs/"+pins.GITHUB_RUN_ID);
+  return {ok:true,async json(){return {
+   id:pins.GITHUB_RUN_ID,event:"workflow_dispatch",run_attempt:1,
+   status:"in_progress",head_sha:sha,
+   head_branch:"experiment/disposable-gemini-live-20261109",
+   path:workflow,head_repository:{full_name:repo},
+   created_at:new Date().toISOString()
+  };}};
+ };
+ t.after(()=>{
+  globalThis.fetch=oldFetch;
+  for(const [key,value] of previous){
+   if(value===undefined)delete process.env[key];
+   else process.env[key]=value;
+  }
+ });
+ const admitted=await createDisposableActionsOwnerGeminiModelsFromPrivateFile({
+  keyFile:f.secret,githubApiToken:"synthetic-github-reader-token"
+ });
+ const prepared=await prepareDisposableActionsOriginalOwnerBootstrap({
+  models:admitted,authority:f.authority,operational:f.operational,
+  backendPrivateKeyFile:f.backendPrivateKeyFile,
+  backendPublicKeyPem:f.backendPublicKeyPem,geminiKeyFile:f.secret
+ });
+ assert.equal(githubReads,1);
+ assert.equal(prepared.status,
+  "actions_original_host_inputs_prepared_no_inference");
+ assert.equal(prepared.authority.checkpoint.store,
+  f.authority.checkpoint.store);
+ assert.equal(prepared.authority.checkpoint.backendKeyId,
+  "original-backend-id");
+ assert.equal(prepared.authority.planner.model,admitted.planner.model);
+ assert.equal(typeof prepared.provision,"function");
+ assert.ok(Object.isFrozen(prepared));
+ assert.equal(admitted.planner.model.publicSummary().calls_started,0);
+ assert.equal(admitted.adaptive.model.publicSummary().calls_started,0);
+ for(const role of ROLES)
+  assert.equal(admitted.workers[role].model.publicSummary().calls_started,0);
+ // No host.start or provision() invocation: neither Rust Root nor model
+ // traffic may occur during this fully offline native composition test.
+ assert.deepEqual(await readdir(f.dirs["status-index"]),[]);
+ assert.deepEqual(await readdir(f.dirs.sessions),[]);
+ assert.equal(f.getEffects(),0);
+ assert.equal(f.getObservations(),0);
+ await assert.rejects(prepareDisposableActionsOriginalOwnerBootstrap({
+  models:admitted,authority:f.authority,operational:f.operational,
+  backendPrivateKeyFile:f.backendPrivateKeyFile,
+  backendPublicKeyPem:f.backendPublicKeyPem,geminiKeyFile:f.secret
+ }),/Disposable live Gemini model admission NO-GO/u);
 });
