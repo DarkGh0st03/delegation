@@ -1,0 +1,113 @@
+/**
+ * Offline-only, fail-closed separate Node PID launcher for ONE of the
+ * three ORIGINAL A2A roles. No inherited environment, owner key, provider
+ * delegate, Github token, Engineer private key or native Rust authority.
+ *
+ * NOT safe for paid Gemini yet: sibling processes with the same UID may
+ * read owner-private filesystem. A real signed Task binder and a proven
+ * different-UID/mount boundary are required before lifting the paid gate.
+ */
+import {fork} from "node:child_process";
+import {fileURLToPath} from "node:url";
+
+const ROLE=new Set(["backend","frontend","test"]);
+const KEYS=[
+ "adapterBaseUrl","adapterToken","gatewayBaseUrl","maxCalls",
+ "modelSecretFile","modelSocketPath","port","role","task"
+];
+const deny=()=>{throw Error("Disposable original A2A subprocess launcher NO-GO");};
+export async function startDisposableOriginalA2aWorkerSubprocess(config){
+ if(process.env.DELEGATION_DISPOSABLE_LIVE_MODE==="gemini-real"||
+    !config||typeof config!=="object"||Array.isArray(config)||
+    Object.keys(config).sort().join(",")!==KEYS.join(",")||
+    !ROLE.has(config.role)||
+    !Number.isSafeInteger(config.port)||config.port<1024||
+    config.port>65535||
+    typeof config.adapterToken!=="string"||
+    config.adapterToken.length<8||
+    typeof config.gatewayBaseUrl!=="string"||
+    typeof config.adapterBaseUrl!=="string"||
+    typeof config.modelSocketPath!=="string"||
+    typeof config.modelSecretFile!=="string")deny();
+ const entry=fileURLToPath(new URL(
+  "./disposable-gemini-original-a2a-worker-child.mjs",import.meta.url
+ ));
+ // Explicit allowlist: never spread process.env (provider key, Github token,
+ // NODE_OPTIONS, credential discovery variables, native owner socket).
+ const child=fork(entry,[],{
+  execArgv:["--experimental-strip-types"],
+  env:{
+   PATH:process.env.PATH??"/usr/bin:/bin",
+   LANG:"C.UTF-8",TZ:"UTC",HOME:"/nonexistent"
+  },
+  stdio:["ignore","ignore","ignore","ipc"],
+  windowsHide:true
+ });
+ let stopped=false,closing;
+ const close=()=>closing??=new Promise((resolve,reject)=>{
+  if(stopped){resolve();return;}
+  let settled=false;
+  const finish=error=>{
+   if(settled)return;
+   settled=true;
+   clearTimeout(timer);
+   child.off("exit",onExit);
+   if(error)reject(Error("Disposable original A2A subprocess close NO-GO"));
+   else resolve();
+  };
+  const onExit=(code,signal)=>{
+   stopped=true;
+   finish(code===0?null:Error("abnormal child exit"));
+  };
+  child.once("exit",onExit);
+  const timer=setTimeout(()=>{
+   if(child.exitCode===null)child.kill("SIGKILL");
+   finish(Error("unconfirmed worker retirement"));
+  },10_000);
+  if(child.connected)child.send({type:"stop"});
+  else if(child.exitCode===null)child.kill("SIGTERM");
+ });
+ try{
+  const ready=await new Promise((resolve,reject)=>{
+   let settled=false;
+   const finish=(error,value)=>{
+    if(settled)return;
+    settled=true;
+    clearTimeout(timer);
+    child.off("message",onMessage);
+    child.off("exit",onExit);
+    child.off("error",onError);
+    if(error)reject(Error("Disposable original A2A subprocess start NO-GO"));
+    else resolve(value);
+   };
+   const onExit=()=>{stopped=true;finish(Error("exit before ready"));};
+   const onError=()=>finish(Error("spawn failed"));
+   const onMessage=message=>{
+    if(message?.type==="error")finish(Error("worker refused config"));
+    else if(message?.type==="ready")finish(null,message);
+   };
+   const timer=setTimeout(()=>finish(Error("worker startup timed out")),
+    15_000);
+   child.on("message",onMessage);
+   child.once("exit",onExit);
+   child.once("error",onError);
+   child.send({type:"start",config});
+  });
+  if(ready?.type!=="ready"||ready.pid!==child.pid||
+     ready.role!==config.role||
+     ready.baseUrl!==`http://127.0.0.1:${config.port}`||
+     ready.providerCredentialPresent!==false||
+     ready.originalNativeTaskBindingPresent!==false||
+     ready.osIsolationVerified!==false)deny();
+  return Object.freeze({
+   role:config.role,pid:child.pid,baseUrl:ready.baseUrl,
+   originalNativeTaskBindingPresent:false,
+   osIsolationVerified:false,
+   close
+  });
+ }catch{
+  if(child.exitCode===null)child.kill("SIGKILL");
+  await close().catch(()=>{});
+  deny();
+ }
+}
