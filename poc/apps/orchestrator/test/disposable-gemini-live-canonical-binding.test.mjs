@@ -106,6 +106,7 @@ test("original Review Host, native transports and exactly three workers receive 
   const current=bound.operational.localWorkers.workers[role];
   assert.ok(current.adk.model instanceof Gemini);
   assert.equal(current.adk.model,set.workers[role].model);
+  assert.equal(current.adk.trustedOriginalModelCallWindow,undefined);
   assert.equal(current.adk.adapterToken,
    f.operational.localWorkers.workers[role].adk.adapterToken);
  }
@@ -169,6 +170,7 @@ test("fail closed on model override, extra role, legacy bypass and source mismat
   f=>{delete f.operational.localWorkers;},
   f=>{f.operational.localWorkers.workers.frontend.adk.model=set.workers.frontend.model;},
   f=>{f.operational.localWorkers.workers.test.port=9111;},
+  f=>{f.operational.localWorkers.workers.backend.adk.trustedOriginalModelCallWindow=noop;},
   f=>{f.operational.localWorkers.workers.test.adk.adapterToken="";},
   f=>{f.authority.workBranch="main";}
  ];
