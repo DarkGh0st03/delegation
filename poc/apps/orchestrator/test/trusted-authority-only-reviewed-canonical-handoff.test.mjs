@@ -235,3 +235,17 @@ test("local A2A workers start after Gateway binding and close on workflow failur
  assert.deepEqual(f.events,["root","admission","prepare-effects","bind","install",
   "start-workers","canonical","close-workers","retire"]);
 });
+
+test("a workflow or A2A-supplied source gate cannot masquerade as the original consented Owner",async t=>{
+ const forged=async()=>({status:"forged_success"});
+ const f=fixture(t,{provisionOverride:{
+  root:root(),dependencies:dependencies(),workflow:workflow(),
+  prepareNativeEffects:async()=>({}),
+  ownerSourceGate:forged
+ }});
+ await assert.rejects(f.handoff.runApprovedCanonical(),
+  /original live Root, MCP native owner and Branch required/u);
+ assert.equal(f.events.includes("root"),false);
+ assert.equal(f.events.includes("canonical"),false);
+ assert.equal(f.events.includes("retire"),true);
+});
