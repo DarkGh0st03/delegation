@@ -144,6 +144,11 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #mutationObservations=new Map<string,Readonly<{
   expectation:TrustedCompletionExpectation;evidence_sha256:string
  }>>();
+ // CREATE is independently attested by its own native old-absence CAS
+ // receipt. No unsworn model path or content enters this private record.
+ readonly #createObservations=new Map<string,Readonly<{
+  expectation:TrustedCompletionExpectation;evidence_sha256:string
+ }>>();
  readonly #branchPins=new Map<string,Readonly<{
   task_id:string;epoch:number;credential_id:string;base_revision:string;
  }>>();
@@ -811,12 +816,15 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    else if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
    this.#completed.add(taskId);
    this.#completionEvidence.set(taskId,observation.evidence_sha256);
-   if(bound.row.permissions.length===1&&
-      bound.row.permissions[0]?.operation==="update_file"){
-    this.#mutationObservations.set(taskId,Object.freeze({
-     expectation:Object.freeze({...expectation}),
-     evidence_sha256:observation.evidence_sha256
-    }));
+   if(bound.row.permissions.length===1){
+    const operation=bound.row.permissions[0]?.operation;
+    if(operation==="update_file"||operation==="create_file"){
+     (operation==="update_file"?this.#mutationObservations:
+       this.#createObservations).set(taskId,Object.freeze({
+      expectation:Object.freeze({...expectation}),
+      evidence_sha256:observation.evidence_sha256
+     }));
+    }
    }
    return Object.freeze({
     status:"task_completion_observed_staged",
@@ -1302,6 +1310,54 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    status:"gateway_completed_mutation_observation_binding_only" as const,
    task_id:taskId,runtime_task_id:runtimeTaskId,
    permission_resource:grants![grants!.length-1]!.resource,
+   evidence_sha256:evidence,
+   expectation:observed.expectation
+  });
+ }
+ /**
+  * Read-only original signed CREATE witness; not an approval or write.
+  * The separate original independent Gitea CREATE observer must recheck
+  * absent-at-parent, one parent, HEAD and bytes before any model matching.
+  * No unsupported sequential/create or unverified Task can pass.
+  */
+ assertTrustedCompletedCreateObservationBinding(
+  taskId:string,runtimeTaskId:string
+ ){
+  const root=this.#live();
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const observed=this.#createObservations.get(taskId);
+  const evidence=this.#completionEvidence.get(taskId);
+  const grant=bound?.row.permissions;
+  if(!bound||!child||!observed||!evidence||
+     grant?.length!==1||grant[0]?.operation!=="create_file"||
+     this.#sequential.has(taskId)||
+     !this.#completed.has(taskId)||
+     observed.evidence_sha256!==evidence||
+     bound.row.task_id!==taskId||
+     bound.row.session_id!==root.session_id||
+     bound.row.authority_digest!==root.authority_digest||
+     bound.row.root_credential_id!==root.root_credential_id||
+     child.credential_id!==observed.expectation.credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     observed.expectation.task_id!==taskId||
+     observed.expectation.runtime_task_id!==runtimeTaskId||
+     observed.expectation.agent_did!==bound.row.agent_did||
+     observed.expectation.session_id!==root.session_id||
+     observed.expectation.authority_digest!==root.authority_digest||
+     observed.expectation.root_credential_id!==root.root_credential_id||
+     observed.expectation.epoch!==bound.row.epoch||
+     this.#completionInFlight||this.#flightInFlight||
+     this.#bindingInFlight||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("original CREATE observation not independently completed");
+  return Object.freeze({
+   status:"gateway_completed_create_observation_binding_only" as const,
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   permission_resource:grant[0].resource,
    evidence_sha256:evidence,
    expectation:observed.expectation
   });
