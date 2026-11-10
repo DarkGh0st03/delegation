@@ -314,3 +314,60 @@ test("same-model overlap poisons the shared budget for every other original role
  assert.equal(budget.publicSummary().reported_total_tokens,0);
  await assert.rejects(collect(workerTest),DENY);
 });
+
+test("non-cooperative provider ignoring cancellation cannot release late ADK output",async()=>{
+ let notifyStarted,release;
+ const started=new Promise(resolve=>{notifyStarted=resolve;});
+ const hold=new Promise(resolve=>{release=resolve;});
+ const budget=new DisposablePrivateSessionUsageBudget();
+ const controller=new AbortController();
+ const delegate=new OfflineDelegate(async function*(){
+  notifyStarted();
+  await hold; // deliberately ignore the signal passed by the trusted owner
+  yield response("MUST-NOT-REACH-AGENT",reported(2,3));
+ });
+ const model=wrapped(delegate,{sessionBudget:budget});
+ const received=[];
+ const pending=(async()=>{
+  for await(const chunk of model.generateContentAsync(
+   {contents:[]},false,controller.signal
+  ))received.push(chunk);
+ })();
+ await started;
+ controller.abort();
+ await assert.rejects(pending,DENY);
+ release();
+ assert.deepEqual(received,[]);
+ assert.equal(model.publicSummary().blocked,true);
+ assert.equal(model.publicSummary().reported_total_tokens,0);
+ assert.equal(budget.publicSummary().blocked,true);
+ await assert.rejects(collect(model),DENY);
+});
+
+test("buffered partial provider decision stays hidden after ignored cancellation",async()=>{
+ let notifyWaiting,release;
+ const waiting=new Promise(resolve=>{notifyWaiting=resolve;});
+ const hold=new Promise(resolve=>{release=resolve;});
+ const budget=new DisposablePrivateSessionUsageBudget();
+ const controller=new AbortController();
+ const delegate=new OfflineDelegate(async function*(){
+  yield response("PARTIAL-MUST-NOT-REACH-AGENT",reported(1,2));
+  notifyWaiting();
+  await hold; // upstream never checks AbortSignal
+  yield response("FINAL-MUST-NOT-REACH-AGENT",reported(3,4));
+ });
+ const model=wrapped(delegate,{sessionBudget:budget});
+ const received=[];
+ const pending=(async()=>{
+  for await(const chunk of model.generateContentAsync(
+   {contents:[]},false,controller.signal
+  ))received.push(chunk);
+ })();
+ await waiting;
+ controller.abort();
+ await assert.rejects(pending,DENY);
+ release();
+ assert.deepEqual(received,[]);
+ assert.equal(model.publicSummary().reported_total_tokens,0);
+ assert.equal(budget.publicSummary().blocked,true);
+});

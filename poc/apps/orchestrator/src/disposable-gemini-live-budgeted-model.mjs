@@ -30,6 +30,50 @@ function usage(value){
 }
 
 /**
+ * A non-cooperative SDK transport may ignore AbortSignal while awaiting its
+ * next streaming chunk. Race each iterator read with the trusted timeout/
+ * cancellation signal so NO late response reaches ADK, even if the provider
+ * never settles. The underlying request may still incur provider charges.
+ * Best-effort iterator return must never delay the fail-closed decision.
+ */
+function nextBeforeAbort(iterator,signal){
+ return new Promise((resolve,reject)=>{
+  if(signal.aborted){reject(Error("Disposable private Gemini request budget NO-GO"));return;}
+  let settled=false;
+  const finish=(fn,value)=>{
+   if(settled)return;
+   settled=true;
+   signal.removeEventListener("abort",onAbort);
+   fn(value);
+  };
+  const onAbort=()=>finish(reject,
+   Error("Disposable private Gemini request budget NO-GO"));
+  signal.addEventListener("abort",onAbort,{once:true});
+  Promise.resolve().then(()=>{
+   if(signal.aborted)deny();
+   return iterator.next();
+  }).then(value=>finish(resolve,value),error=>finish(reject,error));
+ });
+}
+async function* boundedResponses(source,signal){
+ const iterator=source?.[Symbol.asyncIterator]?.();
+ if(!iterator||typeof iterator.next!=="function")deny();
+ let complete=false;
+ try{
+  while(true){
+   const response=await nextBeforeAbort(iterator,signal);
+   if(response.done){complete=true;return;}
+   yield response.value;
+  }
+ }finally{
+  // Aborting a non-cooperative upstream can leave return() unresolved.
+  // The trusted session has already been fenced; never wait on that cleanup.
+  if(!complete&&typeof iterator.return==="function")
+   void Promise.resolve().then(()=>iterator.return()).catch(()=>{});
+ }
+}
+
+/**
  * One global counter shared by all FIVE models of the SAME owner session.
  * Rejects concurrent paid requests across roles (fail-closed, not a queue),
  * cap overruns, reuse and retries after ambiguous failures.
@@ -160,8 +204,8 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
   let last=null,chunks=0,bytes=0,finished=false;
   const buffered=[];
   try{
-   for await(const response of this.#delegate.generateContentAsync(
-    request,stream,combined
+   for await(const response of boundedResponses(
+    this.#delegate.generateContentAsync(request,stream,combined),combined
    )){
     if(this.#blocked||combined.aborted||
        response?.errorCode||response?.errorMessage||
