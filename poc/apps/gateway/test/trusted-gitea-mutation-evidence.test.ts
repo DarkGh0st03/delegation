@@ -1,4 +1,9 @@
 import test from "node:test";
+import {BaseLlm} from "@google/adk";
+import {DisposablePrivateBudgetedAdkModel}
+ from "../../orchestrator/src/disposable-gemini-live-budgeted-model.mjs";
+import {reconcileOriginalModelWriteWithVerifiedGitea}
+ from "../../orchestrator/src/disposable-gemini-gitea-write-reconcile.mjs";
 import {createHash} from "node:crypto";
 import assert from "node:assert/strict";
 import {mkdtemp,mkdir,rm,readFile,writeFile,readdir} from "node:fs/promises";
@@ -129,5 +134,66 @@ test("R302.4 unrelated original request or forged Gitea CAS result is refused",a
    ...result,previous_head_sha:"f".repeat(40)
   },"opa"),/does not match immutable/);
   assert.equal((await readdir(dir)).length,0);
+ });
+});
+
+test("metered model write bytes match the ORIGINAL independently authenticated Gateway Gitea CAS",async()=>{
+ await fixture(async({publisher,observer,setHead})=>{
+  class OfflineWrite extends BaseLlm{
+   constructor(value){
+    super({model:"offline-source-fingerprint-no-provider"});
+    this.value=value;
+   }
+   async *generateContentAsync(){
+    yield {content:{role:"model",parts:[{functionCall:{
+     name:"update_file",args:{branch,path,content:this.value}
+    }}]},usageMetadata:{
+     promptTokenCount:2,candidatesTokenCount:3,totalTokenCount:5
+    }};
+   }
+   connect(){throw Error("No inference in signed mutation test");}
+  }
+  const wrap=value=>new DisposablePrivateBudgetedAdkModel({
+   delegate:new OfflineWrite(value),phase:"backend",
+   maxCalls:2,maxReportedTokens:50,maxPerCallTokens:24
+  });
+  const matching=wrap(content);
+  for await(const response of matching.generateContentAsync({}))
+   assert.ok(response.content);
+  await publisher.publish(intent,expected,result,"opa-r302");
+  const witness=await observer.observeAuthenticatedSourceDigest(expected);
+  assert.equal(witness.status,"owner_verified_gateway_gitea_write_digest_only");
+  assert.equal(witness.source_sha256,requireHash(content));
+  assert.equal(witness.source_bytes,Buffer.byteLength(content));
+  assert.equal(witness.commit_sha,nextHead);
+  assert.ok(!JSON.stringify(witness).includes(content));
+  const reconciled=await reconcileOriginalModelWriteWithVerifiedGitea({
+   model:matching,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did
+  });
+  assert.equal(reconciled.model_emitted_write_matches_committed_bytes,true);
+  assert.equal(reconciled.provider_origin_independently_verified,false);
+  assert.equal(reconciled.model_generated_source_proven,false);
+  assert.equal(reconciled.gateway_evidence_sha256,witness.evidence_sha256);
+  assert.equal(reconciled.commit_sha,nextHead);
+  const wrongSource=wrap("export const DIFFERENT = true;\\n");
+  for await(const _ of wrongSource.generateContentAsync({})){}
+  await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
+   model:wrongSource,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did
+  }),/model\\/Gitea digest reconciliation NO-GO/u);
+  await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
+   model:matching,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:"did:example:wrong"
+  }),/model\\/Gitea digest reconciliation NO-GO/u);
+  setHead(oldHead);
+  await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
+   model:matching,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did
+  }),/feature HEAD is not/u);
  });
 });

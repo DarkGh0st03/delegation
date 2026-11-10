@@ -208,8 +208,12 @@ export class AuthenticatedGiteaMutationCompletionObserver{
    GiteaClient.isPinnedRepositoryClient(value.#client,
     repository.split("/")[0],repository.split("/")[1]);
  }
- async observe(expected:TrustedCompletionExpectation):
- Promise<ObservedTrustedTaskCompletion>{
+ /**
+  * Shared single verifier for original Gateway mutation evidence.
+  * The independent Gitea reader and the MAC are checked BEFORE any
+  * source fingerprint is released to a model-output comparison.
+  */
+ async #verifiedMutation(expected:TrustedCompletionExpectation){
   const raw=await readPrivateReceipt(this.#dir,filename(expected));
   const receipt=validateReceipt(raw,expected,this.#repository,this.#branch);
   const {mac_sha256,...unsigned}=receipt;
@@ -222,10 +226,33 @@ export class AuthenticatedGiteaMutationCompletionObserver{
   if(Math.abs(now-receipt.completed_at_ms)>30*60_000)
    deny("expired or future mutation evidence");
   await independentlyVerifyCas(this.#client,receipt);
+  return receipt;
+ }
+ async observe(expected:TrustedCompletionExpectation):
+ Promise<ObservedTrustedTaskCompletion>{
+  const receipt=await this.#verifiedMutation(expected);
   return Object.freeze({...expected,
    status:"owner_verified_provider_result" as const,
    evidence_sha256:sha(canonical(receipt)),
    completed_at_ms:receipt.completed_at_ms
+  });
+ }
+ /**
+  * The ORIGINAL signed Gateway Task and independent Gitea CAS witness
+  * expose only the committed UTF-8 SHA-256 for owner-side reconciliation.
+  * This is an authenticated write digest, NOT proof of model authorship,
+  * successful Gemini billing or a second approval. No source is disclosed.
+  */
+ async observeAuthenticatedSourceDigest(expected:TrustedCompletionExpectation){
+  const receipt=await this.#verifiedMutation(expected);
+  return Object.freeze({
+   status:"owner_verified_gateway_gitea_write_digest_only" as const,
+   task_id:receipt.task_id,agent_did:receipt.agent_did,
+   branch:receipt.branch,path:receipt.path,
+   commit_sha:receipt.commit_sha,
+   source_sha256:receipt.source_sha256,
+   source_bytes:receipt.source_bytes,
+   evidence_sha256:sha(canonical(receipt))
   });
  }
  toTrustedObserver():TrustedAuthorityOnlyCompletionObserver{
