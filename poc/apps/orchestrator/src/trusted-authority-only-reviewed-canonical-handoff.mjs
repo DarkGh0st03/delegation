@@ -14,7 +14,7 @@
  * back to the legacy Signed DAG, creates another signer or retries a Root.
  */
 import {isIssuedDisposableOwnerSourceGate}
- from "./disposable-gemini-live-canonical-binding.mjs";
+ from "./disposable-gemini-owner-source-gate-brand.mjs";
 const SHA=/^[a-f0-9]{40}$/u;
 const DIGEST=/^[a-f0-9]{64}$/u;
 const ROOT_KEYS=["credential_id","valid_from","validity_seconds",

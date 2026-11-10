@@ -8,7 +8,7 @@ import {createTrustedAuthorityOnlyReviewedCanonicalHandoff}
  from './trusted-authority-only-reviewed-canonical-handoff.mjs';
 import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
 import {isIssuedDisposableOwnerSourceGate}
- from './disposable-gemini-live-canonical-binding.mjs';
+ from './disposable-gemini-owner-source-gate-brand.mjs';
 /** Owner-assembled permission-only Planning -> authenticated Engineer review
  * -> independent native root -> dynamic Coordinator. No public root issuer.
  * The caller owns listener binding; this factory never starts inference until
