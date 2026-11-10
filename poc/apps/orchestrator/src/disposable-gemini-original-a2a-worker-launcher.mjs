@@ -123,7 +123,8 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
    child.on("message",onMessage);
    child.once("exit",onExit);
    child.once("error",onError);
-   child.send({type:"start",config,ownerCanaryPath});
+   child.send({type:"start",config,ownerCanaryPath,
+    requireOwnerFileIsolation});
   });
   // Read real kernel credentials, rather than trusting the worker's
   // self-reported UID. This is evidence of a boundary failure only.

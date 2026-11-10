@@ -77,6 +77,12 @@ const start=async message=>{
  // Same-UID processes can normally open owner 0600 files. This probe
  // provides negative isolation evidence without reading any secret.
  const ownerCanaryReadable=await canOpenOwnerCanary(message.ownerCanaryPath);
+ if(message.requireOwnerFileIsolation!==undefined&&
+    typeof message.requireOwnerFileIsolation!=="boolean")deny();
+ // Refuse an obviously readable owner file BEFORE opening any binder,
+ // model proxy, SDK session or A2A HTTP listener. The parent separately
+ // requires distinct kernel UIDs before acknowledging startup.
+ if(message.requireOwnerFileIsolation===true&&ownerCanaryReadable)deny();
  const cfg=message.config;
  if(!ROLES.has(cfg.role)||!Number.isSafeInteger(cfg.port)||
     cfg.port<1024||cfg.port>65535||
