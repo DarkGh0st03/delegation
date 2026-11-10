@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Disposable GitHub Actions LIVE pilot: ZERO-INFERENCE preflight only.
+ * Disposable GitHub Actions LIVE pilot: ZERO-INFERENCE admission preflight.
  *
- * This is NOT a live-Gemini launcher. In particular it never imports ADK,
- * opens a provider key, creates model objects, issues an Engineer receipt,
- * grants authority or runs a container. It exists to prepare a *separately*
- * reviewed manual workflow before any billed model calls can be wired in.
+ * This is NOT a live-Gemini launcher. It never imports ADK, opens a
+ * provider key, creates models, issues a receipt or runs a container.
+ * In scripted-native mode it only admits the separately gated R385.13 job:
+ * that ORIGINAL no-AI workflow signs the post-Planning checkpoint in its
+ * own native owner session, not in this preflight process.
  *
  * The experimental branch is not the default registered GitHub Actions
  * workflow branch. Registration and a future real owner entrypoint are
@@ -20,6 +21,7 @@ const REF="refs/heads/experiment/disposable-gemini-live-20261109";
 const WORKFLOW=".github/workflows/gemini-authority-only-live-ci-pilot.yml";
 const SOURCE_ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
 const SHA=/^[a-f0-9]{40}$/u;
+const FREE_MODES=new Set(["preflight-only","scripted-native"]);
 const RUN=/^[1-9][0-9]{0,19}$/u;
 const deny=()=>{throw Error("Disposable Gemini CI preflight NO-GO");};
 
@@ -39,7 +41,7 @@ export function assertDisposableGeminiCiPreflight(env,checkoutSha){
     !RUN.test(env.GITHUB_RUN_ID??"")||
     !SHA.test(env.GITHUB_SHA??"")||
     checkoutSha!==env.GITHUB_SHA||
-    env.DELEGATION_LIVE_CI_PREFLIGHT_MODE!=="preflight-only"||
+    !FREE_MODES.has(env.DELEGATION_LIVE_CI_PREFLIGHT_MODE)||
     // A consent string must NEVER be inherited from a scripted job; a
     // paid workflow needs its own explicitly reviewed admission pathway.
     env.DELEGATION_GEMINI_CHARGE_CONFIRMATION!==undefined||
@@ -54,6 +56,9 @@ export function assertDisposableGeminiCiPreflight(env,checkoutSha){
   status:"disposable_manual_ci_preflight_only",
   source_sha:checkoutSha,
   workflow_path:WORKFLOW,
+  scripted_native_e2e_requested:
+   env.DELEGATION_LIVE_CI_PREFLIGHT_MODE==="scripted-native",
+  scripted_native_e2e_proven_here:false,
   signed_engineer_approval_created:false,
   native_root_created:false,
   gemini_provider_imported:false,
