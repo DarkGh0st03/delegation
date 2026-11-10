@@ -336,3 +336,7 @@ jobs:
         env:
           RUNNER_EVIDENCE_REAL_DOCKER: '1'
         run: node --experimental-strip-types --test poc/apps/test-runner-controller/test/failure-evidence-docker.test.ts
+      - name: Cross-UID original owner model HMAC and protected owner canary (no AI)
+        env:
+          DELEGATION_ORIGINAL_CROSSUID_REAL_DOCKER: '1'
+        run: node --test poc/apps/orchestrator/test/disposable-gemini-original-crossuid-model-docker.test.mjs
