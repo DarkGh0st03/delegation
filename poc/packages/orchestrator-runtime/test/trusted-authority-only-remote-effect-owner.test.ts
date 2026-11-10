@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {TrustedAuthorityOnlyRemoteEffectOwner}
+import {TrustedAuthorityOnlyRemoteEffectOwner,
+ claimTrustedOriginalNativeTaskPrebindForModelIpc}
  from "../src/trusted-authority-only-remote-effect-owner.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
@@ -97,6 +98,17 @@ test("R323 real owner proof objects derive exact signed Backend file permission"
  const r=await f.owner.bindRegisteredTask({taskId,runtimeTaskId,effectStager:port});
  assert.equal(r.status,"owner_remote_effect_task_prebound_not_executed");
  assert.equal(r.gateway_execution_authorized,false);
+ const proof=claimTrustedOriginalNativeTaskPrebindForModelIpc(r);
+ assert.deepEqual(proof,{
+  role:"backend",task_id:taskId,runtime_task_id:runtimeTaskId,
+  credential_id:credentialId,session_id:root.session_id,
+  authority_digest:digest,root_credential_id:root.root_credential_id
+ });
+ assert.equal(Object.isFrozen(proof),true);
+ assert.throws(()=>claimTrustedOriginalNativeTaskPrebindForModelIpc(r),
+  /authentic one-use original prebind/u);
+ assert.throws(()=>claimTrustedOriginalNativeTaskPrebindForModelIpc({...r}),
+  /authentic one-use original prebind/u);
  assert.equal(f.calls[0],"bind");
  const pins=JSON.parse(f.calls[1]!);
  assert.deepEqual(pins,{
