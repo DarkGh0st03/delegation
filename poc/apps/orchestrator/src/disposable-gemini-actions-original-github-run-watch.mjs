@@ -28,7 +28,7 @@ const deny=()=>{throw Error("Disposable Actions original Github run watch NO-GO"
  * The read-only API token never appears in process.env or child arguments.
  */
 export function createDisposableActionsOriginalGithubRunWatch({
- runId,sourceSha,githubApiToken,onClose
+ runId,sourceSha,githubApiToken,onClose,onFence=()=>{}
 }={}){
  try{assertDisposableActionsOriginalOwnerContext(process.env,sourceSha);}
  catch{deny();}
@@ -38,7 +38,8 @@ export function createDisposableActionsOriginalGithubRunWatch({
     typeof githubApiToken!=="string"||
     githubApiToken.length<16||githubApiToken.length>512||
     /\s/u.test(githubApiToken)||
-    typeof onClose!=="function")deny();
+    typeof onClose!=="function"||
+    typeof onFence!=="function")deny();
 
  let status="active",started=false,timer,pending,closing;
  const stop=()=>{
@@ -47,7 +48,12 @@ export function createDisposableActionsOriginalGithubRunWatch({
   // "active" after cancellation begins.
   status="closing";
   if(timer)clearInterval(timer);
+  // Poison all private ADK requests SYNCHRONOUSLY before awaiting native
+  // Root/Child retirement. A fence failure cannot skip retirement.
+  let fenceFailed=false;
+  try{onFence();}catch{fenceFailed=true;}
   closing=Promise.resolve().then(()=>onClose()).then(()=>{
+   if(fenceFailed){status="revocation_unconfirmed";deny();}
    status="closed";
   },()=>{
    status="revocation_unconfirmed";

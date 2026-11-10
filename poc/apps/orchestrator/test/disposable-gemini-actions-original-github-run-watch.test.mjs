@@ -33,7 +33,8 @@ function setup(t,{revocationFails=false}={}){
  const previousFetch=globalThis.fetch;
  for(const name of forbidden)delete process.env[name];
  Object.assign(process.env,env);
- let runStatus="in_progress",calls=0,closes=0;
+ let runStatus="in_progress",calls=0,closes=0,fences=0;
+ const events=[];
  const current=()=>({
   id:RUN_ID,run_attempt:1,event:"workflow_dispatch",
   status:runStatus,head_sha:SHA,
@@ -52,8 +53,9 @@ function setup(t,{revocationFails=false}={}){
  const create=(patch={})=>createDisposableActionsOriginalGithubRunWatch({
   runId:RUN_ID,sourceSha:SHA,
   githubApiToken:"synthetic-actions-owner-read-token",
+  onFence:()=>{fences++;events.push("provider-fenced");},
   onClose:async()=>{
-   closes++;
+   closes++;events.push("native-retirement");
    if(revocationFails)throw Error("Original native Root revocation unconfirmed");
   },
   ...patch
@@ -68,7 +70,7 @@ function setup(t,{revocationFails=false}={}){
   }
  });
  return {watcher,create,setStatus:v=>{runStatus=v;},
-  calls:()=>calls,closes:()=>closes,current};
+  calls:()=>calls,closes:()=>closes,fences:()=>fences,events,current};
 }
 
 test("Actions watch is an inert imported factory, real active GitHub run first",async t=>{
@@ -82,6 +84,8 @@ test("Actions watch is an inert imported factory, real active GitHub run first",
  await f.watcher.close();
  assert.equal(f.watcher.status,"closed");
  assert.equal(f.closes(),1);
+ assert.equal(f.fences(),1);
+ assert.deepEqual(f.events,["provider-fenced","native-retirement"]);
  await assert.rejects(f.watcher.checkNow(),DENIED);
  await assert.rejects(f.watcher.start(),DENIED);
 });
@@ -158,4 +162,18 @@ test("source/attempt/environment pins reject private, scripted, foreign or paid 
   if(before===undefined)delete process.env[key];
   else process.env[key]=before;
  }
+});
+
+test("provider abort exception is terminal, but native Root retirement still runs exactly once",async t=>{
+ const f=setup(t);
+ const watcher=f.create({onFence:()=>{
+  f.events.push("abort-failed");
+  throw Error("model abort failed");
+ }});
+ t.after(()=>watcher.close().catch(()=>{}));
+ await watcher.start();
+ await assert.rejects(watcher.close(),DENIED);
+ assert.equal(watcher.status,"revocation_unconfirmed");
+ assert.deepEqual(f.events,["abort-failed","native-retirement"]);
+ assert.equal(f.closes(),1);
 });
