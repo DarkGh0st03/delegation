@@ -56,7 +56,10 @@ function parseJSONL(contents){
  * The field checks cannot establish trust without the independent original
  * E2E, same-run stdout and success exit code enforced by GitHub Actions.
  */
-export function verifyDisposableNativeScriptedE2EProof(contents){
+export function verifyDisposableNativeScriptedE2EProof(contents,{
+ requirePostPlanningCiReview=false
+}={}){
+ if(typeof requirePostPlanningCiReview!=="boolean")deny();
  const records=parseJSONL(contents);
  const deployment=records.get("canonical_deployment_native_preflight");
  const review=records.get("canonical_signed_handoff_native");
@@ -124,6 +127,14 @@ export function verifyDisposableNativeScriptedE2EProof(contents){
   pr_draft:true,pr_open:true,pr_merged:false,
   paid_model_calls:0
  });
+ // When the manual disposable route requests its ORIGINAL after-Planning
+ // CI signature, refuse a legacy/prewritten approval that still produces a
+ // valid native Rust/Gitea/Docker run. Both routes remain SCRIPTED, not AI.
+ if(typeof result.original_engineer_ci_approval_from_actual_planning_checkpoint!==
+     "boolean"||
+    (requirePostPlanningCiReview&&
+     result.original_engineer_ci_approval_from_actual_planning_checkpoint!==true))
+  deny();
  if(!SHA.test(result.tested_head??"")||
     !Number.isSafeInteger(result.registered_tasks)||
     result.registered_tasks<24||
@@ -143,6 +154,8 @@ export function verifyDisposableNativeScriptedE2EProof(contents){
   status:"pass",
   evidence_class:"real_native_e2e_with_scripted_agent_outputs",
   original_signed_engineer_approvals:1,
+  original_ci_review_after_planning_attested:
+   result.original_engineer_ci_approval_from_actual_planning_checkpoint,
   exact_three_specialist_roles:true,
   native_mcp_child_issuances:24,
   original_gitea_branch_and_draft_pr_attested:true,
@@ -168,7 +181,13 @@ if(process.argv[1]&&
     !file.startsWith("/")||!file.endsWith(".jsonl"))deny();
  const meta=await stat(file);
  if(!meta.isFile()||meta.size>2_000_000)deny();
+ // This env flag is pinned by the original native CI workflow, not by an
+ // agent, ADK tool, uploaded evidence file or model output.
+ const flag=process.env.R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING;
+ if(flag!==undefined&&flag!=="0"&&flag!=="1")deny();
  const verdict=verifyDisposableNativeScriptedE2EProof(
-  await readFile(file,"utf8"));
+  await readFile(file,"utf8"),{
+   requirePostPlanningCiReview:flag==="1"
+  });
  process.stdout.write(JSON.stringify(verdict)+"\n");
 }

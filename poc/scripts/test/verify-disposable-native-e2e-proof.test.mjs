@@ -50,6 +50,7 @@ function validRecords(){
    cas_writes:12,authenticated_runner_fail_receipts:1,
    authenticated_runner_pass_receipts:1,
    distinct_child_credentials:24,original_engineer_approval_count:1,
+   original_engineer_ci_approval_from_actual_planning_checkpoint:false,
    original_root_pr_created:true,independent_pr_get:true,
    pr_draft:true,pr_open:true,pr_merged:false,paid_model_calls:0,
    registered_tasks:26,completed_gateway_tasks:25,
@@ -71,6 +72,7 @@ test("same-run original Rust/Gitea/Docker/Draft PR proof remains explicitly SCRI
   "real_native_e2e_with_scripted_agent_outputs");
  assert.equal(output.exact_three_specialist_roles,true);
  assert.equal(output.original_signed_engineer_approvals,1);
+ assert.equal(output.original_ci_review_after_planning_attested,false);
  assert.equal(output.native_mcp_child_issuances,24);
  assert.equal(output.first_real_docker,"fail");
  assert.equal(output.second_real_docker,"pass");
@@ -176,4 +178,33 @@ test("unrelated extra informational native events do not serve as missing native
  assert.equal(evidence.status,"pass");
  expectRejection([{event:"unverified_no_model_task_claim",status:"pass"},
   ...rows.filter(x=>x.event!=="canonical_signed_handoff_native")]);
+});
+
+// The live-workflow's FREE scripted-native mode must NOT accept the old
+// prewritten Engineer fixture, even if Rust/Child/Gitea/Docker all pass.
+test("explicit original after-Planning CI review is mandatory for scripted-native gate",()=>{
+ const records=validRecords();
+ assert.throws(()=>verify(toJSONL(records),{
+  requirePostPlanningCiReview:true
+ }),DENIED);
+ const final=records[4];
+ final.original_engineer_ci_approval_from_actual_planning_checkpoint=true;
+ const accepted=verify(toJSONL(records),{
+  requirePostPlanningCiReview:true
+ });
+ assert.equal(accepted.status,"pass");
+ assert.equal(accepted.original_ci_review_after_planning_attested,true);
+ assert.equal(accepted.model_source,"scripted-offline");
+ assert.equal(accepted.actual_gemini_provider_calls,0);
+ assert.equal(accepted.permission_to_start_paid_gemini,false);
+ delete final.original_engineer_ci_approval_from_actual_planning_checkpoint;
+ expectRejection(records);
+ assert.throws(()=>verify(toJSONL(records),{
+  requirePostPlanningCiReview:true
+ }),DENIED);
+ final.original_engineer_ci_approval_from_actual_planning_checkpoint="true";
+ expectRejection(records);
+ assert.throws(()=>verify(toJSONL(validRecords()),{
+  requirePostPlanningCiReview:"true"
+ }),DENIED);
 });

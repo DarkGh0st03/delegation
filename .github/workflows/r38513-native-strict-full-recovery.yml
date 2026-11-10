@@ -277,6 +277,11 @@ jobs:
           grep -Fq '"second_docker_status":"pass"' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"researcher_acceptance_pass":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"original_root_pr_created":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          # A manual scripted-native run MUST prove its CI Engineer signed
+          # the original post-Planning checkpoint, not a prewritten fixture.
+          if [[ "${R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING:-0}" = "1" ]]; then
+            grep -Fq '"original_engineer_ci_approval_from_actual_planning_checkpoint":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          fi
           grep -Fq '"independent_pr_get":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"pr_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"pr_merged":false' "$RUNNER_TEMP/r38513-proof.jsonl"
