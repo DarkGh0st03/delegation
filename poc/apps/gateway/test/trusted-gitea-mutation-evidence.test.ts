@@ -306,3 +306,43 @@ test("original owner auto-reconciles only a signed Gateway/Gitea mutation agains
   }),/reconciliation NO-GO/u);
  });
 });
+
+test("owner reconciliation scopes repeated identical model outputs by the signed Task call window",async()=>{
+ await fixture(async({publisher,observer})=>{
+  class RepeatSource extends BaseLlm{
+   constructor(){super({model:"offline-duplicate-original-task"});}
+   async *generateContentAsync(){
+    yield {content:{role:"model",parts:[{functionCall:{
+     name:"update_file",args:{branch,path,content}
+    }}]},usageMetadata:{
+     promptTokenCount:2,candidatesTokenCount:3,totalTokenCount:5
+    }};
+   }
+  }
+  const model=new DisposablePrivateBudgetedAdkModel({
+   delegate:new RepeatSource(),phase:"backend",
+   maxCalls:3,maxReportedTokens:50,maxPerCallTokens:20
+  });
+  for await(const _ of model.generateContentAsync({})){}
+  for await(const _ of model.generateContentAsync({})){}
+  assert.equal(model.proposedSourceWriteFingerprints().length,2);
+  const store=new DisposableOriginalA2AModelCallWindowStore({
+   role:"backend",model
+  });
+  store.callbackForOriginalA2A()({
+   task_id:expected.task_id,
+   credential_id:expected.credential_id,
+   runtime_task_id:expected.runtime_task_id,
+   role:"backend",call_index_before:1,call_index_after:2
+  });
+  await publisher.publish(intent,expected,result,"opa-r302");
+  const proof=await reconcileOriginalOwnerTaskWriteFromStore({
+   model,ownerWindowStore:store,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did
+  });
+  assert.equal(proof.matched_model_call_index,2);
+  assert.equal(proof.model_emitted_write_matches_committed_bytes,true);
+  assert.equal(proof.model_generated_source_proven,false);
+ });
+});

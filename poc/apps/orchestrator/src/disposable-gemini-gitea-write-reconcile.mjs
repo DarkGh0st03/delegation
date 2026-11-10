@@ -136,7 +136,10 @@ export async function reconcileOriginalOwnerTaskWriteFromStore({
   row.source_sha256===mutation.source_sha256&&
   row.source_bytes===mutation.source_bytes
  );
- if(candidates.length!==1)deny();
+ // Earlier signed Tasks may have proposed identical bytes on the same
+ // path. Only THIS-Task call window can select the unique model output;
+ // the preflight merely ensures at least one candidate before claiming.
+ if(candidates.length===0)deny();
 
  // The model/store pair is checked again by the private WeakMap provenance
  // proof within the comparator; a swapped store can never authorize a
