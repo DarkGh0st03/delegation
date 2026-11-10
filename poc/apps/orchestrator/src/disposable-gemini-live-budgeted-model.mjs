@@ -187,6 +187,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  #delegate;#phase;#maxCalls;#maxTokens;#maxPerCall;
  #calls=0;#reportedTotal=0;#input=0;#output=0;
  #busy=false;#blocked=false;#sessionBudget;#proposedWrites=[];
+ #claimedWrites=new WeakSet();#claimedGatewayEvidence=new Set();
  constructor({
   delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens,sessionBudget
  }={}){
@@ -233,6 +234,24 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
   */
  proposedSourceWriteFingerprints(){
   return Object.freeze([...this.#proposedWrites]);
+ }
+ /**
+  * Exactly-once, owner-memory correlation. Only accept an original record
+  * object from THIS model's completed provider stream, AND a distinct
+  * independently authenticated Gateway receipt fingerprint. A replay of
+  * either must remain NO-GO even if the source SHA-256 still matches.
+  *
+  * This does not validate which signed Task originally made the model call:
+  * the original owner must supply the trusted call window separately.
+  */
+ claimOriginalGatewayMatchedWrite(record,evidenceSha256){
+  if(!record||typeof record!=="object"||
+     !this.#proposedWrites.includes(record)||
+     !/^[a-f0-9]{64}$/u.test(evidenceSha256??"")||
+     this.#claimedWrites.has(record)||
+     this.#claimedGatewayEvidence.has(evidenceSha256))deny();
+  this.#claimedWrites.add(record);
+  this.#claimedGatewayEvidence.add(evidenceSha256);
  }
  async *generateContentAsync(request,stream,signal){
   if(this.#busy){

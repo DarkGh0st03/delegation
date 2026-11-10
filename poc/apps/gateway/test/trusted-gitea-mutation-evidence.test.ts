@@ -167,12 +167,34 @@ test("metered model write bytes match the ORIGINAL independently authenticated G
   assert.equal(witness.source_bytes,Buffer.byteLength(content));
   assert.equal(witness.commit_sha,nextHead);
   assert.ok(!JSON.stringify(witness).includes(content));
+  const window={task_id:expected.task_id,
+   credential_id:expected.credential_id,
+   call_index_before:0,call_index_after:1};
+  await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
+   model:matching,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did,
+   ownerObservedTaskCallWindow:{...window,task_id:"foreign-task"}
+  }),/reconciliation NO-GO/u);
+  await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
+   model:matching,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did,
+   ownerObservedTaskCallWindow:{...window,call_index_before:1,call_index_after:2}
+  }),/reconciliation NO-GO/u);
   const reconciled=await reconcileOriginalModelWriteWithVerifiedGitea({
    model:matching,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
-   registeredAgentDid:expected.agent_did
+   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:window
   });
   assert.equal(reconciled.model_emitted_write_matches_committed_bytes,true);
+  assert.equal(reconciled.owner_asserted_task_call_window_checked,true);
+  assert.equal(reconciled.model_write_and_gateway_receipt_replay_fenced,true);
+  await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
+   model:matching,mutationObserver:observer,
+   completionExpectation:expected,role:"backend",
+   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:window
+  }),/reconciliation NO-GO/u,"same Gateway receipt cannot consume same model output twice");
   assert.equal(reconciled.provider_origin_independently_verified,false);
   assert.equal(reconciled.model_generated_source_proven,false);
   assert.equal(reconciled.gateway_evidence_sha256,witness.evidence_sha256);
@@ -182,18 +204,18 @@ test("metered model write bytes match the ORIGINAL independently authenticated G
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:wrongSource,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
-   registeredAgentDid:expected.agent_did
+   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:window
   }),/reconciliation NO-GO/u);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:matching,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
-   registeredAgentDid:"did:example:wrong"
+   registeredAgentDid:"did:example:wrong",ownerObservedTaskCallWindow:window
   }),/reconciliation NO-GO/u);
   setHead(oldHead);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:matching,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
-   registeredAgentDid:expected.agent_did
+   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:window
   }),/feature HEAD is not/u);
  });
 });

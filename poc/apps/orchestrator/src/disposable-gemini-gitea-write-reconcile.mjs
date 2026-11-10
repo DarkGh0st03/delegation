@@ -16,12 +16,15 @@ const deny=()=>{throw Error("Disposable original model/Gitea digest reconciliati
 const roles=new Set(["backend","frontend","test"]);
 
 /**
- * The registeredAgentDid comes from the original native owner's signed
- * roster, NEVER from the LLM/A2A Task or a workflow JSON input.
+ * The registeredAgentDid and ownerObservedTaskCallWindow must come from
+ * the original native owner's signed Task lifecycle, NEVER from LLM/A2A
+ * payloads, workflow inputs or a model-declared call index. The window
+ * is checked but is not independently authenticated by this comparator.
  * A digest match is evidence of byte identity, not its causal origin.
  */
 export async function reconcileOriginalModelWriteWithVerifiedGitea({
- model,mutationObserver,completionExpectation,role,registeredAgentDid
+ model,mutationObserver,completionExpectation,role,registeredAgentDid,
+ ownerObservedTaskCallWindow
 }={}){
  if(!(model instanceof DisposablePrivateBudgetedAdkModel)||
     !(mutationObserver instanceof AuthenticatedGiteaMutationCompletionObserver)||
@@ -29,7 +32,24 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
     typeof registeredAgentDid!=="string"||
     !registeredAgentDid.startsWith("did:")||
     !completionExpectation||typeof completionExpectation!=="object"||
-    completionExpectation.agent_did!==registeredAgentDid)
+    completionExpectation.agent_did!==registeredAgentDid||
+    // Task identity + model-call window MUST come from the original
+    // owner's independently authenticated signed A2A Task lifecycle.
+    // This method never derives it from the model's prompt or tool args.
+    !ownerObservedTaskCallWindow||
+    typeof ownerObservedTaskCallWindow!=="object"||
+    Array.isArray(ownerObservedTaskCallWindow)||
+    Object.keys(ownerObservedTaskCallWindow).sort().join(",")!==
+     "call_index_after,call_index_before,credential_id,task_id"||
+    ownerObservedTaskCallWindow.task_id!==completionExpectation.task_id||
+    ownerObservedTaskCallWindow.credential_id!==completionExpectation.credential_id||
+    !Number.isSafeInteger(ownerObservedTaskCallWindow.call_index_before)||
+    !Number.isSafeInteger(ownerObservedTaskCallWindow.call_index_after)||
+    ownerObservedTaskCallWindow.call_index_before<0||
+    ownerObservedTaskCallWindow.call_index_after<=
+     ownerObservedTaskCallWindow.call_index_before||
+    ownerObservedTaskCallWindow.call_index_after>
+     model.publicSummary().calls_started)
    deny();
  // This method verifies the ORIGINAL MAC and original Task binding and
  // independently checks the actual Gitea content, CAS parent and current HEAD.
@@ -37,11 +57,16 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
   completionExpectation);
  const matching=model.proposedSourceWriteFingerprints().filter(row=>
   row.role===role&&row.operation==="update_file"&&
+  row.call_index>ownerObservedTaskCallWindow.call_index_before&&
+  row.call_index<=ownerObservedTaskCallWindow.call_index_after&&
   row.branch===mutation.branch&&row.path===mutation.path&&
   row.source_sha256===mutation.source_sha256&&
   row.source_bytes===mutation.source_bytes
  );
  if(matching.length!==1)deny();
+ // The receipt's signed Task context and independent Gitea re-read were
+ // verified above; the same model output or receipt cannot be matched twice.
+ model.claimOriginalGatewayMatchedWrite(matching[0],mutation.evidence_sha256);
  return Object.freeze({
   status:"signed_gateway_gitea_cas_matches_model_proposed_bytes_only",
   task_id:mutation.task_id,
@@ -50,6 +75,8 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
   source_bytes:mutation.source_bytes,
   gateway_evidence_sha256:mutation.evidence_sha256,
   matched_model_call_index:matching[0].call_index,
+  owner_asserted_task_call_window_checked:true,
+  model_write_and_gateway_receipt_replay_fenced:true,
   model_emitted_write_matches_committed_bytes:true,
   provider_origin_independently_verified:false,
   model_generated_source_proven:false,
