@@ -18,6 +18,36 @@ import type {
   RunnerRunResult
 } from "./types.ts";
 
+/**
+ * Host Docker CLI is a subprocess of the trusted Runner, not of the
+ * untrusted repository. It must NOT inherit a model/API secret from the
+ * Owner process (or NODE_OPTIONS, LD_PRELOAD, GitHub OIDC, injected proxy
+ * settings, etc.) even if one was accidentally present in process.env.
+ *
+ * Explicit Docker-client OS settings only, with no wildcard/prefix passthru.
+ * This is subprocess hygiene, NOT proof of isolated owner memory, provider
+ * billing control or confidentiality from a malicious Docker daemon.
+ */
+const DOCKER_CLI_CHILD_KEYS=Object.freeze([
+ "PATH","Path","HOME","USERPROFILE","SYSTEMROOT","SystemRoot","WINDIR",
+ "COMSPEC","TEMP","TMP","TMPDIR","LANG","LC_ALL","APPDATA","LOCALAPPDATA",
+ "XDG_RUNTIME_DIR","DOCKER_HOST","DOCKER_CONFIG","DOCKER_CONTEXT",
+ "DOCKER_CERT_PATH","DOCKER_TLS_VERIFY","DOCKER_API_VERSION",
+ "DOCKER_DEFAULT_PLATFORM"
+]);
+export function isolatedDockerCliEnvironment(
+ source:NodeJS.ProcessEnv
+):NodeJS.ProcessEnv{
+ const child:NodeJS.ProcessEnv=Object.create(null);
+ for(const name of DOCKER_CLI_CHILD_KEYS){
+  const value=source[name];
+  if(typeof value==="string"&&value.length>0&&
+     !value.includes("\\0")&&!value.includes("\\n")&&!value.includes("\\r"))
+    child[name]=value;
+ }
+ return child;
+}
+
 const MAX_COMMAND_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024;
 // Must finish before the canonical Gateway -> Runner 900s timeout.
@@ -107,7 +137,7 @@ async function defaultCommandRunner(
   return await new Promise<CommandResult>((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: process.env,
+      env: isolatedDockerCliEnvironment(process.env),
       stdio: ["ignore", "pipe", "pipe"]
     });
 

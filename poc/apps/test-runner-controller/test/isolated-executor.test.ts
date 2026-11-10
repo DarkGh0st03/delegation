@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolve } from "node:path";
+import {spawnSync} from "node:child_process";
 import {
   IsolatedDockerRunnerExecutor,
   runnerFixedPhaseCommands,
-  runnerResearcherAcceptanceCommand
+  runnerResearcherAcceptanceCommand,
+  isolatedDockerCliEnvironment
 } from "../src/isolated-executor.ts";
 
 const request = {
@@ -503,4 +505,58 @@ test("A real Playwright command failure produces sanitized locations on exact SH
   assert.equal(result.project_e2e_failure?.locations[0]?.check_id,"baseline_user_profile");
   assert.equal(cleaned,true);
   assert.doesNotMatch(JSON.stringify(result),/PRIVATE_SOURCE|PRIVATE_CREDENTIAL/);
+});
+
+test("host Docker CLI subprocess strips every inherited Gemini, GitHub, injected Node and shell credential",()=>{
+ const parent={
+  PATH:process.env.PATH??"/usr/bin",
+  HOME:process.env.HOME??"/tmp",
+  DOCKER_HOST:"unix:///var/run/docker.sock",
+  GEMINI_API_KEY:"forbidden-google-secret",
+  GOOGLE_API_KEY:"forbidden-second-google-secret",
+  OPENAI_API_KEY:"forbidden-openai-secret",
+  GH_TOKEN:"forbidden-github-token",
+  GITHUB_TOKEN:"forbidden-github-app-token",
+  ACTIONS_ID_TOKEN_REQUEST_TOKEN:"forbidden-oidc-token",
+  ACTIONS_ID_TOKEN_REQUEST_URL:"https://example.invalid/oidc",
+  NODE_OPTIONS:"--require malicious-bootstrap.js",
+  LD_PRELOAD:"/tmp/malicious.so",
+  HTTPS_PROXY:"https://user:password@example.invalid",
+  UNSCOPED_BEARER_TOKEN:"forbidden-private-token"
+ };
+ const safe=isolatedDockerCliEnvironment(parent);
+ assert.equal(Object.getPrototypeOf(safe),null);
+ assert.equal(safe.PATH,parent.PATH);
+ assert.equal(safe.HOME,parent.HOME);
+ assert.equal(safe.DOCKER_HOST,parent.DOCKER_HOST);
+ for(const key of Object.keys(parent).filter(k=>![
+  "PATH","HOME","DOCKER_HOST"
+ ].includes(k)))assert.equal(safe[key],undefined,key);
+ assert.equal(JSON.stringify(safe).includes("forbidden"),false);
+ const probe=spawnSync(process.execPath,["-e",
+  "process.stdout.write(JSON.stringify({google:process.env.GEMINI_API_KEY,github:process.env.GH_TOKEN,oidc:process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,docker:process.env.DOCKER_HOST,preload:process.env.LD_PRELOAD}))"
+ ],{encoding:"utf8",timeout:5000,env:safe});
+ assert.equal(probe.status,0);
+ assert.deepEqual(JSON.parse(probe.stdout),{
+  docker:"unix:///var/run/docker.sock"
+ });
+});
+
+test("Docker subprocess allowlist ignores unknown keys, empty and control-character values",()=>{
+ const input={
+  HOME:"/home/runner",DOCKER_HOST:"tcp://docker.local:2376",
+  DOCKER_TLS_VERIFY:"1",DOCKER_CERT_PATH:"/home/runner/.docker/certs",
+  DOCKER_CONFIG:"/home/runner/.docker",
+  EXFILTRATION_ENDPOINT:"https://elsewhere.invalid",
+  LANG:"en_US.UTF-8",
+  PATH:"/bin:\\n/tmp/evil",
+  TMPDIR:"/tmp\\0injected",
+  TEMP:""
+ };
+ const env=isolatedDockerCliEnvironment(input);
+ assert.deepEqual({...env},{
+  HOME:input.HOME,DOCKER_HOST:input.DOCKER_HOST,
+  DOCKER_TLS_VERIFY:"1",DOCKER_CERT_PATH:input.DOCKER_CERT_PATH,
+  DOCKER_CONFIG:input.DOCKER_CONFIG,LANG:input.LANG
+ });
 });
