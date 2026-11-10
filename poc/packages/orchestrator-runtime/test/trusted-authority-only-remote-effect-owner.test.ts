@@ -338,10 +338,12 @@ test("original native prebind is the ONLY IPC authorization origin, with exact l
   role:"backend",task:exactTask,callId,payload:{contents:[]}
  });
  assert.equal(await call("call-native-000001"),true);
- await assert.rejects(call("call-native-000001"),
-  /Disposable original signed IPC Task admission NO-GO/u);
  assert.equal(approval.retired,false);
  assert.equal(await call("call-native-000002"),true);
+ // A replay or over-budget attempt permanently closes this Task's
+ // admission; it is NOT permissible to continue after ambiguous reuse.
+ await assert.rejects(call("call-native-000001"),
+  /Disposable original signed IPC Task admission NO-GO/u);
  await assert.rejects(call("call-native-000003"),
   /Disposable original signed IPC Task admission NO-GO/u);
  assert.throws(()=>approval.bindOriginalReceipt(signed),
