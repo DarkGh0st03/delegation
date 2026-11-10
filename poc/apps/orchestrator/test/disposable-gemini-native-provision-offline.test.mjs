@@ -21,7 +21,8 @@ import {TrustedOperationalSessionStore}
  from "../../gateway/src/trusted-operational-session-store.ts";
 import {TrustedAuthorityOnlyCompletionObserver}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
-import {createProtectedCanonicalOperationalProvision}
+import {createProtectedCanonicalOperationalProvision,
+ loadProtectedCanonicalOwnerManifest}
  from "../src/trusted-authority-only-owner-bootstrap.mjs";
 import {createDisposableLiveGeminiModelSetFromPrivateFile,
  createDisposableActionsOwnerGeminiModelsFromPrivateFile}
@@ -292,6 +293,14 @@ test("GitHub Actions one-use consented owner models bind every ORIGINAL typed na
    else process.env[key]=value;
   }
  });
+ // Original private R5 manifest validation MUST continue to deny
+ // GitHub Actions. The separate disposable CI typed provision below is
+ // permitted to assemble only its owned dependencies, not bypass R5.
+ await assert.rejects(
+  loadProtectedCanonicalOwnerManifest(
+   "/nonexistent-protected-r5-manifest.json",
+   {expectedSourceSha:checkoutSha}
+  ),/Protected canonical authority bootstrap denied/u);
  const admitted=await createDisposableActionsOwnerGeminiModelsFromPrivateFile({
   keyFile:f.secret,githubApiToken:"synthetic-github-reader-token"
  });

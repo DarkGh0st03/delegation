@@ -229,8 +229,8 @@ jobs:
           node --test poc/apps/gateway/native-test/d1-editor-revision.test.mjs poc/apps/gateway/native-test/d1-gateway-operation-audit.test.mjs
       - name: Private compiler context through admitted repair IPC (no model calls)
         run: node --experimental-strip-types --test --test-name-pattern="N1 compiler context|D1 private assertion" poc/apps/gateway/test/operational-epoch-gateway.test.ts
-      - name: Private Runner evidence without inference
-        run: node --experimental-strip-types --test poc/apps/test-runner-controller/test/failure-evidence.test.ts poc/apps/test-runner-controller/test/private-vitest-failures.test.ts poc/scripts/test/seal-runner-evidence.test.mjs
+      - name: Private Runner evidence and Docker CLI credential isolation (no AI)
+        run: node --experimental-strip-types --test poc/apps/test-runner-controller/test/isolated-executor.test.ts poc/apps/test-runner-controller/test/failure-evidence.test.ts poc/apps/test-runner-controller/test/private-vitest-failures.test.ts poc/scripts/test/seal-runner-evidence.test.mjs
       - name: Recovery scope, signed task context and owner handoff (no model calls)
         run: |
           node --experimental-strip-types --test poc/apps/gateway/native-test/f4-project-test-provenance.test.mjs poc/apps/gateway/native-test/f4-controlled-retest-evidence.test.mjs poc/apps/gateway/native-test/project-test-repair-candidate-scope.test.mjs poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts poc/packages/orchestrator-runtime/test/trusted-adk-integration-review.test.ts poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts poc/packages/orchestrator-runtime/test/authority-only-planning-proposal.test.ts poc/packages/orchestrator-runtime/test/trusted-authority-planning-checkpoint.test.ts poc/apps/orchestrator/test/authority-only-engineer-review.test.mjs poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs poc/packages/orchestrator-runtime/test/offline-planning-dag.test.ts poc/apps/gateway/native-test/f1-planner-ablation.test.mjs
