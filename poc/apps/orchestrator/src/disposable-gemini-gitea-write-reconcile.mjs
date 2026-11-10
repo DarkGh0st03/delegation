@@ -44,9 +44,12 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
     typeof ownerObservedTaskCallWindow!=="object"||
     Array.isArray(ownerObservedTaskCallWindow)||
     Object.keys(ownerObservedTaskCallWindow).sort().join(",")!==
-     "call_index_after,call_index_before,credential_id,task_id"||
+     "call_index_after,call_index_before,credential_id,role,runtime_task_id,task_id"||
     ownerObservedTaskCallWindow.task_id!==completionExpectation.task_id||
     ownerObservedTaskCallWindow.credential_id!==completionExpectation.credential_id||
+    ownerObservedTaskCallWindow.runtime_task_id!==
+     completionExpectation.runtime_task_id||
+    ownerObservedTaskCallWindow.role!==role||
     !Number.isSafeInteger(ownerObservedTaskCallWindow.call_index_before)||
     !Number.isSafeInteger(ownerObservedTaskCallWindow.call_index_after)||
     ownerObservedTaskCallWindow.call_index_before<0||
