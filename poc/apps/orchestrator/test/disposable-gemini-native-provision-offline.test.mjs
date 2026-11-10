@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import {mkdtemp,mkdir,readdir,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {execFileSync} from "node:child_process";
 import {Gemini} from "@google/adk";
 import {TrustedOperationalSessionStore}
  from "../../gateway/src/trusted-operational-session-store.ts";
@@ -22,7 +23,8 @@ import {TrustedAuthorityOnlyCompletionObserver}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
 import {createProtectedCanonicalOperationalProvision}
  from "../src/trusted-authority-only-owner-bootstrap.mjs";
-import {createDisposableLiveGeminiModelSetFromPrivateFile}
+import {createDisposableLiveGeminiModelSetFromPrivateFile,
+ createDisposableActionsOwnerGeminiModelsFromPrivateFile}
  from "../src/disposable-gemini-live-model-set.mjs";
 import {bindDisposableLiveGeminiCanonicalInputs}
  from "../src/disposable-gemini-live-canonical-binding.mjs";
@@ -176,7 +178,7 @@ async function fixture(t){
    }
   }
  };
- return {root,dirs,models,authority,operational,observer,originalStore,
+ return {root,dirs,secret,models,authority,operational,observer,originalStore,
   getEffects:()=>effects,getObservations:()=>observations};
 }
 
@@ -243,4 +245,81 @@ test("original native provision rejects injected provider callbacks and changed 
   );
  assert.deepEqual(await readdir(f.dirs["status-index"]),[]);
  assert.equal(f.getEffects(),0);
+});
+
+test("GitHub Actions one-use consented owner models bind every ORIGINAL typed native slot without API, Root or Docker",async t=>{
+ const f=await fixture(t);
+ // No real GitHub dispatch, provider credentials or Google network here:
+ // only a local independent REST metadata fixture and a synthetic key.
+ const checkoutSha=execFileSync("git",["rev-parse","HEAD"],{
+  encoding:"utf8"
+ }).trim();
+ const ref="refs/heads/experiment/disposable-gemini-live-20261109";
+ const repo="DarkGh0st03/delegation";
+ const workflow=".github/workflows/gemini-authority-only-live-ci-pilot.yml";
+ const pins={
+  GITHUB_ACTIONS:"true",GITHUB_REPOSITORY:repo,
+  GITHUB_EVENT_NAME:"workflow_dispatch",GITHUB_REF:ref,
+  GITHUB_WORKFLOW_REF:repo+"/"+workflow+"@"+ref,
+  GITHUB_RUN_ID:"42784699554",GITHUB_RUN_ATTEMPT:"1",GITHUB_SHA:checkoutSha,
+  DELEGATION_DISPOSABLE_LIVE_MODE:"gemini-real",
+  DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
+  DELEGATION_BILLING_CAP_ACK:
+   "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES"
+ };
+ const names=[...Object.keys(pins),"GEMINI_API_KEY","GOOGLE_API_KEY",
+  "OPENAI_API_KEY","GH_TOKEN","GITHUB_TOKEN","DELEGATION_LIVE_CI_PREFLIGHT_MODE"];
+ const original=new Map(names.map(key=>[key,process.env[key]]));
+ for(const key of names)delete process.env[key];
+ Object.assign(process.env,pins);
+ const previousFetch=globalThis.fetch;
+ let githubReads=0;
+ globalThis.fetch=async url=>{
+  githubReads++;
+  assert.equal(url,"https://api.github.com/repos/"+repo+"/actions/runs/"+pins.GITHUB_RUN_ID);
+  return {ok:true,async json(){return {
+   id:pins.GITHUB_RUN_ID,event:"workflow_dispatch",run_attempt:1,
+   status:"in_progress",head_sha:checkoutSha,
+   head_branch:"experiment/disposable-gemini-live-20261109",
+   path:workflow,head_repository:{full_name:repo},
+   created_at:new Date().toISOString()
+  };}};
+ };
+ t.after(()=>{
+  globalThis.fetch=previousFetch;
+  for(const [key,value] of original){
+   if(value===undefined)delete process.env[key];
+   else process.env[key]=value;
+  }
+ });
+ const admitted=await createDisposableActionsOwnerGeminiModelsFromPrivateFile({
+  keyFile:f.secret,githubApiToken:"synthetic-github-reader-token"
+ });
+ assert.equal(githubReads,1);
+ const bound=bindDisposableLiveGeminiCanonicalInputs({
+  authority:f.authority,operational:f.operational,models:admitted
+ });
+ assert.equal(bound.authority.planner.model,admitted.planner.model);
+ assert.equal(bound.operational.workflow.adaptive.model,admitted.adaptive.model);
+ assert.equal(bound.operational.workflow.createBranch.model,admitted.adaptive.model);
+ assert.equal(bound.operational.workflow.draftPullRequest.model,admitted.adaptive.model);
+ assert.deepEqual(Object.keys(bound.operational.localWorkers.workers).sort(),
+  [...ROLES].sort());
+ for(const role of ROLES){
+  const model=bound.operational.localWorkers.workers[role].adk.model;
+  assert.equal(model,admitted.workers[role].model);
+  assert.equal(model.publicSummary().calls_started,0);
+ }
+ assert.equal(admitted.planner.model.publicSummary().calls_started,0);
+ assert.equal(admitted.adaptive.model.publicSummary().calls_started,0);
+ // Same original owner provision validates typed native dependencies. Do
+ // not invoke returned function: the protected Root/VP state must stay absent.
+ const provision=await createProtectedCanonicalOperationalProvision(
+  bound.authority,bound.operational
+ );
+ assert.equal(typeof provision,"function");
+ assert.deepEqual(await readdir(f.dirs["status-index"]),[]);
+ assert.deepEqual(await readdir(f.dirs.sessions),[]);
+ assert.equal(f.getEffects(),0);
+ assert.equal(f.getObservations(),0);
 });
