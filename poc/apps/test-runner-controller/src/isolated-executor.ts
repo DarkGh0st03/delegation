@@ -42,7 +42,7 @@ export function isolatedDockerCliEnvironment(
  for(const name of DOCKER_CLI_CHILD_KEYS){
   const value=source[name];
   if(typeof value==="string"&&value.length>0&&
-     !value.includes("\\0")&&!value.includes("\\n")&&!value.includes("\\r"))
+     ![...value].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127))
     child[name]=value;
  }
  return child;

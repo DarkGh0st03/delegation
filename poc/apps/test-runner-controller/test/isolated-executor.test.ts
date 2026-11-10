@@ -549,8 +549,8 @@ test("Docker subprocess allowlist ignores unknown keys, empty and control-charac
   DOCKER_CONFIG:"/home/runner/.docker",
   EXFILTRATION_ENDPOINT:"https://elsewhere.invalid",
   LANG:"en_US.UTF-8",
-  PATH:"/bin:\\n/tmp/evil",
-  TMPDIR:"/tmp\\0injected",
+  PATH:"/bin:\n/tmp/evil",
+  TMPDIR:"/tmp\0injected",
   TEMP:""
  };
  const env=isolatedDockerCliEnvironment(input);
