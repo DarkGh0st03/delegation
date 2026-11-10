@@ -138,9 +138,18 @@ export async function startDisposableGeminiOriginalReviewSession({
 
  // All native transports are prepared by the original bootstrap. The
  // callbacks do not execute Git mutations; only reviewed execution can.
- const provision=await createProtectedCanonicalOperationalProvision(
+ const nativeProvision=await createProtectedCanonicalOperationalProvision(
   signedAuthority,bound.operational
  );
+ // Same original reviewed host, no alternate Root or Engineeer grant.
+ // The wrapper passes a one-use, owner-minted reconciliation capability.
+ const provision=async()=>{
+  const ready=await nativeProvision();
+  if(typeof bound.reconcileVerifiedOriginalWorkerUpdate!=="function")
+   deny();
+  return Object.freeze({...ready,
+   ownerSourceGate:bound.reconcileVerifiedOriginalWorkerUpdate});
+ };
 
  // A one-use OIDC admission is NOT lasting permission to execute.
  // Revalidate the active GitHub job BEFORE launching paid Planning, then

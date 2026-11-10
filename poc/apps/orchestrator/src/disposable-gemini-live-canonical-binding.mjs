@@ -17,6 +17,11 @@ import {DisposableOriginalA2AModelCallWindowStore}
 import {reconcileOriginalOwnerTaskWriteFromStore}
  from "./disposable-gemini-gitea-write-reconcile.mjs";
 
+// Trusted in-process original model-binding capability, never JSON/A2A.
+const ISSUED_OWNER_SOURCE_GATES=new WeakSet();
+export function isIssuedDisposableOwnerSourceGate(value){
+ return typeof value==="function"&&ISSUED_OWNER_SOURCE_GATES.has(value);
+}
 const ROLES=Object.freeze(["backend","frontend","test"]);
 const deny=()=>{throw Error("Disposable live canonical binding NO-GO");};
 const plain=x=>!!x&&typeof x==="object"&&!Array.isArray(x)&&
@@ -178,6 +183,7 @@ export function bindDisposableLiveGeminiCanonicalInputs({
    registeredAgentDid:nextAuthority.trustedAgentRegistry[role].did
   });
  }:undefined;
+ if(ownerReconcile)ISSUED_OWNER_SOURCE_GATES.add(ownerReconcile);
  // Claim only AFTER the entire original-host configuration validates.
  // One OIDC-admitted set may bind only ONE owner session; no model reuse
  // as a second parallel Root/Planning launch with the same admission.
