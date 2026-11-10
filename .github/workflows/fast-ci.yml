@@ -130,6 +130,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-a2a-worker-launcher.test.mjs
           # Linux procfs parent/child credentials, mount namespace and no-new-privileges: cannot authorize paid Gemini.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-linux-boundary-audit.test.mjs
+          # Strict cross-UID scoped HMAC group layout audit; no chmod/chown and no paid startup.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-scoped-ipc-permissions.test.mjs
           # Three original specialist subprocesses and owner Stage/Bind IPC SDK shape, strictly offline.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-offline-subprocess-workers.test.mjs
           # No-inference GitHub Actions liveness/cancellation/revocation fence for the original owner.
