@@ -1,0 +1,56 @@
+# Research-only manual registration placeholder for the future LIVE CI.
+# All current steps are ZERO-INFERENCE: no Gemini key or paid provider.
+# A real run needs a separately reviewed trusted owner CLI, native isolation,
+# complete same-session model->signed review->Rust/Gitea/Docker chain,
+# per-session token/billing preflight and EXPLICIT operator authorization.
+name: Gemini Authority-Only LIVE CI — Preflight Only (No AI Billing)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Only no-billing preflight is implemented"
+        required: true
+        default: preflight-only
+        type: choice
+        options:
+          - preflight-only
+permissions:
+  contents: read
+concurrency:
+  group: disposable-live-ci-preflight-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    name: "Manual source-pinned preflight — no Google credentials, no ADK"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.repository == 'DarkGh0st03/delegation' &&
+      github.ref == 'refs/heads/experiment/disposable-gemini-live-20261109' &&
+      inputs.mode == 'preflight-only'
+    env:
+      DELEGATION_LIVE_CI_PREFLIGHT_MODE: preflight-only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+      - name: Deny any inherited provider credentials or paid consent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test -z "${DELEGATION_GEMINI_CHARGE_CONFIRMATION:-}"
+          test -z "${DELEGATION_BILLING_CAP_ACK:-}"
+      - name: Validate tracked checkout, manual identity and no-billing contract
+        run: |
+          node --check poc/apps/orchestrator/src/disposable-gemini-ci-preflight.mjs
+          node poc/apps/orchestrator/src/disposable-gemini-ci-preflight.mjs
+      - name: Re-run offline admission regressions
+        run: |
+          node --test poc/apps/orchestrator/test/disposable-gemini-ci-preflight.test.mjs
