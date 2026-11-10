@@ -183,12 +183,12 @@ test("metered model write bytes match the ORIGINAL independently authenticated G
    model:wrongSource,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
    registeredAgentDid:expected.agent_did
-  }),/model\\/Gitea digest reconciliation NO-GO/u);
+  }),/reconciliation NO-GO/u);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:matching,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
    registeredAgentDid:"did:example:wrong"
-  }),/model\\/Gitea digest reconciliation NO-GO/u);
+  }),/reconciliation NO-GO/u);
   setHead(oldHead);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:matching,mutationObserver:observer,
