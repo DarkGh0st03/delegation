@@ -163,9 +163,9 @@ export async function startDisposableActionsOriginalReviewSession({
    status:"actions_original_ci_simulated_engineer_review_signed_post_planning",
    original_engineer_decision:"SIMULATED_NOT_HUMAN",
    original_review_verified:true,
-   ...{get phase(){return session.phase;},
-       get engineerUrl(){return session.engineerUrl;},
-       get githubRunStatus(){return session.githubRunStatus;}},
+   get phase(){return session.phase;},
+   get engineerUrl(){return session.engineerUrl;},
+   get githubRunStatus(){return session.githubRunStatus;},
    reviewReadiness:()=>session.reviewReadiness(),
    runApprovedCanonical:()=>session.runApprovedCanonical(),
    close:()=>session.close()
