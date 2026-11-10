@@ -57,6 +57,13 @@ test("original three-role SDK startup contract now exists with separate A2A PIDs
   "offline_synthetic_original_sdk_worker_topology_not_native_root");
  assert.equal(handle.original_signed_authority_verified_here,false);
  assert.equal(handle.osIsolationVerified,false);
+ assert.deepEqual(handle.workerOsBoundary.canaryAccessibleByRole,
+  {backend:true,frontend:true,test:true});
+ assert.deepEqual(handle.workerOsBoundary.nativeSignerVerifiedByRole,
+  {backend:false,frontend:false,test:false});
+ if(process.platform==="linux"&&typeof process.getuid==="function")
+  assert.deepEqual(handle.workerOsBoundary.sameUidByRole,
+   {backend:true,frontend:true,test:true});
  const sdk=handle.sdk;
  assert.deepEqual(Object.keys(sdk.agentBaseUrls),ROLES);
  assert.deepEqual(Object.keys(sdk.stageChannels),ROLES);

@@ -80,6 +80,9 @@ export async function startDisposableOriginalOfflineSubprocessWorkers({
   await rm(location,{recursive:true,force:true});
  })();
  const stageChannels={},agentBindingChannels={},agentBaseUrls={};
+ // Observed kernel/file access facts, NOT an OS isolation attestation.
+ // Never place these in the ORIGINAL SDK Agent Card or signed credentials.
+ const ownerCanaryAccessibleByRole={},sameUidByRole={};
  try{
   for(const role of ROLES){
    const ch=async name=>{
@@ -112,14 +115,25 @@ export async function startDisposableOriginalOfflineSubprocessWorkers({
    });
    handles.push(child);
    if(child.osIsolationVerified!==false||
+      child.nativeRustSignerVerified!==false||
       child.originalNativeTaskBindingPresent!==false||
-      child.originalTaskBindingChannelReady!==true)deny();
+      child.originalTaskBindingChannelReady!==true||
+      typeof child.ownerCanaryReadableFromWorker!=="boolean"||
+      ![true,false,null].includes(child.ownerAndWorkerShareUid))deny();
+   ownerCanaryAccessibleByRole[role]=child.ownerCanaryReadableFromWorker;
+   sameUidByRole[role]=child.ownerAndWorkerShareUid;
    agentBaseUrls[role]=child.baseUrl;
   }
   return Object.freeze({
    status:"offline_synthetic_original_sdk_worker_topology_not_native_root",
    original_signed_authority_verified_here:false,
    osIsolationVerified:false,
+   workerOsBoundary:Object.freeze({
+    canaryAccessibleByRole:Object.freeze(ownerCanaryAccessibleByRole),
+    sameUidByRole:Object.freeze(sameUidByRole),
+    nativeSignerVerifiedByRole:Object.freeze(
+     Object.fromEntries(ROLES.map(role=>[role,false])))
+   }),
    close,
    sdk:Object.freeze({
     stageChannels:Object.freeze(stageChannels),
