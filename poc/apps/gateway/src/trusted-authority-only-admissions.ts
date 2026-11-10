@@ -139,6 +139,11 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  }>>();
  readonly #completed=new Set<string>();
  readonly #completionEvidence=new Map<string,string>();
+ // Exact private Gateway UPDATE expectations retained ONLY after an
+ // independently observed completed native single or sequential CAS.
+ readonly #mutationObservations=new Map<string,Readonly<{
+  expectation:TrustedCompletionExpectation;evidence_sha256:string
+ }>>();
  readonly #branchPins=new Map<string,Readonly<{
   task_id:string;epoch:number;credential_id:string;base_revision:string;
  }>>();
@@ -806,6 +811,13 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    else if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
    this.#completed.add(taskId);
    this.#completionEvidence.set(taskId,observation.evidence_sha256);
+   if(bound.row.permissions.length===1&&
+      bound.row.permissions[0]?.operation==="update_file"){
+    this.#mutationObservations.set(taskId,Object.freeze({
+     expectation:Object.freeze({...expectation}),
+     evidence_sha256:observation.evidence_sha256
+    }));
+   }
    return Object.freeze({
     status:"task_completion_observed_staged",
     task_id:taskId,runtime_task_id:runtimeTaskId,
@@ -1223,12 +1235,76 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
     deny("Child expired while sealing verified mixed CAS");
    state.completed=2;
    state.latest_evidence_sha256=observed.evidence_sha256;
+   this.#mutationObservations.set(taskId,Object.freeze({
+    expectation:Object.freeze({...expected}),
+    evidence_sha256:observed.evidence_sha256
+   }));
    delete state.active;
    this.#flights.delete(taskId);
    return Object.freeze({status:"sequential_mutation_effect_attested_staged",
     task_id:taskId,sequence:2,gateway_execution_authorized:false});
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
+ }
+ /**
+  * ORIGINAL OWNER-ONLY: return the authenticated, post-completion UPDATE
+  * Task/Child/Root expectation produced by the real Gateway evidence
+  * observer, not a model or A2A payload. Read-only; no new authorization.
+  *
+  * Both single-file and sequential read->CAS updates are supported. A
+  * missing, stale or incomplete independent completion is always NO-GO.
+  */
+ assertTrustedCompletedMutationObservationBinding(
+  taskId:string,runtimeTaskId:string
+ ){
+  const root=this.#live();
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const observed=this.#mutationObservations.get(taskId);
+  const sequential=this.#sequential.get(taskId);
+  const grants=bound?.row.permissions;
+  const single=grants?.length===1&&
+   grants[0]?.operation==="update_file"&&!sequential;
+  const mixed=grants?.length===2&&
+   grants[0]?.operation==="read_file"&&
+   grants[1]?.operation==="update_file"&&!!sequential&&
+   sequential.completed===2&&
+   sequential.manifest.effect_plan?.join(",")==="read_file,update_file"&&
+   sequential.manifest.runtime_task_id===runtimeTaskId&&
+   sequential.latest_evidence_sha256===observed?.evidence_sha256&&
+   !sequential.active&&!this.#flights.has(taskId);
+  const evidence=single?this.#completionEvidence.get(taskId):
+   mixed?sequential!.latest_evidence_sha256:undefined;
+  if(!bound||!child||!observed||!(single||mixed)||
+     !this.#completed.has(taskId)||
+     !evidence||evidence!==observed.evidence_sha256||
+     bound.row.task_id!==taskId||
+     bound.row.session_id!==root.session_id||
+     bound.row.authority_digest!==root.authority_digest||
+     bound.row.root_credential_id!==root.root_credential_id||
+     child.credential_id!==observed.expectation.credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     observed.expectation.task_id!==taskId||
+     observed.expectation.runtime_task_id!==runtimeTaskId||
+     observed.expectation.agent_did!==bound.row.agent_did||
+     observed.expectation.session_id!==root.session_id||
+     observed.expectation.authority_digest!==root.authority_digest||
+     observed.expectation.root_credential_id!==root.root_credential_id||
+     observed.expectation.epoch!==bound.row.epoch||
+     this.#completionInFlight||this.#flightInFlight||
+     this.#bindingInFlight||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("original UPDATE observation not independently completed");
+  return Object.freeze({
+   status:"gateway_completed_mutation_observation_binding_only" as const,
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   permission_resource:grants![grants!.length-1]!.resource,
+   evidence_sha256:evidence,
+   expectation:observed.expectation
+  });
  }
  /** Explicit, owner-only final declaration after ALL expected receipts. */
  async finalizeTrustedSequentialReadTask(
