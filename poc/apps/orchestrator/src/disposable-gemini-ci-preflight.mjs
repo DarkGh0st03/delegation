@@ -86,9 +86,9 @@ if(process.argv[1]&&
    import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  try{
   if(process.argv.length!==2)deny();
-  process.stdout.write(JSON.stringify(runDisposableGeminiCiPreflight())+"\\n");
+  process.stdout.write(JSON.stringify(runDisposableGeminiCiPreflight())+"\n");
  }catch{
-  process.stderr.write("Disposable Gemini CI preflight NO-GO\\n");
+  process.stderr.write("Disposable Gemini CI preflight NO-GO\n");
   process.exitCode=1;
  }
 }
