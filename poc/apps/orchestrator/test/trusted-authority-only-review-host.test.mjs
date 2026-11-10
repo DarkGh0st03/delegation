@@ -2495,6 +2495,9 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  assert.throws(()=>gateway.assertTrustedCompletedMutationObservationBinding(
   task.task.task_id,task.runtimeTaskId),
   /original UPDATE observation not independently completed/);
+ assert.throws(()=>gateway.assertTrustedCompletedCreateObservationBinding(
+  task.task.task_id,task.runtimeTaskId),
+  /original CREATE observation not independently completed/);
  await assert.rejects(gateway.attestTrustedTaskCompletion(
   task.task.task_id,task.runtimeTaskId),
   /trusted completion observer or owner-private journal missing/);

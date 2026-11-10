@@ -332,6 +332,15 @@ test("GitHub Actions one-use consented owner models bind every ORIGINAL typed na
  await assert.rejects(bound.reconcileVerifiedOriginalWorkerFileEffect({
   role:"backend",completionExpectation:{agent_did:"did:attacker:forged"}
  }),/Disposable live canonical binding NO-GO/u);
+ const trustedDid=bound.authority.trustedAgentRegistry.backend.did;
+ // A genuine roster DID does not substitute for an independently
+ // attested Gateway CREATE or UPDATE receipt. No paid model calls here.
+ for(const operation of ["update_file","create_file"]){
+  await assert.rejects(bound.reconcileVerifiedOriginalWorkerFileEffect({
+   role:"backend",operation,completionExpectation:{agent_did:trustedDid}
+  }),/reconciliation NO-GO/u);
+ }
+ assert.equal(admitted.workers.backend.model.publicSummary().calls_started,0);
  assert.equal(admitted.planner.model.publicSummary().calls_started,0);
  assert.equal(admitted.adaptive.model.publicSummary().calls_started,0);
  // Same original owner provision validates typed native dependencies. Do
