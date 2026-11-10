@@ -235,7 +235,16 @@ test("real Google ADK Runner -> worker model proxy -> Unix RPC -> original meter
    role:"user",parts:[{text:"Run the one authorized offline model call."}]
   }
  })){
-  assert.equal(event.errorCode,undefined);
+  // Content-free diagnostic: only local call counts are exposed, never
+  // SDK prompts, provider keys, model output or authorization material.
+  assert.equal(event.errorCode,undefined,JSON.stringify({
+   workerCalls:workerModel.callsStarted,
+   workerRetired:workerModel.retired,
+   ownerAuthenticatedCalls:authenticated,
+   providerCalls:provider.calls,
+   ownerBlocked:original.publicSummary().blocked,
+   adapterRetired:ownerAdapter.retired
+  }));
   assert.equal(event.errorMessage,undefined);
   count++;
  }
