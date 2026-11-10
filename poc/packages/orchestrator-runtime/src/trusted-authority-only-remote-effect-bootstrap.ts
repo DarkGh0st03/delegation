@@ -76,8 +76,11 @@ export interface TrustedAuthorityOnlyRemoteEffectBootstrapOptions {
 type ServerHandle=Awaited<ReturnType<typeof createTrustedOwnerEffectStagingServer>>;
 type TaskInput={taskId:string;runtimeTaskId:string;
  effectStager:TrustedEffectStagingPort};
-type TaskResult={status:"owner_remote_effect_task_prebound_not_executed";
- task_id:string;runtime_task_id:string;gateway_execution_authorized:false};
+export type TrustedOriginalNativeModelPrebindReceipt={
+ status:"owner_remote_effect_task_prebound_not_executed";
+ task_id:string;runtime_task_id:string;gateway_execution_authorized:false
+};
+type TaskResult=TrustedOriginalNativeModelPrebindReceipt;
 
 export class TrustedAuthorityOnlyRemoteEffectBootstrap {
  readonly #owner:TrustedAuthorityOnlyRemoteEffectOwner;
@@ -88,6 +91,16 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
  /** Only remotely ACKed, not yet terminally fenced bindings. */
  readonly #bound=new Set<string>();
  readonly #cancelled=new Set<string>();
+ /** Optional ORIGINAL owner-only model IPC admission retirement callbacks.
+  * Never persisted, serialized or given to A2A workers. */
+ readonly #modelTaskFences=new Map<string,()=>void>();
+ #modelTaskFenceFailed=false;
+ #fenceModelTask(runtimeTaskId:string){
+  const callback=this.#modelTaskFences.get(runtimeTaskId);
+  if(!callback)return;
+  this.#modelTaskFences.delete(runtimeTaskId);
+  try{callback();}catch{this.#modelTaskFenceFailed=true;}
+ }
  #closed=false;
  #closing?:Promise<void>;
 
@@ -197,8 +210,16 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   */
  async dispatchApprovedTask<T>(opts:TaskInput &{
   dispatch:()=>Promise<T>;
+  /** Called ONLY after the genuine R323 native/Child/Gateway bind.
+   * Must synchronously return a one-shot model Task retirement closure. */
+  onNativeOriginalTaskPrebound?:(
+   receipt:TrustedOriginalNativeModelPrebindReceipt
+  )=>(()=>void);
  }):Promise<T>{
-  if(this.#closed||!opts||typeof opts.dispatch!=="function"||
+  if(this.#closed||this.#modelTaskFenceFailed||
+     !opts||typeof opts.dispatch!=="function"||
+     (opts.onNativeOriginalTaskPrebound!==undefined&&
+      typeof opts.onNativeOriginalTaskPrebound!=="function")||
      !DISPATCH.test(opts.runtimeTaskId)||
      this.#attempted.has(opts.runtimeTaskId))
    deny("closed, duplicate or invalid owner dispatch");
@@ -219,9 +240,22 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
    this.#bound.add(opts.runtimeTaskId);
    if(this.#closed||this.#cancelled.has(opts.runtimeTaskId))
     deny("owner Task cancelled or retired during remote bind");
+   if(opts.onNativeOriginalTaskPrebound){
+    // A JSON clone of this receipt has no original-issued WeakMap brand.
+    // This callback executes exclusively inside the trusted owner.
+    const retirement=opts.onNativeOriginalTaskPrebound(receipt);
+    if(typeof retirement!=="function")
+     deny("model Task admission requires one terminal retirement closure");
+    this.#modelTaskFences.set(opts.runtimeTaskId,retirement);
+    if(this.#closed||this.#cancelled.has(opts.runtimeTaskId))
+     deny("model Task cancelled during IPC prebind");
+   }
    return await opts.dispatch();
   }finally{
    this.#pending.delete(opts.runtimeTaskId);
+   // Revoke model calls synchronously before any async original native
+   // Gateway/agent bind retirement. No stale worker may request new turns.
+   this.#fenceModelTask(opts.runtimeTaskId);
    // If bind never reached owner stage registration, retireFor has no
    // registered entry. A failed binding remains unretryable by this host.
    if(bound){
@@ -234,6 +268,8 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
      // or the owner port was already fenced by R323.
     }
    }
+   if(this.#modelTaskFenceFailed)
+    deny("original model Task retirement unconfirmed");
   }
  }
  /**
@@ -248,6 +284,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   // agent's bind ACK is still in flight, dispatchApprovedTask will
   // observe this flag and refuse to invoke the A2A callback.
   this.#cancelled.add(runtimeTaskId);
+  this.#fenceModelTask(runtimeTaskId); // before native async fence
   try{
    await this.#owner.fence(runtimeTaskId);
    this.#bound.delete(runtimeTaskId);
@@ -255,15 +292,21 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
    if(this.#pending.has(runtimeTaskId)){
     // Binding may not have allocated a local slot yet. Completion of
     // that in-flight bind is terminally fenced in dispatchApprovedTask.
+    if(this.#modelTaskFenceFailed)
+     deny("model retirement unconfirmed during cancellation");
     return;
    }
    throw error;
   }
+  if(this.#modelTaskFenceFailed)
+   deny("model retirement unconfirmed during cancellation");
  }
  close():Promise<void>{
   if(this.#closing)return this.#closing;
   this.#closed=true;
   for(const id of this.#attempted)this.#cancelled.add(id);
+  for(const id of [...this.#modelTaskFences.keys()])
+   this.#fenceModelTask(id);
   this.#registry.retireAll(); // synchronously block EVERY future stage
   this.#closing=(async()=>{
    // A denied prebind may never allocate a local owner slot and
@@ -275,7 +318,8 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
     ...this.#servers.map(server=>server.close())
    ]);
    const failures=results.filter(r=>r.status==="rejected");
-   if(failures.length)deny("one or more private Task fences were not acknowledged");
+   if(failures.length||this.#modelTaskFenceFailed)
+    deny("one or more native/model Task fences were not acknowledged");
   })();
   return this.#closing;
  }

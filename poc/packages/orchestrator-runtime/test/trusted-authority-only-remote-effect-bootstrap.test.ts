@@ -225,3 +225,56 @@ test("R324 explicit cancellation fences a Task before a suspended A2A callback c
   await assert.rejects(attempt,/already dispatched|retired|NO-GO/u);
  }finally{await x.close();}
 });
+
+test("R324 original native prebind callback binds role-specific model calls and retires them BEFORE private native fence",async()=>{
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
+ const x=await fixture();
+ try{
+  const host=await x.start();
+  const ledger=createDisposableOriginalNativeIpcTaskAdmission({
+   role:"backend",assertOriginalRootActive:()=>root
+  });
+  let admittedBeforeDispatch=false;
+  const actual={task_id:taskId,runtime_task_id:runtimeTaskId,
+   session_id:root.session_id,credential_id:child.credential_id};
+  const result=await host.dispatchApprovedTask({
+   taskId,runtimeTaskId,effectStager:{async stage(){}},
+   onNativeOriginalTaskPrebound:receipt=>{
+    ledger.bindOriginalReceipt(receipt,{maxCalls:1});
+    admittedBeforeDispatch=ledger.boundTaskCount===1;
+    return ()=>ledger.retireTask(runtimeTaskId);
+   },
+   dispatch:async()=>{
+    assert.equal(await ledger.authorizeSignedTask({
+     role:"backend",task:actual,callId:"r324-original-model-call-001"
+    }),true);
+    return "original-dispatch-completed";
+   }
+  });
+  assert.equal(result,"original-dispatch-completed");
+  assert.equal(admittedBeforeDispatch,true);
+  await assert.rejects(ledger.authorizeSignedTask({
+   role:"backend",task:actual,callId:"r324-original-model-call-002"
+  }),/Disposable original signed IPC Task admission NO-GO/u);
+ }finally{await x.close();}
+});
+test("R324 a failed original model prebind callback cannot dispatch A2A or retry signed Child",async()=>{
+ const x=await fixture();
+ try{
+  const host=await x.start();
+  let a2aCalled=false;
+  await assert.rejects(host.dispatchApprovedTask({
+   taskId,runtimeTaskId,effectStager:{async stage(){}},
+   onNativeOriginalTaskPrebound:()=>{
+    throw Error("no model IPC admission available");
+   },
+   dispatch:async()=>{a2aCalled=true;}
+  }),/no model IPC admission available/u);
+  assert.equal(a2aCalled,false);
+  await assert.rejects(host.dispatchApprovedTask({
+   taskId,runtimeTaskId,effectStager:{async stage(){}},
+   dispatch:async()=>{a2aCalled=true;}
+  }),/duplicate or invalid owner dispatch/u);
+ }finally{await x.close();}
+});
