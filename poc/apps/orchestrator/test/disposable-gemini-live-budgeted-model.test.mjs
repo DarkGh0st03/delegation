@@ -446,6 +446,8 @@ test("invalid model write arguments and orchestrator writes deny before any ADK 
  const variants=[
   {phase:"backend",args:{...good,branch:"main"}},
   {phase:"backend",args:{...good,path:"../exfiltrate"}},
+  {phase:"backend",args:{...good,path:"apps"+String.fromCharCode(92)+"backend"}},
+  {phase:"backend",args:{...good,path:"apps/unsafe"+String.fromCharCode(0)+"file"}},
   {phase:"backend",args:{...good,extra:"unreviewed"}},
   {phase:"backend",args:{...good,content:45}},
   {phase:"adaptive-execution",args:good}

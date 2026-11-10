@@ -84,7 +84,7 @@ function fingerprintModelWrites(buffered,phase,callIndex){
       args.path.startsWith("/")||
       args.path.split("/").some(segment=>
        !segment||segment==="."||segment===".."||
-       segment.includes("%")||segment.includes("\\\\"))||
+       segment.includes("%")||segment.includes(String.fromCharCode(92))|| [...segment].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127))||
       typeof args.content!=="string")deny();
    const size=Buffer.byteLength(args.content,"utf8");
    if(size<1||size>2_000_000)deny();
