@@ -4,6 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
 import {runOneOriginalReviewHostWithWatch,
  startDisposableActionsOriginalReviewSession}
  from "../src/disposable-gemini-actions-original-review-session.mjs";
@@ -198,4 +199,16 @@ test("paid original owner fences all five ADK models before native Root retireme
  assert.ok(f.calls.indexOf("fence-all-five")>=0);
  assert.ok(f.calls.indexOf("fence-all-five")<
   f.calls.indexOf("original.handoff.close"));
+});
+
+test("paid Actions original review does not import free CI signer or fabricate human consent",async()=>{
+ const source=await readFile(new URL(
+  "../src/disposable-gemini-actions-original-review-session.mjs",
+  import.meta.url),"utf8");
+ assert.doesNotMatch(source,/from ["']\.\/disposable-ci-original-signed-review\.mjs["']/u);
+ assert.doesNotMatch(source,/writeOriginalDisposableActionsEngineerReceipt\s*\(/u);
+ assert.match(source,/original_engineer_decision:"AWAITING_HUMAN_REVIEW"/u);
+ assert.match(source,/original_review_verified:false/u);
+ assert.match(source,/session\.reviewReadiness\(\)/u);
+ assert.match(source,/session\.runApprovedCanonical\(\)/u);
 });

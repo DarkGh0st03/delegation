@@ -25,8 +25,6 @@ import {assertDisposableActionsOriginalOwnerContext,
  from "./disposable-gemini-actions-original-owner-bootstrap.mjs";
 import {createDisposableActionsOriginalGithubRunWatch}
  from "./disposable-gemini-actions-original-github-run-watch.mjs";
-import {writeOriginalDisposableActionsEngineerReceipt}
- from "./disposable-ci-original-signed-review.mjs";
 import {attestDisposableActionsOriginalPlanningCompletion}
  from "./disposable-gemini-actions-original-planning-evidence.mjs";
 
@@ -116,7 +114,8 @@ export async function runOneOriginalReviewHostWithWatch({
 /** Owner-only, POTENTIALLY BILLABLE if explicitly invoked. Not wired into
  * any current workflow. The prepared native authority is one-use and the
  * checkout/run/consent pins must still match before opening a listener.
- * A manually reviewed signed Engineer receipt is still required to execute.
+ * A genuine independently submitted signed Engineer receipt is required;
+ * this function MUST NOT simulate or automatically sign an Engineer decision.
  */
 export async function startDisposableActionsOriginalReviewSession({
  prepared,sourceSha,runId,githubApiToken,
@@ -148,40 +147,20 @@ export async function startDisposableActionsOriginalReviewSession({
  try{
   await session.checkGithubRunActive();
   const authority=claimed.authority;
-  // The original Review Host has now completed its signed Planning. Refuse
-  // a signed simulated Engineer receipt if the actual model had no complete,
-  // metered response (a timed-out call counter is not such evidence).
+  // Original Planning must have complete and valid metering before
+  // exposing its private review. Never turn a model response into consent.
   const planningEvidence=attestDisposableActionsOriginalPlanningCompletion(
    authority
   );
   await session.checkGithubRunActive();
-  const originalReview=await writeOriginalDisposableActionsEngineerReceipt({
-   checkpointStore:authority.checkpoint.store,
-   snapshot:authority.snapshot,
-   workBranch:authority.workBranch,
-   requirement:authority.requirement,
-   receiptDirectory:authority.approval.receiptDirectory,
-   privateKeyFile:authority.approval.privateKeyFile,
-   engineerDid:authority.approval.engineerDid,
-   keyId:authority.approval.keyId,
-   publicKeyPem:authority.approval.publicKeyPem,
-   githubApiToken
-  });
-  if(originalReview.review!=="SIMULATED_NOT_HUMAN"||
-     !originalReview.original_receipt_written_and_independently_verified||
-     !originalReview.checkpoint_from_original_planning||
-     originalReview.native_root_issued_here!==false||
-     originalReview.gemini_called_here!==false||
-     originalReview.human_approval_verified_here!==false)deny();
-  // Revalidate the live job AND the ORIGINAL Host's Ed25519 receipt,
-  // permission subset and immutable planning digest before any Root issue.
-  await session.checkGithubRunActive();
-  const readiness=await session.reviewReadiness();
-  if(readiness?.operational_root_issued!==false)deny();
+  // Real Engineer review is mandatory. Holding an Ed25519 key in a CI
+  // runner NEVER makes the CI run a human reviewer. The original Host's
+  // immutable signed checkpoint and authenticated review flow own this
+  // decision; no automatic simulated signature may be minted here.
   return Object.freeze({
-   status:"actions_original_ci_simulated_engineer_review_signed_post_planning",
-   original_engineer_decision:"SIMULATED_NOT_HUMAN",
-   original_review_verified:true,
+   status:"actions_original_planning_awaiting_original_signed_engineer_review",
+   original_engineer_decision:"AWAITING_HUMAN_REVIEW",
+   original_review_verified:false,
    original_planning_metered_calls:planningEvidence.calls_started,
    original_planning_reported_total_tokens:planningEvidence.reported_total_tokens,
    model_authored_code_proven:false,
@@ -190,6 +169,7 @@ export async function startDisposableActionsOriginalReviewSession({
    get phase(){return session.phase;},
    get engineerUrl(){return session.engineerUrl;},
    get githubRunStatus(){return session.githubRunStatus;},
+   checkGithubRunActive:()=>session.checkGithubRunActive(),
    reviewReadiness:()=>session.reviewReadiness(),
    runApprovedCanonical:()=>session.runApprovedCanonical(),
    close:()=>session.close()
