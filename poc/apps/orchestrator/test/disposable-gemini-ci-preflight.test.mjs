@@ -82,20 +82,20 @@ test("live CI manual scripted-native route reuses ORIGINAL signed native job",()
  const native=readFileSync(new URL(
   "../../../../.github/workflows/r38513-native-strict-full-recovery.yml",
   import.meta.url),"utf8");
- const onBlock=workflow.match(/^on:\\n([\\s\\S]*?)^permissions:/mu)?.[1];
+ const onBlock=workflow.match(/^on:\n([\s\S]*?)^permissions:/mu)?.[1];
  assert.ok(onBlock);
  assert.match(onBlock,/^  workflow_dispatch:/mu);
  assert.doesNotMatch(onBlock,/^  (?:push|pull_request|schedule):/mu);
- assert.match(workflow,/          - preflight-only\\n          - scripted-native/u);
- assert.match(workflow,/DELEGATION_LIVE_CI_PREFLIGHT_MODE: \\$\\{\\{ inputs.mode \\}\\}/u);
+ assert.match(workflow,/          - preflight-only\n          - scripted-native/u);
+ assert.match(workflow,/DELEGATION_LIVE_CI_PREFLIGHT_MODE: \$\{\{ inputs.mode \}\}/u);
  assert.match(workflow,/github.run_attempt == 1/u);
- assert.match(workflow,/    needs: preflight\\n    if:/u);
+ assert.match(workflow,/    needs: preflight\n    if:/u);
  assert.match(workflow,/inputs.mode == 'scripted-native'/u);
- assert.match(workflow,/uses: \\.\\/\\.github\\/workflows\\/r38513-native-strict-full-recovery\\.yml/u);
+ assert.match(workflow,/uses: \.\/\.github\/workflows\/r38513-native-strict-full-recovery\.yml/u);
  assert.match(workflow,/original_ci_engineer_after_planning: true/u);
  assert.match(native,/workflow_call:/u);
- assert.match(native,/R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING: \\$\\{\\{ inputs.original_ci_engineer_after_planning/u);
- assert.match(native,/verify-disposable-native-e2e-proof\\.mjs/u);
- assert.match(workflow,/permissions:\\n  contents: read/u);
- assert.doesNotMatch(workflow,/secrets:|GEMINI_API_KEY:|GOOGLE_API_KEY:|OPENAI_API_KEY:/u);
+ assert.match(native,/R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING: \$\{\{ inputs.original_ci_engineer_after_planning/u);
+ assert.match(native,/verify-disposable-native-e2e-proof\.mjs/u);
+ assert.match(workflow,/permissions:\n  contents: read/u);
+ assert.doesNotMatch(workflow,/^\s+(?:secrets|GEMINI_API_KEY|GOOGLE_API_KEY|OPENAI_API_KEY):/mu);
 });
