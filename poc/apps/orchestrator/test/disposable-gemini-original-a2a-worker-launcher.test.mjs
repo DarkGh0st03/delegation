@@ -282,3 +282,18 @@ test("requesting owner-file UID isolation fails closed on the same-UID CI runner
   f.config,{requireOwnerFileIsolation:true}),deny);
  assert.equal(f.modelCalls(),0);
 });
+
+test("strict launcher requires owner-only protected-key metadata and never accepts an isolation boolean alone",async t=>{
+ const f=await fixture(t);
+ await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(
+  f.config,{requireOwnerFileIsolation:true}),deny);
+ await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(
+  f.config,{requireOwnerFileIsolation:false,ownerPrivateBoundary:{
+   directory:"/tmp",keyFile:"/tmp/secret"
+  }}),deny);
+ await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(
+  f.config,{requireOwnerFileIsolation:true,ownerPrivateBoundary:{
+   directory:"/tmp",keyFile:"/tmp/secret"
+  }}),deny);
+ assert.equal(f.modelCalls(),0);
+});

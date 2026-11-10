@@ -15,6 +15,8 @@ import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 import {inspectDisposableOriginalLinuxBoundary}
  from "./disposable-gemini-original-linux-boundary-audit.mjs";
+import {inspectDisposableOriginalScopedIpcPermissions}
+ from "./disposable-gemini-original-scoped-ipc-permissions.mjs";
 
 const ROLE=new Set(["backend","frontend","test"]);
 const KEYS=[
@@ -24,9 +26,19 @@ const KEYS=[
 ];
 const deny=()=>{throw Error("Disposable original A2A subprocess launcher NO-GO");};
 export async function startDisposableOriginalA2aWorkerSubprocess(
- config,{requireOwnerFileIsolation=false}={}
+ config,{requireOwnerFileIsolation=false,ownerPrivateBoundary}={}
 ){
+ // The owner-only file path is never sent to the worker; only the trusted
+ // parent may inspect its metadata through /proc and lstat. This is a
+ // necessary cross-UID boundary check, not production proof of isolation.
  if(typeof requireOwnerFileIsolation!=="boolean"||
+    (requireOwnerFileIsolation
+     ?(!ownerPrivateBoundary||
+       Object.keys(ownerPrivateBoundary).sort().join(",")!==
+        "directory,keyFile"||
+       typeof ownerPrivateBoundary.directory!=="string"||
+       typeof ownerPrivateBoundary.keyFile!=="string")
+     :ownerPrivateBoundary!==undefined)||
     process.env.DELEGATION_DISPOSABLE_LIVE_MODE==="gemini-real"||
     !config||typeof config!=="object"||Array.isArray(config)||
     Object.keys(config).sort().join(",")!==KEYS.join(",")||
@@ -158,8 +170,26 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
     workerPid:child.pid,ownerCanaryReadable:ready.ownerCanaryReadable
    });
   }
-  if(requireOwnerFileIsolation&&
-     linuxBoundaryAudit?.requiredKernelConditionsPassed!==true)deny();
+  let scopedIpcPermissions=null;
+  if(requireOwnerFileIsolation){
+   if(linuxBoundaryAudit?.requiredKernelConditionsPassed!==true)deny();
+   // A different Linux UID is NOT enough. The model/stage socket files
+   // and secrets must be group-scoped to exactly this specialist, while
+   // the owner Gemini/Engineer key remains owner-private (0700/0600).
+   // This auditor reads metadata only and cannot authorize a paid launch.
+   scopedIpcPermissions=await inspectDisposableOriginalScopedIpcPermissions({
+    role:config.role,workerPid:child.pid,
+    ownerPrivateDirectory:ownerPrivateBoundary.directory,
+    ownerPrivateKeyFile:ownerPrivateBoundary.keyFile,
+    modelSocketPath:config.modelSocketPath,
+    modelSecretFile:config.modelSecretFile,
+    stageSocketPath:config.stageSocketPath,
+    stageSecretFile:config.stageSecretFile,
+    bindSocketPath:config.bindSocketPath,
+    bindSecretFile:config.bindSecretFile
+   });
+   if(scopedIpcPermissions.layoutPotentiallyUsable!==true)deny();
+  }
   return Object.freeze({
    role:config.role,pid:child.pid,baseUrl:ready.baseUrl,
    originalNativeTaskBindingPresent:false,
@@ -169,6 +199,9 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
    ownerAndWorkerShareUid:linuxBoundaryAudit?
     linuxBoundaryAudit.workerUid===linuxBoundaryAudit.ownerUid:null,
    linuxBoundaryAudit,
+   // Pure filesystem metadata is never promoted to a Rust/DID/secret
+   // isolation attestation. No implicit permission to run live Gemini.
+   scopedIpcPermissions,
    nativeRustSignerVerified:false,
    close
   });
