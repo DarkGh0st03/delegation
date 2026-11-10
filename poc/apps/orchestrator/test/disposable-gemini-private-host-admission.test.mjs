@@ -109,11 +109,11 @@ test("independently admitted private Engineer Host constructs all five Gemini mo
  }
  assert.equal(f.observed.calls,1);
  assert.equal(set.planner.model.model,"gemini-3.8-flash");
- assert.equal(set.planner.model.publicSummary().max_calls,20);
- assert.equal(set.adaptive.model.publicSummary().max_calls,25);
- assert.equal(set.workers.backend.model.publicSummary().max_calls,12);
- assert.equal(set.workers.frontend.model.publicSummary().max_calls,12);
- assert.equal(set.workers.test.model.publicSummary().max_calls,10);
+ assert.equal(set.planner.model.publicSummary().max_calls,24);
+ assert.equal(set.adaptive.model.publicSummary().max_calls,27);
+ assert.equal(set.workers.backend.model.publicSummary().max_calls,480);
+ assert.equal(set.workers.frontend.model.publicSummary().max_calls,336);
+ assert.equal(set.workers.test.model.publicSummary().max_calls,240);
  assert.equal(set.planner.model.publicSummary().calls_started,0);
  assert.ok(set.planner.model instanceof BaseLlm);
  assert.throws(()=>JSON.stringify(set),/must not be serialized/u);
