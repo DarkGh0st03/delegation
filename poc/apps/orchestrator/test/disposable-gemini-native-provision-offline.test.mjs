@@ -468,6 +468,7 @@ test("Actions admitted models prepare the ORIGINAL signed host inputs without in
  assert.equal(githubReads,1);
  assert.equal(prepared.status,
   "actions_original_host_inputs_prepared_no_inference");
+ assert.equal(typeof prepared.fenceProviderCalls,"function");
  assert.equal(prepared.authority.checkpoint.store,
   f.authority.checkpoint.store);
  assert.equal(prepared.authority.checkpoint.backendKeyId,
@@ -490,4 +491,12 @@ test("Actions admitted models prepare the ORIGINAL signed host inputs without in
   backendPrivateKeyFile:f.backendPrivateKeyFile,
   backendPublicKeyPem:f.backendPublicKeyPem,geminiKeyFile:f.secret
  }),/Disposable live Gemini model admission NO-GO/u);
+ prepared.fenceProviderCalls();
+ prepared.fenceProviderCalls();
+ assert.equal(admitted.planner.model.publicSummary().blocked,true);
+ assert.equal(admitted.adaptive.model.publicSummary().blocked,true);
+ for(const role of ROLES)
+  assert.equal(admitted.workers[role].model.publicSummary().blocked,true);
+ assert.deepEqual(await readdir(f.dirs.sessions),[]);
+ assert.deepEqual(await readdir(f.dirs["status-index"]),[]);
 });

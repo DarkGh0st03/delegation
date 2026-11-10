@@ -44,7 +44,7 @@ function fixture({
    };
   }
  });
- const watchFactory=onClose=>{
+ const watchFactory=(onClose,onFence)=>{
   return {
    get status(){return state.status;},
    async start(){
@@ -64,6 +64,7 @@ function fixture({
     if(state.stopped)return;
     state.stopped=true;
     state.status="closing";
+    onFence?.();
     try{await onClose();state.status="closed";}
     catch(error){state.status="revocation_unconfirmed";throw error;}
    }
@@ -185,4 +186,16 @@ test("read-only verified GitHub liveness stays independently checked before a si
  assert.equal(f.calls.filter(x=>x==="watch.check").length,count+1);
  assert.equal(f.executions(),0);
  await s.close();
+});
+
+test("paid original owner fences all five ADK models before native Root retirement",async()=>{
+ const f=fixture();
+ const s=await runOneOriginalReviewHostWithWatch({
+  ...f.options,fenceProviderCalls:()=>f.calls.push("fence-all-five")
+ });
+ await s.close();
+ assert.equal(f.closeCount(),1);
+ assert.ok(f.calls.indexOf("fence-all-five")>=0);
+ assert.ok(f.calls.indexOf("fence-all-five")<
+  f.calls.indexOf("original.handoff.close"));
 });

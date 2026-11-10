@@ -44,17 +44,19 @@ const deny=()=>{throw Error("Disposable Actions original reviewed session NO-GO"
  * startup closes the eventually resolved original listener, not a second one.
  */
 export async function runOneOriginalReviewHostWithWatch({
- watchFactory,startOriginalHost,authority,provision
+ watchFactory,startOriginalHost,authority,provision,fenceProviderCalls
 }={}){
  if(typeof watchFactory!=="function"||
     typeof startOriginalHost!=="function"||
     !authority||typeof authority!=="object"||
-    typeof provision!=="function")deny();
+    typeof provision!=="function"||
+    (fenceProviderCalls!==undefined&&
+     typeof fenceProviderCalls!=="function"))deny();
  let starting,host,handoff,watch;
  const retire=()=>retireDisposableOriginalHostAfterStartup({
   starting,host,handoff
  });
- watch=watchFactory(retire);
+ watch=watchFactory(retire,()=>fenceProviderCalls?.());
  if(!watch||typeof watch!=="object"||
     typeof watch.start!=="function"||
     typeof watch.checkNow!=="function"||
@@ -130,9 +132,10 @@ export async function startDisposableActionsOriginalReviewSession({
  // checkpoint, never from an unsigned model-selected permissions object.
  const session=await runOneOriginalReviewHostWithWatch({
   authority:claimed.authority,provision:claimed.provision,
+  fenceProviderCalls:claimed.fenceProviderCalls,
   startOriginalHost:startTrustedAuthorityOnlyReviewHost,
-  watchFactory:onClose=>createDisposableActionsOriginalGithubRunWatch({
-   runId,sourceSha,githubApiToken,onClose
+  watchFactory:(onClose,onFence)=>createDisposableActionsOriginalGithubRunWatch({
+   runId,sourceSha,githubApiToken,onClose,onFence
   })
  });
  try{

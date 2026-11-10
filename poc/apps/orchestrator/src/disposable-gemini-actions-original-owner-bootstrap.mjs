@@ -23,6 +23,8 @@ import {AuthorityPlanningCheckpointStore}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts";
 import {assertIssuedDisposableActionsOwnerGeminiModelSet}
  from "./disposable-gemini-live-model-set.mjs";
+import {DisposablePrivateBudgetedAdkModel}
+ from "./disposable-gemini-live-budgeted-model.mjs";
 import {bindDisposableLiveGeminiCanonicalInputs}
  from "./disposable-gemini-live-canonical-binding.mjs";
 import {bindOriginalBackendCheckpointSigner}
@@ -132,9 +134,22 @@ export async function prepareDisposableActionsOriginalOwnerBootstrap({
  const {provision}=await prepareDisposableOriginalGeminiNativeProvision({
   bound,signedAuthority
  });
+ // Model provenance and the ORIGINAL one-session budget were already
+ // checked by the canonical binder. Keep the stop capability owner-private.
+ const metered=[models.planner.model,models.adaptive.model,
+  ...["backend","frontend","test"].map(role=>models.workers[role].model)];
+ if(metered.length!==5||
+    metered.some(model=>!(model instanceof DisposablePrivateBudgetedAdkModel)||
+     typeof model.fenceOwnerCancellation!=="function"))deny();
+ let fenced=false;
+ const fenceProviderCalls=()=>{
+  if(fenced)return;
+  fenced=true;
+  for(const model of metered)model.fenceOwnerCancellation();
+ };
  const prepared=Object.freeze({
   status:"actions_original_host_inputs_prepared_no_inference",
-  authority:signedAuthority,provision
+  authority:signedAuthority,provision,fenceProviderCalls
  });
  PREPARED_ORIGINAL_HOSTS.add(prepared);
  return prepared;
@@ -147,6 +162,7 @@ export function claimDisposableActionsOriginalOwnerBootstrap(prepared){
     !PREPARED_ORIGINAL_HOSTS.delete(prepared)||
     prepared.status!=="actions_original_host_inputs_prepared_no_inference"||
     typeof prepared.provision!=="function"||
+    typeof prepared.fenceProviderCalls!=="function"||
     !prepared.authority||typeof prepared.authority!=="object")
   deny();
  return prepared;
