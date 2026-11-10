@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync} from "node:crypto";
+import {execFileSync} from "node:child_process";
 import {mkdtemp,mkdir,writeFile,rm,access} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
@@ -10,13 +11,47 @@ import {SignedAuthorityOnlyFileStore}
  from "../../../packages/orchestrator-runtime/src/signed-authority-only-store.ts";
 import {scriptedResearchProposal}
  from "../src/run-disposable-gemini-ci-pilot.mjs";
-import {writeOriginalDisposableCiEngineerReceipt}
+import {writeOriginalDisposableCiEngineerReceipt,
+ assertOriginalDisposableCiReviewOrigin}
  from "../src/disposable-ci-original-signed-review.mjs";
 
 const DENY=/Disposable original CI Engineer review NO-GO/u;
 const privatePem=key=>key.export({format:"pem",type:"pkcs8"}).toString();
 const publicPem=key=>key.export({format:"pem",type:"spki"}).toString();
 async function setup(t,mutate){
+
+ const sourceSha=execFileSync("git",["rev-parse","--verify","HEAD"],{
+  encoding:"utf8",cwd:new URL("../../../../",import.meta.url)
+ }).trim();
+ const ref="refs/heads/experiment/disposable-gemini-live-20261109";
+ const env={
+  GITHUB_ACTIONS:"true",
+  GITHUB_REPOSITORY:"DarkGh0st03/delegation",
+  GITHUB_EVENT_NAME:"workflow_dispatch",
+  GITHUB_REF:ref,
+  GITHUB_WORKFLOW_REF:"DarkGh0st03/delegation/.github/workflows/r38513-native-strict-full-recovery.yml@"+ref,
+  GITHUB_RUN_ID:"42833508019",
+  GITHUB_RUN_ATTEMPT:"1",
+  GITHUB_SHA:sourceSha,
+  R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING:"1",
+  R38513_NATIVE_STRICT_FULL_RECOVERY:"1"
+ };
+ const denied=[
+  "GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY",
+  "DELEGATION_GEMINI_CHARGE_CONFIRMATION","DELEGATION_BILLING_CAP_ACK",
+  "DELEGATION_DISPOSABLE_LIVE_MODE","DELEGATION_SIGNED_GEMINI_PILOT"
+ ];
+ const saved=new Map([...Object.keys(env),...denied]
+  .map(k=>[k,process.env[k]]));
+ for(const name of denied)delete process.env[name];
+ Object.assign(process.env,env);
+ t.after(()=>{
+  for(const [key,value] of saved){
+   if(value===undefined)delete process.env[key];
+   else process.env[key]=value;
+  }
+ });
+
  const parent=await mkdtemp(join(tmpdir(),"disposable-original-ci-"));
  t.after(()=>rm(parent,{recursive:true,force:true}));
  const directory=join(parent,"checkpoints"),receipts=join(parent,"receipts");
@@ -122,4 +157,48 @@ test("native R385.13 experimental switch reuses the same post-Planning signed re
  assert.match(yml,/R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING:/u);
  assert.match(yml,/original_ci_engineer_after_planning:/u);
  assert.equal(e2e.includes("ciApprovalAfterPlanning?null:signAuthorityOnlyGrant"),true);
+});
+
+test("CI-only signer refuses private hosts, foreign workflow, replay attempt and paid mode",async t=>{
+ const f=await setup(t);
+ const origin={...process.env};
+ const observed=origin.GITHUB_SHA;
+ assert.equal(assertOriginalDisposableCiReviewOrigin(origin,observed)
+  .provider_calls_authorized,false);
+ const mutations=[
+  ["GITHUB_ACTIONS","false"],
+  ["GITHUB_REPOSITORY","untrusted/repo"],
+  ["GITHUB_EVENT_NAME","pull_request"],
+  ["GITHUB_REF","refs/heads/main"],
+  ["GITHUB_WORKFLOW_REF","attacker/forge.yml@"+origin.GITHUB_REF],
+  ["GITHUB_RUN_ATTEMPT","2"],
+  ["GITHUB_RUN_ID","0"],
+  ["GITHUB_SHA","b".repeat(40)],
+  ["R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING","0"],
+  ["R38513_NATIVE_STRICT_FULL_RECOVERY","0"],
+  ["GEMINI_API_KEY","not-a-key"],
+  ["GOOGLE_API_KEY","not-a-key"],
+  ["DELEGATION_GEMINI_CHARGE_CONFIRMATION","I AUTHORIZE GEMINI API CHARGES"],
+  ["DELEGATION_DISPOSABLE_LIVE_MODE","gemini-real"]
+ ];
+ for(const [key,value] of mutations){
+  process.env[key]=value;
+  assert.throws(()=>assertOriginalDisposableCiReviewOrigin(
+   process.env,observed),DENY,key);
+  await assert.rejects(writeOriginalDisposableCiEngineerReceipt(f.input),
+   DENY,key);
+  if(origin[key]===undefined)delete process.env[key];
+  else process.env[key]=origin[key];
+ }
+ assert.throws(()=>assertOriginalDisposableCiReviewOrigin(
+  origin,"b".repeat(40)),DENY,"stale HEAD");
+ const pushed={...origin,GITHUB_EVENT_NAME:"push"};
+ assert.throws(()=>assertOriginalDisposableCiReviewOrigin(
+  pushed,observed),DENY,"unregistered push workflow");
+ const allowedPush={...pushed,GITHUB_WORKFLOW_REF:
+  "DarkGh0st03/delegation/.github/workflows/disposable-original-engineer-native-ci.yml@"+
+  pushed.GITHUB_REF};
+ assert.equal(assertOriginalDisposableCiReviewOrigin(
+  allowedPush,observed).original_root_issued,false);
+ await assert.rejects(access(join(f.receipts,f.sessionId+".json")));
 });

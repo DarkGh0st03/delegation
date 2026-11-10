@@ -12,8 +12,10 @@
  */
 import {createPrivateKey,createPublicKey} from "node:crypto";
 import {constants} from "node:fs";
+import {execFileSync} from "node:child_process";
 import {lstat,open} from "node:fs/promises";
-import {join,resolve} from "node:path";
+import {dirname,join,resolve} from "node:path";
+import {fileURLToPath} from "node:url";
 import {isDeepStrictEqual} from "node:util";
 import {AuthorityPlanningCheckpointStore}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-planning-checkpoint.ts";
@@ -29,6 +31,81 @@ const CEILING=scriptedResearchProposal();
 const PERMITTED=new Set(CEILING.requested_permissions.map(p=>
  JSON.stringify([p.resource,p.operation])));
 const deny=()=>{throw Error("Disposable original CI Engineer review NO-GO");};
+const REPO="DarkGh0st03/delegation";
+const EXPERIMENT="refs/heads/experiment/disposable-gemini-live-20261109";
+const ARCHITECTURE="refs/heads/refactor/post-prof-plan-contracts-20261021";
+const WORKFLOWS=new Set([
+ "gemini-authority-only-live-ci-pilot.yml",
+ "disposable-original-engineer-native-ci.yml",
+ "r38513-native-strict-full-recovery.yml"
+]);
+const SHA=/^[a-f0-9]{40}$/u;
+const RUN=/^[1-9][0-9]{0,19}$/u;
+const SOURCE_ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
+
+/**
+ * Pure CI admission; actual signing separately checks the exact local git
+ * HEAD and tracked cleanliness. This predicate is NOT GitHub authentication:
+ * it is a defense-in-depth guard around a CI-only simulated-human signer.
+ * The ORIGINAL checkpoint verifier and native Rust authorization remain
+ * authoritative. Never permit this code path from the private R5 owner.
+ */
+export function assertOriginalDisposableCiReviewOrigin(env,checkoutSha){
+ if(!env||typeof env!=="object"||Array.isArray(env))deny();
+ const ref=env.GITHUB_REF;
+ const workflowRef=env.GITHUB_WORKFLOW_REF;
+ const prefix=REPO+"/.github/workflows/";
+ if(typeof workflowRef!=="string"||
+    !workflowRef.startsWith(prefix)||
+    !workflowRef.endsWith("@"+ref))deny();
+ const filename=workflowRef.slice(prefix.length,-(ref.length+1));
+ if(env.GITHUB_ACTIONS!=="true"||
+    env.GITHUB_REPOSITORY!==REPO||
+    ![EXPERIMENT,ARCHITECTURE].includes(ref)||
+    !WORKFLOWS.has(filename)||
+    !["workflow_dispatch","push"].includes(env.GITHUB_EVENT_NAME)||
+    (env.GITHUB_EVENT_NAME==="push"&&
+     (ref!==EXPERIMENT||
+      filename!=="disposable-original-engineer-native-ci.yml"))||
+    env.GITHUB_RUN_ATTEMPT!=="1"||
+    !RUN.test(env.GITHUB_RUN_ID??"")||
+    !SHA.test(env.GITHUB_SHA??"")||
+    checkoutSha!==env.GITHUB_SHA||
+    env.R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING!=="1"||
+    env.R38513_NATIVE_STRICT_FULL_RECOVERY!=="1"||
+    env.GEMINI_API_KEY!==undefined||
+    env.GOOGLE_API_KEY!==undefined||
+    env.OPENAI_API_KEY!==undefined||
+    env.DELEGATION_GEMINI_CHARGE_CONFIRMATION!==undefined||
+    env.DELEGATION_BILLING_CAP_ACK!==undefined||
+    env.DELEGATION_DISPOSABLE_LIVE_MODE!==undefined||
+    env.DELEGATION_SIGNED_GEMINI_PILOT!==undefined)
+  deny();
+ return Object.freeze({
+  status:"original_disposable_ci_simulated_review_admitted_no_inference",
+  source_sha:checkoutSha,workflow:filename,
+  provider_calls_authorized:false,
+  human_approval_verified:false,
+  original_root_issued:false
+ });
+}
+
+function checkedSourceSha(){
+ try{
+  const sha=execFileSync("git",["rev-parse","--verify","HEAD"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+  const changed=execFileSync("git",["status","--porcelain",
+   "--untracked-files=no"],{
+   cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+   stdio:["ignore","pipe","ignore"]
+  }).trim();
+  if(changed||!SHA.test(sha))deny();
+  return sha;
+ }catch{deny();}
+}
+
 
 function protectedMeta(meta,isDirectory){
  if(!meta||(isDirectory?!meta.isDirectory():!meta.isFile())||
@@ -62,6 +139,9 @@ export async function writeOriginalDisposableCiEngineerReceipt({
  receiptDirectory,privateKeyFile,engineerDid,keyId,publicKeyPem,
  nowMs=Date.now()
 }={}){
+ // Reject any call from a private Engineer Host, foreign GitHub run,
+ // live billing mode or dirty/foreign source before touching the key.
+ assertOriginalDisposableCiReviewOrigin(process.env,checkedSourceSha());
  if(!(checkpointStore instanceof AuthorityPlanningCheckpointStore)||
     !snapshot||typeof snapshot!=="object"||
     typeof workBranch!=="string"||typeof requirement!=="string"||
