@@ -2490,6 +2490,11 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  assert.equal(durable.request_id,prepared.request_id);
  assert.equal(durable.kind,'flight');
  assert.equal(gateway.stagedCompletedTaskCount,0);
+ // A prepared but UNATTESTED signed native mutation cannot become a
+ // successful model-generated write or release any dependent Task.
+ assert.throws(()=>gateway.assertTrustedCompletedMutationObservationBinding(
+  task.task.task_id,task.runtimeTaskId),
+  /original UPDATE observation not independently completed/);
  await assert.rejects(gateway.attestTrustedTaskCompletion(
   task.task.task_id,task.runtimeTaskId),
   /trusted completion observer or owner-private journal missing/);
