@@ -7,6 +7,8 @@ import {runTrustedAuthorityOnlyOperationalWorkflow}
 import {createTrustedAuthorityOnlyReviewedCanonicalHandoff}
  from './trusted-authority-only-reviewed-canonical-handoff.mjs';
 import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
+import {isIssuedDisposableOwnerSourceGate}
+ from './disposable-gemini-live-canonical-binding.mjs';
 /** Owner-assembled permission-only Planning -> authenticated Engineer review
  * -> independent native root -> dynamic Coordinator. No public root issuer.
  * The caller owns listener binding; this factory never starts inference until
@@ -607,7 +609,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
      if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver','readObserver',
-          'create','createObserver'])||
+          'create','createObserver','ownerSourceGate'])||
+        (deps.ownerSourceGate!==undefined&&
+         (!isIssuedDisposableOwnerSourceGate(deps.ownerSourceGate)||
+          !(deps.mutationObserver instanceof
+           AuthenticatedGiteaMutationCompletionObserver)))||
         (Object.hasOwn(deps,'create')!==Object.hasOwn(deps,'createObserver'))||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
@@ -1850,6 +1856,32 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        if(!pin||pin.task_id!==input.taskId||
           gatewayAttestedTaskIds.has(input.taskId))
         deny('Gateway completion no longer matches original staged Task');
+       // Optional ONLY for an original consented, metered model set.
+       // The no-billing scripted host stays unchanged. The Gateway's
+       // authenticated UPDATE expectation is read from its private
+       // completed Task/Child state, never from A2A or model arguments.
+       // No successor Task may be scheduled until this check succeeds.
+       const ownerGate=nativeEffectBinding?.ownerSourceGate;
+       if(ownerGate&&pin.operation==='update_file'){
+        const mutation=gateway.assertTrustedCompletedMutationObservationBinding(
+         input.taskId,input.runtimeTaskId);
+        const matched=await ownerGate({
+         role:pin.agent_id,
+         mutationObserver:nativeEffectBinding.mutationObserver,
+         completionExpectation:mutation.expectation
+        });
+        if(matched?.status!==
+            'signed_gateway_gitea_cas_matches_model_proposed_bytes_only'||
+           matched.task_id!==input.taskId||
+           matched.gateway_evidence_sha256!==mutation.evidence_sha256||
+           matched.model_emitted_write_matches_committed_bytes!==true||
+           matched.model_write_and_gateway_receipt_replay_fenced!==true)
+         deny('model proposed source differs from signed Gitea mutation');
+       }else if(ownerGate&&pin.operation==='create_file'){
+        // CREATE needs its own independently verified model-byte witness.
+        // Fail closed instead of silently reporting generative provenance.
+        deny('model CREATE provenance is not yet attestable');
+       }
        gatewayAttestedTaskIds.set(input.taskId,Object.freeze({
         task_id:pin.task_id,agent_id:pin.agent_id
        }));
