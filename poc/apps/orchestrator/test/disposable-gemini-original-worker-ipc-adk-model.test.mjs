@@ -164,3 +164,86 @@ process.stdout.write(JSON.stringify({results,pid:process.pid,
  assert.equal(f.calls(),1);
  // A separate PID and empty env do not demonstrate OS UID/file isolation.
 });
+
+test("real Google ADK Runner -> worker model proxy -> Unix RPC -> original metered owner model, entirely offline",async t=>{
+ const {BaseLlm,LlmAgent,Runner,InMemorySessionService}=await import("@google/adk");
+ const {DisposablePrivateBudgetedAdkModel}=await import(
+  "../src/disposable-gemini-live-budgeted-model.mjs");
+ const {createDisposableOriginalOwnerIpcModelAdapter}=await import(
+  "../src/disposable-gemini-original-owner-ipc-model-adapter.mjs");
+ class OfflineOwnerProvider extends BaseLlm {
+  calls=0;
+  constructor(){super({model:"gemini-3.8-flash"});}
+  async *generateContentAsync(){
+   this.calls++;
+   yield {content:{role:"model",parts:[{
+    text:"ADK Runner completed through private metered owner RPC"
+   }]},usageMetadata:{promptTokenCount:10,candidatesTokenCount:7,
+    totalTokenCount:17}};
+  }
+  connect(){throw Error("Offline provider has no network");}
+ }
+ const dir=await mkdtemp(join(tmpdir(),"dgm-runner-proxy-"));
+ const socketPath=join(dir,"model.sock"),secretFile=join(dir,"model.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+  {mode:0o600,flag:"wx"});
+ const provider=new OfflineOwnerProvider();
+ const original=new DisposablePrivateBudgetedAdkModel({
+  delegate:provider,phase:"backend",maxCalls:2,
+  maxReportedTokens:400,maxPerCallTokens:200
+ });
+ const ownerAdapter=createDisposableOriginalOwnerIpcModelAdapter({
+  role:"backend",model:original
+ });
+ // The original signed Child/Gateway gate is tested separately in the
+ // native R323 integration suite. This test isolates the real ADK Runner
+ // and actual owner budgeted wrapper (no signed approval is fabricated).
+ let authenticated=0;
+ const server=await startDisposableOwnerModelIpcServer({
+  role:"backend",socketPath,secretFile,
+  authorizeSignedTask:async input=>{
+   authenticated++;
+   return input.role==="backend"&&
+    input.task.session_id===task.session_id&&
+    input.task.credential_id===task.credential_id;
+  },
+  invokeModel:ownerAdapter.invokeModel
+ });
+ t.after(async()=>{
+  ownerAdapter.retire();await server.close().catch(()=>{});
+  await rm(dir,{recursive:true,force:true});
+ });
+ const client=await connectDisposableWorkerModelIpcClient({
+  role:"backend",socketPath,secretFile
+ });
+ const workerModel=createDisposableOriginalWorkerIpcAdkModel({
+  role:"backend",task,client,maxCalls:1
+ });
+ const agent=new LlmAgent({
+  name:"disposable_original_backend_ipc_offline",
+  model:workerModel,
+  instruction:"Answer briefly. Do not invoke any tools."
+ });
+ const sessionService=new InMemorySessionService();
+ const appName="disposable_original_owner_ipc_runner_offline";
+ const userId="offline",sessionId="offline-role-task";
+ const runner=new Runner({appName,agent,sessionService});
+ await sessionService.createSession({appName,userId,sessionId});
+ let count=0;
+ for await(const event of runner.runAsync({
+  userId,sessionId,newMessage:{
+   role:"user",parts:[{text:"Run the one authorized offline model call."}]
+  }
+ })){
+  assert.equal(event.errorCode,undefined);
+  assert.equal(event.errorMessage,undefined);
+  count++;
+ }
+ assert.ok(count>0,"actual ADK Runner emitted one or more events");
+ assert.equal(workerModel.callsStarted,1);
+ assert.equal(provider.calls,1);
+ assert.equal(authenticated,1);
+ assert.equal(original.publicSummary().reported_total_tokens,17);
+ assert.equal(original.publicSummary().blocked,false);
+ assert.equal(ownerAdapter.retired,false);
+});
