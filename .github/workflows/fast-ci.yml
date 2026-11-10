@@ -134,6 +134,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-scoped-ipc-permissions.test.mjs
           # Optional cross-UID model transport is mode- and OS-pinned; no paid provider or chmod of original secrets.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-scoped-model-channel.test.mjs
+          # R322 native Stage/Bind scoped Linux modes, role-pinned and fail-closed without paid provider.
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-effect-staging-scoped-linux.test.ts
           # Three original specialist subprocesses and owner Stage/Bind IPC SDK shape, strictly offline.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-original-offline-subprocess-workers.test.mjs
           # No-inference GitHub Actions liveness/cancellation/revocation fence for the original owner.
