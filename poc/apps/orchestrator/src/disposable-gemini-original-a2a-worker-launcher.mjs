@@ -9,10 +9,12 @@
  */
 import {fork} from "node:child_process";
 import {randomBytes} from "node:crypto";
-import {mkdtemp,writeFile,rm,readFile} from "node:fs/promises";
+import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
+import {inspectDisposableOriginalLinuxBoundary}
+ from "./disposable-gemini-original-linux-boundary-audit.mjs";
 
 const ROLE=new Set(["backend","frontend","test"]);
 const KEYS=[
@@ -139,18 +141,6 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
    child.send({type:"start",config,ownerCanaryPath,
     requireOwnerFileIsolation});
   });
-  // Read real kernel credentials, rather than trusting the worker's
-  // self-reported UID. This is evidence of a boundary failure only.
-  let workerUid=null;
-  if(process.platform==="linux"&&child.pid){
-   try{
-    const status=await readFile("/proc/"+child.pid+"/status","utf8");
-    const m=status.match(/^Uid:\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/mu);
-    const p=status.match(/^Pid:\s*(\d+)/mu);
-    if(m&&p&&Number(p[1])===child.pid&&
-       [2,3,4].every(i=>m[i]===m[1]))workerUid=Number(m[1]);
-   }catch{workerUid=null;}
-  }
   if(ready?.type!=="ready"||ready.pid!==child.pid||
      ready.role!==config.role||
      ready.baseUrl!==`http://127.0.0.1:${config.port}`||
@@ -159,25 +149,26 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
      ready.originalTaskBindingChannelReady!==true||
      typeof ready.ownerCanaryReadable!=="boolean"||
      ready.osIsolationVerified!==false)deny();
-  // Necessary, NOT sufficient, OS boundary conditions for future live
-  // execution. In today's same-UID runner this MUST fail closed.
-  // Even if these checks pass, Rust signer DID and mounts remain unverified;
-  // therefore osIsolationVerified is NEVER set by this offline launcher.
-  if(requireOwnerFileIsolation&&(
-     process.platform!=="linux"||
-     typeof process.getuid!=="function"||
-     workerUid===null||workerUid===0||
-     workerUid===process.getuid()||
-     ready.ownerCanaryReadable!==false))deny();
+  // The parent inspects BOTH kernel UIDs, mount namespaces, effective
+  // capabilities, NoNewPrivs and parent/child PID relationship.
+  // No worker-supplied "isolation verified" boolean is accepted.
+  let linuxBoundaryAudit=null;
+  if(process.platform==="linux"){
+   linuxBoundaryAudit=await inspectDisposableOriginalLinuxBoundary({
+    workerPid:child.pid,ownerCanaryReadable:ready.ownerCanaryReadable
+   });
+  }
+  if(requireOwnerFileIsolation&&
+     linuxBoundaryAudit?.requiredKernelConditionsPassed!==true)deny();
   return Object.freeze({
    role:config.role,pid:child.pid,baseUrl:ready.baseUrl,
    originalNativeTaskBindingPresent:false,
    originalTaskBindingChannelReady:true,
    osIsolationVerified:false,
    ownerCanaryReadableFromWorker:ready.ownerCanaryReadable,
-   ownerAndWorkerShareUid:workerUid===null||
-    typeof process.getuid!=="function"?null:
-    workerUid===process.getuid(),
+   ownerAndWorkerShareUid:linuxBoundaryAudit?
+    linuxBoundaryAudit.workerUid===linuxBoundaryAudit.ownerUid:null,
+   linuxBoundaryAudit,
    nativeRustSignerVerified:false,
    close
   });
