@@ -11,6 +11,8 @@ import {DisposablePrivateBudgetedAdkModel}
  from "./disposable-gemini-live-budgeted-model.mjs";
 import {AuthenticatedGiteaMutationCompletionObserver}
  from "../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
+import {isIssuedOriginalA2ACallWindow,claimIssuedOriginalA2ACallWindow}
+ from "./disposable-gemini-original-task-call-window.mjs";
 
 const deny=()=>{throw Error("Disposable original model/Gitea digest reconciliation NO-GO");};
 const roles=new Set(["backend","frontend","test"]);
@@ -19,7 +21,8 @@ const roles=new Set(["backend","frontend","test"]);
  * The registeredAgentDid and ownerObservedTaskCallWindow must come from
  * the original native owner's signed Task lifecycle, NEVER from LLM/A2A
  * payloads, workflow inputs or a model-declared call index. The window
- * is checked but is not independently authenticated by this comparator.
+ * is minted by the owner-memory signed A2A handler, but is not an
+ * independent cryptographic signature or provider-authorship proof.
  * A digest match is evidence of byte identity, not its causal origin.
  */
 export async function reconcileOriginalModelWriteWithVerifiedGitea({
@@ -36,6 +39,7 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
     // Task identity + model-call window MUST come from the original
     // owner's independently authenticated signed A2A Task lifecycle.
     // This method never derives it from the model's prompt or tool args.
+    !isIssuedOriginalA2ACallWindow(model,ownerObservedTaskCallWindow)||
     !ownerObservedTaskCallWindow||
     typeof ownerObservedTaskCallWindow!=="object"||
     Array.isArray(ownerObservedTaskCallWindow)||
@@ -67,6 +71,7 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
  // The receipt's signed Task context and independent Gitea re-read were
  // verified above; the same model output or receipt cannot be matched twice.
  try{
+  claimIssuedOriginalA2ACallWindow(model,ownerObservedTaskCallWindow);
   model.claimOriginalGatewayMatchedWrite(matching[0],mutation.evidence_sha256);
  }catch{
   // The original owner must see one fail-closed classification for both a

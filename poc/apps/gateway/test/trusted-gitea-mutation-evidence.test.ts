@@ -4,6 +4,8 @@ import {DisposablePrivateBudgetedAdkModel}
  from "../../orchestrator/src/disposable-gemini-live-budgeted-model.mjs";
 import {reconcileOriginalModelWriteWithVerifiedGitea}
  from "../../orchestrator/src/disposable-gemini-gitea-write-reconcile.mjs";
+import {DisposableOriginalA2AModelCallWindowStore}
+ from "../../orchestrator/src/disposable-gemini-original-task-call-window.mjs";
 import {createHash} from "node:crypto";
 import assert from "node:assert/strict";
 import {mkdtemp,mkdir,rm,readFile,writeFile,readdir} from "node:fs/promises";
@@ -167,9 +169,15 @@ test("metered model write bytes match the ORIGINAL independently authenticated G
   assert.equal(witness.source_bytes,Buffer.byteLength(content));
   assert.equal(witness.commit_sha,nextHead);
   assert.ok(!JSON.stringify(witness).includes(content));
-  const window={task_id:expected.task_id,
+  const record={task_id:expected.task_id,
    credential_id:expected.credential_id,
-   call_index_before:0,call_index_after:1};
+   runtime_task_id:expected.runtime_task_id,
+   role:"backend",call_index_before:0,call_index_after:1};
+  const store=new DisposableOriginalA2AModelCallWindowStore({
+   role:"backend",model:matching
+  });
+  store.callbackForOriginalA2A()(record);
+  const window=store.takeOriginalWindow(record);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:matching,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
@@ -201,21 +209,33 @@ test("metered model write bytes match the ORIGINAL independently authenticated G
   assert.equal(reconciled.commit_sha,nextHead);
   const wrongSource=wrap("export const DIFFERENT = true;\\n");
   for await(const _ of wrongSource.generateContentAsync({})){}
+  const wrongStore=new DisposableOriginalA2AModelCallWindowStore({
+   role:"backend",model:wrongSource
+  });
+  wrongStore.callbackForOriginalA2A()(record);
+  const wrongWindow=wrongStore.takeOriginalWindow(record);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:wrongSource,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
-   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:window
+   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:wrongWindow
   }),/reconciliation NO-GO/u);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
    model:matching,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
    registeredAgentDid:"did:example:wrong",ownerObservedTaskCallWindow:window
   }),/reconciliation NO-GO/u);
+  const staleModel=wrap(content);
+  for await(const _ of staleModel.generateContentAsync({})){}
+  const staleStore=new DisposableOriginalA2AModelCallWindowStore({
+   role:"backend",model:staleModel
+  });
+  staleStore.callbackForOriginalA2A()(record);
+  const staleWindow=staleStore.takeOriginalWindow(record);
   setHead(oldHead);
   await assert.rejects(reconcileOriginalModelWriteWithVerifiedGitea({
-   model:matching,mutationObserver:observer,
+   model:staleModel,mutationObserver:observer,
    completionExpectation:expected,role:"backend",
-   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:window
+   registeredAgentDid:expected.agent_did,ownerObservedTaskCallWindow:staleWindow
   }),/feature HEAD is not/u);
  });
 });
