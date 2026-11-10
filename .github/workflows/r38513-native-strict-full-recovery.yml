@@ -110,6 +110,7 @@ jobs:
       - name: Refuse paid model and competing Adapter startup
         run: |
           test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
           test ! -e /tmp/native-evm-adapter.pid
@@ -227,6 +228,7 @@ jobs:
           test "$R3818_CANONICAL_NATIVE_MCP" = "1"
           test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
           test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           set -a
           source poc/infra/.env
@@ -241,6 +243,7 @@ jobs:
           test "${R38513_NATIVE_STRICT_FULL_RECOVERY:-}" = "1"
           test "${APPROVED_RUNNER_NATIVE_MCP:-}" = "1"
           test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/native-gitea-ci-human-gate-fixture.mjs

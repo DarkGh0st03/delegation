@@ -135,6 +135,8 @@ jobs:
           node --test poc/scripts/test/verify-r3818-native-mcp-proof.test.mjs
           # Free-only original R385.13 same-process proof verifier; it MUST deny any Gemini-generated-source claims from scripted fixtures.
           node --test poc/scripts/test/verify-disposable-native-e2e-proof.test.mjs
+          # Opt-in native full CI wiring must refuse all provider credentials (including GOOGLE_API_KEY).
+          node --test poc/scripts/test/r38513-scripted-native-proof-workflow-wiring.test.mjs
           node --check poc/packages/orchestrator-runtime/test/r330-native-two-adk-a2a-frontend-test-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r331-native-three-adk-a2a-test-docker-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r354-native-reviewed-root-branch-e2e.mjs
