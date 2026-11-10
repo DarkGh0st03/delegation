@@ -21,8 +21,11 @@ const KEYS=[
  "port","role","stageSecretFile","stageSocketPath","task"
 ];
 const deny=()=>{throw Error("Disposable original A2A subprocess launcher NO-GO");};
-export async function startDisposableOriginalA2aWorkerSubprocess(config){
- if(process.env.DELEGATION_DISPOSABLE_LIVE_MODE==="gemini-real"||
+export async function startDisposableOriginalA2aWorkerSubprocess(
+ config,{requireOwnerFileIsolation=false}={}
+){
+ if(typeof requireOwnerFileIsolation!=="boolean"||
+    process.env.DELEGATION_DISPOSABLE_LIVE_MODE==="gemini-real"||
     !config||typeof config!=="object"||Array.isArray(config)||
     Object.keys(config).sort().join(",")!==KEYS.join(",")||
     !ROLE.has(config.role)||
@@ -142,6 +145,16 @@ export async function startDisposableOriginalA2aWorkerSubprocess(config){
      ready.originalTaskBindingChannelReady!==true||
      typeof ready.ownerCanaryReadable!=="boolean"||
      ready.osIsolationVerified!==false)deny();
+  // Necessary, NOT sufficient, OS boundary conditions for future live
+  // execution. In today's same-UID runner this MUST fail closed.
+  // Even if these checks pass, Rust signer DID and mounts remain unverified;
+  // therefore osIsolationVerified is NEVER set by this offline launcher.
+  if(requireOwnerFileIsolation&&(
+     process.platform!=="linux"||
+     typeof process.getuid!=="function"||
+     workerUid===null||workerUid===0||
+     workerUid===process.getuid()||
+     ready.ownerCanaryReadable!==false))deny();
   return Object.freeze({
    role:config.role,pid:child.pid,baseUrl:ready.baseUrl,
    originalNativeTaskBindingPresent:false,

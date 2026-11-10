@@ -275,3 +275,10 @@ test("the actual offline A2A worker can open an owner 0600 canary: PID separatio
  assert.equal(f.modelCalls(),0);
  await child.close();
 });
+
+test("requesting owner-file UID isolation fails closed on the same-UID CI runner",async t=>{
+ const f=await fixture(t);
+ await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(
+  f.config,{requireOwnerFileIsolation:true}),deny);
+ assert.equal(f.modelCalls(),0);
+});
