@@ -145,6 +145,7 @@ export function assertDisposableCiSource(env=process.env){
     !SHA.test(env.GITHUB_SHA??"")||
     env.DELEGATION_DISPOSABLE_CI_MODE!=="scripted-offline"||
     env.GEMINI_API_KEY!==undefined||
+    env.GOOGLE_API_KEY!==undefined||
     env.OPENAI_API_KEY!==undefined||
     env.DELEGATION_SIGNED_GEMINI_PILOT!==undefined)
   deny();

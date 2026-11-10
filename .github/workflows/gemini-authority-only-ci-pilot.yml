@@ -43,6 +43,7 @@ jobs:
       - name: Verify exact clean SHA, no paid input, and signed-authority rejection cases
         run: |
           test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           test -z "${DELEGATION_SIGNED_GEMINI_PILOT:-}"
           node --check poc/apps/orchestrator/src/run-disposable-gemini-ci-pilot.mjs

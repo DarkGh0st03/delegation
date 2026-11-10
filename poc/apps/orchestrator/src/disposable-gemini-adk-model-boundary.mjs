@@ -36,7 +36,7 @@ function validUsage(metadata){
  */
 export class DisposableCIMeteredAdkModel extends BaseLlm{
  #delegate;#source;#phase;#limit;#tokenLimit;#calls=0;
- #input=0;#output=0;#total=0;#withUsage=0;#broken=false;
+ #input=0;#output=0;#total=0;#withUsage=0;#broken=false;#inFlight=false;
  constructor({
   delegate,source="scripted-offline",phase,
   maxCalls=2,maxReportedTokens=16000,permitLiveCall
@@ -80,8 +80,12 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
   });
  }
  async *generateContentAsync(request,stream,signal){
+  // Concurrent streams could each pass the same remaining token budget
+  // before either commits its usage. Fence both instead of releasing Tasks.
+  if(this.#inFlight){this.#broken=true;deny();}
   if(this.#broken||this.#calls>=this.#limit||
      this.#total>=this.#tokenLimit)deny();
+  this.#inFlight=true;
   // Only trusted, code-pinned local BaseLlm fixtures are constructed by
   // the disposable workflow. No live provider or billing permit is valid.
   ++this.#calls;
@@ -98,7 +102,7 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
    for await(const response of this.#delegate.generateContentAsync(
     request,stream,combined
    )){
-    if(combined.aborted||response?.errorCode||response?.errorMessage||
+    if(this.#broken||combined.aborted||response?.errorCode||response?.errorMessage||
        ++responseCount>128)deny();
     const bytes=Buffer.byteLength(JSON.stringify(response),"utf8");
     if((responseBytes+=bytes)>1_000_000)deny();
@@ -127,11 +131,12 @@ export class DisposableCIMeteredAdkModel extends BaseLlm{
     this.#total+=lastUsage.total;this.#withUsage++;
    }
    for(const response of buffered){
-    if(combined.aborted)deny();
+    if(this.#broken||combined.aborted)deny();
     yield response;
    }
    done=true;
   }finally{
+   this.#inFlight=false;
    if(!done)this.#broken=true;
   }
  }

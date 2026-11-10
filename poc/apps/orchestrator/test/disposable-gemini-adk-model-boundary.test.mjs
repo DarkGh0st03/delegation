@@ -277,3 +277,35 @@ test("a cumulative usage regression fails closed before releasing any streamed m
   for await(const _ of meter.generateContentAsync({})){}
  },/NO-GO/u);
 });
+
+
+test("overlapping research model requests fence both streams before any ADK effect",async()=>{
+ let release;
+ const gate=new Promise(resolve=>{release=resolve;});
+ class DelayedRecordedAdk extends BaseLlm{
+  constructor(){super({model:"scripted-concurrent-no-provider"});}
+  async *generateContentAsync(){
+   await gate;
+   yield {content:{role:"model",parts:[{text:JSON.stringify(task())}]},
+    usageMetadata:{promptTokenCount:6,candidatesTokenCount:7,totalTokenCount:13}};
+  }
+  connect(){throw Error("No provider");}
+ }
+ const metered=new DisposableCIMeteredAdkModel({
+  delegate:new DelayedRecordedAdk(),phase:"adaptive-execution",
+  maxCalls:2,maxReportedTokens:20
+ });
+ const first=metered.generateContentAsync({}).next();
+ await assert.rejects(
+  metered.generateContentAsync({}).next(),/Disposable ADK research model boundary NO-GO/u
+ );
+ release();
+ await assert.rejects(first,/Disposable ADK research model boundary NO-GO/u);
+ const summary=metered.publicSummary();
+ assert.equal(summary.calls_started,1);
+ assert.equal(summary.reported_total_tokens,0);
+ assert.equal(summary.usage_complete,false);
+ await assert.rejects(
+  metered.generateContentAsync({}).next(),/Disposable ADK research model boundary NO-GO/u
+ );
+});

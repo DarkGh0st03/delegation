@@ -122,6 +122,7 @@ test("manual-only GitHub Actions contract refuses paid mode, push and replay bef
   ["GITHUB_SHA","short"],
   ["DELEGATION_DISPOSABLE_CI_MODE","gemini-real"],
   ["GEMINI_API_KEY","fake-key"],
+  ["GOOGLE_API_KEY","fake-key"],
   ["OPENAI_API_KEY","fake-key"],
   ["DELEGATION_SIGNED_GEMINI_PILOT","1"]
  ]){
