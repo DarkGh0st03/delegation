@@ -84,6 +84,7 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
    settled=true;
    clearTimeout(timer);
    child.off("exit",onExit);
+   child.off("error",onError);
    if(error)reject(Error("Disposable original A2A subprocess close NO-GO"));
    else resolve();
   };
@@ -91,13 +92,25 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
    stopped=true;
    finish(code===0?null:Error("abnormal child exit"));
   };
+  // A child that refuses owner isolation may disconnect its IPC channel
+  // BEFORE the parent sends 'stop'. IPC EPIPE must never become an
+  // unhandled exception (and must never turn a NO-GO into a retry).
+  const onError=()=>{if(child.exitCode===null)child.kill("SIGKILL");};
   child.once("exit",onExit);
+  child.once("error",onError);
   const timer=setTimeout(()=>{
    if(child.exitCode===null)child.kill("SIGKILL");
    finish(Error("unconfirmed worker retirement"));
   },10_000);
-  if(child.connected)child.send({type:"stop"});
-  else if(child.exitCode===null)child.kill("SIGTERM");
+  if(child.connected){
+   try{
+    child.send({type:"stop"},error=>{
+     if(error&&child.exitCode===null)child.kill("SIGKILL");
+    });
+   }catch{
+    if(child.exitCode===null)child.kill("SIGKILL");
+   }
+  }else if(child.exitCode===null)child.kill("SIGTERM");
  });
  try{
   const ready=await new Promise((resolve,reject)=>{
