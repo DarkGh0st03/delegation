@@ -120,6 +120,8 @@ jobs:
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-native-provision-offline.test.mjs
           # Actions-only original Review Host bootstrap: source-locked, typed checkpoint, no inference/Root.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-original-owner-bootstrap.test.mjs
+          # Real separate-process authenticated Unix model IPC; synthetic replies, no Gemini inference.
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-owner-worker-ipc.test.mjs
           # No-inference GitHub Actions liveness/cancellation/revocation fence for the original owner.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-actions-original-github-run-watch.test.mjs
           # Review Host lifecycle: cancellation/Root retirement and single-use startup, no Gemini billing.
