@@ -78,7 +78,7 @@ test("untrusted objects, wrong specialist role or model name cannot manufacture 
    profile:"private-gemini-model-budget-not-proof-of-billing",
    phase:"planning",model_name:"gemini-3.8-flash",
    calls_started:1,reported_total_tokens:10
-  };}}}
+  };}}}}
  ])assert.throws(()=>attestDisposableActionsOriginalPlanningCompletion(obj),DENY);
  const specialist=create(async function*(){yield response(usage(2,2));},"backend");
  await collect(specialist.wrapped);
