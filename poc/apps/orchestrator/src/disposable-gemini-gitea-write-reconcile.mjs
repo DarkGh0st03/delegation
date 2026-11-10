@@ -66,7 +66,14 @@ export async function reconcileOriginalModelWriteWithVerifiedGitea({
  if(matching.length!==1)deny();
  // The receipt's signed Task context and independent Gitea re-read were
  // verified above; the same model output or receipt cannot be matched twice.
- model.claimOriginalGatewayMatchedWrite(matching[0],mutation.evidence_sha256);
+ try{
+  model.claimOriginalGatewayMatchedWrite(matching[0],mutation.evidence_sha256);
+ }catch{
+  // The original owner must see one fail-closed classification for both a
+  // replayed Gateway receipt and a previously consumed model proposal.
+  // Never expose budget internals or silently grant another match.
+  deny();
+ }
  return Object.freeze({
   status:"signed_gateway_gitea_cas_matches_model_proposed_bytes_only",
   task_id:mutation.task_id,
