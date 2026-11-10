@@ -313,3 +313,78 @@ test("R389 original native Test Child can bind CREATE only for one exact project
   operation:"create_file",path:source
  });
 });
+
+test("original native prebind is the ONLY IPC authorization origin, with exact live Root and bounded turns",async()=>{
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
+ const f=fixture();
+ let currentRoot={...root};
+ const approval=createDisposableOriginalNativeIpcTaskAdmission({
+  role:"backend",assertOriginalRootActive:()=>currentRoot
+ });
+ const signed=await f.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ });
+ assert.equal(approval.boundTaskCount,0);
+ assert.throws(()=>approval.bindOriginalReceipt({...signed}),
+  /only an authentic one-use original prebind/u);
+ const bound=approval.bindOriginalReceipt(signed,{maxCalls:2});
+ assert.equal(bound.gateway_execution_authorized,false);
+ assert.equal(bound.model_calls_started_here,0);
+ assert.equal(approval.boundTaskCount,1);
+ const exactTask={task_id:taskId,runtime_task_id:runtimeTaskId,
+  credential_id:credentialId,session_id:root.session_id};
+ const call=callId=>approval.authorizeSignedTask({
+  role:"backend",task:exactTask,callId,payload:{contents:[]}
+ });
+ assert.equal(await call("call-native-000001"),true);
+ await assert.rejects(call("call-native-000001"),
+  /Disposable original signed IPC Task admission NO-GO/u);
+ assert.equal(approval.retired,false);
+ assert.equal(await call("call-native-000002"),true);
+ await assert.rejects(call("call-native-000003"),
+  /Disposable original signed IPC Task admission NO-GO/u);
+ assert.throws(()=>approval.bindOriginalReceipt(signed),
+  /authentic one-use original prebind/u);
+});
+test("original IPC Task admission denies wrong Child, wrong role and revoked Root BEFORE model invocation",async()=>{
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
+ const f=fixture(),signed=await f.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ });
+ let currentRoot={...root};
+ const gate=createDisposableOriginalNativeIpcTaskAdmission({
+  role:"backend",assertOriginalRootActive:()=>currentRoot
+ });
+ gate.bindOriginalReceipt(signed,{maxCalls:2});
+ const actual={task_id:taskId,runtime_task_id:runtimeTaskId,
+  credential_id:credentialId,session_id:root.session_id};
+ await assert.rejects(gate.authorizeSignedTask({
+  role:"frontend",task:actual,callId:"call-native-01"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(gate.authorizeSignedTask({
+  role:"backend",task:{...actual,credential_id:"forged"},
+  callId:"call-native-02"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(gate.authorizeSignedTask({
+  role:"backend",task:actual,callId:"call-native-03"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ // New genuine Task instance: Root retirement denies independently.
+ const f2=fixture();
+ const signed2=await f2.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ });
+ const active=createDisposableOriginalNativeIpcTaskAdmission({
+  role:"backend",assertOriginalRootActive:()=>currentRoot
+ });
+ active.bindOriginalReceipt(signed2);
+ currentRoot={...root,root_credential_id:"revoked-root"};
+ await assert.rejects(active.authorizeSignedTask({
+  role:"backend",task:actual,callId:"call-native-04"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ assert.equal(active.retired,true);
+ await assert.rejects(active.authorizeSignedTask({
+  role:"backend",task:actual,callId:"call-native-05"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+});
