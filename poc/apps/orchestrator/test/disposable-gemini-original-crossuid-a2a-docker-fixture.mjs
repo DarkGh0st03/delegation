@@ -450,6 +450,25 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    JSON.stringify(configs),JSON.stringify(scopes)
   ],{ipc:true});
   await observeReady(owner);
+  // The very same existing specialist PIDs must NOT be able to opt into
+  // native MCP with a guessed DID and an unmounted Rust signing socket.
+  // Refuse at bootstrap, before any A2A listener or model invocation.
+  for(const [role,uid,gid] of roles){
+   const probe=spawnAs(uid,gid,[],[
+    "--experimental-strip-types",CHILD
+   ],{ipc:true,worker:true});
+   const denied=observeWorker(probe);
+   const falseNativeConfig={
+    ...configs[role],nativeSignerDid:"did:thesis:"+role+"-agent",
+    nativeCryptoSocketPath:join(root,"absent-rust-"+role+".sock")
+   };
+   probe.send({type:"start",config:falseNativeConfig,ownerCanaryPath,
+    requireOwnerFileIsolation:true,originalScopedRole:scopes[role]});
+   await assert.rejects(denied,/worker NO-GO/u,
+    "missing original Rust socket must not create a "+role+" A2A listener");
+   await awaitExit(probe);
+   assert.equal(probe.exitCode,1);
+  }
   const pending=[];
   for(const [role,uid,gid] of roles){
    const child=spawnAs(uid,gid,[],[
