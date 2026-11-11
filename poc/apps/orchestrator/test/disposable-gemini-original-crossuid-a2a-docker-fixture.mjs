@@ -795,11 +795,13 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
   // UID/GID during THAT Task, not after it or from the privileged parent.
   const nativeLiveProbe=[
    'const {invokeNativeCryptoWire}=await import(process.argv[1]);',
-   'const [socketPath,token,credentialId,role]=process.argv.slice(2);',
-   'const path={backend:"apps/backend/account.ts",',
+   'const [socketPath,token,credentialId,role,variant]=process.argv.slice(2);',
+   'const paths={backend:"apps/backend/account.ts",',
    ' frontend:"apps/frontend/account.ts",',
-   ' test:"apps/test/account.test.ts"}[role];',
-   'if(!path)throw Error("foreign original specialist");',
+   ' test:"apps/test/account.test.ts"};',
+   'if(!paths[role])throw Error("foreign original specialist");',
+   'const path=variant==="foreign-permission"?',
+   ' paths[role==="backend"?"frontend":"backend"]:paths[role];',
    'const resource="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path;',
    'try{const p=await invokeNativeCryptoWire({socketPath,token,timeoutMs:6000},',
    ' "create_presentation",{credential_id:credentialId,',
@@ -829,22 +831,28 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
       if(finished||!entry||nativeWorkerVps.has(role))
        throw Error("duplicate/foreign native R323 role signal");
       const [,uid,gid]=entry;
-      const probe=spawnAs(uid,gid,[],[
-       "--input-type=module","-e",nativeLiveProbe,
-       "file:///work/poc/mcp-shared/src/native-rust-transport.mjs",
-       nativeRust.roleSockets[role],nativeRust.roleTokens[role],
-       "urn:offline:original-child:"+role,role
-      ]);
-      const result=await new Promise((resolve,reject)=>{
-       let out="",err="";
-       probe.stdout.on("data",b=>out+=b);
-       probe.stderr.on("data",b=>err+=b);
-       probe.once("error",reject);
-       probe.once("close",status=>resolve({status,out,err}));
-      });
-      assert.equal(result.status,0,result.err.slice(-500));
-      assert.equal(result.out,"ALLOWED",
-       "same native R323 Child must admit actual Linux "+role+" UID");
+      for(const [variant,credentialId,expected] of [
+       ["approved","urn:offline:original-child:"+role,"ALLOWED"],
+       ["foreign-permission","urn:offline:original-child:"+role,"DENIED"],
+       ["foreign-child","urn:offline:foreign-child:"+role,"DENIED"]
+      ]){
+       const probe=spawnAs(uid,gid,[],[
+        "--input-type=module","-e",nativeLiveProbe,
+        "file:///work/poc/mcp-shared/src/native-rust-transport.mjs",
+        nativeRust.roleSockets[role],nativeRust.roleTokens[role],
+        credentialId,role,variant
+       ]);
+       const result=await new Promise((resolve,reject)=>{
+        let out="",err="";
+        probe.stdout.on("data",b=>out+=b);
+        probe.stderr.on("data",b=>err+=b);
+        probe.once("error",reject);
+        probe.once("close",status=>resolve({status,out,err}));
+       });
+       assert.equal(result.status,0,result.err.slice(-500));
+       assert.equal(result.out,expected,
+        "cross-UID "+role+" native VP must "+expected+" "+variant);
+      }
       nativeWorkerVps.add(role);
       owner.send({type:"native_role_probe_done",role},err=>{
        if(err)finish(err);
