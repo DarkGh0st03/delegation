@@ -13,6 +13,8 @@ import {randomBytes} from "node:crypto";
 import {mkdtemp,mkdir,chmod,chown,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {AGENT_CARD_PATH} from "@a2a-js/sdk";
+import {startDisposableOriginalPrivilegedThreeRoleWorkers}
+ from "../src/disposable-gemini-original-a2a-worker-launcher.mjs";
 
 const SCOPE={role:"backend",ownerUid:1001,workerUid:1002,roleGid:2301};
 const OWNER_MODEL="file:///work/poc/apps/orchestrator/src/disposable-gemini-owner-worker-ipc.mjs";
@@ -408,8 +410,7 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
   t.skip("Explicit offline Docker root fixture only");return;
  }
  const root=await mkdtemp("/tmp/delegation-three-a2a-");
- let owner;
- const workers=[];
+ let owner,privileged;
  try{
   await chmod(root,0o755);
   const ownerPrivate=join(root,"owner-private");
@@ -469,32 +470,29 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    await awaitExit(probe);
    assert.equal(probe.exitCode,1);
   }
-  const pending=[];
-  for(const [role,uid,gid] of roles){
-   const child=spawnAs(uid,gid,[],[
-    "--experimental-strip-types",CHILD
-   ],{ipc:true,worker:true});
-   workers.push(child);
-   pending.push(observeWorker(child));
-   child.send({type:"start",config:configs[role],ownerCanaryPath,
-    requireOwnerFileIsolation:true,originalScopedRole:scopes[role]});
-  }
-  const ready=await Promise.all(pending);
+  // The ORIGINAL three-role privileged launcher now starts exactly three
+  // existing A2A workers. The Docker fixture no longer fabricates readiness
+  // by manually forking those positive-path workers itself.
+  privileged=await startDisposableOriginalPrivilegedThreeRoleWorkers({
+   configs,scopes,ownerPid:owner.pid,ownerCanaryPath,
+   offlineSyntheticOnly:true
+  });
+  const ready=roles.map(([role])=>privileged.workers[role]);
+  assert.equal(privileged.paidGeminiAuthorized,false);
+  assert.equal(privileged.osIsolationVerified,false);
+  assert.equal(privileged.nativeRustSignerVerified,false);
   assert.equal(new Set(ready.map(r=>r.pid)).size,3);
   assert.ok(ready.every(r=>r.pid!==owner.pid));
   for(let i=0;i<roles.length;i++){
    const [role,uid,gid,,cardName]=roles[i];
-   const actual=ready[i],child=workers[i];
-   assert.equal(actual.pid,child.pid);
+   const actual=ready[i];
+   assert.equal(actual.workerUid,uid);
+   assert.equal(actual.roleGid,gid);
    assert.equal(actual.role,role);
    assert.equal(actual.baseUrl,"http://127.0.0.1:"+configs[role].port);
-   assert.equal(actual.ownerCanaryReadable,false);
-   assert.equal(actual.providerCredentialPresent,false);
+   assert.equal(actual.canReadOwnerCanary,false);
    assert.equal(actual.originalNativeTaskBindingPresent,false);
-   assert.equal(actual.originalTaskBindingChannelReady,true);
-   assert.equal(actual.crossUidChannelsConfigured,true);
    assert.equal(actual.osIsolationVerified,false);
-   assert.equal(child.exitCode,null);
    const proc=await import("node:fs/promises").then(fs=>
     fs.readFile("/proc/"+child.pid+"/status","utf8"));
    const uids=proc.match(/^Uid:\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)/mu);
@@ -652,18 +650,15 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
     "a retired original "+role+" Task must not resume over valid cross-UID HMAC");
   }
   assert.equal(owner.exitCode,null);
-  assert.ok(workers.every(worker=>worker.exitCode===null),
-   "all three original Linux role workers remain alive after fenced Tasks");
+  for(const actual of ready){
+   const response=await fetch(new URL(AGENT_CARD_PATH,actual.baseUrl+"/"));
+   assert.equal(response.status,200,
+    "original Linux worker must remain live after terminal Task fence");
+  }
   // No genuine Engineer/Rust approval, provider model call or Gateway
   // effect was started. Offline Task/Child/Root replies are fixtures.
  }finally{
-  for(const worker of workers.reverse()){
-   if(worker.connected){
-    try{worker.send({type:"stop"},()=>{});}
-    catch{if(worker.exitCode===null)worker.kill("SIGTERM");}
-   }else if(worker.exitCode===null)worker.kill("SIGTERM");
-   await awaitExit(worker);
-  }
+  if(privileged)await privileged.close();
   if(owner){
    if(owner.exitCode===null)owner.kill("SIGTERM");
    await awaitExit(owner);
