@@ -780,8 +780,22 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
     "own-role HMAC is not permission to invoke an unbound model Task");
   }
   // Same real owner PID and the SAME three real worker PIDs now exercise
-  // actual original R323 signed-Task prebinding (offline Root/Child fixtures).
-  // No additional owner, worker, planner, signer or provider is started.
+  // original R323 owner Task prebinding (offline Root/Child fixtures).
+  // The Unix calls below run with the actual isolated Linux specialist
+  // UID/GID during THAT Task, not after it or from the privileged parent.
+  const nativeLiveProbe=[
+   'const {invokeNativeCryptoWire}=await import(process.argv[1]);',
+   'const [socketPath,token,credentialId]=process.argv.slice(2);',
+   'try{const p=await invokeNativeCryptoWire({socketPath,token,timeoutMs:6000},',
+   ' "create_presentation",{credential_id:credentialId,',
+   ' disclosed_permissions:[{operation:"read_file",',
+   ' resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/account.ts"}],',
+   ' audience:"cloud-access-gateway",challenge:"crossuid-live-r323-fake-rust"});',
+   ' process.stdout.write(p.signed_vp==="SYNTHETIC_ONLY_NOT_A_RUST_SIGNATURE"',
+   '  ?"ALLOWED":"WRONG_STUB");}',
+   'catch{process.stdout.write("DENIED");}'
+  ].join("\n");
+  const nativeWorkerVps=new Set();
   const nativeThree=await new Promise((resolve,reject)=>{
    let finished=false,stderr="";
    owner.stderr.on("data",chunk=>stderr+=chunk);
@@ -794,6 +808,36 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
     if(err)reject(err);else resolve(result);
    };
    const onMessage=msg=>{
+    if(msg?.type==="native_role_prebound"){
+     void (async()=>{
+      const role=msg.role;
+      const entry=roles.find(([name])=>name===role);
+      if(finished||!entry||nativeWorkerVps.has(role))
+       throw Error("duplicate/foreign native R323 role signal");
+      const [,uid,gid]=entry;
+      const probe=spawnAs(uid,gid,[],[
+       "--input-type=module","-e",nativeLiveProbe,
+       "file:///work/poc/mcp-shared/src/native-rust-transport.mjs",
+       nativeRust.roleSockets[role],nativeRust.roleTokens[role],
+       "urn:offline:original-child:"+role
+      ]);
+      const result=await new Promise((resolve,reject)=>{
+       let out="",err="";
+       probe.stdout.on("data",b=>out+=b);
+       probe.stderr.on("data",b=>err+=b);
+       probe.once("error",reject);
+       probe.once("close",status=>resolve({status,out,err}));
+      });
+      assert.equal(result.status,0,result.err.slice(-500));
+      assert.equal(result.out,"ALLOWED",
+       "same native R323 Child must admit actual Linux "+role+" UID");
+      nativeWorkerVps.add(role);
+      owner.send({type:"native_role_probe_done",role},err=>{
+       if(err)finish(err);
+      });
+     })().catch(finish);
+     return;
+    }
     if(msg?.type==="original_three_result")finish(null,msg.report);
     if(msg?.type==="original_three_failure")
      finish(Error("original three-role native NO-GO: "+msg.error));
@@ -805,6 +849,7 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
     ready.map(item=>[item.role,item.baseUrl])
    )},error=>{if(error)finish(error);});
   });
+  assert.deepEqual([...nativeWorkerVps].sort(),["backend","frontend","test"]);
   assert.equal(nativeThree.ownerUid,1001);
   assert.equal(nativeThree.staged,0,
    "no Gitea or Docker provider effect may be fabricated in this offline proof");
