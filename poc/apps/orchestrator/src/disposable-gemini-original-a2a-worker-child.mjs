@@ -78,9 +78,10 @@ async function requireOriginalNativeRustSigner(cfg,scoped,isolationRequired){
     !isAbsolute(cfg.nativeCryptoSocketPath)||
     resolve(cfg.nativeCryptoSocketPath)!==cfg.nativeCryptoSocketPath||
     cfg.nativeCryptoSocketPath.length>100||
-    cfg.nativeCryptoSocketPath.includes("\\0")||
+    cfg.nativeCryptoSocketPath.includes("\0")||
     process.env.APPROVED_RUNNER_NATIVE_MCP!==undefined||
-    process.env.DELEGATION_GATEWAY_ARCHITECTURE!==undefined)deny();
+    (process.env.DELEGATION_GATEWAY_ARCHITECTURE!==undefined&&
+     process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"))deny();
  let st;
  try{
   st=await lstat(cfg.nativeCryptoSocketPath);
@@ -142,9 +143,7 @@ const start=async message=>{
  const cfg=message.config;
  const nativeMcp=Object.hasOwn(cfg,"nativeSignerDid")&&
   Object.hasOwn(cfg,"nativeCryptoSocketPath");
- if(!nativeMcp&&(
-    Object.hasOwn(process.env,"APPROVED_RUNNER_NATIVE_MCP")||
-    Object.hasOwn(process.env,"DELEGATION_GATEWAY_ARCHITECTURE")))deny();
+ if(!nativeMcp&&Object.hasOwn(process.env,"APPROVED_RUNNER_NATIVE_MCP"))deny();
  if(!ROLES.has(cfg.role)||!Number.isSafeInteger(cfg.port)||
     cfg.port<1024||cfg.port>65535||
     typeof cfg.gatewayBaseUrl!=="string"||
