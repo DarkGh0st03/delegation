@@ -177,7 +177,10 @@ $("policy-form").addEventListener("submit", async (event) => {
       allow_pull_request: f.allow_pull_request.checked,
       agents_may_merge: false
     });
-    renderPolicy(); message("policy-msg", "Policy salvata.");
+    renderPolicy();
+    if (selectedRepo.opa_published) message("policy-msg", "Policy salvata e applicata da OPA.");
+    else message("policy-msg", "Policy salvata, ma NON applicata: " +
+      (selectedRepo.opa_error || "OPA non raggiungibile") + ". Ricontrolla la pagina Ambiente.", true);
   } catch (error) { message("policy-msg", error.message, true); }
 });
 

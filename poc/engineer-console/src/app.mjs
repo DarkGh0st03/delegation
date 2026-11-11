@@ -66,7 +66,7 @@ function validateRequirement(text) {
   return trimmed;
 }
 
-export function createConsoleHandler({auth, gitea, store, health, port}) {
+export function createConsoleHandler({auth, gitea, store, health, port, opa}) {
   const allowedOrigins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
 
   function requireMutationGuards(req) {
@@ -160,7 +160,13 @@ export function createConsoleHandler({auth, gitea, store, health, port}) {
           try { policy = validatePolicy(await readJson(req), repository); }
           catch (error) { throw new HttpError(error.status ?? 400, error.message); }
           store.savePolicy(policy);
-          return send(res, 200, {repository, policy, policy_source: "saved"});
+          let opaPublished = false, opaError;
+          if (opa) {
+            try { await opa.publish(store.listPolicies()); opaPublished = true; }
+            catch (error) { opaError = error.message; }
+          }
+          return send(res, 200, {repository, policy, policy_source: "saved",
+            opa_published: opaPublished, ...(opaError ? {opa_error: opaError} : {})});
         }
       }
       if (method === "GET" && path === "/api/requests")

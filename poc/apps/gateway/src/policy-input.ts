@@ -58,6 +58,8 @@ export function buildPolicyInput(
     ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
     ...(record.approved_plan_digest ? {approved_plan_digest:record.approved_plan_digest} : {}),
     ...(record.approved_work_branch ? {approved_work_branch:record.approved_work_branch} : {}),
+    ...(record.authority_only_work_branch
+      ? {session_work_branch:record.authority_only_work_branch} : {}),
     repository: {
       authority: repository.authority,
       owner: repository.owner,

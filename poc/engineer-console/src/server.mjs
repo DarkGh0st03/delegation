@@ -12,6 +12,7 @@ import {loadLocalConfig} from "./env.mjs";
 import {GiteaAdmin} from "./gitea.mjs";
 import {checkEnvironment} from "./health.mjs";
 import {ConsoleStore} from "./store.mjs";
+import {OpaPolicyPublisher} from "./opa.mjs";
 import {startTrustedCore} from "./trusted-core.mjs";
 
 const config = loadLocalConfig();
@@ -40,6 +41,21 @@ if (config.composeMode) {
   });
 }
 
+const store = new ConsoleStore(config.stateDir);
+const opa = new OpaPolicyPublisher({opaUrl: config.opaUrl});
+// OPA keeps data in memory: re-publish the saved policies whenever they are
+// missing (console start, OPA restart). Checked by the environment page.
+async function policySync() {
+  const policies = store.listPolicies();
+  if (!policies.length)
+    return {ok: true, detail: "nessuna policy personalizzata: valori predefiniti"};
+  if (await opa.isCurrent(policies))
+    return {ok: true, detail: `${policies.length} repository configurate`};
+  await opa.publish(policies);
+  return {ok: true, detail: `${policies.length} repository ripubblicate su OPA`};
+}
+policySync().catch(() => {});
+
 const handler = createConsoleHandler({
   auth: new ConsoleAuth({users}),
   gitea: new GiteaAdmin({
@@ -47,8 +63,9 @@ const handler = createConsoleHandler({
     adminPassword: config.giteaAdminPassword, org: config.giteaOrg,
     gatewayUser: config.giteaGatewayUser, runnerUser: config.giteaRunnerUser
   }),
-  store: new ConsoleStore(config.stateDir),
-  health: () => checkEnvironment(config, config.composeMode ? {trustedCore: core} : {}),
+  store, opa,
+  health: () => checkEnvironment(config,
+    config.composeMode ? {trustedCore: core, policySync} : {policySync}),
   port: config.consolePort
 });
 

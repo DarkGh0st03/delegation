@@ -80,3 +80,21 @@ export function validatePolicy(raw, repository) {
     agents_may_merge: false
   };
 }
+
+/** Canonical repository URI used by the Gateway and by OPA. */
+export const GITEA_AUTHORITY = "gitea.local";
+export function repositoryUri(owner, name) {
+  return `gitea://${GITEA_AUTHORITY}/${owner}/${name}`;
+}
+
+/** The OPA data document for one validated policy (no metadata). */
+export function toOpaRepositoryConfig(policy) {
+  return {
+    base_branch: policy.base_branch,
+    protected_branches: [...policy.protected_branches],
+    work_branch_prefix: policy.work_branch_prefix,
+    forbidden_path_prefixes: [...policy.forbidden_path_prefixes],
+    runner_profile: policy.runner_profile,
+    allow_pull_request: policy.allow_pull_request
+  };
+}

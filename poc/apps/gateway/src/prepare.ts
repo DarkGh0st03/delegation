@@ -133,7 +133,8 @@ export function prepareAuthorization(
     ...(authorityOnlyBinding ? {
       authority_only_digest:authorityOnlyBinding.authority_digest,
       authority_only_plan_task_id:authorityOnlyBinding.plan_task_id,
-      authority_only_agent_did:authorityOnlyBinding.agent_did
+      authority_only_agent_did:authorityOnlyBinding.agent_did,
+      authority_only_work_branch:authorityOnlyBinding.work_branch
     } : {}),
     ...(approvedBinding ? {
       approved_plan_digest:approvedBinding.plan_digest,

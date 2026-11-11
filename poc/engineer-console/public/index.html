@@ -77,7 +77,7 @@
             <textarea name="protected_branches" rows="3"></textarea></label>
           <label>Prefisso dei branch di lavoro degli agenti
             <input name="work_branch_prefix"></label>
-          <label>Percorsi vietati agli agenti (uno per riga, es. <code>.github/</code>)
+          <label>Percorsi che gli agenti non possono modificare (uno per riga, es. <code>.github/</code>; la lettura resta consentita)
             <textarea name="forbidden_path_prefixes" rows="4"></textarea></label>
           <label>Profilo dei test (Runner) <input name="runner_profile"></label>
           <label class="inline"><input type="checkbox" name="allow_pull_request"> Consenti la creazione di una Draft PR</label>
@@ -86,7 +86,7 @@
           <button type="button" id="policy-reset">Ripristina predefinita</button>
         </form>
         <p id="policy-msg"></p>
-        <p class="hint">Nota: in questa versione la policy viene salvata. Il collegamento a OPA (applicazione reale delle regole) è il prossimo passo.</p>
+        <p class="hint">Salvando, la policy viene pubblicata su OPA e applicata dal Gateway a ogni operazione degli agenti su questa repository.</p>
       </div>
 
       <div class="tab" id="tab-request" hidden>

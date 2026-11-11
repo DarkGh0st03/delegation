@@ -36,7 +36,7 @@ async function rpc(fetchFn, url, method, params = []) {
 }
 
 export async function checkEnvironment(config, {fetchFn = fetch, fileExists = existsSync,
-  loadAddon = loadAddonInChild, trustedCore} = {}) {
+  loadAddon = loadAddonInChild, trustedCore, policySync} = {}) {
   const checks = [];
   const restart = config.composeMode ? "riavvia lo stack: docker compose up -d"
     : "bash poc/scripts/phase1-up.sh";
@@ -84,6 +84,11 @@ export async function checkEnvironment(config, {fetchFn = fetch, fileExists = ex
 
   add("native-engineer", "Modulo Rust dell'Engineer (emissione)",
     await addon(config.nativeEngineerAddon), "Modulo non utilizzabile: " + rebuild);
+
+  if (policySync) {
+    add("opa-policies", "Policy delle repository applicate da OPA",
+      await timed(policySync), "OPA non ha le policy salvate: " + restart);
+  }
 
   if (trustedCore) {
     add("engineer-core", "Core Rust dell'Engineer (identità on-chain)", trustedCore.engineer,

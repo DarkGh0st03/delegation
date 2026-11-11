@@ -1630,6 +1630,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   required_permission:Permission;
   agent_did:string;plan_task_id:string;
   pinned_revision?:string;
+  /** Engineer-signed work branch of the live session, passed to OPA. */
+  work_branch:string;
   gateway_execution_authorized:false
  }>{
   this.#live();
@@ -1692,6 +1694,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    required_permission:structuredClone(required),
    agent_did:bound.row.agent_did,plan_task_id:bound.row.task_id,
    ...(nativeHead?{pinned_revision:nativeHead}:{}),
+   work_branch:this.#branch!,
    gateway_execution_authorized:false
   });
  }

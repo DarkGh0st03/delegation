@@ -95,6 +95,8 @@ export interface PreparedRequestRecord {
   authority_only_digest?: string;
   authority_only_plan_task_id?: string;
   authority_only_agent_did?: string;
+  /** Engineer-signed session work branch (authority-only), for OPA. */
+  authority_only_work_branch?: string;
   /** Trusted signed-plan-derived branch, never public caller input. */
   approved_work_branch?: string;
   /** Trusted-only Runner SHA, never supplied by ADK, MCP or caller arguments. */
@@ -412,6 +414,8 @@ export interface PolicyInput {
   pinned_revision?: string;
   approved_plan_digest?: string;
   approved_work_branch?: string;
+  /** Server-injected from the signed session; never from tool arguments. */
+  session_work_branch?: string;
   repository: GatewayRepositoryConfig;
   verified_delegation: {
     presenter_id: string;

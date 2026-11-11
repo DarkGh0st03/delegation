@@ -212,7 +212,7 @@ test_decision_exposes_policy_version if {
 		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	result.allow == true
-	result.policy_version == "phase6-approved-branch-v2"
+	result.policy_version == "authority-only-parametric-v3"
 }
 
 # Planning has read-only access to main only when the Orchestrator presents
@@ -412,4 +412,118 @@ test_original_specialist_can_still_list_approved_directory if {
   sprintf("%s/directories/apps/backend", [feature_uri]),
   {"branch":"feature/account-suspension","path":"apps/backend"}
  )
+}
+
+# ---------------------------------------------------------------------------
+# Parametric repositories published by the Engineer console.
+# ---------------------------------------------------------------------------
+console_repos := {"gitea://gitea.local/thesis/shop": {
+	"base_branch": "master",
+	"protected_branches": ["master", "release"],
+	"work_branch_prefix": "agent/",
+	"forbidden_path_prefixes": [".github/", "security/"],
+	"runner_profile": "node-default",
+	"allow_pull_request": true,
+}}
+
+shop_repo := "gitea://gitea.local/thesis/shop"
+shop_branch := "agent/session-7"
+shop_branch_uri := "gitea://gitea.local/thesis/shop/branches/agent%2Fsession-7"
+
+shop_input(tool, resource, arguments, session_branch) := object.union(
+	object.union(make_input(tool, resource, arguments), {"repository": {
+		"authority": "gitea.local", "owner": "thesis", "repository": "shop",
+	}}),
+	{"session_work_branch": session_branch},
+)
+
+test_console_repo_allows_signed_session_branch_update if {
+	allow with input as shop_input("update_file", sprintf("%s/files/src/app.js", [shop_branch_uri]),
+		{"branch": shop_branch, "path": "src/app.js"}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+}
+
+test_console_repo_uses_configured_base_branch_for_branch_and_pr if {
+	allow with input as shop_input("create_branch", shop_repo,
+		{"base_branch": "master", "branch": shop_branch}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+	not allow with input as shop_input("create_branch", shop_repo,
+		{"base_branch": "main", "branch": shop_branch}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+	allow with input as shop_input("create_pull_request", shop_repo,
+		{"head_branch": shop_branch, "base_branch": "master"}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+}
+
+test_console_repo_denies_branch_other_than_signed_session if {
+	not allow with input as shop_input("update_file",
+		"gitea://gitea.local/thesis/shop/branches/agent%2Fother/files/src/app.js",
+		{"branch": "agent/other", "path": "src/app.js"}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+}
+
+test_console_repo_denies_session_branch_that_is_protected_or_malformed if {
+	every bad in ["master", "release", "feature/x", "agent/../master", "agent/a//b", "agent/x.lock", "agent/"] {
+		not allow with input as shop_input("create_branch", shop_repo,
+			{"base_branch": "master", "branch": bad}, bad)
+			with data.thesis.console_repositories as console_repos
+	}
+}
+
+test_console_repo_forbidden_paths_block_writes_but_not_reads if {
+	every tool in ["update_file", "create_file"] {
+		not allow with input as shop_input(tool, sprintf("%s/files/security/keys.ts", [shop_branch_uri]),
+			{"branch": shop_branch, "path": "security/keys.ts"}, shop_branch)
+			with data.thesis.console_repositories as console_repos
+		not allow with input as shop_input(tool, sprintf("%s/files/.github/workflows/ci.yml", [shop_branch_uri]),
+			{"branch": shop_branch, "path": ".github/workflows/ci.yml"}, shop_branch)
+			with data.thesis.console_repositories as console_repos
+	}
+	allow with input as shop_input("read_file", sprintf("%s/files/security/keys.ts", [shop_branch_uri]),
+		{"branch": shop_branch, "path": "security/keys.ts"}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+}
+
+test_console_repo_runner_profile_and_pr_switch if {
+	allow with input as shop_input("run_tests", shop_branch_uri,
+		{"branch": shop_branch, "profile": "node-default"}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+	not allow with input as shop_input("run_tests", shop_branch_uri,
+		{"branch": shop_branch, "profile": "poc-default"}, shop_branch)
+		with data.thesis.console_repositories as console_repos
+	no_pr := {shop_repo: object.union(console_repos[shop_repo], {"allow_pull_request": false})}
+	not allow with input as shop_input("create_pull_request", shop_repo,
+		{"head_branch": shop_branch, "base_branch": "master"}, shop_branch)
+		with data.thesis.console_repositories as no_pr
+}
+
+test_console_repo_planning_reads_only_its_base_branch if {
+	base := shop_input("read_file", "gitea://gitea.local/thesis/shop/branches/master/files/src/app.js",
+		{"branch": "master", "path": "src/app.js"}, null)
+	orchestrator := object.union(base, {"agent_role": "orchestrator"})
+	planning := object.remove(orchestrator, ["session_work_branch"])
+	allow with input as planning with data.thesis.console_repositories as console_repos
+	write := object.union(planning, {"tool": "update_file",
+		"required_permission": {"resource": "gitea://gitea.local/thesis/shop/branches/master/files/src/app.js",
+			"operation": "update_file"}})
+	not allow with input as write with data.thesis.console_repositories as console_repos
+}
+
+test_unconfigured_repository_is_denied if {
+	other := object.union(make_input("read_file",
+		"gitea://gitea.local/thesis/unknown/branches/agent%2Fx/files/a.js",
+		{"branch": "agent/x", "path": "a.js"}), {"repository": {
+		"authority": "gitea.local", "owner": "thesis", "repository": "unknown"},
+		"session_work_branch": "agent/x"})
+	not allow with input as other with data.thesis.console_repositories as console_repos
+}
+
+test_console_config_overrides_builtin_for_same_repository if {
+	override := {repo_uri: {
+		"base_branch": "main", "protected_branches": ["main"], "work_branch_prefix": "agent/",
+		"forbidden_path_prefixes": [], "runner_profile": "poc-default", "allow_pull_request": true,
+	}}
+	not allow with input as make_input("read_file", backend_file,
+		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"})
+		with data.thesis.console_repositories as override
 }

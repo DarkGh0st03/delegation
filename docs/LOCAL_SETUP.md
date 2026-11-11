@@ -86,25 +86,23 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
 | Login Engineer | Password con hash scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
 | 1 · Ambiente | Gitea, OPA, Anvil, contratti, moduli Rust, avvio del core dell'Engineer (identità on-chain) e del verificatore del Gateway |
 | 2 · Repository | Elenco e import da URL https pubblico, con protezione del branch principale |
-| 3 · Policy | Parametri salvati per repository. **Non ancora applicati da OPA** |
+| 3 · Policy | Parametri per repository pubblicati su OPA e applicati dal Gateway (branch protetti, branch di lavoro firmato, percorsi non modificabili, profilo dei test, Draft PR) |
 | 4 · Requisito | Richiesta salvata con la commit di base fissata |
 | 5 · Planning e permessi | Da realizzare |
 | 6 · Esecuzione | Da realizzare |
 
 ## Prossimi passi
 
-1. Policy OPA parametrica che legge i parametri della console (sostituisce i
-   valori cablati `feature/account-suspension` e `iam-console-poc`).
-2. Collegare la console al Review Host esistente
+1. Collegare la console al Review Host esistente
    (`poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs`):
    Root preliminare, Planning, revisione dei permessi (solo rimozione o
    restrizione), firma Ed25519, Root operativa, Execution, Draft PR.
-3. Runner in un container dedicato: è l'unico servizio che riceverà l'accesso al
+2. Runner in un container dedicato: è l'unico servizio che riceverà l'accesso al
    socket Docker, per avviare i container di test (compromesso da dichiarare nel
    threat model).
-4. Prima esecuzione senza Gemini (modelli scriptati), poi Gemini reale solo con
+3. Prima esecuzione senza Gemini (modelli scriptati), poi Gemini reale solo con
    consenso esplicito ai costi.
-5. Tappa 2: Gateway, Orchestrator e agenti in container separati con reti
+4. Tappa 2: Gateway, Orchestrator e agenti in container separati con reti
    isolate, così gli agenti non possono raggiungere Gitea se non tramite il Gateway.
 
 ## Problemi frequenti

@@ -32,6 +32,19 @@ export class ConsoleStore {
     return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : undefined;
   }
 
+  /** All saved policies (metadata stripped), for publication to OPA. */
+  listPolicies() {
+    return readdirSync(join(this.#dir, "policies"))
+      .filter(f => f.endsWith(".json"))
+      .map(f => {
+        const {saved_at: _ignored, ...policy} =
+          JSON.parse(readFileSync(join(this.#dir, "policies", f), "utf8"));
+        return policy;
+      })
+      .sort((a, b) => `${a.repository.owner}/${a.repository.name}`
+        .localeCompare(`${b.repository.owner}/${b.repository.name}`));
+  }
+
   savePolicy(policy) {
     const {owner, name} = policy.repository;
     this.#write(this.#policyPath(owner, name), {...policy, saved_at: new Date().toISOString()});

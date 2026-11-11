@@ -292,3 +292,47 @@ test("native environment maps every role identity and refuses missing configurat
   const {ROLE_DID_TEST: _drop, ...incomplete} = local;
   assert.throws(() => nativeEnvironment({local: incomplete, trust, anvilUrl: "x"}), /ROLE_DID_TEST/u);
 });
+
+test("saving a policy publishes the parameters to OPA as data, keyed by repository URI", async (t) => {
+  const {OpaPolicyPublisher, opaDocument} = await import("../src/opa.mjs");
+  const calls = [];
+  const fakeOpa = new OpaPolicyPublisher({opaUrl: "http://opa:8181", fetchFn: async (url, init) => {
+    calls.push({url, init}); return new Response(null, {status: 204});
+  }});
+  const dir = mkdtempSync(join(tmpdir(), "console-opa-"));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  let handler;
+  const server = createServer((req, res) => handler(req, res));
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  t.after(() => server.close());
+  const port = server.address().port;
+  handler = createConsoleHandler({auth: new ConsoleAuth({users: {engineer: hashPassword("correct-horse")}}),
+    gitea: new FakeGitea(), store: new ConsoleStore(join(dir, "c")), opa: fakeOpa,
+    health: async () => ({}), port});
+  const base = `http://127.0.0.1:${port}`;
+  const login = await fetch(base + "/api/login", {method: "POST",
+    headers: {"content-type": "application/json", "x-console-request": "1"},
+    body: JSON.stringify({username: "engineer", password: "correct-horse"})});
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const policy = {...defaultPolicy(REPO), forbidden_path_prefixes: ["security/"]};
+  const r = await fetch(base + `/api/repos/${REPO.name}/policy`, {method: "PUT",
+    headers: {"content-type": "application/json", "x-console-request": "1", cookie},
+    body: JSON.stringify(policy)});
+  const body = await r.json();
+  assert.equal(body.opa_published, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://opa:8181/v1/data/thesis/console_repositories");
+  const sent = JSON.parse(calls[0].init.body);
+  assert.deepEqual(Object.keys(sent), ["gitea://gitea.local/thesis/iam-console-poc"]);
+  assert.deepEqual(sent["gitea://gitea.local/thesis/iam-console-poc"], {
+    base_branch: "main", protected_branches: ["main"], work_branch_prefix: "agent/",
+    forbidden_path_prefixes: ["security/"], runner_profile: "poc-default", allow_pull_request: true});
+  assert.ok(!("agents_may_merge" in sent["gitea://gitea.local/thesis/iam-console-poc"]));
+  assert.deepEqual(opaDocument([]), {});
+});
+
+test("OPA document comparison ignores key order", async () => {
+  const {canonicalJson} = await import("../src/opa.mjs");
+  assert.equal(canonicalJson({b: 1, a: [{d: 2, c: 3}]}), canonicalJson({a: [{c: 3, d: 2}], b: 1}));
+  assert.notEqual(canonicalJson({a: [1, 2]}), canonicalJson({a: [2, 1]}));
+});
