@@ -9,6 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {spawn} from "node:child_process";
+import {createServer as createUnixServer} from "node:net";
 import {randomBytes} from "node:crypto";
 import {mkdtemp,mkdir,chmod,chown,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
@@ -494,6 +495,45 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    await assert.rejects(startDisposableOriginalPrivilegedThreeRoleWorkers({
     ...trustedLaunch,...variant
    }),/Disposable original A2A subprocess launcher NO-GO/u,label);
+  }
+  // A listening Unix socket is NOT proof of a native Rust signer.
+  // Reject it before any A2A spawn when its owner-created Linux group,
+  // socket mode or directory ACL differs from the pinned Backend role.
+  const fakeRustDir=join(root,"fake-native-backend");
+  await mkdir(fakeRustDir,{mode:0o700});
+  await chown(fakeRustDir,1001,2302); // deliberately Frontend's group
+  await chmod(fakeRustDir,0o2750);
+  const fakeRustSocket=join(fakeRustDir,"native.sock");
+  const fakeRust=createUnixServer(()=>{throw Error("No Rust signer here");});
+  await new Promise((resolve,reject)=>{
+   fakeRust.once("error",reject);
+   fakeRust.listen(fakeRustSocket,resolve);
+  });
+  try{
+   await chown(fakeRustSocket,1001,2302);
+   await chmod(fakeRustSocket,0o660);
+   const invalidRust={
+    ...configs,backend:{...configs.backend,
+     nativeCryptoSocketPath:fakeRustSocket,
+     nativeSignerDid:"did:thesis:backend-agent"}
+   };
+   const rejectNative=async label=>assert.rejects(
+    startDisposableOriginalPrivilegedThreeRoleWorkers({
+     configs:invalidRust,scopes,ownerPid:owner.pid,ownerCanaryPath,
+     offlineSyntheticOnly:true
+    }),/subprocess launcher NO-GO/u,label
+   );
+   await rejectNative("foreign specialist GID cannot authenticate Rust socket");
+   await chown(fakeRustSocket,1001,2301);
+   await rejectNative("wrong native Rust directory GID cannot be bypassed");
+   await chown(fakeRustDir,1001,2301);
+   await chmod(fakeRustSocket,0o666);
+   await rejectNative("world-writable Rust socket must be rejected");
+   await chmod(fakeRustSocket,0o660);
+   await chmod(fakeRustDir,0o2755);
+   await rejectNative("world-traversable Rust directory must be rejected");
+  }finally{
+   await new Promise(resolve=>fakeRust.close(resolve));
   }
   // The ORIGINAL three-role privileged launcher now starts exactly three
   // existing A2A workers. The Docker fixture no longer fabricates readiness
