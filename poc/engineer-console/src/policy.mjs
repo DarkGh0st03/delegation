@@ -12,6 +12,7 @@ const PREFIX = /^[a-z0-9][a-z0-9._-]{0,30}\/$/u;
 const PROFILE = /^[a-z0-9][a-z0-9-]{0,40}$/u;
 
 export const DEFAULT_FORBIDDEN_PATHS = Object.freeze([".github/", "security/"]);
+export const SUPPORTED_WORK_BRANCH_PREFIX = "feature/";
 
 export function defaultPolicy(repository) {
   return {
@@ -19,7 +20,7 @@ export function defaultPolicy(repository) {
     repository: {owner: repository.owner, name: repository.name},
     base_branch: repository.default_branch,
     protected_branches: [repository.default_branch],
-    work_branch_prefix: "agent/",
+    work_branch_prefix: SUPPORTED_WORK_BRANCH_PREFIX,
     forbidden_path_prefixes: [...DEFAULT_FORBIDDEN_PATHS],
     runner_profile: "poc-default",
     allow_pull_request: true,
@@ -61,6 +62,10 @@ export function validatePolicy(raw, repository) {
   if (typeof raw.work_branch_prefix !== "string" || !PREFIX.test(raw.work_branch_prefix) ||
       raw.protected_branches.some(b => b.startsWith(raw.work_branch_prefix)))
     throw Error("Work branch prefix must look like 'agent/' and not match a protected branch");
+  // The canonical authority-only Planner/Gateway still derive work branches
+  // as "feature/<id>": refuse a prefix that Planning would reject later.
+  if (raw.work_branch_prefix !== SUPPORTED_WORK_BRANCH_PREFIX)
+    throw Error(`Per ora il prefisso del branch di lavoro deve essere "${SUPPORTED_WORK_BRANCH_PREFIX}"`);
   if (!Array.isArray(raw.forbidden_path_prefixes) || raw.forbidden_path_prefixes.length > 32 ||
       !raw.forbidden_path_prefixes.every(safePathPrefix))
     throw Error("Forbidden paths must be relative repository paths");

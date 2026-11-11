@@ -84,6 +84,31 @@ export class GiteaAdmin {
   }
 
   /**
+   * Trusted owner snapshot: every file and directory path at an exact
+   * commit (Gitea recursive tree, paginated). Paths only, never content.
+   */
+  async repositoryTree(name, sha, {maxPaths = 4096} = {}) {
+    validateRepoName(name);
+    if (!/^[a-f0-9]{40}$/u.test(sha)) throw Error("Invalid commit SHA");
+    const files = [], directories = [""];
+    for (let page = 1; ; page++) {
+      const body = await this.#call("GET", `/repos/${encodeURIComponent(this.#org)}/` +
+        `${encodeURIComponent(name)}/git/trees/${sha}?recursive=true&per_page=1000&page=${page}`);
+      for (const entry of body?.tree ?? []) {
+        if (entry.type === "blob") files.push(entry.path);
+        else if (entry.type === "tree") directories.push(entry.path);
+      }
+      if (files.length + directories.length > maxPaths)
+        throw Error(`La repository ha più di ${maxPaths} percorsi: troppo grande per il Planning`);
+      const total = Number(body?.total_count ?? 0);
+      if (!body?.truncated && (body?.tree?.length ?? 0) < 1000) break;
+      if (total && files.length + directories.length - 1 >= total) break;
+      if (page > 10) throw Error("Albero della repository troppo grande");
+    }
+    return {files: [...new Set(files)].sort(), directories: [...new Set(directories)].sort()};
+  }
+
+  /**
    * Import a public repository and apply the same baseline protections as
    * poc/scripts/bootstrap-gitea.sh: protected default branch, Gateway write
    * collaborator, Runner read collaborator.

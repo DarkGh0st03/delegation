@@ -117,7 +117,7 @@ test("static files are served from a fixed allow-list only", async (t) => {
 test("default policy protects the main branch and forbids agent merges", () => {
   const p = defaultPolicy(REPO);
   assert.deepEqual(p.protected_branches, ["main"]);
-  assert.equal(p.work_branch_prefix, "agent/");
+  assert.equal(p.work_branch_prefix, "feature/");
   assert.equal(p.agents_may_merge, false);
   assert.deepEqual(validatePolicy(p, REPO), p);
 });
@@ -129,6 +129,8 @@ test("policy validation refuses weakening or malformed parameters", () => {
     {...base, protected_branches: ["develop"]},
     {...base, work_branch_prefix: "main"},
     {...base, work_branch_prefix: "ma/", protected_branches: ["main", "ma/x"]},
+    // Well-formed, but Planning still derives work branches as "feature/<id>".
+    {...base, work_branch_prefix: "agent/"},
     {...base, forbidden_path_prefixes: ["../etc/"]},
     {...base, forbidden_path_prefixes: ["/abs/"]},
     {...base, base_branch: "develop"},
@@ -325,7 +327,7 @@ test("saving a policy publishes the parameters to OPA as data, keyed by reposito
   const sent = JSON.parse(calls[0].init.body);
   assert.deepEqual(Object.keys(sent), ["gitea://gitea.local/thesis/iam-console-poc"]);
   assert.deepEqual(sent["gitea://gitea.local/thesis/iam-console-poc"], {
-    base_branch: "main", protected_branches: ["main"], work_branch_prefix: "agent/",
+    base_branch: "main", protected_branches: ["main"], work_branch_prefix: "feature/",
     forbidden_path_prefixes: ["security/"], runner_profile: "poc-default", allow_pull_request: true});
   assert.ok(!("agents_may_merge" in sent["gitea://gitea.local/thesis/iam-console-poc"]));
   assert.deepEqual(opaDocument([]), {});
@@ -335,4 +337,29 @@ test("OPA document comparison ignores key order", async () => {
   const {canonicalJson} = await import("../src/opa.mjs");
   assert.equal(canonicalJson({b: 1, a: [{d: 2, c: 3}]}), canonicalJson({a: [{c: 3, d: 2}], b: 1}));
   assert.notEqual(canonicalJson({a: [1, 2]}), canonicalJson({a: [2, 1]}));
+});
+
+test("password re-check for signing creates no session and shares the lockout", () => {
+  const auth = new ConsoleAuth({users: {engineer: hashPassword("correct-horse")}});
+  assert.equal(auth.verifyPassword("engineer", "correct-horse"), true);
+  assert.equal(auth.verifyPassword("engineer", "wrong-one"), false);
+  assert.deepEqual(Object.keys(auth.userRecord("engineer")).sort(), ["hash", "salt"]);
+  assert.equal(auth.userRecord("nobody"), undefined);
+});
+
+test("scripted planner selects files by requirement keywords and declares itself simulated", async () => {
+  const {selectPlanningFiles, scriptedProposal} = await import("../src/scripted-planner-model.mjs");
+  const files = ["README.md", "apps/backend/src/users/user.service.ts",
+    "apps/backend/src/users/account-status.ts", "apps/frontend/src/pages/UserDetailPage.tsx",
+    "docs/guide.md", "packages/shared/src/index.ts"];
+  const chosen = selectPlanningFiles(files, "Allow an administrator to suspend and reactivate an account");
+  assert.deepEqual(chosen, ["apps/backend/src/users/account-status.ts"]);
+  assert.deepEqual(selectPlanningFiles(files, "Suspend a user account"), [
+    "apps/backend/src/users/account-status.ts", "apps/backend/src/users/user.service.ts",
+    "apps/frontend/src/pages/UserDetailPage.tsx"]);
+  const proposal = scriptedProposal(chosen);
+  assert.equal(proposal.requested_permissions.length, 5);
+  assert.match(proposal.assumptions[0], /SIMULATA/u);
+  const fallback = selectPlanningFiles(files, "Improve something vague");
+  assert.ok(fallback.length > 0 && fallback.every(f => !f.endsWith(".md")));
 });

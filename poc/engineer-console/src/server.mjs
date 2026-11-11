@@ -14,6 +14,7 @@ import {checkEnvironment} from "./health.mjs";
 import {ConsoleStore} from "./store.mjs";
 import {OpaPolicyPublisher} from "./opa.mjs";
 import {startTrustedCore} from "./trusted-core.mjs";
+import {EngineerSessions} from "./sessions.mjs";
 
 const config = loadLocalConfig();
 const users = readUserFile(config.usersPath);
@@ -56,14 +57,17 @@ async function policySync() {
 }
 policySync().catch(() => {});
 
+const gitea = new GiteaAdmin({
+  baseUrl: config.giteaUrl, adminUser: config.giteaAdminUser,
+  adminPassword: config.giteaAdminPassword, org: config.giteaOrg,
+  gatewayUser: config.giteaGatewayUser, runnerUser: config.giteaRunnerUser
+});
+const sessions = config.composeMode
+  ? new EngineerSessions({config, core, gitea, store, opa}) : undefined;
+
 const handler = createConsoleHandler({
   auth: new ConsoleAuth({users}),
-  gitea: new GiteaAdmin({
-    baseUrl: config.giteaUrl, adminUser: config.giteaAdminUser,
-    adminPassword: config.giteaAdminPassword, org: config.giteaOrg,
-    gatewayUser: config.giteaGatewayUser, runnerUser: config.giteaRunnerUser
-  }),
-  store, opa,
+  gitea, store, opa, sessions,
   health: () => checkEnvironment(config,
     config.composeMode ? {trustedCore: core, policySync} : {policySync}),
   port: config.consolePort

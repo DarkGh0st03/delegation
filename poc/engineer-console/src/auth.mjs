@@ -55,8 +55,27 @@ export class ConsoleAuth {
 
   get hasUsers() { return Object.keys(this.#users).length > 0; }
 
+  /** scrypt salt/hash of a user (for the Engineer review host), never the password. */
+  userRecord(username) {
+    const record = Object.hasOwn(this.#users, username) ? this.#users[username] : undefined;
+    return record ? {salt: record.salt, hash: record.hash} : undefined;
+  }
+
+  /** Re-check the password of an authenticated user before signing
+   * (same lockout as login; creates no session). */
+  verifyPassword(username, password) {
+    try { this.#checkPassword(username, password); return true; } catch { return false; }
+  }
+
   /** Returns a session token, or throws a generic error. */
   login(username, password) {
+    const key = this.#checkPassword(username, password);
+    const token = randomBytes(32).toString("base64url");
+    this.#sessions.set(token, {username: key, expiresAt: this.#now() + this.#ttlMs});
+    return token;
+  }
+
+  #checkPassword(username, password) {
     const key = typeof username === "string" ? username : "";
     const failure = this.#failures.get(key);
     if (failure && failure.lockedUntil > this.#now())
@@ -81,9 +100,7 @@ export class ConsoleAuth {
       throw Error("Invalid username or password");
     }
     this.#failures.delete(key);
-    const token = randomBytes(32).toString("base64url");
-    this.#sessions.set(token, {username: key, expiresAt: this.#now() + this.#ttlMs});
-    return token;
+    return key;
   }
 
   /** Returns the username for a live session token, or undefined. */

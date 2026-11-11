@@ -66,7 +66,7 @@ function validateRequirement(text) {
   return trimmed;
 }
 
-export function createConsoleHandler({auth, gitea, store, health, port, opa}) {
+export function createConsoleHandler({auth, gitea, store, health, port, opa, sessions}) {
   const allowedOrigins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
 
   function requireMutationGuards(req) {
@@ -114,7 +114,8 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa}) {
 
       if (method === "GET" && path === "/api/me") {
         const user = auth.verify(sessionTokenFromCookie(req.headers.cookie));
-        return send(res, 200, {username: user ?? null, users_configured: auth.hasUsers});
+        return send(res, 200, {username: user ?? null, users_configured: auth.hasUsers,
+          gemini_available: Boolean(process.env.GEMINI_API_KEY)});
       }
       if (method === "POST" && path === "/api/login") {
         const body = await readJson(req);
@@ -168,6 +169,27 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa}) {
           return send(res, 200, {repository, policy, policy_source: "saved",
             opa_published: opaPublished, ...(opaError ? {opa_error: opaError} : {})});
         }
+      }
+      const planningMatch = /^\/api\/requests\/([a-f0-9-]{36})\/planning$/u.exec(path);
+      if (planningMatch && method === "POST") {
+        if (!sessions) throw new HttpError(503, "Le sessioni sono disponibili solo nell'avvio con Docker");
+        const request = store.getRequest(planningMatch[1]);
+        if (!request) throw new HttpError(404, "Richiesta non trovata");
+        const body = await readJson(req);
+        try {
+          const session = sessions.start({request, mode: body.mode,
+            geminiConsent: body.gemini_consent === true, username,
+            userRecord: auth.userRecord(username)});
+          return send(res, 202, {session});
+        } catch (error) { throw new HttpError(409, error.message); }
+      }
+      if (method === "GET" && path === "/api/sessions")
+        return send(res, 200, {sessions: sessions ? sessions.list() : []});
+      const sessionMatch = /^\/api\/sessions\/(s-[a-f0-9]{12})$/u.exec(path);
+      if (sessionMatch && method === "GET") {
+        const session = sessions?.get(sessionMatch[1]);
+        if (!session) throw new HttpError(404, "Sessione non trovata");
+        return send(res, 200, {session});
       }
       if (method === "GET" && path === "/api/requests")
         return send(res, 200, {requests: store.listRequests()});
