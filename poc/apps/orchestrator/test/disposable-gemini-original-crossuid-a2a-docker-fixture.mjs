@@ -384,6 +384,38 @@ test("all three original specialists simultaneously under ONE offline owner, sep
    assert.equal(card.name,cardName);
    assert.equal(card.supportedInterfaces[0].url,actual.baseUrl+"/a2a/rest");
   }
+  // For every role, the kernel must refuse all three HMAC secrets from
+  // the NEXT specialist's Linux UID/GID. Verify OS file permissions,
+  // not merely a reported A2A role or a mock credential flag.
+  const foreignSecretProbe=[
+   'const {open}=await import("node:fs/promises");',
+   'try{const fd=await open(process.argv[1],"r");await fd.close();',
+   ' process.stdout.write("UNSAFE");}',
+   'catch(error){if(["EACCES","EPERM"].includes(error.code))',
+   ' process.stdout.write("DENIED");else throw error;}'
+  ].join("\n");
+  for(let i=0;i<roles.length;i++){
+   const [,uid,gid]=roles[i],foreignRole=roles[(i+1)%roles.length][0];
+   for(const secretFile of [
+    configs[foreignRole].modelSecretFile,
+    configs[foreignRole].stageSecretFile,
+    configs[foreignRole].bindSecretFile
+   ]){
+    const probe=spawnAs(uid,gid,[],[
+     "--input-type=module","-e",foreignSecretProbe,secretFile
+    ]);
+    const outcome=await new Promise((resolve,reject)=>{
+     let stdout="",stderr="";
+     probe.stdout.on("data",chunk=>stdout+=chunk);
+     probe.stderr.on("data",chunk=>stderr+=chunk);
+     probe.once("error",reject);
+     probe.once("close",code=>resolve({code,stdout,stderr}));
+    });
+    assert.equal(outcome.code,0,outcome.stderr.slice(-300));
+    assert.equal(outcome.stdout,"DENIED",
+     "foreign role must not read other specialist's model/stage/bind HMAC");
+   }
+  }
   assert.equal(owner.exitCode,null);
   // No signed Child, Root, Gemini model call or Gateway effect was started.
  }finally{
