@@ -117,3 +117,102 @@ export function createDisposableOriginalNativeIpcTaskAdmission({
   get boundTaskCount(){return admitted.size;}
  });
 }
+
+
+/**
+ * Bind all THREE existing specialist model channels to one ORIGINAL
+ * Review Host Root. This is the owner-only composition of the per-Task
+ * R323 ledger above, NOT an alternative signer, Owner, planner or worker.
+ *
+ * roleAuthorizers can be passed directly to the existing owner-side
+ * startDisposableOwnerModelIpcServer for each role. They reject all calls
+ * until the SAME Review Host supplies its one-use native prebind receipt
+ * through onNativeOriginalTaskPrebound. No model delegate, API key, Root
+ * bearer or worker endpoint is held here.
+ *
+ * The receipt is never copied, saved or accepted from an IPC body. This
+ * factory alone DOES NOT provide Linux isolation or enable paid Gemini.
+ */
+export function createDisposableOriginalThreeRoleModelTaskAdmission(){
+ const roles=Object.keys(LIMIT);
+ const ledgers=new Map();
+ const active=new Map(roles.map(role=>[role,new Set()]));
+ const admitted=new Map(roles.map(role=>[role,0]));
+ const fenced=new Map(roles.map(role=>[role,0]));
+ let rootPin=null,closed=false;
+ const originalRoot=assertOriginalRootActive=>{
+  if(typeof assertOriginalRootActive!=="function")deny();
+  const root=assertOriginalRootActive();
+  if(!root||!ID.test(root.session_id??"")||
+     !ID.test(root.root_credential_id??"")||
+     !DIGEST.test(root.authority_digest??""))deny();
+  const pin=[root.session_id,root.root_credential_id,root.authority_digest];
+  if(rootPin&&pin.some((v,i)=>v!==rootPin[i])){
+   closed=true;
+   for(const entry of ledgers.values())entry.retireAll();
+   deny();
+  }
+  return pin;
+ };
+ const onNativeOriginalTaskPrebound=({
+  role,receipt,assertOriginalRootActive
+ }={})=>{
+  if(closed||!Object.hasOwn(LIMIT,role??"")||
+     !receipt||typeof receipt!=="object")deny();
+  // The Root callback must be the one the original Review Host created
+  // at R323, never derived from a worker claim or a JSON receipt.
+  const pin=originalRoot(assertOriginalRootActive);
+  let ledger=ledgers.get(role);
+  if(!ledger){
+   ledger=createDisposableOriginalNativeIpcTaskAdmission({
+    role,assertOriginalRootActive
+   });
+   ledgers.set(role,ledger);
+  }
+  const result=ledger.bindOriginalReceipt(receipt);
+  if(result.status!==
+     "original_native_child_gateway_model_task_prebound_not_executed")deny();
+  if(!rootPin)rootPin=pin;
+  const taskId=receipt.runtime_task_id;
+  active.get(role).add(taskId);
+  admitted.set(role,admitted.get(role)+1);
+  let finished=false;
+  return ()=>{
+   if(finished)return;
+   finished=true;
+   // Closing the owner cancels all model authority before any asynchronous
+   // socket/worker shutdown; a late retirement cannot revive a Task.
+   if(!closed)ledger.retireTask(taskId);
+   active.get(role).delete(taskId);
+   fenced.set(role,fenced.get(role)+1);
+  };
+ };
+ const roleAuthorizers=Object.freeze(Object.fromEntries(roles.map(role=>
+  [role,async input=>{
+   if(closed||!input||input.role!==role)deny();
+   const ledger=ledgers.get(role);
+   if(!ledger)deny();
+   return ledger.authorizeSignedTask(input);
+  }]
+ )));
+ const retireAll=()=>{
+  if(closed)return;
+  closed=true;
+  for(const ledger of ledgers.values())ledger.retireAll();
+  for(const items of active.values())items.clear();
+ };
+ // Aggregate only non-secret counts. An owner cannot use these numbers as
+ // Gateway evidence, a Rust signature, or a paid launch authorization.
+ const snapshot=()=>Object.freeze({
+  closed,original_native_root_bound:rootPin!==null,
+  admitted:Object.freeze(Object.fromEntries(
+   roles.map(role=>[role,admitted.get(role)]))),
+  fenced:Object.freeze(Object.fromEntries(
+   roles.map(role=>[role,fenced.get(role)]))),
+  active:Object.freeze(Object.fromEntries(
+   roles.map(role=>[role,active.get(role).size])))
+ });
+ return Object.freeze({
+  onNativeOriginalTaskPrebound,roleAuthorizers,retireAll,snapshot
+ });
+}
