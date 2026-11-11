@@ -322,7 +322,7 @@ jobs:
   runner-evidence-docker:
     name: Real Docker failure evidence round trip (no AI)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -340,3 +340,9 @@ jobs:
         env:
           DELEGATION_ORIGINAL_CROSSUID_REAL_DOCKER: '1'
         run: node --test poc/apps/orchestrator/test/disposable-gemini-original-crossuid-model-docker.test.mjs
+      - name: Install pinned offline A2A runtime for separate UID Docker proof
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Cross-UID real Backend A2A using model, stage and bind channels (no AI)
+        env:
+          DELEGATION_ORIGINAL_CROSSUID_A2A_DOCKER: '1'
+        run: node --test poc/apps/orchestrator/test/disposable-gemini-original-crossuid-a2a-docker.test.mjs
