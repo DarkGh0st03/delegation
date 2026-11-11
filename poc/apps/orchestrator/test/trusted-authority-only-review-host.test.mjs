@@ -997,6 +997,15 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
     session_id:assertOriginalRootActive().session_id,
     credential_id:credentialId
    });
+   // A live Rust presentation is admissible ONLY for the exact genuine
+   // Child bound by this one-use R323 receipt. No worker A2A text or
+   // role-correct HMAC can authorize a foreign Child.
+   assert.equal(threeRoleModelGate.authorizeNativePresentation({
+    role,credentialId
+   }),true);
+   assert.throws(()=>threeRoleModelGate.authorizeNativePresentation({
+    role,credentialId:'urn:foreign:child:'+role
+   }),/Disposable original signed IPC Task admission NO-GO/u);
    const modelCall=threeRoleModelGate.roleAuthorizers[role]({
     role,task,callId:'r368-native-model-turn-'+role+'-001'
    });
@@ -1539,6 +1548,10 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
      {backend:0,frontend:0,test:0});
     for(const record of modelPrebinds){
      assert.equal(await record.modelCall,true);
+     assert.throws(()=>threeRoleModelGate.authorizeNativePresentation({
+      role:record.role,credentialId:record.task.credential_id
+     }),/Disposable original signed IPC Task admission NO-GO/u,
+     'a real Rust VP may never be signed for a retired Child');
      await assert.rejects(threeRoleModelGate.roleAuthorizers[record.role]({
       role:record.role,task:record.task,
       callId:'r368-after-remote-task-fence-'+record.role
@@ -1554,6 +1567,10 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
     }),/Disposable original signed IPC Task admission NO-GO/u);
     assert.equal(threeRoleModelGate.snapshot().closed,true);
     for(const role of ['backend','frontend','test']){
+     const expired=modelPrebinds.find(p=>p.role===role);
+     assert.throws(()=>threeRoleModelGate.authorizeNativePresentation({
+      role,credentialId:expired.task.credential_id
+     }),/Disposable original signed IPC Task admission NO-GO/u);
      await assert.rejects(threeRoleModelGate.roleAuthorizers[role]({
       role,task:modelPrebinds.find(p=>p.role===role).task,
       callId:'r368-root-closed-'+role+'-002'
