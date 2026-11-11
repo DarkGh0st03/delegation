@@ -161,6 +161,9 @@ jobs:
           node --experimental-strip-types --test --test-name-pattern="R382.5|R382.6" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
           # Signed native Task prebind and one-use owner model gate: FREE scripted Review Host only.
           node --experimental-strip-types --test --test-name-pattern="Disposable native R323" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
+          # One original signed adaptive Root, three SDK A2A agents, three per-role
+          # native prebind receipts and terminal owner-model IPC retirement (FREE).
+          node --experimental-strip-types --test --test-name-pattern="R368.1 original Review Host dynamically selects all 3 agents" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
           node --test poc/apps/orchestrator/test/trusted-gemini-owner-dispatch.test.mjs
           node --experimental-strip-types --test --test-name-pattern="R382.4" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
           node --test poc/scripts/test/r3822-native-mcp-checkpoint-isolation.test.mjs
