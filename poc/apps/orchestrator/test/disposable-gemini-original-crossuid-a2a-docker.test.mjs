@@ -18,11 +18,23 @@ test("offline real Backend, Frontend and Test A2A under distinct role-scoped Lin
   "node","--experimental-strip-types","--test",
   "/work/poc/apps/orchestrator/test/disposable-gemini-original-crossuid-a2a-docker-fixture.mjs"
  ];
- const {stdout,stderr}=await exec("docker",args,{
-  timeout:110_000,maxBuffer:1024*1024,
-  env:{PATH:process.env.PATH??"/usr/bin:/bin",
-   HOME:process.env.HOME??"/tmp"}
- });
+ let stdout,stderr;
+ try{
+  ({stdout,stderr}=await exec("docker",args,{
+   timeout:110_000,maxBuffer:1024*1024,
+   env:{PATH:process.env.PATH??"/usr/bin:/bin",
+    HOME:process.env.HOME??"/tmp"}
+  }));
+ }catch(error){
+  // No provider key or private credential is mounted in this Docker test.
+  // Still print ONLY TAP failure metadata, never stdout wholesale.
+  const lines=String(error?.stdout??"").split("\n");
+  const diagnostic=lines.filter(line=>
+   /(?:not ok [0-9]|failureType:|error:|code:|original three-role|native NO-GO|owner exited)/u.test(line)
+  ).map(line=>line.slice(0,300)).slice(0,12);
+  throw Error("Offline original cross-UID Docker test failed: "+
+   (diagnostic.join(" | ")||String(error?.code??"unknown")));
+ }
  assert.match(stdout,/pass 4/u,stderr.slice(-1200));
  assert.match(stdout,/fail 0/u,stderr.slice(-1200));
 });
