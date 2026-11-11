@@ -37,6 +37,13 @@ function bindAddress(value: string): { host: string; port: number } {
   };
 }
 
+function branchPrefix(value: string): string {
+  if (!/^[a-z0-9][a-z0-9._-]{0,30}\/$/u.test(value)) {
+    throw new Error("TEST_RUNNER_BRANCH_PREFIX must look like 'feature/'");
+  }
+  return value;
+}
+
 export function runnerConfigFromEnv(): RunnerServiceConfig {
   const bind = bindAddress(process.env.TEST_RUNNER_BIND_ADDR ?? "0.0.0.0:8095");
   return {
@@ -49,7 +56,9 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
         "gitea://gitea.local/thesis/iam-console-poc",
       branch:
         process.env.TEST_RUNNER_BRANCH ??
-        "feature/account-suspension"
+        "feature/account-suspension",
+      ...(process.env.TEST_RUNNER_BRANCH_PREFIX
+        ? {branch_prefix: branchPrefix(process.env.TEST_RUNNER_BRANCH_PREFIX)} : {})
     },
     execution: {
       gitea_base_url: required("GITEA_RUNNER_BASE_URL").replace(/\/$/u, ""),
@@ -71,6 +80,8 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
         process.env.TEST_RUNNER_LOG_DIR ?? "/tmp/delegation-runner-logs",
       acceptance_enabled:
         (process.env.TEST_RUNNER_ACCEPTANCE_ENABLED ?? "true").toLowerCase() !== "false",
+      ...(process.env.TEST_RUNNER_ACCEPTANCE_VOLUME
+        ? {acceptance_volume: process.env.TEST_RUNNER_ACCEPTANCE_VOLUME} : {}),
       acceptance_dir:
         process.env.TEST_RUNNER_ACCEPTANCE_DIR ??
         fileURLToPath(new URL("../../../runner/acceptance/", import.meta.url))

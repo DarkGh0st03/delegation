@@ -229,14 +229,15 @@ $("request-form").addEventListener("submit", async (event) => {
 const PHASES = {
   planning: "Planning in corso (Root preliminare di sola lettura)",
   awaiting_review: "In attesa della tua revisione",
-  approving: "Firma e attivazione in corso",
-  operational: "Root operativa attiva",
+  approving: "Firma in corso",
+  executing: "Esecuzione in corso (Root operativa attiva)",
+  completed: "Completata (Root revocata)",
   stopping: "Revoca in corso",
   stopped: "Terminata (Root revocata)",
   failed: "Errore",
   interrupted: "Non più attiva (console riavviata)"
 };
-const BUSY = new Set(["planning", "approving", "stopping"]);
+const BUSY = new Set(["planning", "approving", "executing", "stopping"]);
 
 /** "gitea://gitea.local/o/r/branches/feature%2Fx/files/a/b.ts" -> {branch, path} */
 function describeResource(uri) {
@@ -286,7 +287,7 @@ async function loadSessions() {
     cell(tr, s.created_at.replace("T", " ").slice(0, 19));
     cell(tr, s.repository.owner + "/" + s.repository.name);
     cell(tr, s.requirement.slice(0, 80));
-    cell(tr, PHASES[s.phase] || s.phase, s.phase === "failed" ? "fail" : (s.phase === "operational" ? "ok" : ""));
+    cell(tr, PHASES[s.phase] || s.phase, s.phase === "failed" ? "fail" : (s.phase === "completed" ? "ok" : ""));
     rows.appendChild(tr);
   }
   return data.sessions;
@@ -318,13 +319,18 @@ async function showSession(id) {
   $("session-detail").hidden = false;
   $("sd-id").textContent = s.id;
   $("sd-phase").textContent = PHASES[s.phase] || s.phase;
-  $("sd-phase").className = s.phase === "failed" ? "fail" : (s.phase === "operational" ? "ok" : "");
+  $("sd-phase").className = s.phase === "failed" ? "fail" : (s.phase === "completed" ? "ok" : "");
   $("sd-repo").textContent = s.repository.owner + "/" + s.repository.name + " @ " + s.base_sha.slice(0, 12);
   $("sd-branch").textContent = s.work_branch;
-  $("sd-mode").textContent = s.mode === "gemini" ? "Gemini" : "Simulato (nessuna IA)";
+  $("sd-mode").textContent = s.mode === "gemini" ? "Gemini" : "Simulato (nessuna IA: le modifiche sono solo commenti marcati)";
+  $("sd-approved").textContent = s.approval ? s.approval.permission_count + " su " + s.proposal.permissions.length : "—";
+  const r = s.result;
+  $("sd-result").textContent = r ? (r.pr_created ? "Draft PR creata" : "Nessuna PR") +
+    (r.executed_tasks != null ? " · " + r.executed_tasks + " Task eseguiti" : "") + (r.reason ? " · " + r.reason : "") : "—";
+  showPullRequest($("sd-pr"), s.pull_request);
   $("sd-error").textContent = s.error || "";
   $("sd-review").hidden = s.phase !== "awaiting_review";
-  $("sd-stop").hidden = s.phase !== "operational";
+  $("sd-stop").hidden = s.phase !== "executing";
   const log = $("sd-log"); log.replaceChildren();
   for (const entry of s.log) li(log, entry.at.slice(11, 19) + " — " + entry.text);
   const rows = $("sd-gateway"); rows.replaceChildren();
@@ -408,7 +414,7 @@ $("rv-approve").addEventListener("click", async () => {
   try {
     await api("POST", "/api/sessions/" + currentSession + "/approve", {password, permission_ids: ids});
     $("review-dialog").close();
-    message("plan-msg", "Permessi firmati: Root preliminare revocata e Root operativa emessa.");
+    message("plan-msg", "Permessi firmati: l'esecuzione è partita (vedi Cronologia ed Esecuzione).");
   } catch (error) { $("rv-msg").textContent = error.message; $("rv-approve").disabled = false; }
   $("rv-password").value = "";
   await loadSessions(); await showSession(currentSession);
@@ -428,18 +434,38 @@ $("rv-reject").addEventListener("click", async () => {
 async function loadExecution() {
   const rows = $("exec-rows"); rows.replaceChildren();
   const data = await api("GET", "/api/sessions").catch(() => ({sessions: []}));
-  const active = data.sessions.filter(s => s.phase === "operational");
-  for (const s of active) {
+  const shown = data.sessions.filter(s => s.approval);
+  for (const s of shown) {
     const tr = document.createElement("tr");
-    const td = document.createElement("td"); const button = document.createElement("button");
-    button.textContent = "Interrompi (revoca la Root)";
-    button.addEventListener("click", () => stopSession(s.id, "exec-msg"));
-    td.appendChild(button); tr.appendChild(td);
+    const td = document.createElement("td");
+    if (s.phase === "executing") {
+      const button = document.createElement("button");
+      button.textContent = "Interrompi (revoca la Root)";
+      button.addEventListener("click", () => stopSession(s.id, "exec-msg"));
+      td.appendChild(button);
+    }
+    tr.appendChild(td);
     cell(tr, s.id); cell(tr, s.repository.owner + "/" + s.repository.name);
-    cell(tr, String(s.approval?.permission_count ?? "")); cell(tr, (s.operational?.expires_at || "").replace("T", " ").slice(0, 19));
+    cell(tr, PHASES[s.phase] || s.phase, s.phase === "failed" ? "fail" : (s.phase === "completed" ? "ok" : ""));
+    const allowed = s.gateway_decisions.filter(d => d.decision === "allow").length;
+    cell(tr, allowed + " consentite, " + (s.gateway_decisions.length - allowed) + " negate");
+    showPullRequest(cell(tr, ""), s.pull_request);
     rows.appendChild(tr);
   }
-  if (!active.length) { const tr = document.createElement("tr"); cell(tr, ""); cell(tr, "Nessuna sessione con Root operativa attiva."); rows.appendChild(tr); }
+  if (!shown.length) { const tr = document.createElement("tr"); cell(tr, ""); cell(tr, "Nessuna esecuzione: approva prima una proposta."); rows.appendChild(tr); }
+  if (shown.some(s => BUSY.has(s.phase)))
+    setTimeout(() => { if (!$("tab-execution").hidden) loadExecution(); }, 3000);
+}
+
+function showPullRequest(target, pr) {
+  target.replaceChildren();
+  if (!pr) { target.textContent = "—"; return; }
+  const a = document.createElement("a");
+  // Gitea is published on the local machine only.
+  try { const u = new URL(pr.url); a.href = "http://127.0.0.1:3000" + u.pathname; } catch { a.href = "#"; }
+  a.target = "_blank"; a.rel = "noopener";
+  a.textContent = "#" + pr.number + " " + pr.title;
+  target.appendChild(a);
 }
 
 // ---------- bootstrap ----------

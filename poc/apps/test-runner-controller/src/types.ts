@@ -69,4 +69,8 @@ export interface RunnerExecutor {
 export interface RunnerContractConfig {
   repository: string;
   branch: string;
+  /** Optional: accept any safe branch under this prefix instead of the
+   * single fixed branch (one Runner serving per-session work branches).
+   * The Gateway still binds every run_tests to the exact signed branch. */
+  branch_prefix?: string;
 }

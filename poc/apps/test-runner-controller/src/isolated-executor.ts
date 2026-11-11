@@ -65,6 +65,10 @@ export interface IsolatedRunnerConfig {
   failure_evidence_dir?: string;
   acceptance_enabled?: boolean;
   acceptance_dir?: string;
+  /** Docker named volume holding the acceptance suite (mounted read-only).
+   * Used when the Runner itself runs in a container: a bind source path
+   * would be resolved on the host, not inside the Runner container. */
+  acceptance_volume?: string;
 }
 
 interface CommandOptions {
@@ -330,7 +334,15 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         "-e",
         "CI=1"
       ];
-      if (this.#config.acceptance_enabled) {
+      if (this.#config.acceptance_enabled && this.#config.acceptance_volume) {
+        if (!/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(this.#config.acceptance_volume)) {
+          throw new Error("Invalid researcher acceptance volume name");
+        }
+        dockerCreateArgs.push(
+          "--mount",
+          `type=volume,src=${this.#config.acceptance_volume},dst=/workspace/.researcher-acceptance,readonly`
+        );
+      } else if (this.#config.acceptance_enabled) {
         if (!this.#config.acceptance_dir) {
           throw new Error("Researcher acceptance directory is not configured");
         }

@@ -165,6 +165,7 @@ services:
       GITEA_URL: http://gitea:3000
       OPA_URL: http://opa:8181
       ANVIL_URL: http://anvil:8545
+      RUNNER_URL: http://runner:8095
     volumes:
       - config:/config:ro
       - state:/state
@@ -177,6 +178,29 @@ services:
     networks: [infra]
     restart: "no"
 
+  # Runs the project tests of an exact commit in throw-away containers.
+  # It is the ONLY service with the host Docker socket (equivalent to root
+  # on the host: declared trade-off of stage 1). It holds only a read-only
+  # Gitea token and is reachable only on the internal network, with a bearer
+  # that only the trusted Gateway owner (app) knows.
+  runner:
+    <<: *app-image
+    user: "0:0"
+    command: ["node", "--experimental-strip-types", "--disable-warning=ExperimentalWarning",
+      "deploy/runner/start.mjs"]
+    environment:
+      GITEA_URL: http://gitea:3000
+      # A Draft PR requires the researcher acceptance suite to PASS.
+      RUNNER_ACCEPTANCE: "true"
+    volumes:
+      - config:/config:ro
+      - acceptance:/acceptance
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gitea-bootstrap: {condition: service_completed_successfully}
+    networks: [infra]
+    restart: unless-stopped
+
 networks:
   infra:
     name: delegation-infra
@@ -188,3 +212,7 @@ volumes:
     name: delegation-state
   gitea-data:
     name: delegation-gitea-data
+  # Researcher acceptance suite, copied by the Runner from its image and
+  # mounted READ-ONLY into every test container.
+  acceptance:
+    name: delegation-acceptance

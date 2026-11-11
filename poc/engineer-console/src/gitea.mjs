@@ -108,6 +108,16 @@ export class GiteaAdmin {
     return {files: [...new Set(files)].sort(), directories: [...new Set(directories)].sort()};
   }
 
+  /** The open pull request whose head is `branch`, or null (read-only). */
+  async pullRequestFor(name, branch) {
+    validateRepoName(name);
+    const pulls = await this.#call("GET", `/repos/${encodeURIComponent(this.#org)}/` +
+      `${encodeURIComponent(name)}/pulls?state=open&limit=50`);
+    const pr = (pulls ?? []).find(p => p.head?.ref === branch);
+    return pr ? {number: pr.number, title: pr.title, url: pr.html_url,
+      draft: !!pr.draft || /^(WIP|\[WIP\]|Draft)/iu.test(pr.title ?? ""), merged: !!pr.merged} : null;
+  }
+
   /**
    * Import a public repository and apply the same baseline protections as
    * poc/scripts/bootstrap-gitea.sh: protected default branch, Gateway write

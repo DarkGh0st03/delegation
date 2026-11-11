@@ -61,6 +61,7 @@ export function loadLocalConfig(env = process.env) {
     infraEnvPresent: existsSync(infraPath),
     giteaUrl: env.GITEA_URL ?? `http://127.0.0.1:${port("GITEA_HOST_PORT", 3000)}`,
     opaUrl: env.OPA_URL ?? `http://127.0.0.1:${port("OPA_HOST_PORT", 8181)}`,
+    runnerUrl: env.RUNNER_URL ?? "http://127.0.0.1:8095",
     anvilUrl: env.ANVIL_URL ?? `http://127.0.0.1:${port("ANVIL_HOST_PORT", 8545)}`,
     chainId: Number(infra.ANVIL_CHAIN_ID ?? env.CHAIN_ID ?? 31337),
     giteaAdminUser: infra.GITEA_ADMIN_USER ?? "",

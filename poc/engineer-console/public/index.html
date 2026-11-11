@@ -133,7 +133,10 @@
             <dt>Stato</dt><dd id="sd-phase"></dd>
             <dt>Repository / commit</dt><dd id="sd-repo"></dd>
             <dt>Branch di lavoro</dt><dd><code id="sd-branch"></code></dd>
-            <dt>Planner</dt><dd id="sd-mode"></dd>
+            <dt>Planner / agenti</dt><dd id="sd-mode"></dd>
+            <dt>Permessi firmati</dt><dd id="sd-approved"></dd>
+            <dt>Esito</dt><dd id="sd-result"></dd>
+            <dt>Draft PR</dt><dd id="sd-pr"></dd>
           </dl>
           <p class="error" id="sd-error"></p>
           <p>
@@ -150,12 +153,13 @@
 
       <div class="tab" id="tab-execution" hidden>
         <h2>Esecuzione</h2>
-        <p>Sessioni con Root operativa attiva (solo i permessi che hai firmato). Il pulsante di stop revoca subito la Root:
-          da quel momento il Gateway rifiuta ogni operazione degli agenti.</p>
-        <table><thead><tr><th></th><th>Sessione</th><th>Repository</th><th>Permessi firmati</th><th>Scadenza Root</th></tr></thead>
+        <p>Dopo la tua firma l'Orchestrator riceve la Root operativa (solo i permessi firmati) e delega un Task alla volta
+          agli agenti Backend, Frontend e Test, ognuno con una propria Child DC. Ogni operazione passa dal Gateway
+          (verifica Rust della VP + OPA); i test girano in un container Docker usa e getta; alla fine si crea una
+          <strong>Draft PR</strong>. Il merge resta sempre a te. Lo stop revoca subito la Root.</p>
+        <table><thead><tr><th></th><th>Sessione</th><th>Repository</th><th>Stato</th><th>Operazioni del Gateway</th><th>Draft PR</th></tr></thead>
           <tbody id="exec-rows"></tbody></table>
         <p id="exec-msg"></p>
-        <p class="todo-box">Prossimo passo dello sviluppo: avvio degli agenti (Child DC per ruolo), Task, test nel Runner Docker e Draft PR.</p>
       </div>
     </section>
   </main>

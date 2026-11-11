@@ -52,9 +52,11 @@ docker compose up
  │   ├─ opa     127.0.0.1:8181   motore delle policy
  │   └─ anvil   127.0.0.1:8545   blockchain locale
  │
- └─ app        127.0.0.1:8700    console dell'Engineer
-                                 + Gateway e Review Host per ogni sessione
-                                 (agenti nei prossimi passi)
+ ├─ app        127.0.0.1:8700    console dell'Engineer; per ogni sessione:
+ │                               Gateway, Review Host, Orchestrator e agenti
+ │                               Backend/Frontend/Test (A2A su loopback)
+ └─ runner     (solo rete interna) esegue i test in container Docker usa e getta;
+                                 è l'UNICO servizio con il socket Docker
 ```
 
 Tutte le porte sono pubblicate solo su `127.0.0.1`: non sono raggiungibili da
@@ -90,7 +92,7 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
 | 3 · Policy | Parametri per repository pubblicati su OPA e applicati dal Gateway (branch protetti, branch di lavoro firmato, percorsi non modificabili, profilo dei test, Draft PR) |
 | 4 · Requisito | Richiesta salvata con la commit di base fissata |
 | 5 · Planning e permessi | Root preliminare di sola lettura, Planner (simulato gratuito o Gemini con consenso), letture tramite il Gateway reale, finestra di revisione dei permessi, firma Ed25519 con password, Root operativa |
-| 6 · Esecuzione | Elenco delle Root operative attive e pulsante di stop (revoca). Avvio degli agenti: da realizzare |
+| 6 · Esecuzione | Dopo la firma: Root operativa, branch, Task degli agenti con Child DC, Gateway (Rust + OPA), test nel Runner Docker, Draft PR; stato, decisioni del Gateway, link alla PR e pulsante di stop |
 
 ### Come funziona una sessione
 
@@ -110,10 +112,22 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
    (`engineer-approval-server.mjs`, solo su loopback), che verifica l'hash
    scrypt, firma il sottoinsieme con la chiave Ed25519 dell'Engineer e salva la
    ricevuta. "Rifiuta" revoca la Root preliminare senza emettere nulla.
-3. **Root operativa.** Il Review Host rilegge e verifica la ricevuta, revoca la
-   Root preliminare ed emette la Root operativa con i soli permessi firmati. La
-   sua durata non supera quella dell'approvazione (30 minuti dalla firma).
-   "Interrompi" la revoca subito.
+3. **Esecuzione** (parte da sola dopo la firma). Il Review Host rilegge e
+   verifica la ricevuta, revoca la Root preliminare ed emette la **Root
+   operativa** con i soli permessi firmati; la sua durata non supera quella
+   dell'approvazione (30 minuti dalla firma) e "Interrompi" la revoca subito.
+   L'Orchestrator lavora **un Task alla volta**: crea il branch, poi delega ogni
+   Task a Backend, Frontend o Test con una **Child DC** propria. Ogni lettura,
+   modifica (con controllo della HEAD di Gitea) e `run_tests` passa dal Gateway:
+   VP verificata dal core Rust, decisione di OPA. I test girano nel servizio
+   `runner`, in un container usa e getta. La **Draft PR** si crea solo se il
+   Runner riporta PASS dei test del progetto **e** dei test di accettazione del
+   ricercatore sul commit finale. A fine esecuzione la Root viene revocata.
+   - *Simulato*: gli agenti non usano IA. Ogni file approvato riceve solo un
+     commento marcato `SIMULATA`, così si vede tutta la catena di autorizzazione
+     su un diff reale. Il requisito non è implementato: i test di accettazione
+     falliscono e **non si crea nessuna PR**. È l'esito corretto e atteso.
+   - *Gemini*: gli agenti scrivono il codice; la PR nasce solo se i test passano.
 
 Limiti attuali, dichiarati:
 
@@ -123,18 +137,22 @@ Limiti attuali, dichiarati:
 - branch principale `main` e prefisso `feature/` sono ancora fissi nel codice
   canonico (la pagina Policy non permette altri prefissi);
 - dopo un riavvio dell'app le sessioni precedenti risultano "Non più attive",
-  perché la blockchain locale riparte da zero.
+  perché la blockchain locale riparte da zero;
+- il Runner esegue i comandi di test del progetto `iam-console-poc` e i test di
+  accettazione del requisito di riferimento (sospensione degli account): per
+  altre repository l'Esecuzione arriva ai test ma non può produrre una PR;
+- il servizio `runner` ha il socket Docker dell'host, che equivale a privilegi
+  di root sull'host: è isolato nella rete interna, conosce solo un token Gitea
+  di sola lettura e accetta richieste solo dal Gateway (token privato). I
+  container di test hanno rete (servono `npm ci` e Playwright) e ricevono i
+  test di accettazione in sola lettura;
+- il primo `run_tests` scarica dipendenze e browser: può richiedere vari minuti.
 
 ## Prossimi passi
 
-1. Esecuzione dalla console: Child DC per ruolo, Task degli agenti tramite il
-   Gateway, test nel Runner Docker, Draft PR.
-2. Runner in un container dedicato: è l'unico servizio che riceverà l'accesso al
-   socket Docker, per avviare i container di test (compromesso da dichiarare nel
-   threat model).
-3. Prima esecuzione senza Gemini (modelli scriptati), poi Gemini reale solo con
-   consenso esplicito ai costi.
-4. Tappa 2: Gateway, Orchestrator e agenti in container separati con reti
+1. Prima esecuzione completa sul PC (simulata, gratuita), poi Gemini reale solo
+   con consenso esplicito ai costi.
+2. Tappa 2: Gateway, Orchestrator e agenti in container separati con reti
    isolate, così gli agenti non possono raggiungere Gitea se non tramite il Gateway.
 
 ## Problemi frequenti

@@ -389,3 +389,51 @@ test("approval needs the Engineer password again and forwards only permission ID
   assert.equal((await call("POST", path + "stop", {body: {}})).status, 401);
   assert.equal(calls.length, 2);
 });
+
+test("simulated execution plans only from APPROVED permissions, one Task per read+update file", async () => {
+  const {simulatedExecutionPlan, roleForPath, simulatedMarker, lastReadContent, ScriptedDecisionModel} =
+    await import("../src/scripted-execution-models.mjs");
+  const repo = "gitea://gitea.local/thesis/iam-console-poc";
+  const file = path => `${repo}/branches/feature%2Fs-1/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const approved = [
+    {operation: "create_branch", resource: repo},
+    {operation: "run_tests", resource: `${repo}/branches/feature%2Fs-1`},
+    {operation: "read_file", resource: file("apps/backend/src/a.ts")},
+    {operation: "update_file", resource: file("apps/backend/src/a.ts")},
+    {operation: "read_file", resource: file("apps/frontend/src/B.tsx")},
+    {operation: "update_file", resource: file("apps/frontend/src/B.tsx")},
+    // read without update: never becomes a write Task
+    {operation: "read_file", resource: file("tests/backend/c.test.ts")}
+  ];
+  const plan = simulatedExecutionPlan(approved, "s-1");
+  assert.deepEqual(plan.tasks.map(t => [t.task_id, t.agent_id, t.path ?? null]), [
+    ["t01-backend", "backend", "apps/backend/src/a.ts"],
+    ["t02-frontend", "frontend", "apps/frontend/src/B.tsx"],
+    ["t99-test", "test", null]]);
+  assert.equal(plan.pullRequest, undefined, "no PR permission approved, none planned");
+  assert.deepEqual(plan.tasks[0].permissions.map(p => p.operation), ["read_file", "update_file"]);
+  assert.equal(roleForPath("tests/e2e/x.spec.ts"), "test");
+  assert.match(simulatedMarker("a.css", "s-1"), /^\/\* .*SIMULATA.* \*\/$/u);
+  assert.match(simulatedMarker("a.ts", "s-1"), /^\/\/ \[delegation s-1\]/u);
+  // The worker rewrites what the Gateway actually returned.
+  assert.equal(lastReadContent({contents: [{parts: [{functionResponse: {name: "read_file",
+    response: {result: JSON.stringify({content: "old body\n"})}}}]}]}), "old body\n");
+  // Decisions: delegate in order, then stop honestly on a verified FAIL.
+  const model = new ScriptedDecisionModel({plan, branchTaskId: "branch"});
+  const next = async (request = {}) => {
+    for await (const e of model.generateContentAsync(request)) return JSON.parse(e.content.parts[0].text);
+  };
+  assert.deepEqual((await next()).task.depends_on, ["branch"]);
+  assert.deepEqual((await next()).task.depends_on, ["t01-backend"]);
+  assert.equal((await next()).task.agent_id, "test");
+  assert.equal((await next({x: "independent_runner_failure"})).action, "blocked");
+});
+
+test("execution errors from the canonical fail-closed stops are explained in plain words", async () => {
+  const {friendlyExecutionError} = await import("../src/sessions.mjs");
+  assert.match(friendlyExecutionError(Error("Native D1 failure preflight NO-GO: original Runner FAIL is not independently actionable")),
+    /ambiente di test/u);
+  assert.match(friendlyExecutionError(Error("ENOENT: no such file or directory, open '/x/runnerFailureReceipts/a.runner-fail.json'")),
+    /esito verificabile/u);
+  assert.equal(friendlyExecutionError(Error("other")), "other");
+});

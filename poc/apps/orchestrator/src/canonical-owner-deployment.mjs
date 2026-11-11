@@ -27,11 +27,15 @@ function exact(value,keys){
  return !!value&&typeof value==="object"&&!Array.isArray(value)&&
   Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 }
-function endpoint(value){
+// Single-label names only (e.g. Docker Compose service names): they resolve
+// only on the private container network, never through public DNS.
+const INTERNAL_HOST=/^[a-z][a-z0-9-]{0,62}$/u;
+function endpoint(value,internalHosts=[]){
  if(typeof value!=="string"||!URL.canParse(value))deny();
  const url=new URL(value);
  if(url.username||url.password||url.hash||url.search||url.pathname!=="/"||
-    (url.protocol!=="https:"&&!(url.protocol==="http:"&&url.hostname==="127.0.0.1")))
+    (url.protocol!=="https:"&&!(url.protocol==="http:"&&
+     (url.hostname==="127.0.0.1"||internalHosts.includes(url.hostname)))))
   deny();
  return url.origin;
 }
@@ -70,7 +74,8 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  const requireVerifiedRepairDiagnostic=c?.requireVerifiedRepairDiagnostic===true;
  const optionalKeys=[...(nativeCreateEnabled?["enableNativeCreateFile"]:[]),
   ...(requireVerifiedRepairDiagnostic?["requireVerifiedRepairDiagnostic"]:[]),
-  ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[])];
+  ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[]),
+  ...(Object.hasOwn(c??{},"internalHttpHosts")?["internalHttpHosts"]:[])];
  if(!exact(c,[...standardKeys,...optionalKeys])||
     typeof c.directory!=="string"||!c.directory.startsWith("/")||
     !exact(c.workerTokens,roles)||!exact(c.workerPorts,roles)||
@@ -88,7 +93,14 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
     new Set(Object.values(c.workerPorts)).size!==roles.length||
     Object.values(c.workerPorts).some(port=>!Number.isSafeInteger(port)||port<1||port>65535))
   deny();
- const giteaUrl=endpoint(c.giteaUrl),runnerUrl=endpoint(c.runnerUrl),opaUrl=endpoint(c.opaUrl);
+ // Optional, owner-config only: plain HTTP to named services of the private
+// container network (Compose). Never a dotted or public host name.
+ const internalHosts=c.internalHttpHosts??[];
+ if(!Array.isArray(internalHosts)||internalHosts.length>8||
+    internalHosts.some(h=>typeof h!=="string"||!INTERNAL_HOST.test(h)))
+  deny();
+ const giteaUrl=endpoint(c.giteaUrl,internalHosts),runnerUrl=endpoint(c.runnerUrl,internalHosts),
+  opaUrl=endpoint(c.opaUrl,internalHosts);
  const [writer,reader,runnerKey,key,...workerTokens]=await Promise.all([
   token(c.giteaWriterFile),token(c.giteaReaderFile),token(c.runnerTokenFile),
   token(c.evidenceKeyFile),...roles.map(role=>token(c.workerTokens[role]))

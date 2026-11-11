@@ -7,22 +7,54 @@
  *    signed Planning checkpoint, durable journals, Root transitions).
  * The console itself never builds ResourceURIs or decides permissions.
  */
-import {createServer} from "node:http";
+import {createServer as createNetServer} from "node:net";
 import {randomBytes, generateKeyPairSync, createPrivateKey, createPublicKey} from "node:crypto";
 import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync, chmodSync} from "node:fs";
 import {join} from "node:path";
 import {readEnvFile} from "./env.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
+import {simulatedExecutionPlan, ScriptedWorkerModel, ScriptedTestModel, ScriptedTestFileWorker,
+  ScriptedDecisionModel, ScriptedRootTaskModel} from "./scripted-execution-models.mjs";
 
 const SESSION_ID = /^s-[a-f0-9]{12}$/u;
 const PERMISSION_ID = /^permission-[1-9][0-9]{0,2}$/u;
 // Phases that only exist while this process holds the session's host. After
 // an app restart the chain is new and every earlier Root is gone with it.
-const LIVE_PHASES = new Set(["planning", "awaiting_review", "approving", "operational", "stopping"]);
+const LIVE_PHASES = new Set(["planning", "awaiting_review", "approving", "executing", "stopping"]);
 const AUTHORITY = "gitea.local";
 const STATUS_LIST = "https://status.delegation.local/engineer/revocation";
 const isoSeconds = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/u, "Z");
+
+async function freePort() {
+  const server = createNetServer();
+  await new Promise((ok, bad) => { server.once("error", bad); server.listen(0, "127.0.0.1", ok); });
+  const {port} = server.address();
+  await new Promise(ok => server.close(ok));
+  return port;
+}
+
+/** Plain-language reason for the canonical fail-closed stops. */
+export function friendlyExecutionError(error) {
+  const text = String(error?.message ?? error);
+  if (/not independently actionable/u.test(text))
+    return "i test sono falliti per un problema dell'ambiente di test (ad esempio l'installazione " +
+      "delle dipendenze senza rete), non per il codice. L'esecuzione si è fermata in sicurezza e la " +
+      "Root è stata revocata. Dettagli: docker compose logs runner";
+  if (/runner-?fail|runnerFailureReceipts/iu.test(text) && /ENOENT/u.test(text))
+    return "il Runner non ha restituito un esito verificabile (servizio non raggiungibile o errore " +
+      "interno). L'esecuzione si è fermata in sicurezza e la Root è stata revocata. Dettagli: " +
+      "docker compose logs runner";
+  return text;
+}
+
+/** Only non-secret status fields of the canonical workflow result. */
+function summarizeResult(result) {
+  const a = result?.adaptive ?? {};
+  return {status: result?.status ?? null, pr_created: !!result?.pr_created,
+    executed_tasks: a.executed_tasks ?? null, adaptive_status: a.status ?? result?.adaptive_status ?? null,
+    reason: typeof a.reason === "string" ? a.reason.slice(0, 300) : null};
+}
 
 function writeJson(path, value, mode = 0o600) {
   const tmp = path + ".tmp";
@@ -110,34 +142,163 @@ export class EngineerSessions {
       session.phase = "awaiting_review"; this.#save(session);
       throw error;
     }
-    try {
-      // The operational Root may not outlive the signed approval: take its
-      // expiry from the receipt (the host re-verifies it independently).
-      const receipt = JSON.parse(readFileSync(join(live.dirs.approvals, session.id + ".json"), "utf8"));
-      const now = Date.now();
-      const validity = Math.floor((Date.parse(receipt.expires_at) - now) / 1000) - 60;
-      if (!(validity >= 300)) throw Error("Approvazione firmata troppo vicina alla scadenza");
-      const result = await live.host.activateOperational({
-        credential_id: `urn:delegation:${session.id}:operational`,
-        valid_from: isoSeconds(now), validity_seconds: validity,
-        credential_status: {type: "BitstringStatusListEntry", statusPurpose: "revocation",
-          statusListIndex: session.operational_status_index, statusListCredential: STATUS_LIST}
-      });
-      live.coordinator = result.coordinator;
-      session.phase = "operational";
-      session.operational = {at: new Date().toISOString(),
-        credential_id: `urn:delegation:${session.id}:operational`,
-        expires_at: new Date(now + validity * 1000).toISOString()};
-      this.#log(session, "Root preliminare revocata; Root operativa emessa con i soli permessi approvati");
-      return session;
-    } catch (error) {
-      // The host retires anything it started; the signed receipt is single use.
+    session.phase = "executing"; this.#save(session);
+    this.#log(session, "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati");
+    this.#runExecution(session, live).catch(error => {
+      if (live.stopRequested) return; // the Engineer's stop records the outcome
       session.phase = "failed";
-      session.error = "Attivazione della Root operativa fallita: " + (error?.message ?? error);
+      session.error = "Esecuzione interrotta: " + friendlyExecutionError(error);
       this.#log(session, "Errore: " + session.error);
-      await this.#shutdown(session.id).catch(() => {});
-      throw Error(session.error);
+      this.#shutdown(session.id).catch(() => {});
+    });
+    return session;
+  }
+
+  /**
+   * Execution through the canonical reviewed handoff of THIS session's host:
+   * provision -> operational Root (re-verified signed grant) -> Child DCs per
+   * Task -> Gateway (VP/Rust/OPA) -> Gitea CAS / Docker Runner -> Draft PR.
+   * The console only assembles owner configuration and chooses the models.
+   */
+  async #runExecution(session, live) {
+    const local = readEnvFile(join(this.#config.configDir, "local.env"));
+    const giteaEnv = readEnvFile(join(this.#config.configDir, "gitea.env"));
+    const approvedIds = new Set(session.approval.permission_ids);
+    const approved = session.proposal.permissions.filter(p => approvedIds.has(p.id));
+    if (!approved.some(p => p.operation === "create_branch"))
+      throw Error("Il permesso create_branch non è stato approvato: senza branch di lavoro non si può eseguire");
+    const scripted = session.mode === "scripted";
+    const plan = simulatedExecutionPlan(approved, session.id);
+    if (scripted && !plan.tasks.length)
+      throw Error("Nessun file approvato con lettura e modifica: niente da eseguire");
+
+    // Owner-private files (0600 in 0700 directories), as the canonical
+    // assembler requires for every secret it reads.
+    const execDir = this.#path(session.id, "execution");
+    const sub = [...["gateway-tasks", "issuer-children", "gateway-children", "effect-fences",
+      "sequences"].map(d => join("journals", d)), "status-reservations", "secrets",
+      "mutationIntent", "giteaReceipts", "runnerIntent", "runnerFailureReceipts",
+      "runnerPassReceipts", "createIntent", "createReceipts"];
+    for (const d of ["", "journals", ...sub]) {
+      mkdirSync(join(execDir, d), {recursive: true, mode: 0o700}); chmodSync(join(execDir, d), 0o700);
     }
+    const secret = (name, value) => {
+      if (!value) throw Error("Configurazione privata incompleta: " + name);
+      const file = join(execDir, "secrets", name);
+      writeFileSync(file, value, {mode: 0o600}); chmodSync(file, 0o600);
+      return file;
+    };
+    const roles = ["backend", "frontend", "test"];
+    const childCount = scripted ? plan.tasks.length : 24;
+    const childIndices = Array.from({length: childCount}, () => String(this.#nextStatus++));
+    const workerPorts = {};
+    for (const role of roles) workerPorts[role] = await freePort();
+    const createEnabled = approved.some(p => p.operation === "create_file");
+
+    const {assembleCanonicalOperationalDeployment} = await import(
+      "../../apps/orchestrator/src/canonical-owner-deployment.mjs");
+    const {createProtectedCanonicalOperationalProvision} = await import(
+      "../../apps/orchestrator/src/trusted-authority-only-owner-bootstrap.mjs");
+    const operational = await assembleCanonicalOperationalDeployment({
+      pins: {snapshot: live.snapshot, preliminaryRoot: live.preliminaryRoot,
+        workBranch: session.work_branch, gateway: {gatewayBaseUrl: live.gatewayBaseUrl}},
+      config: {
+        directory: execDir,
+        giteaUrl: this.#config.giteaUrl, opaUrl: this.#config.opaUrl, runnerUrl: this.#config.runnerUrl,
+        internalHttpHosts: [...new Set([this.#config.giteaUrl, this.#config.opaUrl, this.#config.runnerUrl]
+          .map(u => new URL(u).hostname).filter(h => /^[a-z][a-z0-9-]*$/u.test(h)))],
+        giteaWriterFile: secret("writer.token", giteaEnv.GITEA_GATEWAY_TOKEN),
+        giteaReaderFile: secret("reader.token", giteaEnv.GITEA_RUNNER_TOKEN),
+        runnerTokenFile: secret("runner.token", local.RUNNER_GATEWAY_TOKEN),
+        evidenceKeyFile: secret("evidence.key", local.EXECUTION_EVIDENCE_KEY_HEX),
+        orchestratorTokenFile: secret("orchestrator.token", local.ADAPTER_CALLER_ORCHESTRATOR),
+        workerTokens: Object.fromEntries(roles.map(role =>
+          [role, secret(role + ".token", local[`ADAPTER_CALLER_${role.toUpperCase()}`])])),
+        workerPorts, rootIndex: session.operational_status_index, childIndices,
+        executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: 1},
+        ...(createEnabled ? {enableNativeCreateFile: true} : {}),
+        draftTitle: (scripted ? "[SIMULATA] " : "") + session.requirement.slice(0, 120),
+        draftBody: `Sessione ${session.id}, requisito approvato dall'Engineer.\n\n` +
+          `${session.requirement}\n\n` + (scripted
+          ? "Esecuzione SIMULATA senza IA: ogni file autorizzato riceve solo un commento marcato; il requisito NON è implementato.\n"
+          : "Modifiche generate dagli agenti entro i permessi firmati dall'Engineer.\n") +
+          "Gli agenti non possono fare merge: la decisione resta umana."
+      },
+      loadModelFactory: async () => {
+        if (scripted) return () => new ScriptedRootTaskModel({});
+        const {createGeminiAdkModel} = await import("../../packages/agent-runtime/src/gemini-adk-model.ts");
+        return () => createGeminiAdkModel({apiKey: process.env.GEMINI_API_KEY,
+          model: process.env.GEMINI_MODEL || "gemini-3.8-flash"});
+      }
+    });
+
+    // The operational Root may not outlive the signed approval.
+    const receipt = JSON.parse(readFileSync(join(live.dirs.approvals, session.id + ".json"), "utf8"));
+    const validity = Math.floor((Date.parse(receipt.expires_at) - Date.now()) / 1000) - 120;
+    if (!(validity >= 300)) throw Error("Approvazione firmata troppo vicina alla scadenza: ripeti il Planning");
+    operational.rootReservation.validitySeconds = Math.min(validity, 7200);
+
+    if (scripted) {
+      const files = role => plan.tasks.filter(t => t.agent_id === role && t.path).map(t => t.path);
+      const w = operational.localWorkers.workers, branch = session.work_branch;
+      w.backend.adk.model = new ScriptedWorkerModel({role: "backend", branch, files: files("backend"), sessionId: session.id});
+      w.frontend.adk.model = new ScriptedWorkerModel({role: "frontend", branch, files: files("frontend"), sessionId: session.id});
+      w.test.adk.model = new ScriptedTestModel({branch, worker: new ScriptedTestFileWorker(
+        {role: "test", branch, files: files("test"), sessionId: session.id})});
+      operational.workflow.createBranch.model = new ScriptedRootTaskModel({task_id: "branch",
+        agent_id: "orchestrator", depends_on: [], permissions: [plan.branch],
+        instruction: "Crea il branch di lavoro approvato a partire da main"});
+      operational.workflow.adaptive.model = new ScriptedDecisionModel({plan, branchTaskId: "branch"});
+      if (plan.pullRequest && plan.runsTests)
+        operational.workflow.draftPullRequest.model = new ScriptedRootTaskModel({task_id: "draft-pr",
+          agent_id: "orchestrator", depends_on: ["t99-test"], permissions: [plan.pullRequest],
+          instruction: "Crea la Draft PR sul commit testato; non fare mai merge"});
+      else delete operational.workflow.draftPullRequest;
+    } else if (!approved.some(p => p.operation === "create_pull_request")) {
+      delete operational.workflow.draftPullRequest;
+    }
+
+    // Live view of every Gateway decision of the agents (VP, Rust, OPA).
+    const events = operational.rootGateway.audit.events;
+    let seen = 0;
+    live.auditTimer = setInterval(() => {
+      if (events.length === seen) return;
+      for (const event of events.slice(seen)) this.#recordDecision(session, event);
+      seen = events.length; this.#save(session);
+    }, 1500);
+
+    const authority = {snapshot: live.snapshot, workBranch: session.work_branch,
+      preliminaryRoot: live.preliminaryRoot, operationalSessionStore: live.operationalSessionStore,
+      trustedAgentRegistry: live.trustedAgentRegistry};
+    const provision = await createProtectedCanonicalOperationalProvision(authority, operational);
+    live.handoff = live.host.createReviewedCanonicalHandoff({provision});
+    this.#log(session, scripted ? "Agenti SIMULATI (nessuna IA): " + plan.tasks.length + " Task pianificati"
+      : "Agenti con Gemini: l'Orchestrator sceglie i Task entro i permessi firmati");
+    let result;
+    try { result = await live.handoff.runApprovedCanonical(); }
+    finally {
+      clearInterval(live.auditTimer);
+      for (const event of events.slice(seen)) this.#recordDecision(session, event);
+    }
+    session.result = summarizeResult(result);
+    if (result?.pr_created) {
+      session.pull_request = await this.#gitea.pullRequestFor(session.repository.name, session.work_branch)
+        .catch(() => null);
+    }
+    session.phase = "completed";
+    this.#log(session, result?.pr_created
+      ? "Completata: Draft PR creata. Il merge resta una decisione umana."
+      : "Completata senza Draft PR: " + (session.result.reason ?? session.result.status));
+    // Retire the operational Root now: nothing else may run under it.
+    await this.#shutdown(session.id);
+    this.#log(session, "Root operativa revocata a fine esecuzione");
+  }
+
+  #recordDecision(session, event) {
+    if (event.event !== "authorization_executed" && event.event !== "authorization_denied") return;
+    session.gateway_decisions.push({at: event.timestamp, agent: event.agent_role,
+      tool: event.tool, resource: event.resource_uri, decision: event.decision,
+      reason: event.reason ?? null, verification_ms: event.verification_ms, opa_ms: event.opa_ms});
   }
 
   async #signViaApprovalServer(server, password, permissionIds) {
@@ -171,14 +332,15 @@ export class EngineerSessions {
 
   /** Stop: retires the live Root (preliminary or operational) and the Gateway. */
   async stop(id) {
-    const {session} = this.#requireLive(id, ["awaiting_review", "operational"]);
+    const {session, live} = this.#requireLive(id, ["awaiting_review", "executing"]);
+    live.stopRequested = true;
     const previous = session.phase;
     session.phase = "stopping"; this.#save(session);
     try {
       await this.#shutdown(id);
       session.phase = "stopped";
-      this.#log(session, previous === "operational"
-        ? "Sessione interrotta: Root operativa revocata"
+      this.#log(session, previous !== "awaiting_review"
+        ? "Sessione chiusa: Root operativa revocata, agenti fermati"
         : "Proposta rifiutata: Root preliminare revocata, nessuna Root operativa emessa");
     } catch (error) {
       session.phase = "failed";
@@ -193,7 +355,8 @@ export class EngineerSessions {
     const live = this.#live.get(id);
     if (!live) return;
     this.#live.delete(id);
-    try { await live.host.close(); }
+    clearInterval(live.auditTimer);
+    try { await (live.handoff ?? live.host).close(); }
     finally { await new Promise(ok => live.gatewayServer.close(() => ok())); }
   }
 
@@ -359,6 +522,17 @@ export class EngineerSessions {
     session.operational_status_index = statusIndex();
     this.#log(session, "Emissione della Root preliminare di sola lettura...");
 
+    const operationalSessionStore = new TrustedOperationalSessionStore(dirs["op-sessions"]);
+    const trustedAgentRegistry = {
+      backend: {did: roleDid("BACKEND"), card_ref: "trusted:backend",
+        capabilities: ["read_file", "update_file", "create_file"]},
+      frontend: {did: roleDid("FRONTEND"), card_ref: "trusted:frontend",
+        capabilities: ["read_file", "update_file", "create_file"]},
+      test: {did: roleDid("TEST"), card_ref: "trusted:test",
+        capabilities: ["read_file", "update_file", "create_file", "run_tests"]},
+      orchestrator: {did: roleDid("ORCHESTRATOR"), card_ref: "trusted:orchestrator",
+        capabilities: ["create_branch", "create_pull_request"]}
+    };
     let host;
     try {
     host = await createTrustedAuthorityOnlyReviewHost({
@@ -368,7 +542,7 @@ export class EngineerSessions {
       activationJournal: new DurableAuthorityOnlyActivationJournal(dirs.activation),
       taskJournal: new DurableAuthorityTaskJournal(dirs.tasks),
       operationalRecoveryStore: new TrustedOperationalRecoveryStore(dirs.recovery),
-      operationalSessionStore: new TrustedOperationalSessionStore(dirs["op-sessions"]),
+      operationalSessionStore,
       approval: {engineerDid: roleDid("ENGINEER"), keyId: "engineer-console",
         publicKeyPem: engineerPublicPem, privateKeyFile: engineerKeyFile,
         receiptDirectory: dirs.approvals,
@@ -377,16 +551,7 @@ export class EngineerSessions {
         ? {model, planId: session.id, maxModelTurns: 24, maxProposalRevisions: 1,
            thinkingLevel: "LOW", maxModelCallMs: 180000, maxOutputTokens: 12288, maxPlanningMs: 600000}
         : {model, planId: session.id, maxModelTurns: 3, maxProposalRevisions: 0},
-      trustedAgentRegistry: {
-        backend: {did: roleDid("BACKEND"), card_ref: "trusted:backend",
-          capabilities: ["read_file", "update_file", "create_file"]},
-        frontend: {did: roleDid("FRONTEND"), card_ref: "trusted:frontend",
-          capabilities: ["read_file", "update_file", "create_file"]},
-        test: {did: roleDid("TEST"), card_ref: "trusted:test",
-          capabilities: ["read_file", "update_file", "create_file", "run_tests"]},
-        orchestrator: {did: roleDid("ORCHESTRATOR"), card_ref: "trusted:orchestrator",
-          capabilities: ["create_branch", "create_pull_request"]}
-      },
+      trustedAgentRegistry,
       credentials: this.#core.credentials,
       planningRevisions: revisions,
       gateway: {gatewayBaseUrl, adapterToken: local.ADAPTER_CALLER_ORCHESTRATOR,
@@ -407,7 +572,8 @@ export class EngineerSessions {
       verified_source_reads: checkpoint.verified_source_reads ?? null
     };
     session.phase = "awaiting_review";
-    this.#live.set(session.id, {host, gatewayServer, revisions, checkpointStore, snapshot, dirs,
+    this.#live.set(session.id, {host, gatewayServer, gatewayBaseUrl, revisions, checkpointStore,
+      snapshot, dirs, preliminaryRoot, operationalSessionStore, trustedAgentRegistry,
       engineerKeyFile, engineerPublicPem});
     this.#log(session, `Proposta pronta: ${session.proposal.permissions.length} permessi da rivedere`);
   }

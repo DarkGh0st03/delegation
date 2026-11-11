@@ -48,3 +48,13 @@ test("Runner contract rejects moving refs, foreign repositories and profiles", (
     /profile/u
   );
 });
+
+test("Runner branch prefix accepts per-session branches and nothing else", () => {
+  const prefixed = { ...config, branch_prefix: "feature/" };
+  assert.equal(validateRunnerRunRequest({ ...valid, branch: "feature/s-0123456789ab" }, prefixed).branch,
+    "feature/s-0123456789ab");
+  for (const branch of ["main", "feature/", "feature/a/b", "feature/../main", "feature/x.lock",
+    "featurex/s-1", "agent/s-1"]) {
+    assert.throws(() => validateRunnerRunRequest({ ...valid, branch }, prefixed), /branch/u, branch);
+  }
+});

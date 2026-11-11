@@ -560,3 +560,32 @@ test("Docker subprocess allowlist ignores unknown keys, empty and control-charac
   DOCKER_CONFIG:input.DOCKER_CONFIG,LANG:input.LANG
  });
 });
+
+test("containerised Runner mounts the acceptance suite from a named volume, read-only", async () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  let fetchCount = 0;
+  const executor = new IsolatedDockerRunnerExecutor(
+    { ...config, acceptance_enabled: true, acceptance_volume: "delegation-acceptance" },
+    {
+      fetch_fn: async () => (++fetchCount === 1
+        ? new Response(JSON.stringify({ commit: { id: request.commit_sha } }), { status: 200 })
+        : new Response(Buffer.from("fake-tar-gz"), { status: 200 })),
+      command_runner: async (command, args) => {
+        calls.push({ command, args });
+        return { exit_code: 0, stdout: "", stderr: "", timed_out: false };
+      }
+    }
+  );
+  await executor.run(request);
+  const create = calls.find((call) => call.command === "docker" && call.args[0] === "create");
+  assert.ok(create);
+  assert.equal(create.args[create.args.indexOf("--mount") + 1],
+    "type=volume,src=delegation-acceptance,dst=/workspace/.researcher-acceptance,readonly");
+  await assert.rejects(new IsolatedDockerRunnerExecutor(
+    { ...config, acceptance_enabled: true, acceptance_volume: "../host" },
+    { fetch_fn: async () => (++fetchCount % 2
+        ? new Response(JSON.stringify({ commit: { id: request.commit_sha } }), { status: 200 })
+        : new Response(Buffer.from("x"), { status: 200 })),
+      command_runner: async () => ({ exit_code: 0, stdout: "", stderr: "", timed_out: false }) }
+  ).run(request), /acceptance volume/u);
+});

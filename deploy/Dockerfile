@@ -49,6 +49,24 @@ USER chain
 RUN cd blockchain && forge build
 ENTRYPOINT []
 
+# ----------------------------------------------------------- docker-cli ----
+# Docker CLI only (no daemon), used by the Runner service to start isolated
+# test containers through the host socket mounted into THAT service only.
+# Docker publishes no checksum file for static builds: this SHA-256 was taken
+# from the HTTPS download of the official archive and is pinned here.
+FROM ${CHAIN_BASE_IMAGE} AS docker-cli
+ARG DOCKER_CLI_VERSION=28.5.1
+ARG DOCKER_CLI_SHA256=5c0d19f31fece1accd0358bb8cff591fe25d7b6cba19f0fd412cbfdc07f75ff6
+RUN --mount=type=secret,id=extra_ca,required=false \
+    set -eu; \
+    if [ -f /run/secrets/extra_ca ]; then CA=/run/secrets/extra_ca; else CA=/etc/ssl/certs/ca-certificates.crt; fi; \
+    curl --proto '=https' --tlsv1.2 -fsSL --cacert "$CA" --retry 5 -o /tmp/docker.tgz \
+      "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz"; \
+    echo "${DOCKER_CLI_SHA256}  /tmp/docker.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/docker.tgz -C /tmp --no-same-owner docker/docker; \
+    install -m 0755 /tmp/docker/docker /usr/local/bin/docker; \
+    rm -rf /tmp/docker /tmp/docker.tgz
+
 # ----------------------------------------------------------- rust-build ----
 FROM ${RUST_IMAGE} AS rust-build
 WORKDIR /src
@@ -90,6 +108,7 @@ COPY --from=rust-build --chown=node:node /out/delegation-core.node \
      poc/apps/gateway/src/native/delegation-core.node
 # Mount points prepared with the runtime user as owner, so named volumes
 # initialised from this image are writable by uid 1000.
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 RUN mkdir -p /config /state && chown node:node /config /state
 USER node
 EXPOSE 8700

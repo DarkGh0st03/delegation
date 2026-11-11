@@ -55,7 +55,13 @@ export function validateRunnerRunRequest(
   if (repository !== config.repository) {
     throw new Error("repository is outside the controlled Runner repository");
   }
-  if (branch !== config.branch) {
+  if (config.branch_prefix !== undefined) {
+    const rest = branch.startsWith(config.branch_prefix)
+      ? branch.slice(config.branch_prefix.length) : "";
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(rest) || rest.endsWith(".lock")) {
+      throw new Error("branch is outside the controlled Runner branch prefix");
+    }
+  } else if (branch !== config.branch) {
     throw new Error("branch is outside the controlled Runner branch");
   }
   if (!/^[0-9a-f]{40}$/u.test(commitSha)) {
