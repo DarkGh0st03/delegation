@@ -416,6 +416,43 @@ test("all three original specialists simultaneously under ONE offline owner, sep
      "foreign role must not read other specialist's model/stage/bind HMAC");
    }
   }
+  // Own-role HMAC and correct UID/GID are NOT enough. Without an R323
+  // owner native Task prebind, every model request must be denied.
+  const noNativeTaskProbe=[
+   'const {connectDisposableWorkerModelIpcClient}=await import(process.argv[1]);',
+   'const cfg=JSON.parse(process.argv[2]);',
+   'const scope=JSON.parse(process.argv[3]);',
+   'const client=await connectDisposableWorkerModelIpcClient({',
+   ' role:scope.role,socketPath:cfg.modelSocketPath,',
+   ' secretFile:cfg.modelSecretFile,originalScopedModelRole:scope});',
+   'const task={session_id:cfg.task.session_id,',
+   ' task_id:"unapproved-"+scope.role,',
+   ' credential_id:"urn:unapproved:child:"+scope.role,',
+   ' runtime_task_id:"dispatch_"+"Q".repeat(22)};',
+   'try{await client.call({task,callId:"crossuid-without-native-prebind-001",',
+   ' payload:{contents:[{role:"user",parts:[{text:"NO INFERENCE"}]}]}});',
+   ' process.stdout.write("UNSAFE");}',
+   'catch(error){',
+   ' if(!String(error.message).includes("owner-worker model IPC NO-GO"))',
+   '  throw error;',
+   ' process.stdout.write("DENIED");}'
+  ].join("\n");
+  for(const [role,uid,gid] of roles){
+   const probe=spawnAs(uid,gid,[],[
+    "--input-type=module","-e",noNativeTaskProbe,
+    OWNER_MODEL,JSON.stringify(configs[role]),JSON.stringify(scopes[role])
+   ]);
+   const outcome=await new Promise((resolve,reject)=>{
+    let stdout="",stderr="";
+    probe.stdout.on("data",chunk=>stdout+=chunk);
+    probe.stderr.on("data",chunk=>stderr+=chunk);
+    probe.once("error",reject);
+    probe.once("close",code=>resolve({code,stdout,stderr}));
+   });
+   assert.equal(outcome.code,0,outcome.stderr.slice(-400));
+   assert.equal(outcome.stdout,"DENIED",
+    "own-role HMAC is not permission to invoke an unbound model Task");
+  }
   assert.equal(owner.exitCode,null);
   // No signed Child, Root, Gemini model call or Gateway effect was started.
  }finally{
