@@ -293,12 +293,12 @@ function executionDeps(f){
 test('disposable owner model Task prebind stays offline-only and cannot bypass original Planning',async t=>{
  const f=await fixture(t);
  f.options.disposableOwnerModelTaskPrebind={};
- await assert.rejects(f.start(),/disposable owner model Task prebind requires offline private owner code/u);
+ await assert.rejects(f.start(),/disposable model Task prebind requires offline private owner code/u);
  f.options.disposableOwnerModelTaskPrebind=()=>()=>{};
  const old=process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
  process.env.DELEGATION_DISPOSABLE_LIVE_MODE='gemini-real';
  try{
-  await assert.rejects(f.start(),/disposable owner model Task prebind requires offline private owner code/u);
+  await assert.rejects(f.start(),/disposable model Task prebind requires offline private owner code/u);
  }finally{
   if(old===undefined)delete process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
   else process.env.DELEGATION_DISPOSABLE_LIVE_MODE=old;
