@@ -11,7 +11,7 @@
 import {generateKeyPairSync} from "node:crypto";
 import {constants} from "node:fs";
 import {open,lstat,realpath,access} from "node:fs/promises";
-import {isAbsolute,resolve} from "node:path";
+import {isAbsolute,dirname,resolve} from "node:path";
 import {connectDisposableWorkerModelIpcClient}
  from "./disposable-gemini-owner-worker-ipc.mjs";
 import {createDisposableOriginalWorkerIpcAdkModel}
@@ -84,10 +84,19 @@ async function requireOriginalNativeRustSigner(cfg,scoped,isolationRequired){
      process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"))deny();
  let st;
  try{
+  const parent=dirname(cfg.nativeCryptoSocketPath);
+  const dir=await lstat(parent);
   st=await lstat(cfg.nativeCryptoSocketPath);
-  if(!st.isSocket()||st.isSymbolicLink()||
+  // The worker must independently recheck the original per-role native
+  // Rust endpoint; an owner bootstrap claim is not sufficient. One
+  // shared socket group cannot authorize three different specialists.
+  if(!st.isSocket()||st.isSymbolicLink()||st.nlink!==1||
      st.uid!==scoped.ownerUid||st.uid===scoped.workerUid||
-     (st.mode&0o007)!==0||
+     st.gid!==scoped.roleGid||(st.mode&0o777)!==0o660||
+     !dir.isDirectory()||dir.isSymbolicLink()||
+     dir.uid!==scoped.ownerUid||dir.gid!==scoped.roleGid||
+     (dir.mode&0o7777)!==0o2750||
+     await realpath(parent)!==parent||
      await realpath(cfg.nativeCryptoSocketPath)!==cfg.nativeCryptoSocketPath)
    deny();
   // A distinct Linux UID must be able to connect through the explicitly
