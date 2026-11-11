@@ -98,6 +98,11 @@ export function verifyDisposableNativeScriptedE2EProof(contents,{
   individually_signed_repair_tasks:10,
   original_owner_adaptive_decisions:25,
   native_child_count:24,
+  original_native_three_role_model_task_receipts_fenced:true,
+  // The free native Rust E2E still uses same-PID SDK worker processes.
+  // A zero-inference cross-UID Docker proof in another run is NOT a
+  // substitute for isolated workers in this exact signed session.
+  isolated_worker_model_ipc_in_this_native_e2e:false,
   latest_test_pass_same_head:true,
   no_extra_child_for_terminal_decision:true,
   scripted_adk_planning_calls_in_native_host:2,
