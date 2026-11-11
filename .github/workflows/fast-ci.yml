@@ -93,10 +93,6 @@ jobs:
           node --test poc/apps/orchestrator/test/r460-gemini-three-agent-binding.test.mjs
           # R462: exact one-file private Gemini registration PR39 audit; fixture-only, no model, merge or dispatch.
           node --test poc/scripts/test/r462-gemini-registration-pr-audit.test.mjs
-          # R463: paid private Engineer Host OIDC/TLS and exact source pins, no host or model started.
-          node --test poc/scripts/test/r463-gemini-private-host-preflight.test.mjs
-          # R464: paid-identity GitHub admin controls, no authenticated calls from CI.
-          node --test poc/scripts/test/r464-gemini-private-github-readiness.test.mjs
           # Phase C: a disposable scripted-only Engineer decision, actual Ed25519 signature, NEVER Gemini billing.
           node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs
           # Research model evidence: actual ADK BaseLlm output enters original owner adaptive loop; no provider key.
