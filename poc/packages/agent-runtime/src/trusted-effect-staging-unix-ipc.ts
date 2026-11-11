@@ -442,6 +442,9 @@ export async function createTrustedEffectAgentBindingServer(config:{
   Partial<Pick<Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>,"attest"|"reportNoChange">>;
  /** Production agents pin their own role before accepting owner Task binds. */
  expectedRole?:Role;
+ /** Original Rust MCP signer DID, pinned by the trusted owner bootstrap,
+  * never inferred from an untrusted A2A Card or request body. */
+ expectedPresenterDid?:string;
  originalScopedEffectRole?:TrustedOriginalScopedEffectRole;
 }){
  if(config.originalScopedEffectRole&&
@@ -450,6 +453,11 @@ export async function createTrustedEffectAgentBindingServer(config:{
  if(config.expectedRole!==undefined&&
     !trustedPrivateRole(config.expectedRole))
   deny("invalid locally pinned Agent role");
+ if(config.expectedPresenterDid!==undefined&&(
+     !config.expectedRole||
+     typeof config.expectedPresenterDid!=="string"||
+     !/^did:[A-Za-z0-9:._-]{6,240}$/u.test(config.expectedPresenterDid)))
+  deny("invalid owner-pinned native Rust signer DID");
  if(!(config.registry instanceof TrustedEffectStagingTaskRegistry)||
     !config.ownerStageClient||
     typeof config.ownerStageClient.stage!=="function")
@@ -465,6 +473,12 @@ export async function createTrustedEffectAgentBindingServer(config:{
     const pins=v.pins;
     if(config.expectedRole!==undefined&&pins.role!==config.expectedRole)
      deny("owner Task role differs from local Agent host role");
+    // A role-correct HMAC never makes a different signed Child DID valid.
+    // On the native isolated worker, bind the original signer/Card DID to
+    // the original trusted Coordinator/Child presenter BEFORE any Task.
+    if(config.expectedPresenterDid!==undefined&&
+       pins.presenterId!==config.expectedPresenterDid)
+     deny("signed Child presenter differs from original native signer DID");
     if(pins.operation==="read_then_update"&&
        typeof config.ownerStageClient.attest!=="function")
      deny("mixed Task needs original private independent attestation channel");
