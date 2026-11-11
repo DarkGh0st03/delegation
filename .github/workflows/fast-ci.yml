@@ -159,6 +159,8 @@ jobs:
           node --experimental-strip-types --test --test-name-pattern="R382.6|R382.7" poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-reviewed-canonical-handoff.test.mjs
           node --experimental-strip-types --test --test-name-pattern="R382.5|R382.6" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
+          # Signed native Task prebind and one-use owner model gate: FREE scripted Review Host only.
+          node --experimental-strip-types --test --test-name-pattern="Disposable native R323" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
           node --test poc/apps/orchestrator/test/trusted-gemini-owner-dispatch.test.mjs
           node --experimental-strip-types --test --test-name-pattern="R382.4" poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs
           node --test poc/scripts/test/r3822-native-mcp-checkpoint-isolation.test.mjs
