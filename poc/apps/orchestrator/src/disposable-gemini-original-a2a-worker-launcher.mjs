@@ -7,9 +7,9 @@
  * read owner-private filesystem. A real signed Task binder and a proven
  * different-UID/mount boundary are required before lifting the paid gate.
  */
-import {fork} from "node:child_process";
+import {fork,spawn} from "node:child_process";
 import {randomBytes} from "node:crypto";
-import {mkdtemp,writeFile,rm,lstat,realpath} from "node:fs/promises";
+import {mkdtemp,writeFile,rm,lstat,realpath,readFile} from "node:fs/promises";
 import {join,resolve,isAbsolute} from "node:path";
 import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
@@ -267,4 +267,202 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
   // Probe does not outlive child startup or an error path.
   await rm(probeDir,{recursive:true,force:true}).catch(()=>{});
  }
+}
+
+
+/**
+ * FREE / NO-GEMINI privileged Linux sibling launcher for the THREE ORIGINAL
+ * specialist A2A processes, NOT a new orchestrator, signer or agent.
+ *
+ * The parent is an explicit UID=0 provisioner; Owner is a SEPARATE
+ * unprivileged UID process already running. The launcher executes ONLY the
+ * repository's existing A2A worker entrypoint through fixed /usr/bin/setpriv,
+ * dropping to three unique unprivileged UIDs/GIDs with no supplementary
+ * groups, no effective capabilities and NoNewPrivs.
+ *
+ * Unlike startDisposableOriginalA2aWorkerSubprocess (same-UID fork), this
+ * actually changes Linux credentials. It DOES NOT create distinct mount
+ * namespaces, attest a native Rust signature, grant provider effects or
+ * authorize Gemini. Never launch in a paid workflow.
+ */
+export async function startDisposableOriginalPrivilegedThreeRoleWorkers({
+ configs,scopes,ownerPid,ownerCanaryPath,offlineSyntheticOnly
+}={}){
+ const names=["backend","frontend","test"];
+ const precise=value=>value&&typeof value==="object"&&
+  !Array.isArray(value)&&
+  Object.keys(value).sort().join(",")===names.slice().sort().join(",");
+ const allowed=value=>Number.isSafeInteger(value)&&value>0&&value<65536;
+ const statusNumbers=(status,key,count)=>{
+  const line=status.match(new RegExp("^"+key+":\\s*([^\\n]*)$","mu"));
+  if(!line)deny();
+  const parts=line[1].trim()?line[1].trim().split(/\s+/u):[];
+  if(parts.length!==count||parts.some(x=>!/^[0-9]+$/u.test(x)))deny();
+  const result=parts.map(Number);
+  if(!result.every(Number.isSafeInteger))deny();
+  return result;
+ };
+ if(offlineSyntheticOnly!==true||process.platform!=="linux"||
+    process.getuid?.()!==0||process.geteuid?.()!==0||
+    process.env.DELEGATION_DISPOSABLE_LIVE_MODE!==undefined||
+    ["GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY",
+     "GOOGLE_APPLICATION_CREDENTIALS"].some(k=>Object.hasOwn(process.env,k))||
+    !precise(configs)||!precise(scopes)||
+    !Number.isSafeInteger(ownerPid)||ownerPid<2||ownerPid===process.pid||
+    typeof ownerCanaryPath!=="string"||
+    !isAbsolute(ownerCanaryPath)||resolve(ownerCanaryPath)!==ownerCanaryPath||
+    ownerCanaryPath.length>240||ownerCanaryPath.includes("\0"))deny();
+ const uidSet=new Set(),gidSet=new Set(),ports=new Set(),channels=new Set();
+ let ownerUid;
+ try{
+  const [stat,dir,owner,priv]=await Promise.all([
+   lstat(ownerCanaryPath),lstat(resolve(ownerCanaryPath,"..")),
+   readFile("/proc/"+ownerPid+"/status","utf8"),
+   lstat("/usr/bin/setpriv")
+  ]);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
+     (stat.mode&0o777)!==0o600||
+     !dir.isDirectory()||dir.isSymbolicLink()||
+     (dir.mode&0o777)!==0o700||stat.uid!==dir.uid||
+     !priv.isFile()||priv.isSymbolicLink()||priv.uid!==0||
+     (priv.mode&0o022)!==0||
+     await realpath(ownerCanaryPath)!==ownerCanaryPath||
+     statusNumbers(owner,"Pid",1)[0]!==ownerPid||
+     statusNumbers(owner,"PPid",1)[0]!==process.pid)deny();
+  const uids=statusNumbers(owner,"Uid",4);
+  if(!uids.every(u=>u===uids[0])||uids[0]===0||
+     uids[0]!==stat.uid)deny();
+  ownerUid=uids[0];
+  for(const name of names){
+   const conf=configs[name],scope=scopes[name];
+   if(!conf||typeof conf!=="object"||Array.isArray(conf)||
+      !scope||typeof scope!=="object"||Array.isArray(scope)||
+      Object.keys(scope).sort().join(",")!=="ownerUid,role,roleGid,workerUid"||
+      scope.role!==name||conf.role!==name||
+      scope.ownerUid!==ownerUid||!allowed(scope.workerUid)||
+      !allowed(scope.roleGid)||scope.workerUid===ownerUid||
+      Object.keys(conf).sort().join(",")!==(
+       (Object.hasOwn(conf,"nativeCryptoSocketPath")||
+        Object.hasOwn(conf,"nativeSignerDid"))?NATIVE_KEYS.join(","):KEYS.join(","))||
+      !Number.isSafeInteger(conf.port)||conf.port<1024||
+      conf.port>65535||ports.has(conf.port)||
+      typeof conf.adapterToken!=="string"||conf.adapterToken.length<8||
+      typeof conf.gatewayBaseUrl!=="string"||
+      typeof conf.adapterBaseUrl!=="string"||
+      !conf.task||typeof conf.task.session_id!=="string")deny();
+   uidSet.add(scope.workerUid);gidSet.add(scope.roleGid);
+   ports.add(conf.port);
+   for(const key of ["modelSocketPath","modelSecretFile",
+     "bindSocketPath","bindSecretFile","stageSocketPath","stageSecretFile"]){
+    if(typeof conf[key]!=="string"||!isAbsolute(conf[key])||
+       resolve(conf[key])!==conf[key]||conf[key].includes("\0")||
+       channels.has(conf[key]))deny();
+    channels.add(conf[key]);
+   }
+   if(Object.hasOwn(conf,"nativeCryptoSocketPath"))
+    await verifyOwnerNativeRustSocket(conf,scope);
+  }
+  if(uidSet.size!==3||gidSet.size!==3||ports.size!==3||
+     channels.size!==18)deny();
+ }catch{deny();}
+ const entry=fileURLToPath(new URL(
+  "./disposable-gemini-original-a2a-worker-child.mjs",import.meta.url
+ ));
+ const children=new Map(),results={};
+ const halt=async()=>{
+  const done=[];
+  for(const child of children.values()){
+   done.push(new Promise(resolveDone=>{
+    if(child.exitCode!==null||child.signalCode!==null){
+     resolveDone();return;
+    }
+    let settled=false;
+    const finish=()=>{if(settled)return;settled=true;
+      clearTimeout(timer);resolveDone();};
+    child.once("exit",finish);
+    const timer=setTimeout(()=>{
+     if(child.exitCode===null)child.kill("SIGKILL");
+     finish();
+    },5000);
+    try{
+     if(child.connected)child.send({type:"stop"},err=>{
+      if(err&&child.exitCode===null)child.kill("SIGTERM");
+     });
+     else if(child.exitCode===null)child.kill("SIGTERM");
+    }catch{if(child.exitCode===null)child.kill("SIGTERM");}
+   }));
+  }
+  await Promise.all(done);
+ };
+ const ownerEnv=Object.freeze({
+  PATH:"/usr/bin:/bin",LANG:"C.UTF-8",TZ:"UTC",HOME:"/nonexistent",
+  DELEGATION_GATEWAY_ARCHITECTURE:"authority-only"
+ });
+ try{
+  for(const name of names){
+   const scope=scopes[name],conf=configs[name];
+   const child=spawn("/usr/bin/setpriv",[
+    "--reuid",String(scope.workerUid),
+    "--regid",String(scope.roleGid),
+    "--clear-groups","--no-new-privs","--bounding-set=-all",
+    process.execPath,"--experimental-strip-types",entry
+   ],{
+    env:ownerEnv,stdio:["ignore","ignore","ignore","ipc"],
+    windowsHide:true
+   });
+   children.set(name,child);
+   const reported=await new Promise((accept,reject)=>{
+    let settled=false;
+    const finish=(error,value)=>{
+     if(settled)return;
+     settled=true;clearTimeout(timer);
+     child.off("message",message);child.off("exit",exit);
+     child.off("error",failure);
+     if(error)reject(error);else accept(value);
+    };
+    const message=data=>data?.type==="ready"?
+      finish(null,data):data?.type==="error"?finish(Error("NO-GO")):undefined;
+    const exit=()=>finish(Error("worker exited before trusted readiness"));
+    const failure=()=>finish(Error("privileged drop failed"));
+    const timer=setTimeout(()=>finish(Error("worker readiness timeout")),18000);
+    child.on("message",message);child.once("exit",exit);
+    child.once("error",failure);
+    child.send({type:"start",config:conf,ownerCanaryPath,
+     requireOwnerFileIsolation:true,originalScopedRole:scope},err=>{
+      if(err)finish(Error("privileged worker IPC unavailable"));
+    });
+   });
+   if(reported.pid!==child.pid||reported.role!==name||
+      reported.baseUrl!=="http://127.0.0.1:"+conf.port||
+      reported.ownerCanaryReadable!==false||
+      reported.providerCredentialPresent!==false||
+      reported.originalNativeTaskBindingPresent!==false||
+      reported.originalTaskBindingChannelReady!==true||
+      reported.crossUidChannelsConfigured!==true||
+      reported.osIsolationVerified!==false)deny();
+   const status=await readFile("/proc/"+child.pid+"/status","utf8");
+   if(statusNumbers(status,"Pid",1)[0]!==child.pid||
+      statusNumbers(status,"PPid",1)[0]!==process.pid||
+      !statusNumbers(status,"Uid",4).every(u=>u===scope.workerUid)||
+      !statusNumbers(status,"Gid",4).every(g=>g===scope.roleGid)||
+      statusNumbers(status,"Groups",0).length!==0||
+      statusNumbers(status,"NoNewPrivs",1)[0]!==1||
+      !/^CapEff:\s*0+\s*$/mu.test(status))deny();
+   results[name]=Object.freeze({
+    role:name,pid:child.pid,baseUrl:reported.baseUrl,
+    workerUid:scope.workerUid,roleGid:scope.roleGid,
+    canReadOwnerCanary:false,
+    originalNativeTaskBindingPresent:false,
+    osIsolationVerified:false,nativeRustSignerVerified:false
+   });
+  }
+ }catch{
+  await halt();deny();
+ }
+ let closing;
+ return Object.freeze({
+  workers:Object.freeze(results),close:()=>closing??=halt(),
+  osIsolationVerified:false,nativeRustSignerVerified:false,
+  paidGeminiAuthorized:false
+ });
 }
