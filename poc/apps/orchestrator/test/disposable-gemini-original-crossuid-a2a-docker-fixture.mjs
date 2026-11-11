@@ -559,6 +559,40 @@ test("original R323 owner UID 1001 prebinds one real Backend UID 1002 A2A Task, 
    modelCalls:1,staged:0,a2aIncomplete:true,
    syntheticRootOnly:true,paidInference:false
   });
+  // A fresh process with the CORRECT Backend UID, GID, Task and HMAC
+  // cannot replay a model request after the R323 owner retired the Child.
+  // This proves actual network denial, not only an in-memory ledger call.
+  const afterFenceProbe=[
+   'const {connectDisposableWorkerModelIpcClient}=await import(process.argv[1]);',
+   'const cfg=JSON.parse(process.argv[2]);',
+   'const scope=JSON.parse(process.argv[3]);',
+   'const client=await connectDisposableWorkerModelIpcClient({',
+   ' role:scope.role,socketPath:cfg.modelSocketPath,',
+   ' secretFile:cfg.modelSecretFile,originalScopedModelRole:scope});',
+   'const task={session_id:cfg.task.session_id,',
+   ' task_id:"original-real-crossuid-native-task-01",',
+   ' credential_id:"urn:offline:original-child:crossuid-backend",',
+   ' runtime_task_id:"dispatch_"+"N".repeat(22)};',
+   'try{await client.call({task,callId:"crossuid-after-native-fence-002",',
+   ' payload:{contents:[{role:"user",parts:[{text:"REPLAY"}]}]}});',
+   ' process.stdout.write("UNSAFE");}',
+   'catch(error){if(!String(error.message).includes("model IPC NO-GO"))',
+   ' throw error;process.stdout.write("DENIED");}'
+  ].join("\n");
+  const replay=spawnAs(1002,2301,[],[
+   "--input-type=module","-e",afterFenceProbe,OWNER_MODEL,
+   JSON.stringify(conf),JSON.stringify(scope)
+  ]);
+  const replayResult=await new Promise((resolve,reject)=>{
+   let stdout="",stderr="";
+   replay.stdout.on("data",x=>stdout+=x);
+   replay.stderr.on("data",x=>stderr+=x);
+   replay.once("error",reject);
+   replay.once("close",code=>resolve({code,stdout,stderr}));
+  });
+  assert.equal(replayResult.code,0,replayResult.stderr.slice(-600));
+  assert.equal(replayResult.stdout,"DENIED",
+   "closed native Task cannot be replayed over correct-role cross-UID HMAC");
   assert.equal(owner.exitCode,null);
   assert.equal(worker.exitCode,null);
  }finally{
