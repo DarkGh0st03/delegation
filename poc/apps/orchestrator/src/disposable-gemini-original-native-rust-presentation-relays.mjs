@@ -184,11 +184,15 @@ export async function startDisposableOriginalNativeRustPresentationRelays({
    let busy=false;
    const server=createServer({allowHalfOpen:true},socket=>{
     sockets.add(socket);socket.on("close",()=>sockets.delete(socket));
+    // A peer disconnecting during a Rust call must never crash the Owner
+    // through an unhandled net.Socket error after request EOF.
+    socket.on("error",()=>{});
     socket.setTimeout(12_000,()=>socket.destroy());
     const run=async()=>{
+     let acquired=false;
      try{
       if(closed||busy)deny();
-      busy=true;
+      busy=true;acquired=true;
       const body=await readHalfClosedRequest(socket);
       if(closed)deny();
       const message=JSON.parse(body.toString("utf8"));
@@ -211,7 +215,7 @@ export async function startDisposableOriginalNativeRustPresentationRelays({
       counts[role]++;
       respond(socket,{ok:true,result});
      }catch{respond(socket);}
-     finally{busy=false;}
+     finally{if(acquired)busy=false;}
     };
     void run();
    });
