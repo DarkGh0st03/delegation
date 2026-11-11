@@ -134,6 +134,10 @@ jobs:
       - name: Preflight free R371 root Branch-before-SDK operational launcher
         run: |
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
+          node --check poc/apps/orchestrator/src/disposable-ci-original-signed-review.mjs
+          # Reject a mismatched workflow origin BEFORE the costly Rust/Docker
+          # E2E. This tests the same original signed post-Planning review.
+          node --experimental-strip-types --test --test-name-pattern="CI-only signer refuses private hosts" poc/apps/orchestrator/test/disposable-ci-original-signed-review.test.mjs
           node --check poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-adaptive-work-loop.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-operational-launcher.test.mjs
