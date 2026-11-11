@@ -290,6 +290,26 @@ function executionDeps(f){
   }}
  };
 }
+test('disposable owner model Task prebind stays offline-only and cannot bypass original Planning',async t=>{
+ const f=await fixture(t);
+ f.options.disposableOwnerModelTaskPrebind={};
+ await assert.rejects(f.start(),/disposable owner model Task prebind requires offline private owner code/u);
+ f.options.disposableOwnerModelTaskPrebind=()=>()=>{};
+ const old=process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+ process.env.DELEGATION_DISPOSABLE_LIVE_MODE='gemini-real';
+ try{
+  await assert.rejects(f.start(),/disposable owner model Task prebind requires offline private owner code/u);
+ }finally{
+  if(old===undefined)delete process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+  else process.env.DELEGATION_DISPOSABLE_LIVE_MODE=old;
+ }
+ let called=0;
+ f.options.disposableOwnerModelTaskPrebind=()=>{called++;return ()=>{};};
+ const host=await f.start();
+ assert.equal(host.phase,'planning');
+ assert.equal(called,0,'no native Task prebind exists before an original signed Root');
+});
+
 test('R350 same R349 Engineer session activates independently verified Gateway and native Child issuer',async t=>{
  const f=await fixture(t),host=await f.start();
  await assert.rejects(host.admitOperationalExecution(executionDeps(f)),/requires an activated/);
