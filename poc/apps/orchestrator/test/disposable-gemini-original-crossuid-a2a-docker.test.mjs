@@ -33,8 +33,8 @@ test("offline real Backend, Frontend and Test A2A under distinct role-scoped Lin
   // ReferenceError from a role HMAC or Rust security denial. Include
   // bounded, credential-free file:line frames, never raw stdout or stderr.
   const diagnostic=lines.filter(line=>
-   /(?:not ok [0-9]|failureType:|error:|code:|original three-role|native NO-GO|owner exited|^\s+at (?:TestContext|file:|async |startDisposable|Object\.)|^\s+stack:)/u.test(line)
-  ).map(line=>line.slice(0,260)).slice(0,18);
+   /(?:not ok [0-9]|failureType:|error:|code:|original three-role|native NO-GO|owner exited|The input did not match|The error is expected|Expected values|^\s+at (?:TestContext|file:|async |startDisposable|Object\.)|^\s+stack:|^\s+(?:expected:|actual:))/u.test(line)
+  ).map(line=>line.slice(0,260)).slice(0,20);
   throw Error("Offline original cross-UID Docker test failed: "+
    (diagnostic.join(" | ")||String(error?.code??"unknown")));
  }
