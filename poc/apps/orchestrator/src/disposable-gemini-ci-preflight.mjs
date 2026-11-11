@@ -24,6 +24,9 @@ const SHA=/^[a-f0-9]{40}$/u;
 const FREE_MODES=new Set(["preflight-only","scripted-native"]);
 const RUN=/^[1-9][0-9]{0,19}$/u;
 const deny=()=>{throw Error("Disposable Gemini CI preflight NO-GO");};
+const isSourcePinnedFreeRun=env=>
+ env.GITHUB_EVENT_NAME==="push"&&
+ env.DELEGATION_LIVE_CI_PREFLIGHT_MODE==="scripted-native";
 
 /**
  * An honest NO-BILLING admission, not a paid consent check.
@@ -34,7 +37,8 @@ export function assertDisposableGeminiCiPreflight(env,checkoutSha){
  if(!env||typeof env!=="object"||Array.isArray(env)||
     env.GITHUB_ACTIONS!=="true"||
     env.GITHUB_REPOSITORY!==REPO||
-    env.GITHUB_EVENT_NAME!=="workflow_dispatch"||
+    (env.GITHUB_EVENT_NAME!=="workflow_dispatch"&&
+     !isSourcePinnedFreeRun(env))||
     env.GITHUB_REF!==REF||
     env.GITHUB_WORKFLOW_REF!==REPO+"/"+WORKFLOW+"@"+REF||
     env.GITHUB_RUN_ATTEMPT!=="1"||
@@ -53,11 +57,14 @@ export function assertDisposableGeminiCiPreflight(env,checkoutSha){
     env.OPENAI_API_KEY!==undefined)
    deny();
  return Object.freeze({
-  status:"disposable_manual_ci_preflight_only",
+  status:isSourcePinnedFreeRun(env)?
+   "disposable_single_branch_push_scripted_native_preflight_only":
+   "disposable_manual_ci_preflight_only",
   source_sha:checkoutSha,
   workflow_path:WORKFLOW,
   scripted_native_e2e_requested:
    env.DELEGATION_LIVE_CI_PREFLIGHT_MODE==="scripted-native",
+  source_pinned_free_push_only:isSourcePinnedFreeRun(env),
   scripted_native_e2e_proven_here:false,
   signed_engineer_approval_created:false,
   native_root_created:false,
