@@ -139,18 +139,28 @@ export function createDisposableOriginalThreeRoleModelTaskAdmission(){
  const active=new Map(roles.map(role=>[role,new Set()]));
  const admitted=new Map(roles.map(role=>[role,0]));
  const fenced=new Map(roles.map(role=>[role,0]));
- let rootPin=null,closed=false;
+ let rootPin=null,rootAsserter=null,closed=false;
+ const revokeAll=()=>{
+  if(closed)return;
+  closed=true;
+  for(const ledger of ledgers.values())ledger.retireAll();
+  for(const entries of active.values())entries.clear();
+ };
  const originalRoot=assertOriginalRootActive=>{
-  if(typeof assertOriginalRootActive!=="function")deny();
-  const root=assertOriginalRootActive();
+  if(closed||typeof assertOriginalRootActive!=="function"){
+   revokeAll();deny();
+  }
+  let root;
+  try{root=assertOriginalRootActive();}
+  catch{revokeAll();deny();}
   if(!root||!ID.test(root.session_id??"")||
      !ID.test(root.root_credential_id??"")||
-     !DIGEST.test(root.authority_digest??""))deny();
+     !DIGEST.test(root.authority_digest??"")){
+   revokeAll();deny();
+  }
   const pin=[root.session_id,root.root_credential_id,root.authority_digest];
   if(rootPin&&pin.some((v,i)=>v!==rootPin[i])){
-   closed=true;
-   for(const entry of ledgers.values())entry.retireAll();
-   deny();
+   revokeAll();deny();
   }
   return pin;
  };
@@ -172,7 +182,12 @@ export function createDisposableOriginalThreeRoleModelTaskAdmission(){
   const result=ledger.bindOriginalReceipt(receipt);
   if(result.status!==
      "original_native_child_gateway_model_task_prebound_not_executed")deny();
-  if(!rootPin)rootPin=pin;
+  if(!rootPin){
+   rootPin=pin;
+   // Re-check the SAME original Coordinator Root on every role's model
+   // turn, including an unrelated specialist's already-bound Task.
+   rootAsserter=assertOriginalRootActive;
+  }
   const taskId=receipt.runtime_task_id;
   active.get(role).add(taskId);
   admitted.set(role,admitted.get(role)+1);
@@ -190,17 +205,16 @@ export function createDisposableOriginalThreeRoleModelTaskAdmission(){
  const roleAuthorizers=Object.freeze(Object.fromEntries(roles.map(role=>
   [role,async input=>{
    if(closed||!input||input.role!==role)deny();
+   if(!rootAsserter)deny();
+   // Root revocation / replacement must fence ALL three roles at once,
+   // not just the specific role whose old Task is being replayed.
+   originalRoot(rootAsserter);
    const ledger=ledgers.get(role);
    if(!ledger)deny();
    return ledger.authorizeSignedTask(input);
   }]
  )));
- const retireAll=()=>{
-  if(closed)return;
-  closed=true;
-  for(const ledger of ledgers.values())ledger.retireAll();
-  for(const items of active.values())items.clear();
- };
+ const retireAll=()=>revokeAll();
  // Aggregate only non-secret counts. An owner cannot use these numbers as
  // Gateway evidence, a Rust signature, or a paid launch authorization.
  const snapshot=()=>Object.freeze({
