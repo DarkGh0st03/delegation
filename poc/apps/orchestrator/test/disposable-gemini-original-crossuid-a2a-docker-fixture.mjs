@@ -876,6 +876,28 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
     modelCalls:1,a2aIncomplete:true
    },"original "+role+" R323 prebind/model IPC/retirement must all succeed");
   }
+  // The same three real worker Linux UIDs now replay their own formerly
+  // authorized Rust presentation with a valid role token AFTER terminal
+  // original R323/remote binder fence. The owner relay must deny them all,
+  // not merely close the in-process admission callback.
+  for(const [role,uid,gid] of roles){
+   const probe=spawnAs(uid,gid,[],[
+    "--input-type=module","-e",nativeNoTaskProbe,
+    "file:///work/poc/mcp-shared/src/native-rust-transport.mjs",
+    nativeRust.roleSockets[role],nativeRust.roleTokens[role],
+    "urn:offline:original-child:"+role,"create_presentation"
+   ]);
+   const result=await new Promise((resolve,reject)=>{
+    let out="",err="";
+    probe.stdout.on("data",b=>out+=b);
+    probe.stderr.on("data",b=>err+=b);
+    probe.once("error",reject);
+    probe.once("close",status=>resolve({status,out,err}));
+   });
+   assert.equal(result.status,0,result.err.slice(-300));
+   assert.equal(result.out,"DENIED",
+    "retired original "+role+" signed Child cannot replay a VP via real UID");
+  }
   // Separate Linux processes now attempt replay with the EXACT previously
   // bound Task/Child and their own valid role HMAC. Denial must come from
   // the actual OWNER Unix model server, not only an in-process test ledger.
