@@ -200,6 +200,9 @@ const start=async message=>{
   socketPath:cfg.bindSocketPath,secretFile:cfg.bindSecretFile,
   expectedRole:cfg.role,registry:trustedEffectTaskRegistry,
   ownerStageClient,
+  // This DID is also the trusted native Agent Card identity; the binder
+  // must not accept an otherwise HMAC-valid Child with a foreign presenter.
+  ...(nativeMcp?{expectedPresenterDid:cfg.nativeSignerDid}:{}),
   ...(scoped?{originalScopedEffectRole:scoped}:{})
  });
  await binder.start();
