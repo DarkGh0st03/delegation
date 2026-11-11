@@ -14,19 +14,30 @@
 
 name: delegation
 
-x-app-image: &app-image
+# Each local image is BUILT by exactly one service ("app" and "anvil"); the
+# other services only reuse it and never try to pull it from a registry.
+# (Several services building the same tag in parallel makes BuildKit fail.)
+x-app-build: &app-build
   image: delegation-app:local
   build:
     context: .
     dockerfile: deploy/Dockerfile
     target: app
 
-x-chain-image: &chain-image
+x-app-image: &app-image
+  image: delegation-app:local
+  pull_policy: never
+
+x-chain-build: &chain-build
   image: delegation-chain:local
   build:
     context: .
     dockerfile: deploy/Dockerfile
     target: chain
+
+x-chain-image: &chain-image
+  image: delegation-chain:local
+  pull_policy: never
 
 services:
   # ---------------------------------------------------------- preparation --
@@ -126,7 +137,7 @@ services:
     restart: unless-stopped
 
   anvil:
-    <<: *chain-image
+    <<: *chain-build
     command: ["anvil", "--host", "0.0.0.0", "--chain-id", "31337",
               "--mnemonic", "test test test test test test test test test test test junk"]
     ports:
@@ -142,7 +153,7 @@ services:
 
   # ---------------------------------------------------------- application --
   app:
-    <<: *app-image
+    <<: *app-build
     environment:
       CONFIG_DIR: /config
       CONSOLE_STATE_DIR: /state
