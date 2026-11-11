@@ -537,6 +537,42 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
   assert.match(ownerField("CapEff")??"",/^0+$/u);
   assert.deepEqual(ownerField("Groups")?.split(" ").filter(Boolean).sort(),
    ["2301","2302","2303"]);
+  // A real Linux role GID plus a valid role-specific Rust bearer cannot
+  // authorize any VP BEFORE the same Owner's genuine R323 Task prebind.
+  // This prebound-negative check and the later positive owner relay call
+  // exercise the exact same Unix listeners and Owner process.
+  const nativeNoTaskProbe=[
+   'const {invokeNativeCryptoWire}=await import(process.argv[1]);',
+   'const socketPath=process.argv[2],token=process.argv[3],',
+   ' credentialId=process.argv[4],operation=process.argv[5];',
+   'try{await invokeNativeCryptoWire({socketPath,token,timeoutMs:4000},',
+   ' operation,{credential_id:credentialId,',
+   ' disclosed_permissions:[{operation:"read_file",',
+   ' resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/account.ts"}],',
+   ' audience:"cloud-access-gateway",challenge:"offline-role-prebind-challenge"});',
+   ' process.stdout.write("UNSAFE");}',
+   'catch{process.stdout.write("DENIED");}'
+  ].join("\n");
+  for(const [role,uid,gid] of roles){
+   for(const operation of ["create_presentation","issue_child"]){
+    const probe=spawnAs(uid,gid,[],[
+     "--input-type=module","-e",nativeNoTaskProbe,
+     "file:///work/poc/mcp-shared/src/native-rust-transport.mjs",
+     nativeRust.roleSockets[role],nativeRust.roleTokens[role],
+     "urn:offline:original-child:"+role,operation
+    ]);
+    const result=await new Promise((resolve,reject)=>{
+     let out="",err="";
+     probe.stdout.on("data",b=>out+=b);
+     probe.stderr.on("data",b=>err+=b);
+     probe.once("error",reject);
+     probe.once("close",status=>resolve({status,out,err}));
+    });
+    assert.equal(result.status,0,result.err.slice(-200));
+    assert.equal(result.out,"DENIED",
+     "native Rust role "+role+" must reject "+operation+" before R323");
+   }
+  }
   // The very same existing specialist PIDs must NOT be able to opt into
   // native MCP with a guessed DID and an unmounted Rust signing socket.
   // Refuse at bootstrap, before any A2A listener or model invocation.
