@@ -30,8 +30,7 @@ Altri comandi utili:
 | `docker compose ps -a` | stato dei servizi (i servizi di preparazione risultano `Exited (0)` quando hanno finito bene) |
 | `docker compose logs -f app` | log della console |
 | `docker compose logs gitea-bootstrap trust-bootstrap` | log della preparazione |
-| `docker compose stop` | ferma tutto mantenendo i dati |
-| `docker compose up -d` | riavvia |
+| `docker compose down` poi `docker compose up -d` | **riavvio corretto** (anche dopo aver riacceso il PC): ferma tutto e riparte da capo mantenendo i dati di Gitea |
 | `docker compose down` | rimuove i container, mantiene i volumi (dati e configurazione) |
 | `docker compose down -v` | **cancella tutto**, compresi Gitea, chiavi e configurazione |
 
@@ -72,15 +71,20 @@ Immagini:
 
 Dati persistenti (volumi Docker): `delegation-config` (configurazione privata),
 `delegation-gitea-data` (repository Gitea), `delegation-state` (policy e
-richieste salvate dalla console). Anvil invece riparte da zero a ogni riavvio:
-`trust-bootstrap` registra di nuovo i contratti automaticamente.
+richieste salvate dalla console). Anvil invece riparte da zero a ogni avvio e
+`trust-bootstrap` registra di nuovo i contratti. **Blockchain e app vanno
+sempre riavviate insieme**: all'avvio il core Rust dell'Engineer genera nuove
+chiavi per gli accumulatori e registra le identità dei 5 ruoli (Engineer,
+Orchestrator, Backend, Frontend, Test) su una catena pulita. Per questo `anvil`
+e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
+`docker compose up -d`.
 
 ## Cosa fa oggi la console
 
 | Sezione | Stato |
 |---|---|
 | Login Engineer | Password con hash scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
-| 1 · Ambiente | Gitea, OPA, Anvil, contratti, moduli Rust |
+| 1 · Ambiente | Gitea, OPA, Anvil, contratti, moduli Rust, avvio del core dell'Engineer (identità on-chain) e del verificatore del Gateway |
 | 2 · Repository | Elenco e import da URL https pubblico, con protezione del branch principale |
 | 3 · Policy | Parametri salvati per repository. **Non ancora applicati da OPA** |
 | 4 · Requisito | Richiesta salvata con la commit di base fissata |

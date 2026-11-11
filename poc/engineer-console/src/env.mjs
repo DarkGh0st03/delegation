@@ -57,6 +57,7 @@ export function loadLocalConfig(env = process.env) {
   const consolePort = Number(env.ENGINEER_CONSOLE_PORT ?? 8700);
   return Object.freeze({
     composeMode,
+    configDir: composeMode ? resolve(env.CONFIG_DIR) : RUNTIME_DIR,
     infraEnvPresent: existsSync(infraPath),
     giteaUrl: env.GITEA_URL ?? `http://127.0.0.1:${port("GITEA_HOST_PORT", 3000)}`,
     opaUrl: env.OPA_URL ?? `http://127.0.0.1:${port("OPA_HOST_PORT", 8181)}`,

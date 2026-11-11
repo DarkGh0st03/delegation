@@ -93,4 +93,4 @@ COPY --from=rust-build --chown=node:node /out/delegation-core.node \
 RUN mkdir -p /config /state && chown node:node /config /state
 USER node
 EXPOSE 8700
-CMD ["node", "poc/engineer-console/src/server.mjs"]
+CMD ["node", "--experimental-strip-types", "--disable-warning=ExperimentalWarning", "poc/engineer-console/src/server.mjs"]

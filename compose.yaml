@@ -149,7 +149,10 @@ services:
       retries: 30
       start_period: 5s
     networks: [infra]
-    restart: unless-stopped
+    # Not auto-restarted: the chain must restart together with "app" (the
+    # Engineer core enrols fresh accumulator keys at every start). Use
+    # "docker compose down && docker compose up -d".
+    restart: "no"
 
   # ---------------------------------------------------------- application --
   app:
@@ -172,7 +175,7 @@ services:
       trust-bootstrap: {condition: service_completed_successfully}
       opa: {condition: service_healthy}
     networks: [infra]
-    restart: unless-stopped
+    restart: "no"
 
 networks:
   infra:

@@ -270,3 +270,25 @@ test("Gitea 422 on import becomes an actionable message", async (t) => {
   assert.equal(r.status, 422);
   assert.match((await r.json()).error, /indirizzo di clonazione/u);
 });
+
+test("native environment maps every role identity and refuses missing configuration", async () => {
+  const {nativeEnvironment} = await import("../src/trusted-core.mjs");
+  const local = {ANVIL_DEPLOYER_PRIVATE_KEY: "0x" + "a".repeat(64), ADAPTER_CALLER_GATEWAY: "g"};
+  for (const role of ["ENGINEER", "ORCHESTRATOR", "BACKEND", "FRONTEND", "TEST"]) {
+    local[`ROLE_EVM_PRIVATE_KEY_${role}`] = "0x" + role.length.toString(16).padStart(64, "0");
+    local[`ROLE_DID_${role}`] = "did:ethr:0x7a69:0x" + role.length.toString(16).padStart(40, "0");
+    local[`ADAPTER_CALLER_${role}`] = "token-" + role;
+  }
+  const trust = {DID_REGISTRY_ADDRESS: "0x1", ENTERPRISE_TRUST_REGISTRY_ADDRESS: "0x2",
+    ISSUER_REGISTRY_ADDRESS: "0x3"};
+  const env = nativeEnvironment({local, trust, anvilUrl: "http://anvil:8545"});
+  assert.equal(env.ENGINEER_CORE_NATIVE_MODE, "1");
+  assert.equal(env.ADAPTER_TRUST_PROFILE, "evm");
+  assert.equal(env.ADAPTER_ID_BACKEND, local.ROLE_DID_BACKEND);
+  assert.equal(env.ADAPTER_EVM_PRIVATE_KEY_TEST, local.ROLE_EVM_PRIVATE_KEY_TEST);
+  assert.equal(env.GOVERNANCE_PRIVATE_KEY, local.ANVIL_DEPLOYER_PRIVATE_KEY);
+  assert.equal(env.CORE_RUST_DID_REGISTRY_ADDRESS, "0x1");
+  assert.ok(env.ADAPTER_ENGINEER_NATIVE_SOCKET.length <= 100);
+  const {ROLE_DID_TEST: _drop, ...incomplete} = local;
+  assert.throws(() => nativeEnvironment({local: incomplete, trust, anvilUrl: "x"}), /ROLE_DID_TEST/u);
+});

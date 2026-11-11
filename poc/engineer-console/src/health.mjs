@@ -36,7 +36,7 @@ async function rpc(fetchFn, url, method, params = []) {
 }
 
 export async function checkEnvironment(config, {fetchFn = fetch, fileExists = existsSync,
-  loadAddon = loadAddonInChild} = {}) {
+  loadAddon = loadAddonInChild, trustedCore} = {}) {
   const checks = [];
   const restart = config.composeMode ? "riavvia lo stack: docker compose up -d"
     : "bash poc/scripts/phase1-up.sh";
@@ -84,6 +84,13 @@ export async function checkEnvironment(config, {fetchFn = fetch, fileExists = ex
 
   add("native-engineer", "Modulo Rust dell'Engineer (emissione)",
     await addon(config.nativeEngineerAddon), "Modulo non utilizzabile: " + rebuild);
+
+  if (trustedCore) {
+    add("engineer-core", "Core Rust dell'Engineer (identità on-chain)", trustedCore.engineer,
+      "Il core non è partito: guarda docker compose logs app");
+    add("gateway-verifier", "Verificatore del Gateway", trustedCore.verifier,
+      "Il verificatore non è pronto: guarda docker compose logs app");
+  }
 
   return {ready: checks.every(c => c.ok), checks};
 }

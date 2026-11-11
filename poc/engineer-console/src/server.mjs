@@ -12,6 +12,7 @@ import {loadLocalConfig} from "./env.mjs";
 import {GiteaAdmin} from "./gitea.mjs";
 import {checkEnvironment} from "./health.mjs";
 import {ConsoleStore} from "./store.mjs";
+import {startTrustedCore} from "./trusted-core.mjs";
 
 const config = loadLocalConfig();
 const users = readUserFile(config.usersPath);
@@ -27,6 +28,18 @@ if (!config.infraEnvPresent) {
   process.exit(1);
 }
 
+// Native Rust components start in the background (Compose deployment only);
+// their status is shown on the environment page until they are ready.
+const core = {engineer: {ok: false, detail: "avvio in corso..."},
+  verifier: {ok: false, detail: "in attesa del core dell'Engineer"}};
+if (config.composeMode) {
+  startTrustedCore(config).then(result => {
+    Object.assign(core, result);
+    process.stdout.write(`Core Engineer: ${result.engineer.ok ? "OK" : "ERRORE"} - ${result.engineer.detail}\n` +
+      `Verificatore Gateway: ${result.verifier.ok ? "OK" : "ERRORE"} - ${result.verifier.detail}\n`);
+  });
+}
+
 const handler = createConsoleHandler({
   auth: new ConsoleAuth({users}),
   gitea: new GiteaAdmin({
@@ -35,7 +48,7 @@ const handler = createConsoleHandler({
     gatewayUser: config.giteaGatewayUser, runnerUser: config.giteaRunnerUser
   }),
   store: new ConsoleStore(config.stateDir),
-  health: () => checkEnvironment(config),
+  health: () => checkEnvironment(config, config.composeMode ? {trustedCore: core} : {}),
   port: config.consolePort
 });
 

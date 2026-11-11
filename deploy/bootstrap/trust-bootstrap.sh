@@ -19,4 +19,12 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
-exec bash /work/poc/scripts/bootstrap-trust.sh
+bash /work/poc/scripts/bootstrap-trust.sh
+
+# Fund every role identity on the local chain (Anvil restarts empty, so this
+# runs on every start). Balances pay for DID and accumulator transactions.
+grep -E '^ROLE_EVM_PRIVATE_KEY_[A-Z]+=' "$config" | while IFS='=' read -r name key; do
+  address="$(cast wallet address --private-key "$key")"
+  cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+  echo "Funded ${name#ROLE_EVM_PRIVATE_KEY_} identity $address"
+done
