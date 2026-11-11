@@ -299,6 +299,26 @@ test("three-role Owner model IPC refuses mismatched channels, foreign roles and 
  await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
   ...valid,offlineSyntheticOnly:false
  }),/Disposable original signed IPC Task admission NO-GO/u);
+ const scoped={
+  backend:{role:"backend",ownerUid:1001,workerUid:1002,roleGid:2301},
+  frontend:{role:"frontend",ownerUid:1001,workerUid:1003,roleGid:2302},
+  test:{role:"test",ownerUid:1001,workerUid:1004,roleGid:2303}
+ };
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,originalScopedRoles:{...scoped,
+   frontend:{...scoped.frontend,workerUid:1002}}
+ }),/Disposable original signed IPC Task admission NO-GO/u,
+ "two original specialists cannot share an OS worker identity");
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,originalScopedRoles:{...scoped,
+   test:{...scoped.test,roleGid:2301}}
+ }),/Disposable original signed IPC Task admission NO-GO/u,
+ "two role scopes cannot share a Linux HMAC group");
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,originalScopedRoles:{...scoped,
+   test:{...scoped.test,ownerUid:2001}}
+ }),/Disposable original signed IPC Task admission NO-GO/u,
+ "one owner cannot silently become multiple owners");
  const previous=process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
  process.env.DELEGATION_DISPOSABLE_LIVE_MODE="gemini-real";
  try{
