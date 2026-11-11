@@ -23,6 +23,6 @@ test("offline real Backend, Frontend and Test A2A under distinct role-scoped Lin
   env:{PATH:process.env.PATH??"/usr/bin:/bin",
    HOME:process.env.HOME??"/tmp"}
  });
- assert.match(stdout,/pass 3/u,stderr.slice(-1200));
+ assert.match(stdout,/pass 4/u,stderr.slice(-1200));
  assert.match(stdout,/fail 0/u,stderr.slice(-1200));
 });
