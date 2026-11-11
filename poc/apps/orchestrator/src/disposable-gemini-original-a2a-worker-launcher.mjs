@@ -340,8 +340,15 @@ export async function startDisposableOriginalPrivilegedThreeRoleWorkers({
      statusNumbers(owner,"Pid",1)[0]!==ownerPid||
      statusNumbers(owner,"PPid",1)[0]!==process.pid)deny();
   const uids=statusNumbers(owner,"Uid",4);
+  const ownerGids=statusNumbers(owner,"Gid",4);
+  // The Rust/Model Owner is not a privileged root helper: it must be an
+  // ordinary stable Linux principal without effective capabilities, with
+  // NoNewPrivs already locked before any specialist is launched.
   if(!uids.every(u=>u===uids[0])||uids[0]===0||
-     uids[0]!==stat.uid)deny();
+     uids[0]!==stat.uid||
+     !ownerGids.every(g=>g===ownerGids[0])||ownerGids[0]===0||
+     statusNumbers(owner,"NoNewPrivs",1)[0]!==1||
+     !/^CapEff:[ \t]*0+[ \t]*$/mu.test(owner))deny();
   ownerUid=uids[0];
   for(const name of names){
    const conf=configs[name],scope=scopes[name];
@@ -372,8 +379,15 @@ export async function startDisposableOriginalPrivilegedThreeRoleWorkers({
    if(Object.hasOwn(conf,"nativeCryptoSocketPath"))
     await verifyOwnerNativeRustSocket(conf,scope);
   }
+  const actualOwnerGroups=statusNumbers(owner,"Groups",3);
+  // The Owner may join precisely the three original role transport
+  // groups and NO other supplementary group (especially not GID 0).
+  // Workers retain zero supplementary groups after setpriv.
   if(uidSet.size!==3||gidSet.size!==3||ports.size!==3||
-     channels.size!==18)deny();
+     channels.size!==18||
+     gidSet.has(ownerGids[0])||
+     new Set(actualOwnerGroups).size!==3||
+     actualOwnerGroups.some(g=>!gidSet.has(g)))deny();
  }catch{deny();}
  const entry=fileURLToPath(new URL(
   "./disposable-gemini-original-a2a-worker-child.mjs",import.meta.url
