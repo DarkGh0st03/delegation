@@ -261,3 +261,143 @@ test("actual Frontend and Test A2A listeners run as separate UID/GID role princi
   }
  }
 });
+
+
+const threeRoleOwnerScript=[
+ 'const {startDisposableOwnerModelIpcServer}=await import(process.argv[1]);',
+ 'const {createTrustedOwnerEffectStagingServer,TrustedOwnerEffectStagingRegistry}=',
+ ' await import(process.argv[2]);',
+ 'const configs=JSON.parse(process.argv[3]),scopes=JSON.parse(process.argv[4]);',
+ 'const roles=["backend","frontend","test"];',
+ 'if(Object.keys(configs).sort().join(",")!==roles.slice().sort().join(",")||',
+ ' Object.keys(scopes).sort().join(",")!==roles.slice().sort().join(","))',
+ ' throw Error("expected original three roles");',
+ 'const registry=new TrustedOwnerEffectStagingRegistry(),handles=[];',
+ 'try{',
+ ' for(const role of roles){',
+ '  const conf=configs[role],scope=scopes[role];',
+ '  if(conf.role!==role||scope.role!==role)throw Error("foreign role");',
+ '  const model=await startDisposableOwnerModelIpcServer({',
+ '   role,socketPath:conf.modelSocketPath,secretFile:conf.modelSecretFile,',
+ '   originalScopedModelRole:scope,authorizeSignedTask:async()=>false,',
+ '   invokeModel:async()=>{throw Error("NO GEMINI INFERENCE");}',
+ '  });',
+ '  handles.push(model);',
+ '  const stage=await createTrustedOwnerEffectStagingServer({',
+ '   socketPath:conf.stageSocketPath,secretFile:conf.stageSecretFile,',
+ '   expectedRole:role,registry,originalScopedEffectRole:scope',
+ '  });',
+ '  handles.push(stage);await stage.start();',
+ ' }',
+ '}catch(error){',
+ ' await Promise.allSettled(handles.reverse().map(h=>h.close()));',
+ ' throw error;',
+ '}',
+ 'process.stdout.write("READY\\n");',
+ 'process.once("SIGTERM",()=>void Promise.allSettled(',
+ ' handles.reverse().map(h=>h.close())).then(items=>process.exit(',
+ ' items.every(item=>item.status==="fulfilled")?0:1)));'
+].join("\n");
+
+test("all three original specialists simultaneously under ONE offline owner, separate UID/GID and no signed Task",async t=>{
+ if(process.platform!=="linux"||process.getuid()!==0){
+  t.skip("Explicit offline Docker root fixture only");return;
+ }
+ const root=await mkdtemp("/tmp/delegation-three-a2a-");
+ let owner;
+ const workers=[];
+ try{
+  await chmod(root,0o755);
+  const ownerPrivate=join(root,"owner-private");
+  await mkdir(ownerPrivate,{mode:0o700});
+  await chown(ownerPrivate,1001,1101);
+  await chmod(ownerPrivate,0o700);
+  const ownerCanaryPath=join(ownerPrivate,"harmless-canary");
+  await writeFile(ownerCanaryPath,randomBytes(32),{mode:0o600,flag:"wx"});
+  await chown(ownerCanaryPath,1001,1101);
+  await chmod(ownerCanaryPath,0o600);
+  const roles=[
+   ["backend",1002,2301,18711,"Backend Development Agent"],
+   ["frontend",1003,2302,18721,"Frontend Development Agent"],
+   ["test",1004,2303,18731,"Software Testing Agent"]
+  ];
+  const configs={},scopes={};
+  for(const [role,uid,gid,port] of roles){
+   const model=await prepare(root,"model",1001,gid,0o2750,role);
+   const stage=await prepare(root,"stage",1001,gid,0o2750,role);
+   const bind=await prepare(root,"bind",1001,gid,0o3770,role);
+   scopes[role]={role,ownerUid:1001,workerUid:uid,roleGid:gid};
+   configs[role]={
+    role,port,task:{session_id:"one-offline-original-three-role-session"},
+    maxCalls:1,modelSocketPath:model.socketPath,
+    modelSecretFile:model.secretFile,stageSocketPath:stage.socketPath,
+    stageSecretFile:stage.secretFile,bindSocketPath:bind.socketPath,
+    bindSecretFile:bind.secretFile,
+    adapterToken:"offline-three-role-"+role+"-token",
+    gatewayBaseUrl:"http://127.0.0.1:18780",
+    adapterBaseUrl:"http://127.0.0.1:18781"
+   };
+  }
+  // ONE owner Node process has the three role groups, while each
+  // specialist has only its own Linux UID/primary GID.
+  owner=spawnAs(1001,1101,[2301,2302,2303],[
+   "--experimental-strip-types","--input-type=module","-e",
+   threeRoleOwnerScript,OWNER_MODEL,STAGE,
+   JSON.stringify(configs),JSON.stringify(scopes)
+  ]);
+  await observeReady(owner);
+  const pending=[];
+  for(const [role,uid,gid] of roles){
+   const child=spawnAs(uid,gid,[],[
+    "--experimental-strip-types",CHILD
+   ],{ipc:true,worker:true});
+   workers.push(child);
+   pending.push(observeWorker(child));
+   child.send({type:"start",config:configs[role],ownerCanaryPath,
+    requireOwnerFileIsolation:true,originalScopedRole:scopes[role]});
+  }
+  const ready=await Promise.all(pending);
+  assert.equal(new Set(ready.map(r=>r.pid)).size,3);
+  assert.ok(ready.every(r=>r.pid!==owner.pid));
+  for(let i=0;i<roles.length;i++){
+   const [role,uid,gid,,cardName]=roles[i];
+   const actual=ready[i],child=workers[i];
+   assert.equal(actual.pid,child.pid);
+   assert.equal(actual.role,role);
+   assert.equal(actual.baseUrl,"http://127.0.0.1:"+configs[role].port);
+   assert.equal(actual.ownerCanaryReadable,false);
+   assert.equal(actual.providerCredentialPresent,false);
+   assert.equal(actual.originalNativeTaskBindingPresent,false);
+   assert.equal(actual.originalTaskBindingChannelReady,true);
+   assert.equal(actual.crossUidChannelsConfigured,true);
+   assert.equal(actual.osIsolationVerified,false);
+   assert.equal(child.exitCode,null);
+   const proc=await import("node:fs/promises").then(fs=>
+    fs.readFile("/proc/"+child.pid+"/status","utf8"));
+   const uids=proc.match(/^Uid:\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)/mu);
+   const gids=proc.match(/^Gid:\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)/mu);
+   assert.deepEqual(uids?.slice(1).map(Number),[uid,uid,uid,uid]);
+   assert.deepEqual(gids?.slice(1).map(Number),[gid,gid,gid,gid]);
+   const response=await fetch(new URL(AGENT_CARD_PATH,actual.baseUrl+"/"));
+   assert.equal(response.status,200);
+   const card=await response.json();
+   assert.equal(card.name,cardName);
+   assert.equal(card.supportedInterfaces[0].url,actual.baseUrl+"/a2a/rest");
+  }
+  assert.equal(owner.exitCode,null);
+  // No signed Child, Root, Gemini model call or Gateway effect was started.
+ }finally{
+  for(const worker of workers.reverse()){
+   if(worker.connected){
+    try{worker.send({type:"stop"},()=>{});}
+    catch{if(worker.exitCode===null)worker.kill("SIGTERM");}
+   }else if(worker.exitCode===null)worker.kill("SIGTERM");
+   await awaitExit(worker);
+  }
+  if(owner){
+   if(owner.exitCode===null)owner.kill("SIGTERM");
+   await awaitExit(owner);
+  }
+  await rm(root,{recursive:true,force:true});
+ }
+});
