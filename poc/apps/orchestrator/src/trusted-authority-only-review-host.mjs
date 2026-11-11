@@ -119,6 +119,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     'maxProposalRevisions','thinkingLevel','maxModelCallMs','maxOutputTokens','maxPlanningMs'])||
   !fields(options.gateway,['gatewayBaseUrl','adapterBaseUrl','adapterToken','fetchFn','timeoutMs']))
   deny('explicit trusted dependencies required; legacy/context overrides forbidden');
+ // Disposable owner-private, offline-only seam. A2A/model/workflow JSON
+ // cannot mint an R323 native receipt or call this host-only callback.
+ // Paid startup stays disabled until OS/process isolation is proven.
+ if(options.disposableOwnerModelTaskPrebind!==undefined&&
+    (typeof options.disposableOwnerModelTaskPrebind!=='function'||
+     process.env.DELEGATION_DISPOSABLE_LIVE_MODE==='gemini-real'))
+  deny('disposable model Task prebind requires offline private owner code');
  const projectTestSourceProfile=options.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
  if(!isTrustedProjectTestSourceProfile(projectTestSourceProfile))
   deny('trusted repository test-source profile required');
@@ -1436,7 +1443,31 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        operationalCoordinator.assertTrustedGatewayAuthorityBinding();
        const report=await a2aOwner.dispatchIssuedTask({
         taskId:input.taskId,runtimeTaskId:input.runtimeTaskId,
-        instruction:input.instruction,effectStager:input.effectStager
+        instruction:input.instruction,effectStager:input.effectStager,
+        ...(options.disposableOwnerModelTaskPrebind?{
+         // Called ONLY by the original native R323 prebind, after signed
+         // Coordinator/Child/Gateway checks and authenticated agent bind.
+         // This one-use receipt never enters HTTP, A2A, IPC or Gemini.
+         onNativeOriginalTaskPrebound:receipt=>{
+          if(!['backend','frontend','test'].includes(pin.agent_id)||
+             closed||session.phase!=='operational')
+           deny('disposable model prebind needs an active original specialist');
+          const assertOriginalRootActive=()=>{
+           if(closed||session.phase!=='operational')
+            deny('disposable model prebind root retired');
+           return operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+          };
+          const root=assertOriginalRootActive();
+          if(root.session_id!==snapshot.session_id||root.branch!==branch)
+           deny('disposable model prebind original Root changed');
+          const retirement=options.disposableOwnerModelTaskPrebind({
+           role:pin.agent_id,receipt,assertOriginalRootActive
+          });
+          if(typeof retirement!=='function')
+           deny('disposable model Task admission must provide retirement');
+          return retirement;
+         }
+        }:{})
        });
        if(closed||session.phase!=='operational')
         deny('Engineer retired while A2A Task was executing');
