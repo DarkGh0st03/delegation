@@ -969,6 +969,33 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
  const f=await fixture(t,throughFrontend?{includeTestPermission:true,
   includePullRequestPermission:wantsPrGrant}:{});
  const modelPrebinds=[];
+ if(mode==='adaptive-from-zero-test'){
+  const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+   '../src/disposable-gemini-original-ipc-task-admission.mjs');
+  // This is the SAME original Root/Coordinator/Gateway/SDK A2A
+  // adaptive session, not three separate claimed Task receipts.
+  f.options.disposableOwnerModelTaskPrebind=({
+   role,receipt,assertOriginalRootActive
+  })=>{
+   assert.ok(['backend','frontend','test'].includes(role));
+   const ledger=createDisposableOriginalNativeIpcTaskAdmission({
+    role,assertOriginalRootActive
+   });
+   const granted=ledger.bindOriginalReceipt(receipt,{maxCalls:1});
+   assert.equal(granted.status,
+    'original_native_child_gateway_model_task_prebound_not_executed');
+   assert.equal(granted.model_calls_started_here,0);
+   assert.throws(()=>ledger.bindOriginalReceipt({...receipt}),
+    /authentic one-use original prebind/u,
+    'an A2A/IPC JSON clone cannot acquire a Task');
+   const record={role,taskId:receipt.task_id,ledger,retired:false};
+   modelPrebinds.push(record);
+   return ()=>{
+    ledger.retireTask(receipt.runtime_task_id);
+    record.retired=true;
+   };
+  };
+ }
  if(mode==='backend-ipc-native'){
   const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
    '../src/disposable-gemini-original-ipc-task-admission.mjs');
@@ -1485,6 +1512,15 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
    });
    assert.equal(result.status,fullTest?'owner_adaptive_work_ready_for_pr':'owner_adaptive_work_blocked');
    assert.equal(result.executed_tasks,fullTest?3:2);
+   if(fullTest){
+    assert.deepEqual(modelPrebinds.map(p=>p.role),[
+     'backend','frontend','test'
+    ],'the adaptive Owner must admit only its three specialist Tasks');
+    assert.deepEqual(modelPrebinds.map(p=>p.retired),[true,true,true],
+     'each IPC model Task must be fenced before the next adaptive step');
+    assert.equal(new Set(modelPrebinds.map(p=>p.taskId)).size,3);
+    assert.ok(modelPrebinds.every(p=>p.ledger.boundTaskCount===1));
+   }
    assert.equal(result.pr_created,false);
    assert.equal(adaptive.calls,fullTest?4:3);
    assert.deepEqual(supplied,[{epoch:1,agent_id:'backend'},
