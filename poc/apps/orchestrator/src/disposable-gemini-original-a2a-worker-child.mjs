@@ -162,7 +162,13 @@ const start=async message=>{
      cfg.modelSocketPath,cfg.modelSecretFile,
      cfg.bindSocketPath,cfg.bindSecretFile,
      cfg.stageSocketPath,cfg.stageSecretFile
-    ]).size!==6)deny();
+    ]).size!==6||
+    (nativeMcp&&[
+     cfg.modelSocketPath,cfg.modelSecretFile,
+     cfg.bindSocketPath,cfg.bindSecretFile,
+     cfg.stageSocketPath,cfg.stageSecretFile
+    ].includes(cfg.nativeCryptoSocketPath)))deny();
+ // The native Rust endpoint cannot reuse a worker model or stage channel.
  // No Rust signer configured: preserve the existing offline HMAC-only
  // A2A worker. A partial native config is rejected by the exact-key gate.
  if(nativeMcp)await requireOriginalNativeRustSigner(
