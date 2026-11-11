@@ -33,6 +33,8 @@ function validRecords(){
    status:"pass",strict_postfail_diagnostic_read_count:10,
    individually_signed_repair_tasks:10,
    original_owner_adaptive_decisions:25,native_child_count:24,
+   original_native_three_role_model_task_receipts_fenced:true,
+   isolated_worker_model_ipc_in_this_native_e2e:false,
    latest_test_pass_same_head:true,no_extra_child_for_terminal_decision:true,
    scripted_adk_planning_calls_in_native_host:2,
    scripted_adk_adaptive_calls_in_native_host:25,
@@ -115,6 +117,8 @@ test("signed Root/Child/Gateway evidence cannot be substituted by mere CI succes
  const mutations=[
   ["native_rust_evm",false],
   ["native_child_count",23],
+  ["original_native_three_role_model_task_receipts_fenced",false],
+  ["isolated_worker_model_ipc_in_this_native_e2e",true],
   ["r3818_canonical_private_mcp_native_signing",false],
   ["native_mcp_child_issuances",23],
   ["native_mcp_presentations_by_role",{backend:12,frontend:8}],
