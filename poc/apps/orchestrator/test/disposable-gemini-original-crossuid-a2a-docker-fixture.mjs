@@ -470,6 +470,31 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    await awaitExit(probe);
    assert.equal(probe.exitCode,1);
   }
+  // Fail-closed supervisor inputs must be rejected BEFORE any additional
+  // Linux worker is spawned. The trusted signed Owner is a single UID/PID.
+  const trustedLaunch={
+   configs,scopes,ownerPid:owner.pid,ownerCanaryPath,
+   offlineSyntheticOnly:true
+  };
+  for(const [label,variant] of [
+   ["reused worker UID",{scopes:{...scopes,frontend:{
+    ...scopes.frontend,workerUid:scopes.backend.workerUid
+   }}}],
+   ["reused worker group",{scopes:{...scopes,test:{
+    ...scopes.test,roleGid:scopes.frontend.roleGid
+   }}}],
+   ["foreign owner PID",{ownerPid:process.pid}],
+   ["paid-mode authorization",{offlineSyntheticOnly:false}],
+   ["unmounted native Rust signer",{configs:{...configs,backend:{
+    ...configs.backend,
+    nativeSignerDid:"did:thesis:backend-agent",
+    nativeCryptoSocketPath:join(root,"missing-original-native-rust.sock")
+   }}}]
+  ]){
+   await assert.rejects(startDisposableOriginalPrivilegedThreeRoleWorkers({
+    ...trustedLaunch,...variant
+   }),/Disposable original A2A subprocess launcher NO-GO/u,label);
+  }
   // The ORIGINAL three-role privileged launcher now starts exactly three
   // existing A2A workers. The Docker fixture no longer fabricates readiness
   // by manually forking those positive-path workers itself.
