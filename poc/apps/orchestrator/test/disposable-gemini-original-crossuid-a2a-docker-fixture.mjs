@@ -785,11 +785,15 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
   // UID/GID during THAT Task, not after it or from the privileged parent.
   const nativeLiveProbe=[
    'const {invokeNativeCryptoWire}=await import(process.argv[1]);',
-   'const [socketPath,token,credentialId]=process.argv.slice(2);',
+   'const [socketPath,token,credentialId,role]=process.argv.slice(2);',
+   'const path={backend:"apps/backend/account.ts",',
+   ' frontend:"apps/frontend/account.ts",',
+   ' test:"apps/test/account.test.ts"}[role];',
+   'if(!path)throw Error("foreign original specialist");',
+   'const resource="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path;',
    'try{const p=await invokeNativeCryptoWire({socketPath,token,timeoutMs:6000},',
    ' "create_presentation",{credential_id:credentialId,',
-   ' disclosed_permissions:[{operation:"read_file",',
-   ' resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/account.ts"}],',
+   ' disclosed_permissions:[{operation:"read_file",resource}],',
    ' audience:"cloud-access-gateway",challenge:"crossuid-live-r323-fake-rust"});',
    ' process.stdout.write(p.signed_vp==="SYNTHETIC_ONLY_NOT_A_RUST_SIGNATURE"',
    '  ?"ALLOWED":"WRONG_STUB");}',
@@ -819,7 +823,7 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
        "--input-type=module","-e",nativeLiveProbe,
        "file:///work/poc/mcp-shared/src/native-rust-transport.mjs",
        nativeRust.roleSockets[role],nativeRust.roleTokens[role],
-       "urn:offline:original-child:"+role
+       "urn:offline:original-child:"+role,role
       ]);
       const result=await new Promise((resolve,reject)=>{
        let out="",err="";
