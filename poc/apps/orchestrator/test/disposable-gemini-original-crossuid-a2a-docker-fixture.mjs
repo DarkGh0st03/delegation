@@ -489,10 +489,21 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    ["test",1004,2303,18731,"Software Testing Agent"]
   ];
   const configs={},scopes={};
+  const nativeRust={
+   originalNativeSocketPath:join(ownerPrivate,"original-fake-rust.sock"),
+   roleSockets:{},roleTokens:{}
+  };
   for(const [role,uid,gid,port] of roles){
    const model=await prepare(root,"model",1001,gid,0o2750,role);
    const stage=await prepare(root,"stage",1001,gid,0o2750,role);
    const bind=await prepare(root,"bind",1001,gid,0o3770,role);
+   // Native VP has a fourth, disjoint role directory. The stub Rust
+   // signer itself remains in the 0700 Owner-only directory above.
+   const vpDir=join(root,"native-vp-"+role);
+   await mkdir(vpDir,{mode:0o700});
+   await chown(vpDir,1001,gid);
+   await chmod(vpDir,0o2750);
+   nativeRust.roleSockets[role]=join(vpDir,"presentation.sock");
    scopes[role]={role,ownerUid:1001,workerUid:uid,roleGid:gid};
    configs[role]={
     role,port,task:{session_id:"one-offline-original-three-role-session"},
@@ -504,13 +515,15 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
     gatewayBaseUrl:"http://127.0.0.1:18780",
     adapterBaseUrl:"http://127.0.0.1:18781"
    };
+   nativeRust.roleTokens[role]=configs[role].adapterToken;
   }
   // ONE owner Node process has the three role groups, while each
   // specialist has only its own Linux UID/primary GID.
   owner=spawnAs(1001,1101,[2301,2302,2303],[
    "--experimental-strip-types","--input-type=module","-e",
    threeRoleOwnerScript,OWNER_MODEL,STAGE,
-   JSON.stringify(configs),JSON.stringify(scopes)
+   JSON.stringify(configs),JSON.stringify(scopes),
+   JSON.stringify(nativeRust)
   ],{ipc:true});
   await observeReady(owner);
   // The owner, unlike the UID=0 provisioner, has no Linux capability or
@@ -741,12 +754,21 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
   assert.equal(nativeThree.staged,0,
    "no Gitea or Docker provider effect may be fabricated in this offline proof");
   assert.equal(nativeThree.syntheticRootOnly,true);
+  assert.equal(nativeThree.syntheticRustOnly,true);
+  assert.equal(nativeThree.syntheticRustCalls,3,
+   "one fake Rust relay VP per authentic branded R323 Task, never a signer");
+  assert.deepEqual(nativeThree.nativeRelayProof.forwarded,
+   {backend:1,frontend:1,test:1});
+  assert.equal(nativeThree.nativeRelayProof.original_rust_signature_verified_here,
+   false);
+  assert.equal(nativeThree.nativeRelayProof.paid_gemini_authorized,false);
   assert.equal(nativeThree.paidInference,false);
   assert.deepEqual(Object.keys(nativeThree.roles).sort(),
    ["backend","frontend","test"]);
   for(const role of ["backend","frontend","test"]){
    assert.deepEqual(nativeThree.roles[role],{
     prebound:true,fenced:true,replayDenied:true,
+    nativeRelayAuthorized:true,nativeRelayReplayDenied:true,
     modelCalls:1,a2aIncomplete:true
    },"original "+role+" R323 prebind/model IPC/retirement must all succeed");
   }
