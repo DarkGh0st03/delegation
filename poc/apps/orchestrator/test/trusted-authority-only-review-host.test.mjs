@@ -969,7 +969,7 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
  const f=await fixture(t,throughFrontend?{includeTestPermission:true,
   includePullRequestPermission:wantsPrGrant}:{});
  const modelPrebinds=[];
- let threeRoleModelGate;
+ let threeRoleModelGate,originalRootInvalidated=false;
  if(mode==='adaptive-from-zero-test'){
   const {createDisposableOriginalThreeRoleModelTaskAdmission}=await import(
    '../src/disposable-gemini-original-ipc-task-admission.mjs');
@@ -978,9 +978,14 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
   threeRoleModelGate=createDisposableOriginalThreeRoleModelTaskAdmission();
   f.options.disposableOwnerModelTaskPrebind=prebind=>{
    const {role,receipt,assertOriginalRootActive}=prebind;
-   const retirement=threeRoleModelGate.onNativeOriginalTaskPrebound(prebind);
+   const checkedOriginalRoot=()=>{
+    if(originalRootInvalidated)throw Error('original operational Root retired');
+    return assertOriginalRootActive();
+   };
+   const ownerOnlyPrebind={...prebind,assertOriginalRootActive:checkedOriginalRoot};
+   const retirement=threeRoleModelGate.onNativeOriginalTaskPrebound(ownerOnlyPrebind);
    assert.throws(()=>threeRoleModelGate.onNativeOriginalTaskPrebound({
-    ...prebind,receipt:{...receipt}
+    ...ownerOnlyPrebind,receipt:{...receipt}
    }),/authentic one-use original prebind/u,
    'an A2A/IPC JSON clone cannot acquire a Task');
    const credentialId=role==='backend'?staged?.credential_id:
@@ -1539,6 +1544,20 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
       callId:'r368-after-remote-task-fence-'+record.role
      }),/Disposable original signed IPC Task admission NO-GO/u,
      'owner model authorization must be revoked on successful A2A completion');
+    }
+    // The original Coordinator Root disappears after all three authentic
+    // prebinds; the next IPC authorization must revoke every role at once.
+    originalRootInvalidated=true;
+    await assert.rejects(threeRoleModelGate.roleAuthorizers.backend({
+     role:'backend',task:modelPrebinds[0].task,
+     callId:'r368-after-original-root-revoked-001'
+    }),/Disposable original signed IPC Task admission NO-GO/u);
+    assert.equal(threeRoleModelGate.snapshot().closed,true);
+    for(const role of ['backend','frontend','test']){
+     await assert.rejects(threeRoleModelGate.roleAuthorizers[role]({
+      role,task:modelPrebinds.find(p=>p.role===role).task,
+      callId:'r368-root-closed-'+role+'-002'
+     }),/Disposable original signed IPC Task admission NO-GO/u);
     }
    }
    assert.equal(result.pr_created,false);
