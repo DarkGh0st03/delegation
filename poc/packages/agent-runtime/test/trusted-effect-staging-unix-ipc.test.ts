@@ -32,7 +32,8 @@ const task=():AgentTaskContext=>({
  delegation_evidence:{credential:"PRIVATE_CHILD_DC",
   credential_id:pins.childCredentialId,presenter_id:pins.presenterId}
 });
-async function fixtures(expectedRole?:"backend"|"test"){
+async function fixtures(expectedRole?:"backend"|"test",
+ expectedPresenterDid?:string){
  const dir=await mkdtemp(join(tmpdir(),"r322-"));
  const bindSecret=join(dir,"bind.hex"),stageSecret=join(dir,"stage.hex"),
   foreignSecret=join(dir,"foreign.hex");
@@ -50,7 +51,9 @@ async function fixtures(expectedRole?:"backend"|"test"){
   socketPath:stageSocket,secretFile:stageSecret});
  const agentServer=await createTrustedEffectAgentBindingServer({
   socketPath:bindSocket,secretFile:bindSecret,
-  registry:agent,ownerStageClient:remote
+  registry:agent,ownerStageClient:remote,
+  ...(expectedRole?{expectedRole}:{}),
+  ...(expectedPresenterDid?{expectedPresenterDid}:{})
  });
  await agentServer.start();
  const client=await connectTrustedEffectAgentBindingClient({
@@ -62,6 +65,28 @@ async function fixtures(expectedRole?:"backend"|"test"){
  return {dir,owner,agent,calls,client,remote,close,
   bindSocket,stageSocket,bindSecret,stageSecret,foreignSecret};
 }
+
+test("Original Rust signer DID is a separate immutable Child presenter pin before authenticated A2A bind",async()=>{
+ const x=await fixtures("backend",pins.presenterId);
+ try{
+  x.owner.bindTask(runtime,{stage:async id=>x.calls.push(id)},"backend");
+  // A forged Child with the correct role, HMAC, branch, runtime Task and
+  // credential ID cannot replace the original signed presenter identity.
+  await assert.rejects(x.client.bindTask({
+   ...pins,presenterId:"did:thesis:foreign-signer"
+  }),/Authenticated private effect operation denied/u);
+  assert.deepEqual(x.calls,[]);
+  // Failed prebind must not burn the original legitimate Task.
+  await x.client.bindTask(pins);
+  const privatePort=x.agent.selectFor(task());
+  assert.deepEqual(await privatePort.stage("r323-native-presenter-001"),
+   {provider_write_authorized:false});
+  assert.deepEqual(x.calls,["r323-native-presenter-001"]);
+  await x.client.fence(runtime);
+  await assert.rejects(x.client.bindTask(pins),
+   /Authenticated private effect operation denied/u);
+ }finally{await x.close();}
+});
 
 test("R322 authenticated owner binds remote A2A Task; one prepared Gateway request stages at actual owner",async()=>{
  const x=await fixtures();
