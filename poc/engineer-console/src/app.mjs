@@ -191,6 +191,23 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
         if (!session) throw new HttpError(404, "Sessione non trovata");
         return send(res, 200, {session});
       }
+      const actionMatch = /^\/api\/sessions\/(s-[a-f0-9]{12})\/(approve|stop)$/u.exec(path);
+      if (actionMatch && method === "POST") {
+        if (!sessions) throw new HttpError(503, "Le sessioni sono disponibili solo nell'avvio con Docker");
+        const body = await readJson(req);
+        if (actionMatch[2] === "approve") {
+          // Same lockout as login: a stolen browser session cannot guess
+          // the password through the signing endpoint.
+          if (!auth.verifyPassword(username, body.password))
+            throw new HttpError(403, "Password non corretta (o troppi tentativi: riprova tra poco)");
+          try {
+            return send(res, 200, {session: await sessions.approve({id: actionMatch[1],
+              password: body.password, permissionIds: body.permission_ids})});
+          } catch (error) { throw new HttpError(409, error.message); }
+        }
+        try { return send(res, 200, {session: await sessions.stop(actionMatch[1])}); }
+        catch (error) { throw new HttpError(409, error.message); }
+      }
       if (method === "GET" && path === "/api/requests")
         return send(res, 200, {requests: store.listRequests()});
       if (method === "POST" && path === "/api/requests") {

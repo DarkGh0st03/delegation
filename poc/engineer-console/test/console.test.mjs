@@ -29,7 +29,7 @@ class FakeGitea {
   }
 }
 
-async function startConsole(t) {
+async function startConsole(t, {sessions} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "console-test-"));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const users = {engineer: hashPassword("correct-horse")};
@@ -41,7 +41,7 @@ async function startConsole(t) {
   const port = server.address().port;
   handler = createConsoleHandler({auth: new ConsoleAuth({users}), gitea,
     store: new ConsoleStore(join(dir, "console")),
-    health: async () => ({ready: true, checks: []}), port});
+    health: async () => ({ready: true, checks: []}), port, sessions});
   const base = `http://127.0.0.1:${port}`;
   const call = (method, path, {body, cookie, headers = {}} = {}) => fetch(base + path, {
     method, redirect: "manual",
@@ -362,4 +362,30 @@ test("scripted planner selects files by requirement keywords and declares itself
   assert.match(proposal.assumptions[0], /SIMULATA/u);
   const fallback = selectPlanningFiles(files, "Improve something vague");
   assert.ok(fallback.length > 0 && fallback.every(f => !f.endsWith(".md")));
+});
+
+test("approval needs the Engineer password again and forwards only permission IDs", async (t) => {
+  const calls = [];
+  const sessions = {
+    async approve(input) { calls.push(["approve", input]); return {id: input.id, phase: "operational"}; },
+    async stop(id) { calls.push(["stop", id]); return {id, phase: "stopped"}; }
+  };
+  const {call, login} = await startConsole(t, {sessions});
+  const cookie = await login();
+  const path = "/api/sessions/s-0123456789ab/";
+  const wrong = await call("POST", path + "approve", {cookie,
+    body: {password: "not-the-password", permission_ids: ["permission-1"]}});
+  assert.equal(wrong.status, 403);
+  assert.equal(calls.length, 0, "a wrong password never reaches the signer");
+  const ok = await call("POST", path + "approve", {cookie,
+    body: {password: "correct-horse", permission_ids: ["permission-1", "permission-3"]}});
+  assert.equal(ok.status, 200);
+  assert.deepEqual(calls[0], ["approve", {id: "s-0123456789ab", password: "correct-horse",
+    permissionIds: ["permission-1", "permission-3"]}]);
+  const stop = await call("POST", path + "stop", {cookie, body: {}});
+  assert.equal(stop.status, 200);
+  assert.deepEqual(calls[1], ["stop", "s-0123456789ab"]);
+  // Without a console session nothing is signed or stopped.
+  assert.equal((await call("POST", path + "stop", {body: {}})).status, 401);
+  assert.equal(calls.length, 2);
 });

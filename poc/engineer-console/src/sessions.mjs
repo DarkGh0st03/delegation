@@ -9,13 +9,17 @@
  */
 import {createServer} from "node:http";
 import {randomBytes, generateKeyPairSync, createPrivateKey, createPublicKey} from "node:crypto";
-import {existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync} from "node:fs";
+import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync, chmodSync} from "node:fs";
 import {join} from "node:path";
 import {readEnvFile} from "./env.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
 
 const SESSION_ID = /^s-[a-f0-9]{12}$/u;
+const PERMISSION_ID = /^permission-[1-9][0-9]{0,2}$/u;
+// Phases that only exist while this process holds the session's host. After
+// an app restart the chain is new and every earlier Root is gone with it.
+const LIVE_PHASES = new Set(["planning", "awaiting_review", "approving", "operational", "stopping"]);
 const AUTHORITY = "gitea.local";
 const STATUS_LIST = "https://status.delegation.local/engineer/revocation";
 const isoSeconds = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/u, "Z");
@@ -27,7 +31,7 @@ function writeJson(path, value, mode = 0o600) {
 }
 
 export class EngineerSessions {
-  #config; #core; #gitea; #store; #opa; #dir; #live = new Map(); #nextStatus;
+  #config; #core; #gitea; #store; #opa; #dir; #live = new Map(); #owned = new Set(); #nextStatus;
 
   constructor({config, core, gitea, store, opa}) {
     this.#config = config; this.#core = core; this.#gitea = gitea;
@@ -48,12 +52,149 @@ export class EngineerSessions {
   get(id) {
     if (!SESSION_ID.test(id) || !existsSync(this.#path(id, "session.json"))) return undefined;
     const session = JSON.parse(readFileSync(this.#path(id, "session.json"), "utf8"));
-    if (this.#live.has(id)) session.live = true;
+    session.live = this.#live.has(id);
+    // Started by an earlier process: its Roots died with that chain.
+    if (!this.#owned.has(id) && LIVE_PHASES.has(session.phase)) {
+      session.phase = "interrupted";
+      session.error = session.error ?? "La console è stata riavviata: la sessione non è più attiva " +
+        "(la blockchain locale riparte da zero a ogni avvio). Avvia un nuovo Planning.";
+    }
     return session;
   }
 
-  list() {
-    return [...this.#live.keys()].map(id => this.get(id)).filter(Boolean);
+  /** Most recent sessions first (live or finished). */
+  list(limit = 20) {
+    let ids = [];
+    try { ids = readdirSync(this.#dir).filter(id => SESSION_ID.test(id)); } catch { /* none */ }
+    return ids.map(id => this.get(id)).filter(Boolean)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit);
+  }
+
+  #requireLive(id, phases) {
+    const session = this.get(id);
+    if (!session) throw Error("Sessione non trovata");
+    const live = this.#live.get(id);
+    if (!live || !phases.includes(session.phase))
+      throw Error(`Operazione non permessa nella fase "${session.phase}"`);
+    return {session, live};
+  }
+
+  /**
+   * Engineer decision on the proposal. The console never signs by itself:
+   * it opens the canonical password-protected Engineer approval server of
+   * this session's review host (loopback only) and submits the selected
+   * permission IDs with the password the Engineer has just re-entered.
+   * That server re-checks the scrypt verifier, signs the subset with the
+   * Engineer Ed25519 key and writes the receipt. Then the host re-verifies
+   * the receipt, revokes the preliminary Root and issues the operational one.
+   */
+  async approve({id, password, permissionIds}) {
+    const {session, live} = this.#requireLive(id, ["awaiting_review"]);
+    if (!Array.isArray(permissionIds) || !permissionIds.length ||
+        permissionIds.length > 128 || permissionIds.some(x => !PERMISSION_ID.test(x)) ||
+        new Set(permissionIds).size !== permissionIds.length)
+      throw Error("Seleziona almeno un permesso valido");
+    const known = new Set(session.proposal.permissions.map(p => p.id));
+    if (permissionIds.some(x => !known.has(x))) throw Error("Permesso non presente nella proposta");
+    if (typeof password !== "string" || !password) throw Error("Password richiesta");
+
+    session.phase = "approving"; this.#save(session);
+    try {
+      const signed = await this.#signViaApprovalServer(live.host.server, password, permissionIds);
+      session.approval = {at: new Date().toISOString(), permission_ids: [...permissionIds],
+        proposal_digest: signed.proposal_digest, permission_count: signed.permission_count};
+      this.#log(session, `Firma Ed25519 dell'Engineer registrata su ${signed.permission_count} ` +
+        `permessi di ${session.proposal.permissions.length}`);
+    } catch (error) {
+      // Nothing was signed: the Engineer can retry (e.g. wrong password).
+      session.phase = "awaiting_review"; this.#save(session);
+      throw error;
+    }
+    try {
+      // The operational Root may not outlive the signed approval: take its
+      // expiry from the receipt (the host re-verifies it independently).
+      const receipt = JSON.parse(readFileSync(join(live.dirs.approvals, session.id + ".json"), "utf8"));
+      const now = Date.now();
+      const validity = Math.floor((Date.parse(receipt.expires_at) - now) / 1000) - 60;
+      if (!(validity >= 300)) throw Error("Approvazione firmata troppo vicina alla scadenza");
+      const result = await live.host.activateOperational({
+        credential_id: `urn:delegation:${session.id}:operational`,
+        valid_from: isoSeconds(now), validity_seconds: validity,
+        credential_status: {type: "BitstringStatusListEntry", statusPurpose: "revocation",
+          statusListIndex: session.operational_status_index, statusListCredential: STATUS_LIST}
+      });
+      live.coordinator = result.coordinator;
+      session.phase = "operational";
+      session.operational = {at: new Date().toISOString(),
+        credential_id: `urn:delegation:${session.id}:operational`,
+        expires_at: new Date(now + validity * 1000).toISOString()};
+      this.#log(session, "Root preliminare revocata; Root operativa emessa con i soli permessi approvati");
+      return session;
+    } catch (error) {
+      // The host retires anything it started; the signed receipt is single use.
+      session.phase = "failed";
+      session.error = "Attivazione della Root operativa fallita: " + (error?.message ?? error);
+      this.#log(session, "Errore: " + session.error);
+      await this.#shutdown(session.id).catch(() => {});
+      throw Error(session.error);
+    }
+  }
+
+  async #signViaApprovalServer(server, password, permissionIds) {
+    if (!server.listening)
+      await new Promise((ok, bad) => {
+        server.once("error", bad);
+        server.listen(0, "127.0.0.1", () => { server.off("error", bad); ok(); });
+      });
+    const origin = "http://127.0.0.1:" + server.address().port;
+    const call = async (method, path, body, extra = {}) => {
+      const response = await fetch(origin + path, {method, redirect: "error",
+        headers: {...(body ? {"content-type": "application/json"} : {}),
+          ...(method === "POST" ? {origin} : {}), ...extra},
+        ...(body ? {body: JSON.stringify(body)} : {}), signal: AbortSignal.timeout(60_000)});
+      const data = await response.json().catch(() => ({}));
+      return {response, data};
+    };
+    const login = await call("POST", "/api/login", {password});
+    if (login.response.status === 401) throw Error("Password non corretta");
+    if (!login.response.ok) throw Error(login.data.error ?? "Accesso alla firma non riuscito");
+    const cookie = String(login.response.headers.get("set-cookie") ?? "").split(";")[0];
+    const review = await call("GET", "/api/authorization", undefined, {cookie});
+    if (!review.response.ok) throw Error(review.data.error ?? "Proposta non più valida");
+    const digest = review.data.proposal_digest;
+    const approved = await call("POST", "/api/approve", {proposal_digest: digest,
+      approved_permission_ids: permissionIds, confirmation: "APPROVE " + digest},
+      {cookie, "x-csrf-token": review.data.csrf_token});
+    if (approved.response.status !== 201) throw Error(approved.data.error ?? "Firma non riuscita");
+    return approved.data;
+  }
+
+  /** Stop: retires the live Root (preliminary or operational) and the Gateway. */
+  async stop(id) {
+    const {session} = this.#requireLive(id, ["awaiting_review", "operational"]);
+    const previous = session.phase;
+    session.phase = "stopping"; this.#save(session);
+    try {
+      await this.#shutdown(id);
+      session.phase = "stopped";
+      this.#log(session, previous === "operational"
+        ? "Sessione interrotta: Root operativa revocata"
+        : "Proposta rifiutata: Root preliminare revocata, nessuna Root operativa emessa");
+    } catch (error) {
+      session.phase = "failed";
+      session.error = "Revoca non confermata, serve una verifica manuale: " + (error?.message ?? error);
+      this.#log(session, "Errore: " + session.error);
+      throw Error(session.error);
+    }
+    return session;
+  }
+
+  async #shutdown(id) {
+    const live = this.#live.get(id);
+    if (!live) return;
+    this.#live.delete(id);
+    try { await live.host.close(); }
+    finally { await new Promise(ok => live.gatewayServer.close(() => ok())); }
   }
 
   #log(session, text) {
@@ -73,6 +214,7 @@ export class EngineerSessions {
     }
     const id = "s-" + randomBytes(6).toString("hex");
     mkdirSync(this.#path(id), {recursive: true, mode: 0o700});
+    this.#owned.add(id);
     const session = {
       id, phase: "planning", mode, created_at: new Date().toISOString(), created_by: username,
       request_id: request.id, requirement: request.requirement,
@@ -217,7 +359,9 @@ export class EngineerSessions {
     session.operational_status_index = statusIndex();
     this.#log(session, "Emissione della Root preliminare di sola lettura...");
 
-    const host = await createTrustedAuthorityOnlyReviewHost({
+    let host;
+    try {
+    host = await createTrustedAuthorityOnlyReviewHost({
       snapshot, requirement: session.requirement, workBranch: session.work_branch, preliminaryRoot,
       checkpoint: {store: checkpointStore, backendKeyId: "owner",
         backendPrivateKeyPem: checkpointKey.privateKey.export({format: "pem", type: "pkcs8"}).toString()},
@@ -248,10 +392,17 @@ export class EngineerSessions {
       gateway: {gatewayBaseUrl, adapterToken: local.ADAPTER_CALLER_ORCHESTRATOR,
         fetchFn: fetch, timeoutMs: 60000}
     });
+    } catch (error) {
+      // The host retires its own preliminary Root on failure; close the Gateway.
+      await new Promise(ok => gatewayServer.close(() => ok()));
+      throw error;
+    }
 
     const checkpoint = await checkpointStore.load();
     session.proposal = {
-      permissions: checkpoint.proposal.requested_permissions,
+      // Same IDs as the canonical approval server: permission-<n> in order.
+      permissions: checkpoint.proposal.requested_permissions
+        .map((p, i) => ({id: "permission-" + (i + 1), ...p})),
       assumptions: checkpoint.assumptions ?? [], uncertainties: checkpoint.uncertainties ?? [],
       verified_source_reads: checkpoint.verified_source_reads ?? null
     };

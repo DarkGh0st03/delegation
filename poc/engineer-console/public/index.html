@@ -32,8 +32,8 @@
         <button data-tab="repo">2 · Repository</button>
         <button data-tab="policy">3 · Policy</button>
         <button data-tab="request">4 · Requisito</button>
-        <button data-tab="planning" class="todo">5 · Planning e permessi</button>
-        <button data-tab="execution" class="todo">6 · Esecuzione</button>
+        <button data-tab="planning">5 · Planning e permessi</button>
+        <button data-tab="execution">6 · Esecuzione</button>
       </nav>
 
       <div class="tab" id="tab-env">
@@ -75,8 +75,8 @@
           <p>Sorgente: <strong id="policy-source"></strong></p>
           <label>Branch protetti (uno per riga; deve includere il principale)
             <textarea name="protected_branches" rows="3"></textarea></label>
-          <label>Prefisso dei branch di lavoro degli agenti
-            <input name="work_branch_prefix"></label>
+          <label>Prefisso dei branch di lavoro degli agenti (per ora fisso: ogni sessione lavora su <code>feature/&lt;sessione&gt;</code>)
+            <input name="work_branch_prefix" readonly></label>
           <label>Percorsi che gli agenti non possono modificare (uno per riga, es. <code>.github/</code>; la lettura resta consentita)
             <textarea name="forbidden_path_prefixes" rows="4"></textarea></label>
           <label>Profilo dei test (Runner) <input name="runner_profile"></label>
@@ -106,18 +106,82 @@
 
       <div class="tab" id="tab-planning" hidden>
         <h2>Planning e revisione dei permessi</h2>
-        <p class="todo-box">Prossimo passo dello sviluppo. Qui l'Orchestrator analizzerà la repository con una credenziale di sola lettura
-          e proporrà i permessi (ResourceURI + operazione). Comparirà la finestra per togliere o restringere i permessi
-          e firmare l'approvazione.</p>
+        <p>L'Orchestrator riceve una credenziale di <strong>sola lettura</strong> (Root preliminare), legge la repository
+          tramite il Gateway e propone i permessi necessari. Tu decidi quali concedere: puoi solo toglierne, mai aggiungerne.</p>
+        <form id="plan-form">
+          <label>Richiesta <select name="request" id="plan-request" required></select></label>
+          <fieldset>
+            <legend>Planner</legend>
+            <label class="inline"><input type="radio" name="mode" value="scripted" checked>
+              Simulato (gratuito, nessuna IA: sceglie i file confrontando le parole del requisito con i percorsi)</label>
+            <label class="inline"><input type="radio" name="mode" value="gemini" id="mode-gemini">
+              Gemini (a pagamento) <span id="gemini-state" class="hint"></span></label>
+            <label class="inline" id="gemini-consent-row" hidden><input type="checkbox" name="gemini_consent">
+              Confermo che questa sessione può consumare crediti API di Gemini</label>
+          </fieldset>
+          <button type="submit">Avvia Planning</button>
+        </form>
+        <p id="plan-msg"></p>
+
+        <h3>Sessioni</h3>
+        <table><thead><tr><th></th><th>Avviata</th><th>Repository</th><th>Requisito</th><th>Stato</th></tr></thead>
+          <tbody id="session-rows"></tbody></table>
+
+        <div id="session-detail" hidden>
+          <h3>Sessione <code id="sd-id"></code></h3>
+          <dl>
+            <dt>Stato</dt><dd id="sd-phase"></dd>
+            <dt>Repository / commit</dt><dd id="sd-repo"></dd>
+            <dt>Branch di lavoro</dt><dd><code id="sd-branch"></code></dd>
+            <dt>Planner</dt><dd id="sd-mode"></dd>
+          </dl>
+          <p class="error" id="sd-error"></p>
+          <p>
+            <button id="sd-review" hidden>Rivedi e approva i permessi</button>
+            <button id="sd-stop" hidden>Interrompi (revoca la Root)</button>
+          </p>
+          <h4>Cronologia</h4>
+          <ul id="sd-log"></ul>
+          <h4>Decisioni del Gateway (verifica Rust + OPA)</h4>
+          <table><thead><tr><th>Ora</th><th>Ruolo</th><th>Operazione</th><th>Risorsa</th><th>Esito</th><th>Motivo</th></tr></thead>
+            <tbody id="sd-gateway"></tbody></table>
+        </div>
       </div>
 
       <div class="tab" id="tab-execution" hidden>
         <h2>Esecuzione</h2>
-        <p class="todo-box">Prossimo passo dello sviluppo. Qui vedrai i Task degli agenti, le decisioni del Gateway e di OPA,
-          i test in Docker, la Draft PR e il pulsante di stop (revoca della Root).</p>
+        <p>Sessioni con Root operativa attiva (solo i permessi che hai firmato). Il pulsante di stop revoca subito la Root:
+          da quel momento il Gateway rifiuta ogni operazione degli agenti.</p>
+        <table><thead><tr><th></th><th>Sessione</th><th>Repository</th><th>Permessi firmati</th><th>Scadenza Root</th></tr></thead>
+          <tbody id="exec-rows"></tbody></table>
+        <p id="exec-msg"></p>
+        <p class="todo-box">Prossimo passo dello sviluppo: avvio degli agenti (Child DC per ruolo), Task, test nel Runner Docker e Draft PR.</p>
       </div>
     </section>
   </main>
+  <dialog id="review-dialog">
+    <form method="dialog" id="review-form">
+      <h2>Revisione dei permessi</h2>
+      <p><strong id="rv-repo"></strong> — branch di lavoro <code id="rv-branch"></code></p>
+      <p class="hint" id="rv-simulated"></p>
+      <h3>Ipotesi del Planner</h3><ul id="rv-assumptions"></ul>
+      <h3>Incertezze</h3><ul id="rv-uncertainties"></ul>
+      <h3>Permessi richiesti</h3>
+      <p class="hint">Togli la spunta ai permessi che non vuoi concedere. Non è possibile aggiungere permessi non proposti.
+        <button type="button" id="rv-all">Tutti</button> <button type="button" id="rv-none">Nessuno</button></p>
+      <table><thead><tr><th>Concedi</th><th>Operazione</th><th>Branch</th><th>Risorsa</th></tr></thead>
+        <tbody id="rv-rows"></tbody></table>
+      <p><strong id="rv-count"></strong></p>
+      <label>Password dell'Engineer (conferma la firma Ed25519 dei permessi selezionati)
+        <input type="password" id="rv-password" autocomplete="current-password"></label>
+      <p class="error" id="rv-msg"></p>
+      <p>
+        <button type="button" id="rv-approve">Approva e firma</button>
+        <button type="button" id="rv-reject">Rifiuta la proposta (revoca la Root preliminare)</button>
+        <button type="button" id="rv-close">Chiudi senza decidere</button>
+      </p>
+    </form>
+  </dialog>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -53,7 +53,8 @@ docker compose up
  │   └─ anvil   127.0.0.1:8545   blockchain locale
  │
  └─ app        127.0.0.1:8700    console dell'Engineer
-                                 (+ Orchestrator, agenti, Gateway nei prossimi passi)
+                                 + Gateway e Review Host per ogni sessione
+                                 (agenti nei prossimi passi)
 ```
 
 Tutte le porte sono pubblicate solo su `127.0.0.1`: non sono raggiungibili da
@@ -88,15 +89,46 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
 | 2 · Repository | Elenco e import da URL https pubblico, con protezione del branch principale |
 | 3 · Policy | Parametri per repository pubblicati su OPA e applicati dal Gateway (branch protetti, branch di lavoro firmato, percorsi non modificabili, profilo dei test, Draft PR) |
 | 4 · Requisito | Richiesta salvata con la commit di base fissata |
-| 5 · Planning e permessi | Da realizzare |
-| 6 · Esecuzione | Da realizzare |
+| 5 · Planning e permessi | Root preliminare di sola lettura, Planner (simulato gratuito o Gemini con consenso), letture tramite il Gateway reale, finestra di revisione dei permessi, firma Ed25519 con password, Root operativa |
+| 6 · Esecuzione | Elenco delle Root operative attive e pulsante di stop (revoca). Avvio degli agenti: da realizzare |
+
+### Come funziona una sessione
+
+1. **Planning.** La console pubblica la policy della repository su OPA, prende
+   l'elenco dei percorsi alla commit fissata e avvia nel container un Gateway
+   (verifica Rust della VP + OPA + Gitea). Il core Rust dell'Engineer emette una
+   **Root preliminare di sola lettura**; il Planner legge i file solo tramite il
+   Gateway e restituisce una proposta di permessi (operazione + ResourceURI sul
+   branch `feature/<sessione>`), salvata come checkpoint firmato.
+   - *Simulato*: gratuito e senza IA. Sceglie i file confrontando le parole del
+     requisito con i percorsi; la proposta lo dichiara esplicitamente.
+   - *Gemini*: a pagamento. Disponibile solo se `GEMINI_API_KEY` è nel file
+     `.env` e serve spuntare il consenso ai costi a ogni sessione.
+2. **Revisione.** Nella finestra "Rivedi e approva i permessi" puoi solo
+   **togliere** permessi, mai aggiungerne. Per firmare reinserisci la password:
+   la console la passa al server di approvazione canonico della sessione
+   (`engineer-approval-server.mjs`, solo su loopback), che verifica l'hash
+   scrypt, firma il sottoinsieme con la chiave Ed25519 dell'Engineer e salva la
+   ricevuta. "Rifiuta" revoca la Root preliminare senza emettere nulla.
+3. **Root operativa.** Il Review Host rilegge e verifica la ricevuta, revoca la
+   Root preliminare ed emette la Root operativa con i soli permessi firmati. La
+   sua durata non supera quella dell'approvazione (30 minuti dalla firma).
+   "Interrompi" la revoca subito.
+
+Limiti attuali, dichiarati:
+
+- la chiave Ed25519 dell'Engineer è conservata dal container `app` (volume
+  `config`) e sbloccata dalla password: è una firma *autenticata dalla
+  password*, non da un dispositivo personale dell'Engineer;
+- branch principale `main` e prefisso `feature/` sono ancora fissi nel codice
+  canonico (la pagina Policy non permette altri prefissi);
+- dopo un riavvio dell'app le sessioni precedenti risultano "Non più attive",
+  perché la blockchain locale riparte da zero.
 
 ## Prossimi passi
 
-1. Collegare la console al Review Host esistente
-   (`poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs`):
-   Root preliminare, Planning, revisione dei permessi (solo rimozione o
-   restrizione), firma Ed25519, Root operativa, Execution, Draft PR.
+1. Esecuzione dalla console: Child DC per ruolo, Task degli agenti tramite il
+   Gateway, test nel Runner Docker, Draft PR.
 2. Runner in un container dedicato: è l'unico servizio che riceverà l'accesso al
    socket Docker, per avviare i container di test (compromesso da dichiarare nel
    threat model).

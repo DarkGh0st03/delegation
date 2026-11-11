@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 body { font-family: system-ui, sans-serif; margin: 0; color: #1d1d1f; background: #f6f7f9; }
 header { display: flex; gap: 16px; align-items: center; padding: 12px 20px; background: #20232a; color: #fff; }
 header span { margin-left: auto; }
@@ -22,3 +23,11 @@ button { padding: 6px 12px; cursor: pointer; }
 dl { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; }
 dt { color: #5f6670; }
 code { word-break: break-all; }
+select { display: block; width: 100%; max-width: 640px; padding: 6px; font: inherit; }
+fieldset { border: 1px solid #dde1e6; margin: 10px 0; max-width: 820px; }
+dialog { width: min(1000px, 94vw); max-height: 90vh; overflow: auto; border: 1px solid #c8ccd2; padding: 16px 20px; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+tr.denied td { color: #8a8f98; text-decoration: line-through; }
+td.allow { color: #12802c; font-weight: 600; }
+td.deny { color: #b3261e; font-weight: 600; }
+#sd-log { font-size: 0.92em; }
