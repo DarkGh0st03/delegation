@@ -294,7 +294,8 @@ export async function startDisposableOriginalPrivilegedThreeRoleWorkers({
   Object.keys(value).sort().join(",")===names.slice().sort().join(",");
  const allowed=value=>Number.isSafeInteger(value)&&value>0&&value<65536;
  const statusNumbers=(status,key,count)=>{
-  const line=status.match(new RegExp("^"+key+":\\s*([^\\n]*)$","mu"));
+  // /proc Groups: may be empty; \\s would swallow its newline and the next field.
+  const line=status.match(new RegExp("^"+key+":[ \\t]*([^\\n]*)$","mu"));
   if(!line)deny();
   const parts=line[1].trim()?line[1].trim().split(/\s+/u):[];
   if(parts.length!==count||parts.some(x=>!/^[0-9]+$/u.test(x)))deny();
