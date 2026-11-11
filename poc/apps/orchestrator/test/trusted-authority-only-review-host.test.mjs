@@ -988,7 +988,23 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
    assert.throws(()=>ledger.bindOriginalReceipt({...receipt}),
     /authentic one-use original prebind/u,
     'an A2A/IPC JSON clone cannot acquire a Task');
-   const record={role,taskId:receipt.task_id,ledger,retired:false};
+   const credentialId=role==='backend'?staged?.credential_id:
+    role==='frontend'?frontendStaged?.credential_id:
+     testStaged?.credential_id;
+   assert.ok(credentialId,'native issued Child must predate model IPC admission');
+   const task=Object.freeze({
+    task_id:receipt.task_id,runtime_task_id:receipt.runtime_task_id,
+    session_id:assertOriginalRootActive().session_id,
+    credential_id:credentialId
+   });
+   // Exercise the ACTUAL owner gate once per real native prebound Task.
+   // No Gemini transport is invoked: the scripted SDK Agent retains its
+   // own offline response, and Gateway remains the only effect authority.
+   const modelCall=ledger.authorizeSignedTask({
+    role,task,callId:'r368-native-model-turn-'+role+'-001'
+   });
+   const record={role,taskId:receipt.task_id,ledger,task,modelCall,
+    retired:false};
    modelPrebinds.push(record);
    return ()=>{
     ledger.retireTask(receipt.runtime_task_id);
@@ -1520,6 +1536,14 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
      'each IPC model Task must be fenced before the next adaptive step');
     assert.equal(new Set(modelPrebinds.map(p=>p.taskId)).size,3);
     assert.ok(modelPrebinds.every(p=>p.ledger.boundTaskCount===1));
+    for(const record of modelPrebinds){
+     assert.equal(await record.modelCall,true);
+     await assert.rejects(record.ledger.authorizeSignedTask({
+      role:record.role,task:record.task,
+      callId:'r368-after-remote-task-fence-'+record.role
+     }),/Disposable original signed IPC Task admission NO-GO/u,
+     'owner model authorization must be revoked on successful A2A completion');
+    }
    }
    assert.equal(result.pr_created,false);
    assert.equal(adaptive.calls,fullTest?4:3);
