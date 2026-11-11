@@ -470,3 +470,109 @@ test("all three original specialists simultaneously under ONE offline owner, sep
   await rm(root,{recursive:true,force:true});
  }
 });
+
+
+test("original R323 owner UID 1001 prebinds one real Backend UID 1002 A2A Task, authentic HMAC model IPC then terminally fences",async t=>{
+ if(process.platform!=="linux"||process.getuid()!==0){
+  t.skip("Explicit offline Docker root fixture only");return;
+ }
+ const root=await mkdtemp("/tmp/delegation-native-crossuid-");
+ let owner,worker;
+ try{
+  await chmod(root,0o755);
+  const role="backend",scope={
+   role,ownerUid:1001,workerUid:1002,roleGid:2301
+  };
+  const model=await prepare(root,"model",1001,2301,0o2750);
+  const stage=await prepare(root,"stage",1001,2301,0o2750);
+  const bind=await prepare(root,"bind",1001,2301,0o3770);
+  const privateDir=join(root,"owner-private");
+  await mkdir(privateDir,{mode:0o700});
+  await chown(privateDir,1001,1101);
+  await chmod(privateDir,0o700);
+  const ownerCanaryPath=join(privateDir,"harmless-canary");
+  await writeFile(ownerCanaryPath,randomBytes(32),{mode:0o600,flag:"wx"});
+  await chown(ownerCanaryPath,1001,1101);
+  await chmod(ownerCanaryPath,0o600);
+  const conf={
+   role,port:18741,
+   task:{session_id:"original-native-crossuid-offline-session"},
+   maxCalls:1,
+   modelSocketPath:model.socketPath,modelSecretFile:model.secretFile,
+   stageSocketPath:stage.socketPath,stageSecretFile:stage.secretFile,
+   bindSocketPath:bind.socketPath,bindSecretFile:bind.secretFile,
+   adapterToken:"offline-backend-crossuid-r323-token",
+   gatewayBaseUrl:"http://127.0.0.1:18780",
+   adapterBaseUrl:"http://127.0.0.1:18781"
+  };
+  const ownerEntry="/work/poc/apps/orchestrator/test/disposable-gemini-original-crossuid-native-owner-fixture.mjs";
+  owner=spawnAs(1001,1101,[2301],[
+   "--experimental-strip-types",ownerEntry,
+   JSON.stringify(conf),JSON.stringify(scope)
+  ],{ipc:true});
+  await observeReady(owner);
+  worker=spawnAs(1002,2301,[],[
+   "--experimental-strip-types",CHILD
+  ],{ipc:true,worker:true});
+  const awaited=observeWorker(worker);
+  worker.send({type:"start",config:conf,ownerCanaryPath,
+   requireOwnerFileIsolation:true,originalScopedRole:scope});
+  const ready=await awaited;
+  assert.equal(ready.role,"backend");
+  assert.equal(ready.pid,worker.pid);
+  assert.equal(ready.ownerCanaryReadable,false);
+  assert.equal(ready.providerCredentialPresent,false);
+  assert.equal(ready.originalNativeTaskBindingPresent,false,
+   "worker cannot claim an independent original signed Root");
+  assert.equal(ready.originalTaskBindingChannelReady,true);
+  assert.equal(ready.crossUidChannelsConfigured,true);
+  assert.equal(ready.osIsolationVerified,false);
+  const result=await new Promise((resolve,reject)=>{
+   let finished=false,stderr="";
+   owner.stderr.on("data",b=>stderr+=b);
+   const timer=setTimeout(()=>finish(
+    Error("native owner did not confirm cross-UID signed-task prebind")),25000);
+   const finish=(error,value)=>{
+    if(finished)return;
+    finished=true;clearTimeout(timer);
+    owner.off("message",onMessage);
+    owner.off("exit",onExit);
+    if(error)reject(error);
+    else resolve(value);
+   };
+   const onMessage=message=>{
+    if(message?.type==="result")finish(null,message.report);
+    if(message?.type==="failure")
+     finish(Error("original R323 crossUID NO-GO: "+message.error));
+   };
+   const onExit=code=>finish(Error("native owner exited "+code+
+    " "+stderr.slice(-900)));
+   owner.on("message",onMessage);
+   owner.once("exit",onExit);
+   owner.send({type:"run",agentBaseUrl:ready.baseUrl},error=>{
+    if(error)finish(error);
+   });
+  });
+  assert.deepEqual(result,{
+   ownerUid:1001,workerUid:1002,
+   prebound:true,fenced:true,replayDenied:true,
+   modelCalls:1,staged:0,a2aIncomplete:true,
+   syntheticRootOnly:true,paidInference:false
+  });
+  assert.equal(owner.exitCode,null);
+  assert.equal(worker.exitCode,null);
+ }finally{
+  if(worker){
+   if(worker.connected){
+    try{worker.send({type:"stop"},()=>{});}
+    catch{if(worker.exitCode===null)worker.kill("SIGTERM");}
+   }else if(worker.exitCode===null)worker.kill("SIGTERM");
+   await awaitExit(worker);
+  }
+  if(owner){
+   if(owner.exitCode===null)owner.kill("SIGTERM");
+   await awaitExit(owner);
+  }
+  await rm(root,{recursive:true,force:true});
+ }
+});
