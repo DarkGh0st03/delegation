@@ -38,20 +38,30 @@ export function readEnvFile(path) {
   return parseEnvFile(readFileSync(path, "utf8"));
 }
 
-/** Local infrastructure configuration, merged from the setup outputs. */
+/**
+ * Local configuration. Two layouts are supported:
+ *  - Docker Compose (CONFIG_DIR set): private files in the /config volume,
+ *    services reached by their Compose names (GITEA_URL, OPA_URL, ANVIL_URL);
+ *  - development on the host: poc/infra/.env and poc/infra/runtime/.
+ */
 export function loadLocalConfig(env = process.env) {
-  const infra = readEnvFile(resolve(INFRA_DIR, ".env"));
-  const trust = readEnvFile(resolve(RUNTIME_DIR, "trust.env"));
+  const composeMode = typeof env.CONFIG_DIR === "string" && env.CONFIG_DIR !== "";
+  const infraPath = composeMode ? resolve(env.CONFIG_DIR, "local.env") : resolve(INFRA_DIR, ".env");
+  const infra = readEnvFile(infraPath);
+  const trust = readEnvFile(composeMode ? resolve(env.CONFIG_DIR, "trust.env")
+    : resolve(RUNTIME_DIR, "trust.env"));
   const port = (name, fallback) => {
     const value = Number(infra[name] ?? fallback);
     return Number.isInteger(value) && value > 0 && value < 65536 ? value : fallback;
   };
+  const consolePort = Number(env.ENGINEER_CONSOLE_PORT ?? 8700);
   return Object.freeze({
-    infraEnvPresent: existsSync(resolve(INFRA_DIR, ".env")),
-    giteaUrl: `http://127.0.0.1:${port("GITEA_HOST_PORT", 3000)}`,
-    opaUrl: `http://127.0.0.1:${port("OPA_HOST_PORT", 8181)}`,
-    anvilUrl: `http://127.0.0.1:${port("ANVIL_HOST_PORT", 8545)}`,
-    chainId: Number(infra.ANVIL_CHAIN_ID ?? 31337),
+    composeMode,
+    infraEnvPresent: existsSync(infraPath),
+    giteaUrl: env.GITEA_URL ?? `http://127.0.0.1:${port("GITEA_HOST_PORT", 3000)}`,
+    opaUrl: env.OPA_URL ?? `http://127.0.0.1:${port("OPA_HOST_PORT", 8181)}`,
+    anvilUrl: env.ANVIL_URL ?? `http://127.0.0.1:${port("ANVIL_HOST_PORT", 8545)}`,
+    chainId: Number(infra.ANVIL_CHAIN_ID ?? env.CHAIN_ID ?? 31337),
     giteaAdminUser: infra.GITEA_ADMIN_USER ?? "",
     giteaAdminPassword: infra.GITEA_ADMIN_PASSWORD ?? "",
     giteaOrg: infra.GITEA_ORG ?? "thesis",
@@ -60,7 +70,11 @@ export function loadLocalConfig(env = process.env) {
     didRegistryAddress: trust.DID_REGISTRY_ADDRESS ?? "",
     trustRegistryAddress: trust.ENTERPRISE_TRUST_REGISTRY_ADDRESS ?? "",
     issuerRegistryAddress: trust.ISSUER_REGISTRY_ADDRESS ?? "",
-    consolePort: Number(env.ENGINEER_CONSOLE_PORT ?? 8700),
+    consoleHost: env.ENGINEER_CONSOLE_HOST ?? "127.0.0.1",
+    consolePort: Number.isInteger(consolePort) ? consolePort : 8700,
+    usersPath: composeMode ? resolve(env.CONFIG_DIR, "console-users.json")
+      : resolve(CONSOLE_DIR, "users.json"),
+    stateDir: env.CONSOLE_STATE_DIR ?? (composeMode ? "/state" : CONSOLE_DIR),
     nativeGatewayAddon: resolve(POC_ROOT, "apps/gateway/src/native/delegation-core.node"),
     nativeEngineerAddon: resolve(POC_ROOT,
       "packages/orchestrator-runtime/src/native/delegation-engineer.node")

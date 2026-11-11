@@ -1,122 +1,123 @@
-# Delegation in locale (Windows + WSL2)
+# Delegation in locale con Docker Compose
 
-Guida per eseguire il PoC sul proprio PC, senza GitHub Actions. Vale anche come
-documento di consegna per una sessione di Claude Code avviata in locale.
+L'intero PoC si avvia con Docker. L'unico prerequisito è **Docker** (su Windows:
+Docker Desktop). Vale anche come documento di consegna per chi lavora sul codice,
+inclusa una sessione di Claude Code avviata in locale.
 
-## Architettura locale
+## Avvio
 
-Tutto gira dentro WSL (Ubuntu). Due tipi di componenti:
-
-```
-┌──────────────────── PC → WSL (Ubuntu) ───────────────────────────┐
-│ ① IN DOCKER (poc/infra/docker-compose.yml)                       │
-│    • Gitea  127.0.0.1:3000  repository su cui lavorano gli agenti│
-│    • OPA    127.0.0.1:8181  motore delle policy                  │
-│    • Anvil  127.0.0.1:8545  blockchain locale (DID, trust, revoca)│
-│    • container di test usa e getta, creati dal Runner            │
-│                                                                  │
-│ ② PROCESSI NODE + RUST                                           │
-│    • Console dell'Engineer  127.0.0.1:8700 (poc/engineer-console)│
-│    • modulo Rust dell'Engineer: chiavi, Root DC, revoca          │
-│    • Orchestrator (Gemini/ADK): Planning ed Execution            │
-│    • Gateway: verifica Rust diretta + OPA → Gitea / Runner       │
-│    • agenti Backend, Frontend, Test (A2A)                        │
-│    • MCP crittografico privato: Child DC e VP                    │
-│    • Runner: test sulla SHA esatta in Docker                     │
-└──────────────────────────────────────────────────────────────────┘
-        solo in modalità reale → API Gemini (Google)
-```
-
-Tutti i servizi ascoltano solo su `127.0.0.1`.
-
-## Prerequisiti
-
-- La repository va clonata **nel filesystem Linux** (es. `~/delegation`), non in
-  `/mnt/c/...`: i controlli sui permessi `0600` e i socket Unix non funzionano
-  sul disco Windows.
-- Docker Desktop con integrazione WSL attiva per Ubuntu.
-- Versioni usate dal progetto: Node 22.15, Rust 1.99, Foundry 1.8.4.
-
-## Primo avvio (una volta sola)
-
-Dalla cartella della repository, in un terminale WSL:
+Dalla cartella della repository:
 
 ```bash
-cd ~/delegation
-git pull
+cp .env.example .env
 ```
 
-1. **Preparazione**: dipendenze Node e compilazione dei moduli Rust
-   (la prima volta richiede alcuni minuti).
-
-   ```bash
-   bash poc/scripts/local-prepare.sh
-   ```
-
-2. **Infrastruttura**: genera la configurazione locale (`poc/infra/.env`,
-   ignorata da Git), avvia Gitea, OPA e Anvil, importa la repository di esempio
-   `iam-console-poc` con il branch `main` protetto, crea gli account di servizio
-   e registra i contratti on-chain.
-
-   ```bash
-   bash poc/scripts/phase1-up.sh
-   ```
-
-3. **Utente Engineer** della console (la password non viene mostrata mentre la
-   scrivi e viene salvata solo come hash).
-
-   ```bash
-   node poc/engineer-console/scripts/create-user.mjs engineer
-   ```
-
-## Uso normale
+Apri `.env` e scegli la password dell'Engineer (`ENGINEER_PASSWORD`, almeno 8
+caratteri). Il file resta sul tuo computer: è escluso da Git.
 
 ```bash
-bash poc/scripts/phase1-up.sh
-npm --prefix poc run console
+docker compose up -d --build
 ```
 
-Poi apri **http://127.0.0.1:8700** nel browser di Windows ed entra con l'utente
-creato. `phase1-up.sh` si può rilanciare: riutilizza ciò che esiste. Va
-rilanciato dopo un riavvio del PC, perché Anvil perde lo stato e i contratti
-devono essere registrati di nuovo.
+La prima volta scarica le immagini e compila i moduli Rust: servono diversi
+minuti. Le volte successive l'avvio è rapido. Poi apri
+**http://127.0.0.1:8700** e accedi con `engineer` e la password scelta.
 
-Per fermare: `Ctrl+C` nel terminale della console, poi
-`bash poc/scripts/phase1-down.sh`. **Non** usare `--volumes`, che cancella i
-dati di Gitea.
+Altri comandi utili:
+
+| Comando | Effetto |
+|---|---|
+| `docker compose ps -a` | stato dei servizi (i servizi di preparazione risultano `Exited (0)` quando hanno finito bene) |
+| `docker compose logs -f app` | log della console |
+| `docker compose logs gitea-bootstrap trust-bootstrap` | log della preparazione |
+| `docker compose stop` | ferma tutto mantenendo i dati |
+| `docker compose up -d` | riavvia |
+| `docker compose down` | rimuove i container, mantiene i volumi (dati e configurazione) |
+| `docker compose down -v` | **cancella tutto**, compresi Gitea, chiavi e configurazione |
+
+## Architettura (tappa 1)
+
+```
+docker compose up
+ │
+ ├─ preparazione (una volta per avvio, poi terminano)
+ │   ├─ setup            genera la configurazione privata nel volume "config"
+ │   │                   (password di servizio casuali, login Engineer da .env)
+ │   ├─ gitea-users      crea gli account Gitea (admin, gateway, runner)
+ │   ├─ gitea-bootstrap  importa iam-console-poc al commit fissato, protegge
+ │   │                   main, assegna i permessi, crea i token di servizio
+ │   └─ trust-bootstrap  registra i contratti DID/Trust/Issuer su Anvil
+ │
+ ├─ infrastruttura
+ │   ├─ gitea   127.0.0.1:3000   repository su cui lavorano gli agenti
+ │   ├─ opa     127.0.0.1:8181   motore delle policy
+ │   └─ anvil   127.0.0.1:8545   blockchain locale
+ │
+ └─ app        127.0.0.1:8700    console dell'Engineer
+                                 (+ Orchestrator, agenti, Gateway nei prossimi passi)
+```
+
+Tutte le porte sono pubblicate solo su `127.0.0.1`: non sono raggiungibili da
+altri computer della rete.
+
+Immagini:
+
+- `delegation-chain` (da `deploy/Dockerfile`, target `chain`): Foundry 1.8.4 e
+  `solc` 0.8.24 dalle release ufficiali, verificati con SHA-256; contratti
+  compilati durante la build. Usata da `anvil` e `trust-bootstrap`.
+- `delegation-app` (target `app`): Node 22.15, dipendenze npm bloccate dai
+  lockfile e i due moduli Rust nativi (emissione dell'Engineer, verifica del
+  Gateway) compilati con Rust 1.99 e `Cargo.lock` bloccati.
+- `gitea/gitea:28.0.0` e `openpolicyagent/opa:1.21.1` da Docker Hub.
+
+Dati persistenti (volumi Docker): `delegation-config` (configurazione privata),
+`delegation-gitea-data` (repository Gitea), `delegation-state` (policy e
+richieste salvate dalla console). Anvil invece riparte da zero a ogni riavvio:
+`trust-bootstrap` registra di nuovo i contratti automaticamente.
 
 ## Cosa fa oggi la console
 
 | Sezione | Stato |
 |---|---|
-| Login Engineer | Funzionante: password con scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
-| 1 · Ambiente | Funzionante: Gitea, OPA, Anvil, contratti, moduli Rust |
-| 2 · Repository | Funzionante: elenco, import da URL https pubblico (con protezione del branch principale) |
+| Login Engineer | Password con hash scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
+| 1 · Ambiente | Gitea, OPA, Anvil, contratti, moduli Rust |
+| 2 · Repository | Elenco e import da URL https pubblico, con protezione del branch principale |
 | 3 · Policy | Parametri salvati per repository. **Non ancora applicati da OPA** |
 | 4 · Requisito | Richiesta salvata con la commit di base fissata |
 | 5 · Planning e permessi | Da realizzare |
 | 6 · Esecuzione | Da realizzare |
 
-## Prossimi passi dello sviluppo
+## Prossimi passi
 
 1. Policy OPA parametrica che legge i parametri della console (sostituisce i
    valori cablati `feature/account-suspension` e `iam-console-poc`).
 2. Collegare la console al Review Host esistente
    (`poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs`):
-   Root preliminare, Planning, finestra di revisione dei permessi (solo
-   rimozione o restrizione), firma Ed25519, Root operativa, Execution.
-3. Prima esecuzione **senza Gemini** (modelli scriptati), poi Gemini reale solo
-   con consenso esplicito ai costi.
-4. Separare Gateway, agenti ed Engineer in processi distinti.
+   Root preliminare, Planning, revisione dei permessi (solo rimozione o
+   restrizione), firma Ed25519, Root operativa, Execution, Draft PR.
+3. Runner in un container dedicato: è l'unico servizio che riceverà l'accesso al
+   socket Docker, per avviare i container di test (compromesso da dichiarare nel
+   threat model).
+4. Prima esecuzione senza Gemini (modelli scriptati), poi Gemini reale solo con
+   consenso esplicito ai costi.
+5. Tappa 2: Gateway, Orchestrator e agenti in container separati con reti
+   isolate, così gli agenti non possono raggiungere Gitea se non tramite il Gateway.
 
 ## Problemi frequenti
 
-- **La porta 3000 è già occupata** (ad esempio da un altro Gitea): aggiungi
-  `GITEA_HOST_PORT=3001` in `poc/infra/.env` e rilancia `phase1-up.sh`.
-- **`docker` non risponde in WSL**: Docker Desktop → Settings → Resources → WSL
-  Integration → attiva Ubuntu.
-- **Contratti assenti** nella pagina Ambiente: Anvil è stato riavviato, rilancia
-  `phase1-up.sh`.
+- **Porta già in uso** (3000, 8181, 8545 o 8700): un altro programma la occupa,
+  ad esempio un altro Gitea. Fermalo, oppure cambia la porta a sinistra nella
+  riga `ports` del servizio in `compose.yaml`.
+- **`ENGINEER_PASSWORD` mancante**: non hai creato `.env` da `.env.example`.
+- **Un servizio di preparazione è `Exited (1)`**: guarda il suo log con
+  `docker compose logs <nome>`. Rilanciare `docker compose up -d` è sicuro: la
+  preparazione riusa ciò che esiste.
+
+## Sviluppo senza Docker (facoltativo)
+
+Per eseguire i test del codice direttamente su Linux/WSL:
+`bash poc/scripts/local-prepare.sh` (dipendenze e moduli Rust) e
+`npm --prefix poc run console:test`.
 
 ## Regole per chi lavora sul codice (anche Claude Code locale)
 
@@ -125,6 +126,6 @@ dati di Gitea.
 - Non indebolire le verifiche di Root, Child DC, VP, Gateway e OPA per far
   passare un test.
 - Non esporre le chiavi (Gemini, Engineer, Gitea) agli agenti o al codice generato.
-- Non committare `poc/infra/.env`, `poc/infra/runtime/` né i moduli `.node`
-  compilati (sono già esclusi da Git).
+- Non committare `.env`, `poc/infra/.env`, `poc/infra/runtime/` né i moduli
+  `.node` compilati (sono già esclusi da Git).
 - Branch di lavoro: `refactor/post-prof-plan-contracts-20261021`.

@@ -1,0 +1,176 @@
+# Delegation — local deployment (stage 1).
+#
+#   cp .env.example .env      # then set ENGINEER_PASSWORD
+#   docker compose up -d --build
+#   open http://127.0.0.1:8700
+#
+# Infrastructure: gitea, opa, anvil.
+# One-shot preparation (exit after success): setup, gitea-users,
+#   gitea-bootstrap, trust-bootstrap.
+# Application: app (Engineer console; Orchestrator, agents and Gateway are
+#   added to this stage next, then split into their own services in stage 2).
+#
+# Every published port is bound to 127.0.0.1 only.
+
+name: delegation
+
+x-app-image: &app-image
+  image: delegation-app:local
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile
+    target: app
+
+x-chain-image: &chain-image
+  image: delegation-chain:local
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile
+    target: chain
+
+services:
+  # ---------------------------------------------------------- preparation --
+  setup:
+    <<: *app-image
+    command: ["node", "deploy/bootstrap/setup.mjs"]
+    environment:
+      CONFIG_DIR: /config
+      ENGINEER_USERNAME: ${ENGINEER_USERNAME:-engineer}
+      ENGINEER_PASSWORD: ${ENGINEER_PASSWORD:?Copy .env.example to .env and set ENGINEER_PASSWORD}
+    volumes:
+      - config:/config
+    restart: "no"
+
+  gitea-users:
+    image: ${GITEA_IMAGE:-gitea/gitea:28.0.0}
+    user: "1000:1000"
+    entrypoint: ["/bin/sh", "/deploy/gitea-users.sh"]
+    volumes:
+      - gitea-data:/data
+      - config:/config:ro
+      - ./deploy/bootstrap/gitea-users.sh:/deploy/gitea-users.sh:ro
+    depends_on:
+      setup: {condition: service_completed_successfully}
+      gitea: {condition: service_healthy}
+    networks: [infra]
+    restart: "no"
+
+  gitea-bootstrap:
+    <<: *app-image
+    command: ["node", "deploy/bootstrap/gitea-bootstrap.mjs"]
+    environment:
+      CONFIG_DIR: /config
+      GITEA_URL: http://gitea:3000
+    volumes:
+      - config:/config
+    depends_on:
+      gitea-users: {condition: service_completed_successfully}
+    networks: [infra]
+    restart: "no"
+
+  trust-bootstrap:
+    <<: *chain-image
+    command: ["bash", "/work/deploy/bootstrap/trust-bootstrap.sh"]
+    environment:
+      RPC_URL: http://anvil:8545
+      CHAIN_ID: "31337"
+    volumes:
+      - config:/config
+    depends_on:
+      setup: {condition: service_completed_successfully}
+      anvil: {condition: service_healthy}
+    networks: [infra]
+    restart: "no"
+
+  # ------------------------------------------------------- infrastructure --
+  gitea:
+    image: ${GITEA_IMAGE:-gitea/gitea:28.0.0}
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__PATH: /data/gitea/gitea.db
+      GITEA__server__DOMAIN: localhost
+      GITEA__server__ROOT_URL: http://localhost:3000/
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__actions__ENABLED: "false"
+    volumes:
+      - gitea-data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 60
+      start_period: 10s
+    networks: [infra]
+    restart: unless-stopped
+
+  opa:
+    image: ${OPA_IMAGE:-openpolicyagent/opa:1.21.1}
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "--log-format=json", "/policy"]
+    volumes:
+      - ./poc/opa:/policy:ro
+    ports:
+      - "127.0.0.1:8181:8181"
+    healthcheck:
+      test: ["CMD", "/opa", "eval", "true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [infra]
+    restart: unless-stopped
+
+  anvil:
+    <<: *chain-image
+    command: ["anvil", "--host", "0.0.0.0", "--chain-id", "31337",
+              "--mnemonic", "test test test test test test test test test test test junk"]
+    ports:
+      - "127.0.0.1:8545:8545"
+    healthcheck:
+      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://127.0.0.1:8545"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks: [infra]
+    restart: unless-stopped
+
+  # ---------------------------------------------------------- application --
+  app:
+    <<: *app-image
+    environment:
+      CONFIG_DIR: /config
+      CONSOLE_STATE_DIR: /state
+      ENGINEER_CONSOLE_HOST: 0.0.0.0
+      ENGINEER_CONSOLE_PORT: "8700"
+      GITEA_URL: http://gitea:3000
+      OPA_URL: http://opa:8181
+      ANVIL_URL: http://anvil:8545
+    volumes:
+      - config:/config:ro
+      - state:/state
+    ports:
+      - "127.0.0.1:8700:8700"
+    depends_on:
+      gitea-bootstrap: {condition: service_completed_successfully}
+      trust-bootstrap: {condition: service_completed_successfully}
+      opa: {condition: service_healthy}
+    networks: [infra]
+    restart: unless-stopped
+
+networks:
+  infra:
+    name: delegation-infra
+
+volumes:
+  config:
+    name: delegation-config
+  state:
+    name: delegation-state
+  gitea-data:
+    name: delegation-gitea-data

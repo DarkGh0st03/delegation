@@ -1,32 +1,29 @@
 /**
- * Start the Engineer console on 127.0.0.1 only.
+ * Start the Engineer console.
  *
- *   node poc/engineer-console/src/server.mjs
- *
- * Prerequisites: local infrastructure prepared with poc/scripts/phase1-up.sh
- * and at least one Engineer user (poc/engineer-console/scripts/create-user.mjs).
+ * Normally started by Docker Compose (service "app"): it listens inside the
+ * container and Compose publishes it on 127.0.0.1:8700 of the host only.
+ * For development on the host it binds 127.0.0.1 (see docs/LOCAL_SETUP.md).
  */
 import {createServer} from "node:http";
-import {join} from "node:path";
 import {ConsoleAuth, readUserFile} from "./auth.mjs";
 import {createConsoleHandler} from "./app.mjs";
-import {CONSOLE_DIR, loadLocalConfig} from "./env.mjs";
+import {loadLocalConfig} from "./env.mjs";
 import {GiteaAdmin} from "./gitea.mjs";
 import {checkEnvironment} from "./health.mjs";
 import {ConsoleStore} from "./store.mjs";
 
 const config = loadLocalConfig();
-const usersPath = join(CONSOLE_DIR, "users.json");
-const users = readUserFile(usersPath);
+const users = readUserFile(config.usersPath);
 if (Object.keys(users).length === 0) {
   process.stderr.write(
     "Nessun utente Engineer configurato.\n" +
-    "Crealo con: node poc/engineer-console/scripts/create-user.mjs engineer\n");
+    (config.composeMode ? "Imposta ENGINEER_PASSWORD nel file .env e riavvia.\n"
+      : "Crealo con: node poc/engineer-console/scripts/create-user.mjs engineer\n"));
   process.exit(1);
 }
 if (!config.infraEnvPresent) {
-  process.stderr.write(
-    "Manca poc/infra/.env: prepara prima l'ambiente con bash poc/scripts/phase1-up.sh\n");
+  process.stderr.write("Configurazione locale mancante: avvia con docker compose up\n");
   process.exit(1);
 }
 
@@ -37,13 +34,13 @@ const handler = createConsoleHandler({
     adminPassword: config.giteaAdminPassword, org: config.giteaOrg,
     gatewayUser: config.giteaGatewayUser, runnerUser: config.giteaRunnerUser
   }),
-  store: new ConsoleStore(CONSOLE_DIR),
+  store: new ConsoleStore(config.stateDir),
   health: () => checkEnvironment(config),
   port: config.consolePort
 });
 
 const server = createServer(handler);
-server.listen(config.consolePort, "127.0.0.1", () => {
+server.listen(config.consolePort, config.consoleHost, () => {
   process.stdout.write(
     `Engineer console: http://127.0.0.1:${config.consolePort}\n` +
     "(Ctrl+C per fermarla)\n");

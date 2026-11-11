@@ -142,7 +142,9 @@ export function createConsoleHandler({auth, gitea, store, health, port}) {
           const repository = await gitea.importRepository({cloneUrl: body.clone_url, name: body.name});
           return send(res, 201, {repository});
         } catch (error) {
-          throw new HttpError(error.status === 409 ? 409 : 400, error.message);
+          if (error.status === 409)
+            throw new HttpError(409, "Esiste già una repository con questo nome in Gitea");
+          throw new HttpError(400, error.message);
         }
       }
       const repoMatch = /^\/api\/repos\/([^/]+)(\/policy)?$/u.exec(path);

@@ -1,0 +1,17 @@
+# Keep the build context small and free of secrets/build outputs.
+.git
+.github
+.env
+**/.env
+**/node_modules
+target
+services/**/target
+blockchain/out
+blockchain/cache
+blockchain/broadcast
+blockchain/lib
+poc/infra/.env
+poc/infra/runtime
+poc/infra/data
+**/*.node
+docs

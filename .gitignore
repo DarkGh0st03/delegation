@@ -25,3 +25,6 @@
 /poc/apps/gateway/src/native/*.node
 # Compiled, platform-specific Engineer Rust Node API addon
 /poc/packages/orchestrator-runtime/src/native/*.node
+
+# Local Docker Compose settings (Engineer password): never commit
+/.env

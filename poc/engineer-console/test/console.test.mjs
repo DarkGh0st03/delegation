@@ -208,8 +208,53 @@ test("environment check reports every missing component with a hint", async () =
     anvilUrl: "http://z", chainId: 31337, didRegistryAddress: "", trustRegistryAddress: "",
     issuerRegistryAddress: "", nativeGatewayAddon: "/none", nativeEngineerAddon: "/none"};
   const result = await checkEnvironment(config, {
-    fetchFn: async () => { throw Error("connection refused"); }, fileExists: () => false});
+    fetchFn: async () => { throw Error("connection refused"); }, fileExists: () => false,
+    loadAddon: async () => ({ok: true})});
   assert.equal(result.ready, false);
   assert.equal(result.checks.length, 7);
   assert.ok(result.checks.every(c => !c.ok && c.hint.length > 0));
+});
+
+test("Compose mode reads private files from CONFIG_DIR and service URLs from env", async (t) => {
+  const {writeFileSync} = await import("node:fs");
+  const {loadLocalConfig} = await import("../src/env.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "console-config-"));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  writeFileSync(join(dir, "local.env"), "GITEA_ADMIN_USER=thesis-admin\nGITEA_ADMIN_PASSWORD=pw\nGITEA_ORG=thesis\n");
+  writeFileSync(join(dir, "trust.env"), "DID_REGISTRY_ADDRESS=0x" + "1".repeat(40) + "\n");
+  const config = loadLocalConfig({CONFIG_DIR: dir, GITEA_URL: "http://gitea:3000",
+    OPA_URL: "http://opa:8181", ANVIL_URL: "http://anvil:8545", ENGINEER_CONSOLE_HOST: "0.0.0.0"});
+  assert.equal(config.composeMode, true);
+  assert.equal(config.infraEnvPresent, true);
+  assert.equal(config.giteaUrl, "http://gitea:3000");
+  assert.equal(config.giteaAdminPassword, "pw");
+  assert.equal(config.didRegistryAddress, "0x" + "1".repeat(40));
+  assert.equal(config.usersPath, join(dir, "console-users.json"));
+  assert.equal(config.stateDir, "/state");
+  assert.equal(config.consoleHost, "0.0.0.0");
+  const dev = loadLocalConfig({});
+  assert.equal(dev.composeMode, false);
+  assert.equal(dev.consoleHost, "127.0.0.1");
+});
+
+test("a native addon that exists but cannot be loaded is reported as not ready", async (t) => {
+  const {writeFileSync} = await import("node:fs");
+  const {loadAddonInChild} = await import("../src/health.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "console-addon-"));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const fake = join(dir, "broken.node");
+  writeFileSync(fake, "not a shared library");
+  const result = await loadAddonInChild(fake);
+  assert.equal(result.ok, false);
+  assert.ok(result.detail.length > 0);
+});
+
+test("importing a repository name that already exists returns a clear 409", async (t) => {
+  const {call, login, gitea} = await startConsole(t);
+  gitea.importRepository = async () => { const e = Error("Gitea POST /repos/migrate failed with HTTP 409"); e.status = 409; throw e; };
+  const cookie = await login();
+  const r = await call("POST", "/api/repos/import", {cookie,
+    body: {clone_url: "https://github.com/a/b.git", name: "b"}});
+  assert.equal(r.status, 409);
+  assert.match((await r.json()).error, /Esiste già/u);
 });
