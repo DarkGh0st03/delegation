@@ -457,9 +457,13 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
   // privilege escalation path; it retains exactly the three role GIDs.
   const ownerStatus=await (await import("node:fs/promises")).readFile(
    "/proc/"+owner.pid+"/status","utf8");
-  assert.match(ownerStatus,/^NoNewPrivs:[ \\t]*1[ \\t]*$/mu);
-  assert.match(ownerStatus,/^CapEff:[ \\t]*0+[ \\t]*$/mu);
-  assert.match(ownerStatus,/^Groups:[ \\t]*2301 2302 2303[ \\t]*$/mu);
+  const ownerField=name=>ownerStatus.split("\n").find(
+   line=>line.startsWith(name+":")
+  )?.slice(name.length+1).trim();
+  assert.equal(ownerField("NoNewPrivs"),"1");
+  assert.match(ownerField("CapEff")??"",/^0+$/u);
+  assert.deepEqual(ownerField("Groups")?.split(" ").filter(Boolean).sort(),
+   ["2301","2302","2303"]);
   // The very same existing specialist PIDs must NOT be able to opt into
   // native MCP with a guessed DID and an unmounted Rust signing socket.
   // Refuse at bootstrap, before any A2A listener or model invocation.
