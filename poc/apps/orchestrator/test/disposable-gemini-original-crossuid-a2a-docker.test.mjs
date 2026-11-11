@@ -4,7 +4,7 @@ import {execFile} from "node:child_process";
 import {promisify} from "node:util";
 import {resolve} from "node:path";
 const exec=promisify(execFile);
-test("offline real Backend A2A under cross-UID model/stage/bind HMAC channels (no AI)",async t=>{
+test("offline real Backend, Frontend and Test A2A under distinct role-scoped Linux credentials (no AI)",async t=>{
  if(process.env.DELEGATION_ORIGINAL_CROSSUID_A2A_DOCKER!=="1"){
   t.skip("Explicit free Docker safety test only");return;
  }
@@ -23,6 +23,6 @@ test("offline real Backend A2A under cross-UID model/stage/bind HMAC channels (n
   env:{PATH:process.env.PATH??"/usr/bin:/bin",
    HOME:process.env.HOME??"/tmp"}
  });
- assert.match(stdout,/pass 1/u,stderr.slice(-1200));
+ assert.match(stdout,/pass 2/u,stderr.slice(-1200));
  assert.match(stdout,/fail 0/u,stderr.slice(-1200));
 });

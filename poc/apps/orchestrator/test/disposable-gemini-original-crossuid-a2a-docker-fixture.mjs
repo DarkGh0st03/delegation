@@ -1,7 +1,8 @@
 /**
- * FREE Docker proof of one REAL ORIGINAL Backend A2A listener running as
- * UID 1002, using the original model, stage and bind HMAC transports from
- * an owner at UID 1001. All three channels use a dedicated role GID 2301.
+ * FREE Docker proof of the THREE ORIGINAL specialist A2A listeners under
+ * distinct Linux worker UIDs 1002/1003/1004, with one owner UID 1001.
+ * Each role's three HMAC transports use only its dedicated 2301/2302/2303
+ * group. No additional specialist or real Gemini model is created.
  * Model callback denies all inference. No Rust Root, Gitea or provider.
  * The container does NOT prove separate Linux mount namespaces.
  */
@@ -24,14 +25,14 @@ const ownerScript=[
  'const conf=JSON.parse(process.argv[3]);',
  'const scope=JSON.parse(process.argv[4]);',
  'const model=await startDisposableOwnerModelIpcServer({',
- ' role:"backend",socketPath:conf.modelSocketPath,',
+ ' role:scope.role,socketPath:conf.modelSocketPath,',
  ' secretFile:conf.modelSecretFile,originalScopedModelRole:scope,',
  ' authorizeSignedTask:async()=>false,',
  ' invokeModel:async()=>{throw Error("NO PROVIDER INFERENCE");}',
  '});',
  'const stage=await createTrustedOwnerEffectStagingServer({',
  ' socketPath:conf.stageSocketPath,secretFile:conf.stageSecretFile,',
- ' expectedRole:"backend",registry:new TrustedOwnerEffectStagingRegistry(),',
+ ' expectedRole:scope.role,registry:new TrustedOwnerEffectStagingRegistry(),',
  ' originalScopedEffectRole:scope',
  '});',
  'await stage.start();',
@@ -91,8 +92,8 @@ const observeWorker=child=>new Promise((resolve,reject)=>{
  child.once("error",()=>finish(true));
  child.once("exit",()=>finish(true));
 });
-async function prepare(root,name,ownerUid,group,dirMode){
- const directory=join(root,name+"-backend");
+async function prepare(root,name,ownerUid,group,dirMode,role="backend"){
+ const directory=join(root,name+"-"+role);
  await mkdir(directory,{mode:0o700});
  await chown(directory,ownerUid,group);
  await chmod(directory,dirMode);
@@ -178,4 +179,85 @@ test("real Backend A2A server under UID 1002 starts with 3 role-scoped owner tra
  assert.equal(card.name,"Backend Development Agent");
  assert.equal(card.supportedInterfaces[0].url,ready.baseUrl+"/a2a/rest");
  assert.equal(worker.exitCode,null);
+});
+
+test("actual Frontend and Test A2A listeners run as separate UID/GID role principals with the same original 3 private IPC directions",async t=>{
+ if(process.platform!=="linux"||process.getuid()!==0){
+  t.skip("Explicit offline Docker root fixture only");return;
+ }
+ for(const [role,uid,gid,port,expectedCard] of [
+  ["frontend",1003,2302,18651,"Frontend Development Agent"],
+  ["test",1004,2303,18661,"Software Testing Agent"]
+ ]){
+  const scope={role,ownerUid:1001,workerUid:uid,roleGid:gid};
+  const root=await mkdtemp("/tmp/delegation-real-a2a-"+role+"-");
+  let owner,worker;
+  try{
+   await chmod(root,0o755);
+   const model=await prepare(root,"model",1001,gid,0o2750,role);
+   const stage=await prepare(root,"stage",1001,gid,0o2750,role);
+   const bind=await prepare(root,"bind",1001,gid,0o3770,role);
+   const ownerPrivate=join(root,"owner-private");
+   await mkdir(ownerPrivate,{mode:0o700});
+   await chown(ownerPrivate,1001,1101);
+   await chmod(ownerPrivate,0o700);
+   const ownerCanaryPath=join(ownerPrivate,"harmless-canary");
+   await writeFile(ownerCanaryPath,randomBytes(32),
+    {mode:0o600,flag:"wx"});
+   await chown(ownerCanaryPath,1001,1101);
+   await chmod(ownerCanaryPath,0o600);
+   const conf={
+    role,port,task:{session_id:"original-offline-crossuid-3-roles"},
+    maxCalls:1,modelSocketPath:model.socketPath,
+    modelSecretFile:model.secretFile,
+    stageSocketPath:stage.socketPath,
+    stageSecretFile:stage.secretFile,
+    bindSocketPath:bind.socketPath,
+    bindSecretFile:bind.secretFile,
+    adapterToken:"offline-"+role+"-private-adapter",
+    gatewayBaseUrl:"http://127.0.0.1:18642",
+    adapterBaseUrl:"http://127.0.0.1:18643"
+   };
+   owner=spawnAs(1001,1101,[gid],[
+    "--experimental-strip-types","--input-type=module","-e",
+    ownerScript,OWNER_MODEL,STAGE,JSON.stringify(conf),
+    JSON.stringify(scope)
+   ]);
+   await observeReady(owner);
+   worker=spawnAs(uid,gid,[],[
+    "--experimental-strip-types",CHILD
+   ],{ipc:true,worker:true});
+   const pending=observeWorker(worker);
+   worker.send({
+    type:"start",config:conf,ownerCanaryPath,
+    requireOwnerFileIsolation:true,originalScopedRole:scope
+   });
+   const ready=await pending;
+   assert.equal(ready.role,role);
+   assert.equal(ready.pid,worker.pid);
+   assert.equal(ready.crossUidChannelsConfigured,true);
+   assert.equal(ready.providerCredentialPresent,false);
+   assert.equal(ready.ownerCanaryReadable,false);
+   assert.equal(ready.originalNativeTaskBindingPresent,false);
+   assert.equal(ready.originalTaskBindingChannelReady,true);
+   assert.equal(ready.osIsolationVerified,false);
+   const response=await fetch(new URL(AGENT_CARD_PATH,ready.baseUrl+"/"));
+   assert.equal(response.status,200);
+   const card=await response.json();
+   assert.equal(card.name,expectedCard);
+   assert.equal(card.supportedInterfaces[0].url,
+    ready.baseUrl+"/a2a/rest");
+  }finally{
+   if(worker){
+    if(worker.connected)worker.send({type:"stop"},()=>{});
+    else if(worker.exitCode===null)worker.kill("SIGTERM");
+    await awaitExit(worker);
+   }
+   if(owner){
+    if(owner.exitCode===null)owner.kill("SIGTERM");
+    await awaitExit(owner);
+   }
+   await rm(root,{recursive:true,force:true});
+  }
+ }
 });
