@@ -12,11 +12,11 @@ const fixture=()=>{
  const channels={};
  for(const name of ["model","stage","bind"]){
   const dir="/var/run/delegation-"+name+"-backend";
-  const bind=name==="bind",serverUid=bind?workerUid:ownerUid;
+  const bind=name==="bind",socketUid=bind?workerUid:ownerUid;
   channels[name]={
-   directory:meta(dir,"directory",serverUid,roleGid,
-    bind?0o2770:0o2750,2),
-   socket:meta(dir+"/"+name+".sock","socket",serverUid,roleGid,0o660),
+   directory:meta(dir,"directory",ownerUid,roleGid,
+    bind?0o3770:0o2750,2),
+   socket:meta(dir+"/"+name+".sock","socket",socketUid,roleGid,0o660),
    secretFile:meta(dir+"/"+name+".hex","file",ownerUid,roleGid,0o640)
   };
  }
@@ -61,6 +61,8 @@ test("group/world-writable owner socket, secret and directory are rejected",()=>
   ["model","secretFile",0o664],
   ["stage","socket",0o666],
   ["bind","directory",0o2777],
+  ["bind","directory",0o2770],
+  ["bind","directory",0o3777],
   ["stage","directory",0o2770],
   ["bind","secretFile",0o660]
  ]){
@@ -88,10 +90,13 @@ test("another specialist, unexpected supplementary group or role GID reuse is a 
   else assert.equal(evalCase(extra).layoutPotentiallyUsable,false);
  }
 });
-test("role bind server must be worker-owned, while all HMAC secrets remain owner-owned",()=>{
+test("bind socket is worker-owned, while sticky bind directory and all HMAC files are owner-owned",()=>{
  const c=structuredClone(fixture().channels);
  c.bind.socket.stat.uid=1001;
  assert.equal(evalCase({channels:c}).layoutPotentiallyUsable,false);
+ const badOwner=structuredClone(fixture().channels);
+ badOwner.bind.directory.stat.uid=1002;
+ assert.equal(evalCase({channels:badOwner}).layoutPotentiallyUsable,false);
  const d=structuredClone(fixture().channels);
  d.bind.secretFile.stat.uid=1002;
  assert.equal(evalCase({channels:d}).layoutPotentiallyUsable,false);
@@ -153,7 +158,7 @@ const threeRoleContracts=()=>{
     ch[part].stat.gid=row.roleGid;
    }
    if(kind==="bind"){
-    ch.directory.stat.uid=row.workerUid;
+    ch.directory.stat.uid=row.ownerUid;
     ch.socket.stat.uid=row.workerUid;
    }
   }
@@ -189,7 +194,6 @@ test("three-role validation detects role group sharing, duplicated UIDs and a fo
   }
   if(issue==="uid"){
    workers.test.workerUid=workers.backend.workerUid;
-   workers.test.channels.bind.directory.stat.uid=workers.backend.workerUid;
    workers.test.channels.bind.socket.stat.uid=workers.backend.workerUid;
   }
   if(issue==="channelAlias"){

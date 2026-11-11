@@ -9,11 +9,14 @@
  * launcher has safely created it:
  *
  * owner model/stage dirs: owner uid + unique role gid, mode 2750
- * worker bind dir: worker uid + unique role gid, mode 2770
+ * bind dir: OWNER uid + unique role gid, mode 3770 (setgid + sticky).
+ * A worker may create its own socket but cannot delete the OWNER HMAC.
  * all sockets: mode 0660; role-scoped HMAC files: owner uid, mode 0640
  *
- * The writable bind directory contains ONLY worker bind.sock and an
- * owner-created role-scoped HMAC file. No Gemini/Engineer/Rust keys may
+ * The sticky, owner-owned bind directory contains ONLY worker bind.sock
+ * and an owner-created role-scoped HMAC file. Without the sticky bit or
+ * owner directory ownership, a compromised worker could unlink/replace
+ * that owner file regardless of the file's 0640 permissions. No Gemini/Engineer/Rust keys may
  * ever be placed in any group-readable or worker-writable location.
  *
  * A structurally correct layout is NOT proof of peer credentials,
@@ -78,11 +81,13 @@ export function evaluateDisposableOriginalScopedIpcPermissions({
      socket.path===secretFile.path)deny();
   usedDirectories.add(directory.path);
   usedFiles.add(secretFile.path);usedFiles.add(socket.path);
-  const serverUid=channel==="bind"?workerUid:ownerUid;
+  const socketUid=channel==="bind"?workerUid:ownerUid;
+  // The directory must always be owned by the OWNER. If the worker owns
+  // it, sticky mode cannot protect the owner's HMAC from unlink/rename.
   conditions[channel+"Directory"]=statOk(directory.stat,"directory",
-   serverUid,roleGid,channel==="bind"?0o2770:0o2750);
+   ownerUid,roleGid,channel==="bind"?0o3770:0o2750);
   conditions[channel+"Socket"]=statOk(socket.stat,"socket",
-   serverUid,roleGid,0o660);
+   socketUid,roleGid,0o660);
   conditions[channel+"HmacSecret"]=statOk(secretFile.stat,"file",
    ownerUid,roleGid,0o640);
  }

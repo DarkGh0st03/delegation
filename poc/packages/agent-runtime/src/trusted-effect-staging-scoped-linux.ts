@@ -3,7 +3,9 @@
  * stage/bind IPC. No chmod/chown, new signer, network listener or paid API.
  *
  * Stage socket directory: owner UID / dedicated role GID / mode 2750.
- * Bind socket directory: worker UID / dedicated role GID / mode 2770.
+ * Bind socket directory: OWNER UID / dedicated role GID / mode 3770
+ * (setgid + sticky; worker can create its own socket but cannot unlink
+ * the owner's HMAC file). Bind socket itself stays worker-owned.
  * Both HMAC files: owner UID / role GID / mode 0640, nlink=1.
  * Both sockets: server UID / role GID / mode 0660.
  *
@@ -88,10 +90,9 @@ async function checkedDir(channel:Channel,
  socketPath:string,secretFile:string){
  const dir=validLocations(socketPath,secretFile);
  const d=await lstat(dir);
- const serverUid=channel==="stage"?scope.ownerUid:scope.workerUid;
- const mode=channel==="stage"?0o2750:0o2770;
+ const mode=channel==="stage"?0o2750:0o3770;
  if(!d.isDirectory()||d.isSymbolicLink()||
-    d.uid!==serverUid||d.gid!==scope.roleGid||
+    d.uid!==scope.ownerUid||d.gid!==scope.roleGid||
     (d.mode&0o7777)!==mode||
     await realpath(dir)!==dir)deny();
  const names=await readdir(dir);

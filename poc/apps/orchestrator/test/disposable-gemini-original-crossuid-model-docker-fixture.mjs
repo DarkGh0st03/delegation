@@ -121,6 +121,17 @@ test("Linux UID 1001/1002: only the backend group can request the synthetic HMAC
  await writeFile(canary,randomBytes(32),{mode:0o600,flag:"wx"});
  await chown(canary,1001,1101);
  await chmod(canary,0o600);
+ // A worker must be allowed to CREATE its bind.sock, but MUST NOT be
+ // allowed to unlink the owner-owned bind HMAC (sticky owner directory).
+ const bindDir=join(root,"bind-backend");
+ await mkdir(bindDir,{mode:0o700});
+ await chown(bindDir,1001,2301);
+ await chmod(bindDir,0o3770);
+ const bindSecret=join(bindDir,"bind.hex");
+ await writeFile(bindSecret,randomBytes(32).toString("hex")+"\n",
+  {mode:0o600,flag:"wx"});
+ await chown(bindSecret,1001,2301);
+ await chmod(bindSecret,0o640);
  const cfg={socket,secret,canary};
  const argv=[MODULE,JSON.stringify(cfg),JSON.stringify(TASK),
   JSON.stringify(SCOPE)];
@@ -141,6 +152,17 @@ test("Linux UID 1001/1002: only the backend group can request the synthetic HMAC
  assert.notEqual(foreign.code,0,
   "a foreign role group must not be admitted");
  assert.equal(foreign.stdout.includes("synthetic-cross-uid"),false);
+ const unlinkOwnerHmac=[
+  'const {unlink}=await import("node:fs/promises");',
+  'try{await unlink(process.argv[1]);process.stdout.write("UNLINKED");}',
+  'catch(e){if(["EACCES","EPERM"].includes(e.code))',
+  'process.stdout.write("DENIED");else throw e;}'
+ ].join("\n");
+ const forbidden=await finish(spawnAs(1002,2301,[],
+  unlinkOwnerHmac,[bindSecret]));
+ assert.equal(forbidden.code,0,forbidden.stderr.slice(0,500));
+ assert.equal(forbidden.stdout,"DENIED",
+  "worker must not unlink owner HMAC in owner-owned sticky directory");
  const worker=await finish(spawnAs(1002,2301,[],workerScript,argv));
  assert.equal(worker.code,0,worker.stderr.slice(0,1500));
  const result=JSON.parse(worker.stdout);
