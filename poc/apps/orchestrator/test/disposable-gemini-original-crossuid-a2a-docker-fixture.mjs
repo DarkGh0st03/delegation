@@ -47,7 +47,8 @@ const ownerEnv={PATH:"/usr/bin:/bin",LANG:"C.UTF-8",HOME:"/tmp"};
 const workerEnv={...ownerEnv,DELEGATION_GATEWAY_ARCHITECTURE:"authority-only"};
 const spawnAs=(uid,gid,groups,args,options={})=>{
  const privileges=["--reuid",String(uid),"--regid",String(gid),
-  ...(groups.length?["--groups",groups.join(",")]:["--clear-groups"])];
+  ...(groups.length?["--groups",groups.join(",")]:["--clear-groups"]),
+  "--no-new-privs","--bounding-set=-all"];
  return spawn("/usr/bin/setpriv",[...privileges,process.execPath,...args],{
   stdio:options.ipc?["ignore","pipe","pipe","ipc"]:
    ["ignore","pipe","pipe"],
@@ -452,6 +453,13 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    JSON.stringify(configs),JSON.stringify(scopes)
   ],{ipc:true});
   await observeReady(owner);
+  // The owner, unlike the UID=0 provisioner, has no Linux capability or
+  // privilege escalation path; it retains exactly the three role GIDs.
+  const ownerStatus=await (await import("node:fs/promises")).readFile(
+   "/proc/"+owner.pid+"/status","utf8");
+  assert.match(ownerStatus,/^NoNewPrivs:[ \\t]*1[ \\t]*$/mu);
+  assert.match(ownerStatus,/^CapEff:[ \\t]*0+[ \\t]*$/mu);
+  assert.match(ownerStatus,/^Groups:[ \\t]*2301 2302 2303[ \\t]*$/mu);
   // The very same existing specialist PIDs must NOT be able to opt into
   // native MCP with a guessed DID and an unmounted Rust signing socket.
   // Refuse at bootstrap, before any A2A listener or model invocation.
