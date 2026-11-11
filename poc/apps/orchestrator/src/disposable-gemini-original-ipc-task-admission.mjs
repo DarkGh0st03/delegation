@@ -105,6 +105,19 @@ export function createDisposableOriginalNativeIpcTaskAdmission({
   rootCheck(item.pin);
   return true;
  };
+ // Native role signer access is SEPARATE from a model-call slot. The
+ // owner-side Rust relay may create a Gateway-challenged presentation only
+ // while the same real R323 Coordinator/Child/Gateway Task is active.
+ // This is not a substitute for Rust verifying the issued credential.
+ const authorizeNativePresentation=({credentialId}={})=>{
+  if(retired||!ID.test(credentialId??""))deny();
+  const found=[...admitted.values()].find(item=>
+   !item.closed&&item.binding.credential_id===credentialId
+  );
+  if(!found)deny();
+  rootCheck(found.pin);
+  return true;
+ };
  const retireTask=runtimeTaskId=>{
   if(retired||!admitted.has(runtimeTaskId))deny();
   admitted.get(runtimeTaskId).closed=true;
@@ -114,7 +127,8 @@ export function createDisposableOriginalNativeIpcTaskAdmission({
   for(const entry of admitted.values())entry.closed=true;
  };
  return Object.freeze({
-  role,bindOriginalReceipt,authorizeSignedTask,retireTask,retireAll,
+  role,bindOriginalReceipt,authorizeSignedTask,
+  authorizeNativePresentation,retireTask,retireAll,
   get retired(){return retired;},
   get boundTaskCount(){return admitted.size;}
  });
@@ -216,6 +230,17 @@ export function createDisposableOriginalThreeRoleModelTaskAdmission(){
    return ledger.authorizeSignedTask(input);
   }]
  )));
+ // The original Rust presentation transport cannot be invoked from a
+ // worker-borne Task alone. Owner-side receipt provenance and the live
+ // SAME Root must independently match the exact signed Child ID.
+ const authorizeNativePresentation=({role,credentialId}={})=>{
+  if(closed||!Object.hasOwn(LIMIT,role??"")||
+     !ID.test(credentialId??"")||!rootAsserter)deny();
+  originalRoot(rootAsserter);
+  const ledger=ledgers.get(role);
+  if(!ledger)deny();
+  return ledger.authorizeNativePresentation({credentialId});
+ };
  const retireAll=()=>revokeAll();
  // Aggregate only non-secret counts. An owner cannot use these numbers as
  // Gateway evidence, a Rust signature, or a paid launch authorization.
@@ -229,7 +254,8 @@ export function createDisposableOriginalThreeRoleModelTaskAdmission(){
    roles.map(role=>[role,active.get(role).size])))
  });
  return Object.freeze({
-  onNativeOriginalTaskPrebound,roleAuthorizers,retireAll,snapshot
+  onNativeOriginalTaskPrebound,roleAuthorizers,
+  authorizeNativePresentation,retireAll,snapshot
  });
 }
 
@@ -326,6 +352,7 @@ export async function startDisposableOriginalThreeRoleModelIpcOwner({
  return Object.freeze({
   onNativeOriginalTaskPrebound:gate.onNativeOriginalTaskPrebound,
   roleAuthorizers:gate.roleAuthorizers,
+  authorizeNativePresentation:gate.authorizeNativePresentation,
   snapshot:gate.snapshot,
   close
  });
