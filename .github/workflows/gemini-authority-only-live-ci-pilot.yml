@@ -62,6 +62,9 @@ jobs:
       - name: Validate tracked checkout, manual identity and no-billing contract
         run: |
           node --check poc/apps/orchestrator/src/disposable-gemini-ci-preflight.mjs
+          # Source pin and signer share this SAME free workflow origin;
+          # syntactic guards run before native Rust is built.
+          node --check poc/apps/orchestrator/src/disposable-ci-original-signed-review.mjs
           node poc/apps/orchestrator/src/disposable-gemini-ci-preflight.mjs
       - name: Re-run offline admission regressions
         run: |
