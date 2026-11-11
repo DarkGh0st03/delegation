@@ -9,8 +9,8 @@
  */
 import {fork} from "node:child_process";
 import {randomBytes} from "node:crypto";
-import {mkdtemp,writeFile,rm} from "node:fs/promises";
-import {join} from "node:path";
+import {mkdtemp,writeFile,rm,lstat,realpath} from "node:fs/promises";
+import {join,resolve,isAbsolute} from "node:path";
 import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 import {inspectDisposableOriginalLinuxBoundary}
@@ -25,12 +25,34 @@ const KEYS=[
  "port","role","stageSecretFile","stageSocketPath","task"
 ];
 const deny=()=>{throw Error("Disposable original A2A subprocess launcher NO-GO");};
+const NATIVE_KEYS=[...KEYS,"nativeCryptoSocketPath","nativeSignerDid"].sort();
+const NATIVE_DID=/^did:[a-z0-9]+:[A-Za-z0-9._:%-]{4,180}$/u;
+async function verifyOwnerNativeRustSocket(config,scope){
+ const path=config.nativeCryptoSocketPath;
+ if(!NATIVE_DID.test(config.nativeSignerDid??"")||
+    typeof path!=="string"||!isAbsolute(path)||
+    resolve(path)!==path||path.includes("\0")||
+    path.length>100||[
+     config.modelSocketPath,config.modelSecretFile,
+     config.stageSocketPath,config.stageSecretFile,
+     config.bindSocketPath,config.bindSecretFile
+    ].includes(path))deny();
+ try{
+  const st=await lstat(path);
+  if(!st.isSocket()||st.isSymbolicLink()||
+     st.uid!==scope.ownerUid||st.uid===scope.workerUid||
+     (st.mode&0o007)!==0||await realpath(path)!==path)deny();
+ }catch{deny();}
+}
 export async function startDisposableOriginalA2aWorkerSubprocess(
  config,{
   requireOwnerFileIsolation=false,ownerPrivateBoundary,
   originalScopedRole
  }={}
 ){
+ const nativeMcp=!!config&&typeof config==="object"&&
+  Object.hasOwn(config,"nativeCryptoSocketPath")&&
+  Object.hasOwn(config,"nativeSignerDid");
  // The owner-only file path is never sent to the worker; only the trusted
  // parent may inspect its metadata through /proc and lstat. This is a
  // necessary cross-UID boundary check, not production proof of isolation.
@@ -61,7 +83,9 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
      :ownerPrivateBoundary!==undefined)||
     process.env.DELEGATION_DISPOSABLE_LIVE_MODE==="gemini-real"||
     !config||typeof config!=="object"||Array.isArray(config)||
-    Object.keys(config).sort().join(",")!==KEYS.join(",")||
+    Object.keys(config).sort().join(",")!==(
+     nativeMcp?NATIVE_KEYS.join(","):KEYS.join(","))||
+    (nativeMcp&&!requireOwnerFileIsolation)||
     !ROLE.has(config.role)||
     !Number.isSafeInteger(config.port)||config.port<1024||
     config.port>65535||
@@ -80,6 +104,9 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
      config.bindSocketPath,config.bindSecretFile,
      config.stageSocketPath,config.stageSecretFile
     ]).size!==6)deny();
+ // The original worker accepts ONLY cross-UID native Rust signer pins.
+ // A same-UID/offline subprocess cannot enable native MCP by configuration.
+ if(nativeMcp)await verifyOwnerNativeRustSocket(config,originalScopedRole);
  const entry=fileURLToPath(new URL(
   "./disposable-gemini-original-a2a-worker-child.mjs",import.meta.url
  ));
