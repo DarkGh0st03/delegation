@@ -859,10 +859,10 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    "no Gitea or Docker provider effect may be fabricated in this offline proof");
   assert.equal(nativeThree.syntheticRootOnly,true);
   assert.equal(nativeThree.syntheticRustOnly,true);
-  assert.equal(nativeThree.syntheticRustCalls,3,
-   "one fake Rust relay VP per authentic branded R323 Task, never a signer");
+  assert.equal(nativeThree.syntheticRustCalls,6,
+   "one Owner VP and one actual cross-UID worker VP per branded R323 Child");
   assert.deepEqual(nativeThree.nativeRelayProof.forwarded,
-   {backend:1,frontend:1,test:1});
+   {backend:2,frontend:2,test:2});
   assert.equal(nativeThree.nativeRelayProof.original_rust_signature_verified_here,
    false);
   assert.equal(nativeThree.nativeRelayProof.paid_gemini_authorized,false);
