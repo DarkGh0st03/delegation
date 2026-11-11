@@ -94,10 +94,21 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         }
 
         let permissions = dc.permissions().clone();
-        if !permissions.contains(context.required_permission()) {
+        // Every requirement must be present in the holder-signed VP. The
+        // subsequent accumulator verification authenticates the disclosed
+        // permission set against each issuer's delegation witnesses and
+        // metadata. Missing any requirement rejects the whole request;
+        // there is no partial VerifiedDelegation result.
+        let missing = context
+            .required_permissions()
+            .iter()
+            .filter(|required| !permissions.iter().any(|grant| grant.covers(required)))
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
             return Err(format!(
-                "Required permission {} is not disclosed in the VP",
-                context.required_permission()
+                "Required permissions not disclosed in the VP: {}",
+                missing.join(", ")
             ));
         }
 
@@ -117,7 +128,17 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         let mut previous: &String;
         let mut current: &String = vp.issuer();
         // !!! It's in reverse order !!!
+        let mut descendant_permissions = &permissions;
         for delegator in hierarchy.iter().rev() {
+            let ancestor_permissions = delegator.permissions_for_verification(&permissions);
+            if ancestor_permissions.len() != descendant_permissions.len()
+                || !ancestor_permissions
+                    .iter()
+                    .zip(descendant_permissions.iter())
+                    .all(|(parent, child)| parent.covers(child))
+            {
+                return Err(String::from("Delegation scope expands ancestor authority"));
+            }
             previous = delegator.delegatee_id();
             // Check that the current delegator is the delegatee in the previous credential
             if previous != current {
@@ -132,9 +153,10 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
                 delegator.id(),
                 delegator.credential_id(),
                 delegator.credential_status(),
-                &permissions,
+                ancestor_permissions,
                 now_ns,
             )?;
+            descendant_permissions = ancestor_permissions;
             current = delegator.id();
         }
         let credential_status = vp.credential_status().ok_or_else(|| {
@@ -167,6 +189,14 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
             }
         };
 
+        // Chain entries are ordered root -> immediate delegator. Each entry's
+        // credential_id has already passed witness, status and trust checks
+        // above. A direct-root VP has no hierarchy and uses its own ID.
+        let verified_root_credential_id = hierarchy
+            .first()
+            .map(|entry| entry.credential_id().clone())
+            .unwrap_or_else(|| vp.id().clone());
+
         Ok(VerifiedDelegation::new(
             presenter_id.clone(),
             vp.id().clone(),
@@ -174,7 +204,8 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
             permissions,
             hierarchy.len(),
             expiration,
-        ))
+        )
+        .with_verified_root(verified_root_credential_id))
     }
 }
 
@@ -677,6 +708,309 @@ mod tests {
     }
 
     #[test]
+    fn verifies_recursive_scopes_with_fanout_and_selective_disclosure() -> Result<(), String> {
+        let scoped = |path: &str| {
+            Permission::new(
+                format!("gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{path}"),
+                Operation::ReadFile,
+            )
+            .unwrap()
+        };
+        type Curve = Bn254;
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
+
+        let id = String::from("https://vc.example/delegators/d0");
+        let previous_vc = None;
+        let issuer: DelegationIssuer<Curve> = prepared_issuer(id, trust_registry.clone())?;
+        trust_registry.set_trust_anchor(issuer.holder_id(), true)?;
+        let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
+        let credential_id = String::from("http://delegation.example/credentials/1337");
+        let valid_from = String::from("2026-01-01T00:00:00Z");
+        let delegatee_id = String::from("https://vc.example/delegators/d1");
+        let validity_period: Duration = Duration::new(3600, 0);
+        let permissions: Vec<Permission> = vec![scoped("directories/apps")];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context,
+            credential_id,
+            test_status(101),
+            valid_from,
+            delegatee_id,
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let id = String::from("https://vc.example/delegators/d1");
+        let previous_vc = Some(vc);
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
+        let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
+        let credential_id = String::from("http://delegation.example/credentials/1338");
+        let valid_from = String::from("2026-01-01T00:00:00Z");
+        let delegatee_id = String::from("https://vc.example/delegators/d2");
+        let validity_period: Duration = Duration::new(3600, 0);
+        let permissions: Vec<Permission> = vec![
+            scoped("directories/apps/frontend"),
+            scoped("directories/apps/backend"),
+        ];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context.clone(),
+            credential_id,
+            test_status(102),
+            valid_from.clone(),
+            delegatee_id.clone(),
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let id = String::from("https://vc.example/delegators/d2");
+        let previous_vc = Some(vc);
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
+        let credential_id = String::from("http://delegation.example/credentials/1339");
+        let delegatee_id = String::from("https://vc.example/delegators/d3");
+        let permissions: Vec<Permission> = vec![
+            scoped("files/apps/backend/user.rs"),
+            scoped("files/apps/frontend/user.ts"),
+        ];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context.clone(),
+            credential_id,
+            test_status(103),
+            valid_from.clone(),
+            delegatee_id.clone(),
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let id = String::from("https://vc.example/delegators/d3");
+        let previous_vc = Some(vc);
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
+        let credential_id = String::from("http://delegation.example/credentials/1340");
+        let delegatee_id = String::from("https://vc.example/delegators/d4");
+        let permissions: Vec<Permission> = vec![scoped("files/apps/backend/user.rs")];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context.clone(),
+            credential_id,
+            test_status(104),
+            valid_from.clone(),
+            delegatee_id.clone(),
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let status_resolver = resolver_for_vc(&vc)?;
+        let id = delegatee_id.clone();
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id.clone(), trust_registry.clone())?;
+
+        let disclosed_permissions: Vec<Permission> = vec![scoped("files/apps/backend/user.rs")];
+        let audience = String::from("cloud-access-gateway");
+        let challenge = String::from("challenge-1");
+        let signed_vp = issuer.issue_delegation_verifiable_presentation(
+            vc,
+            disclosed_permissions,
+            audience.clone(),
+            challenge.clone(),
+        )?;
+
+        let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
+        let context = AuthorizationContext::new(
+            id.clone(),
+            audience,
+            challenge,
+            scoped("files/apps/backend/user.rs"),
+        )?;
+        let verified = verifier.verify_verifiable_presentation(context, signed_vp)?;
+
+        assert_eq!(verified.presenter_id(), &id);
+        assert_eq!(
+            verified.permissions(),
+            &vec![scoped("files/apps/backend/user.rs")]
+        );
+        assert_eq!(verified.hierarchy_depth(), 3);
+
+        Ok(())
+    }
+
+    /// One real signed VP with two disclosed permissions must pass atomically.
+    /// The positive and negative vectors also exercise the existing accumulator
+    /// witness verification path; there is no mock verification shortcut.
+    fn multipermission_fixture(
+        disclosed: Vec<Permission>,
+    ) -> Result<(DelegationVerifier<Bn254>, String, String), String> {
+        let trust_registry = Rc::new(InMemoryTrustStore::<Bn254>::new());
+        let root = prepared_issuer(
+            String::from("https://vc.example/delegators/multipermission-root"),
+            trust_registry.clone(),
+        )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
+
+        let holder_id = String::from("https://vc.example/delegators/multipermission-holder");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/multipermission"),
+            test_status(130),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![
+                permission(Operation::ReadFile),
+                permission(Operation::WriteFile),
+            ],
+            None,
+        )?;
+        let status_resolver = resolver_for_vc(&vc)?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc,
+            disclosed,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-multi"),
+        )?;
+        let verifier = DelegationVerifier::new(trust_registry, status_resolver)?;
+        Ok((verifier, signed_vp, holder_id))
+    }
+
+    fn multi_context(
+        holder_id: String,
+        required: Vec<Permission>,
+    ) -> Result<AuthorizationContext, String> {
+        AuthorizationContext::new_multiple(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-multi"),
+            required,
+        )
+    }
+
+    #[test]
+    fn verifies_all_disclosed_permissions_in_one_atomic_request() -> Result<(), String> {
+        let expected = vec![
+            permission(Operation::ReadFile),
+            permission(Operation::WriteFile),
+        ];
+        let (verifier, signed_vp, holder_id) = multipermission_fixture(expected.clone())?;
+        let verified = verifier.verify_verifiable_presentation(
+            multi_context(holder_id, expected.clone())?,
+            signed_vp,
+        )?;
+        assert_eq!(verified.permissions(), &expected);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_entire_request_if_one_required_permission_was_not_disclosed() -> Result<(), String> {
+        let (verifier, signed_vp, holder_id) =
+            multipermission_fixture(vec![permission(Operation::ReadFile)])?;
+        let rejected = verifier.verify_verifiable_presentation(
+            multi_context(
+                holder_id,
+                vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::WriteFile),
+                ],
+            )?,
+            signed_vp,
+        );
+        let message = match rejected {
+            Ok(_) => {
+                return Err(String::from(
+                    "A partial VP must never grant an atomic multipermission authorization",
+                ));
+            }
+            Err(message) => message,
+        };
+        assert!(message.contains("write_file"));
+        Ok(())
+    }
+
+    #[test]
+    fn reports_all_missing_requirements_without_partial_success() -> Result<(), String> {
+        let (verifier, signed_vp, holder_id) =
+            multipermission_fixture(vec![permission(Operation::ReadFile)])?;
+        let rejected = verifier.verify_verifiable_presentation(
+            multi_context(
+                holder_id,
+                vec![
+                    permission(Operation::WriteFile),
+                    permission(Operation::CreateBranch),
+                ],
+            )?,
+            signed_vp,
+        );
+        let message = match rejected {
+            Ok(_) => {
+                return Err(String::from(
+                    "An unsupported permission set must be denied atomically",
+                ));
+            }
+            Err(message) => message,
+        };
+        assert!(message.contains("write_file"));
+        assert!(message.contains("create_branch"));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_correct_operation_on_unapproved_resource() -> Result<(), String> {
+        let (verifier, signed_vp, holder_id) = multipermission_fixture(vec![
+            permission(Operation::ReadFile),
+            permission(Operation::WriteFile),
+        ])?;
+        let other_resource = Permission::new(
+            String::from("https://gitea.local/repos/another-project"),
+            Operation::WriteFile,
+        )?;
+        let rejected = verifier.verify_verifiable_presentation(
+            multi_context(
+                holder_id,
+                vec![permission(Operation::ReadFile), other_resource.clone()],
+            )?,
+            signed_vp,
+        );
+        let message = match rejected {
+            Ok(_) => {
+                return Err(String::from(
+                    "A permission on another resource must not be accepted",
+                ));
+            }
+            Err(message) => message,
+        };
+        assert!(message.contains(&other_resource.to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_wrong_challenge_for_atomic_multi_request() -> Result<(), String> {
+        let requested = vec![
+            permission(Operation::ReadFile),
+            permission(Operation::WriteFile),
+        ];
+        let (verifier, signed_vp, holder_id) = multipermission_fixture(requested.clone())?;
+        let context = AuthorizationContext::new_multiple(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("incorrect-challenge"),
+            requested,
+        )?;
+        assert!(
+            verifier
+                .verify_verifiable_presentation(context, signed_vp)
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
     fn rejects_wrong_audience() -> Result<(), String> {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
@@ -767,6 +1101,96 @@ mod tests {
         assert!(
             verifier
                 .verify_verifiable_presentation(context, signed_vp)
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn required_leaf_must_be_covered_by_cryptographically_authenticated_vp_scope()
+    -> Result<(), String> {
+        type Curve = Bn254;
+        let scope = |suffix: &str, op: Operation| {
+            Permission::new(
+                format!("gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{suffix}"),
+                op,
+            )
+            .unwrap()
+        };
+        let trust = Rc::new(InMemoryTrustStore::<Curve>::new());
+        let issuer_id = String::from("https://vc.example/delegators/r299-root");
+        let root = prepared_issuer(issuer_id, trust.clone())?;
+        trust.set_trust_anchor(root.holder_id(), true)?;
+        let holder_id = String::from("https://vc.example/delegators/r299-holder");
+        let scoped = scope("directories/apps/backend", Operation::ReadFile);
+        let credential = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/r299-directory"),
+            test_status(299),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![scoped.clone()],
+            None,
+        )?;
+        let status = resolver_for_vc(&credential)?;
+        let holder = prepared_issuer(holder_id.clone(), trust.clone())?;
+        let signed = holder.issue_delegation_verifiable_presentation(
+            credential,
+            vec![scoped.clone()],
+            String::from("cloud-access-gateway"),
+            String::from("r299-challenge"),
+        )?;
+        let verifier = DelegationVerifier::new(trust, status)?;
+        let allowed = [
+            scope("files/apps/backend/user.ts", Operation::ReadFile),
+            scope("files/apps/backend/src/nested.ts", Operation::ReadFile),
+        ];
+        let authorized = AuthorizationContext::new_multiple(
+            holder_id.clone(),
+            String::from("cloud-access-gateway"),
+            String::from("r299-challenge"),
+            allowed.to_vec(),
+        )?;
+        let verified = verifier.verify_verifiable_presentation(authorized, signed.clone())?;
+        assert_eq!(verified.permissions(), &vec![scoped]);
+        for denied in [
+            scope("files/apps/backend-extra/user.ts", Operation::ReadFile),
+            scope("files/apps/backend/../secret.ts", Operation::ReadFile),
+            scope("files/apps/backend/%2E%2E/secret.ts", Operation::ReadFile),
+            scope("files/apps/backend/user.ts", Operation::UpdateFile),
+            Permission::new(
+                "gitea://gitea.local/thesis/other/branches/feature%2Fwork/files/apps/backend/user.ts".to_owned(),
+                Operation::ReadFile,
+            )?,
+            Permission::new(
+                "gitea://gitea.local/thesis/repo/branches/main/files/apps/backend/user.ts".to_owned(),
+                Operation::ReadFile,
+            )?,
+        ] {
+            let context = AuthorizationContext::new(
+                holder_id.clone(),
+                String::from("cloud-access-gateway"),
+                String::from("r299-challenge"),
+                denied,
+            )?;
+            let error = verifier
+                .verify_verifiable_presentation(context, signed.clone())
+                .expect_err("out-of-scope signed VP must fail");
+            assert!(error.contains("Required permissions not disclosed"));
+        }
+        let mixed = AuthorizationContext::new_multiple(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("r299-challenge"),
+            vec![
+                allowed[0].clone(),
+                scope("files/apps/backend-extra/user.ts", Operation::ReadFile),
+            ],
+        )?;
+        assert!(
+            verifier
+                .verify_verifiable_presentation(mixed, signed)
                 .is_err()
         );
         Ok(())

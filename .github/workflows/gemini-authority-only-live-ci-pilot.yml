@@ -1,0 +1,92 @@
+# Manual, ZERO-INFERENCE disposable CI. Two free modes only:
+# preflight-only (source/identity checks) or scripted-native (the ORIGINAL
+# R385.13 same-session signed Engineer review + Rust/Child/A2A/Gitea/Docker).
+# Neither mode imports Gemini, authorizes payment or proves model generation.
+# A future PAID workflow requires a separately reviewed isolated-owner CLI,
+# explicit financial consent, verified spend controls and source pinning.
+name: Gemini Authority-Only LIVE CI — Free Preflight and Scripted Native E2E (No AI Billing)
+on:
+  # One free same-source E2E when this experimental workflow changes.
+  # Unrelated pushes do not retrigger the scripted Docker session.
+  push:
+    branches:
+      - experiment/disposable-gemini-live-20261109
+    paths:
+      - .github/workflows/gemini-authority-only-live-ci-pilot.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "No-billing preflight or same-session scripted native E2E; no Gemini calls"
+        required: true
+        default: preflight-only
+        type: choice
+        options:
+          - preflight-only
+          - scripted-native
+permissions:
+  contents: read
+concurrency:
+  group: disposable-live-ci-preflight-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    name: "Manual source-pinned preflight — no Google credentials, no ADK"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.repository == 'DarkGh0st03/delegation' &&
+      github.ref == 'refs/heads/experiment/disposable-gemini-live-20261109' &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' &&
+        (inputs.mode == 'preflight-only' || inputs.mode == 'scripted-native')))
+    env:
+      DELEGATION_LIVE_CI_PREFLIGHT_MODE: ${{ github.event_name == 'push' && 'scripted-native' || inputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+      - name: Deny any inherited provider credentials or paid consent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test -z "${DELEGATION_GEMINI_CHARGE_CONFIRMATION:-}"
+          test -z "${DELEGATION_BILLING_CAP_ACK:-}"
+      - name: Validate tracked checkout, manual identity and no-billing contract
+        run: |
+          node --check poc/apps/orchestrator/src/disposable-gemini-ci-preflight.mjs
+          # Source pin and signer share this SAME free workflow origin;
+          # syntactic guards run before native Rust is built.
+          node --check poc/apps/orchestrator/src/disposable-ci-original-signed-review.mjs
+          node poc/apps/orchestrator/src/disposable-gemini-ci-preflight.mjs
+      - name: Re-run offline admission regressions
+        run: |
+          node --test poc/apps/orchestrator/test/disposable-gemini-ci-preflight.test.mjs
+
+  scripted-native-e2e:
+    name: Original post-Planning Engineer signature → native Rust/Child/A2A/Docker/PR (No AI)
+    needs: preflight
+    if: >-
+      github.repository == 'DarkGh0st03/delegation' &&
+      github.ref == 'refs/heads/experiment/disposable-gemini-live-20261109' &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' &&
+        inputs.mode == 'scripted-native'))
+    # The original native job creates and consumes ONE Ed25519-signed review
+    # of its own authentic Planning checkpoint, then issues the operational
+    # Rust Root and exercises the exact three original specialists.
+    # It also independently verifies its same-run Gitea/Docker/PR evidence.
+    # No Gemini model, provider secret or second signed approval is added.
+    uses: ./.github/workflows/r38513-native-strict-full-recovery.yml
+    with:
+      original_ci_engineer_after_planning: true
+    permissions:
+      contents: read

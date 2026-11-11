@@ -1,0 +1,132 @@
+import {safeProjectE2eFailureDiagnostic} from "./project-e2e-failure-diagnostic.mjs";
+import {safeProjectTestFailureDiagnostic} from "./project-test-failure-diagnostic.mjs";
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
+/**
+ * Structured, secret-free failure diagnostics for the disposable native
+ * signed DAG's REAL Docker acceptance. Child stderr can contain source,
+ * credentials or untrusted test output and must NEVER be printed verbatim.
+ */
+import {safeTypecheckPermissionScopeAudit}
+  from "./typecheck-permission-scope-audit.mjs";
+import {safeTypecheckRevisionComparison}
+  from "./typecheck-revision-comparison.mjs";
+import {safeTypecheckRepairNomination}
+  from "./typecheck-repair-nomination.mjs";
+const PREFIX="[native-dag-adk] docker_phase_status ";
+const PHASES=Object.freeze([
+  "dependency_install","typecheck","backend_tests","frontend_tests",
+  "build","playwright_e2e","researcher_acceptance"
+]);
+const STATES=new Set(["pass","fail","skipped"]);
+function parseExact(marker){
+  if(!marker||typeof marker!=="object"||Array.isArray(marker)||
+     !["pass","fail"].includes(marker.status)||
+     !["pass","fail"].includes(marker.project_tests)||
+     !STATES.has(marker.researcher_acceptance)||
+     !Array.isArray(marker.phases)||marker.phases.length!==PHASES.length)
+    return null;
+  const statuses=[];
+  for(let i=0;i<PHASES.length;i++){
+    const p=marker.phases[i];
+    if(!p||typeof p!=="object"||p.phase!==PHASES[i]||
+       !STATES.has(p.status))return null;
+    statuses.push(Object.freeze({phase:PHASES[i],status:p.status}));
+  }
+  const firstFailed=statuses.find(x=>x.status==="fail");
+  // A bounded code-only diagnostic; arbitrary compiler output and paths
+  // are never re-emitted. Invalid metadata rejects the whole event.
+  let acceptanceFailure;
+  if(marker.acceptance_failure!==undefined){
+    if(firstFailed?.phase!=="researcher_acceptance"||
+       marker.project_tests!=="pass"||marker.researcher_acceptance!=="fail")return null;
+    acceptanceFailure=safeAcceptanceFailureSummary(marker.acceptance_failure);
+    if(!acceptanceFailure)return null;
+  }
+  let projectE2eFailure;
+  if(marker.project_e2e_failure!==undefined){
+    projectE2eFailure=safeProjectE2eFailureDiagnostic(marker.project_e2e_failure);
+    if(!projectE2eFailure||firstFailed?.phase!=="playwright_e2e"||
+       marker.status!=="fail"||marker.project_tests!=="fail"||
+       marker.researcher_acceptance!=="skipped"||
+       statuses.some((p,i)=>p.status!==(i<5?"pass":i===5?"fail":"skipped")))return null;
+  }
+  let projectTestFailure;
+  if(marker.project_test_failure!==undefined){
+    projectTestFailure=safeProjectTestFailureDiagnostic(marker.project_test_failure);
+    if(!projectTestFailure||firstFailed?.phase!==projectTestFailure.phase||
+       marker.status!=="fail"||marker.project_tests!=="fail"||
+       marker.researcher_acceptance!=="skipped"||
+       statuses.some((p,i)=>p.status!==(i<PHASES.indexOf(firstFailed.phase)
+         ?"pass":i===PHASES.indexOf(firstFailed.phase)?"fail":"skipped")))return null;
+  }
+  let typecheckCodes;
+  if(marker.typecheck_error_codes!==undefined){
+    const codes=marker.typecheck_error_codes;
+    if(firstFailed?.phase!=="typecheck"||!Array.isArray(codes)||
+       codes.length===0||codes.length>8||
+       codes.some(x=>typeof x!=="string"||!/^TS[0-9]{4,5}$/u.test(x))||
+       new Set(codes).size!==codes.length||
+       codes.some((x,i)=>i>0&&codes[i-1]>=x))
+      return null;
+    typecheckCodes=Object.freeze([...codes]);
+  }
+  let scopeAudit;
+  if(marker.typecheck_permission_scope_audit!==undefined){
+    if(firstFailed?.phase!=="typecheck")return null;
+    scopeAudit=safeTypecheckPermissionScopeAudit(marker.typecheck_permission_scope_audit);
+    if(!scopeAudit)return null;
+  }
+  let revisionComparison;
+  if(marker.typecheck_revision_comparison!==undefined){
+    if(firstFailed?.phase!=="typecheck")return null;
+    revisionComparison=safeTypecheckRevisionComparison(marker.typecheck_revision_comparison);
+    if(!revisionComparison)return null;
+  }
+  let repairNomination;
+  if(marker.typecheck_repair_nomination!==undefined){
+    if(firstFailed?.phase!=="typecheck"||!scopeAudit||!revisionComparison)
+      return null;
+    repairNomination=safeTypecheckRepairNomination(
+      marker.typecheck_repair_nomination);
+    if(!repairNomination||
+       repairNomination.diagnostic_files!==scopeAudit.distinct_file_count||
+       repairNomination.diagnostic_files!==revisionComparison.diagnostic_files||
+       repairNomination.outside_operational_scope!==
+         scopeAudit.outside_operational_root_write)return null;
+  }
+  if(marker.status==="fail"&&!firstFailed ||
+     marker.status==="pass"&&statuses.some(x=>x.status!=="pass")||
+     marker.status==="pass"&&(
+       marker.project_tests!=="pass"||marker.researcher_acceptance!=="pass"))
+    return null;
+  return Object.freeze({
+    status:marker.status,
+    first_failed_phase:firstFailed?.phase??null,
+    phases:Object.freeze(statuses),
+    project_tests:marker.project_tests,
+    researcher_acceptance:marker.researcher_acceptance,
+    ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
+    ...(projectTestFailure?{project_test_failure:projectTestFailure}:{}),
+    ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
+    ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{}),
+    ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),
+    ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{}),
+    ...(repairNomination?{typecheck_repair_nomination:repairNomination}:{})
+  });
+}
+/** Returns only enums from known fixed phases. No arbitrary stderr copied. */
+export function safeNativeDockerFailureDiagnostic(stderr){
+  if(!Buffer.isBuffer(stderr)&&typeof stderr!=="string")return null;
+  const raw=(Buffer.isBuffer(stderr)?stderr.toString("utf8"):stderr);
+  const tail=raw.slice(-256*1024);
+  const lines=tail.split(/\r?\n/u);
+  for(let i=lines.length-1;i>=0;i--){
+    const line=lines[i];
+    if(!line.startsWith(PREFIX)||line.length>4096)continue;
+    try{
+      const result=parseExact(JSON.parse(line.slice(PREFIX.length)));
+      if(result)return result;
+    }catch{/* invalid log event: do not print its content */}
+  }
+  return null;
+}

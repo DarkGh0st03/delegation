@@ -30,6 +30,16 @@ test("aggregate distinguishes legitimate different reads from duplicate reads",(
   assert.equal(JSON.stringify(metrics).includes(secretPath),false);
 });
 
+test("Legacy approval referral without a failed phase remains terminal",()=>{
+  const progress=new AdkToolProgress();
+  progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"controlled",
+      details:{repair_requires_new_approval:true,
+        private_source:"NEVER_EXPOSE_THIS"}}}});
+  assert.equal(progress.requiresFreshEngineerApproval,true);
+  assert.equal(progress.typecheckScopeSummary,null);
+});
+
 test("all ADK role prompts encourage bounded investigation and safe full-file writes",()=>{
   for(const role of ["backend","frontend","test"] as const){
     const prompt=SPECIALIZED_AGENT_PROFILES[role].system_prompt;
@@ -37,4 +47,30 @@ test("all ADK role prompts encourage bounded investigation and safe full-file wr
     assert.match(prompt,/REPLACES the entire target file/i);
     assert.match(prompt,/Never attempt to bypass an authorization denial/i);
   }
+});
+
+test("A trusted out-of-scope Runner repair remains terminal even after other tools",()=>{
+  const progress=new AdkToolProgress();
+  const secret="PRIVATE_FILE_DO_NOT_LOG";
+  progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"controlled error",
+      details:{first_failed_phase:"typecheck",repair_requires_new_approval:true,
+        typecheck_scope_summary:{parsed_locations:2,missing_read_grants:1,
+          missing_write_grants:2},untrusted:secret}}}});
+  assert.equal(progress.requiresFreshEngineerApproval,true);
+  assert.deepEqual(progress.typecheckScopeSummary,{
+    parsed_locations:2,missing_read_grants:1,missing_write_grants:2});
+  progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:true,result:{status:"pass"}}});
+  assert.equal(progress.requiresFreshEngineerApproval,true);
+  assert.ok(!JSON.stringify(progress.snapshot()).includes(secret));
+  const ordinary=new AdkToolProgress();
+  ordinary.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"failed",
+      details:{first_failed_phase:"typecheck"}}}});
+  assert.equal(ordinary.requiresFreshEngineerApproval,false);
+  ordinary.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"failed",
+      details:{repair_requires_new_approval:"true"}}}});
+  assert.equal(ordinary.requiresFreshEngineerApproval,false);
 });

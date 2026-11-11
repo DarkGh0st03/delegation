@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolve } from "node:path";
+import {spawnSync} from "node:child_process";
 import {
   IsolatedDockerRunnerExecutor,
   runnerFixedPhaseCommands,
-  runnerResearcherAcceptanceCommand
+  runnerResearcherAcceptanceCommand,
+  isolatedDockerCliEnvironment
 } from "../src/isolated-executor.ts";
 
 const request = {
@@ -52,7 +54,9 @@ test("Phase 6B Playwright phase boots the controlled app services before E2E", (
   assert.match(command, /npm run dev -w @iam\/frontend/u);
   assert.match(command, /wait_port 3000/u);
   assert.match(command, /wait_port 5173/u);
-  assert.match(command, /npm run test:e2e/u);
+  // One shared mutable Backend is used by all project specs. Baseline
+  // ACTIVE observations must not overlap the suspension transition.
+  assert.match(command, /npm run test:e2e -- --workers=1(?:$|[ ;])/u);
 });
 
 test("Phase 6C mounts researcher acceptance read-only and reports a separate verdict", async () => {
@@ -227,7 +231,7 @@ test("fixed pipeline stops after a failing phase and marks later phases skipped"
           return {
             exit_code: 2,
             stdout: "",
-            stderr: "typecheck failed",
+            stderr: "apps/backend/src/users/user.ts(23,7): error TS2304: PRIVATE_CODE",
             timed_out: false
           };
         }
@@ -247,6 +251,10 @@ test("fixed pipeline stops after a failing phase and marks later phases skipped"
   assert.equal(result.phases[0].status, "pass");
   assert.equal(result.phases[1].status, "fail");
   assert.equal(result.phases[2].status, "skipped");
+  assert.deepEqual(result.typecheck_diagnostics,[{
+    path:"apps/backend/src/users/user.ts",line:23,column:7,code:"TS2304"
+  }]);
+  assert.ok(!JSON.stringify(result).includes("PRIVATE_CODE"));
   assert.equal(execCount, 2);
 });
 
@@ -418,4 +426,137 @@ test("AUD-010: expiration mid-pipeline cannot return PASS and cleanup runs",asyn
   await assert.rejects(()=>executor.run(request));
   assert.equal(sawCreate,true);
   assert.equal(sawCleanup,true);
+});
+
+test("Vitest failed suites return only bounded filenames without raw error text",async()=>{
+  let fetchCount=0;
+  const worker=new IsolatedDockerRunnerExecutor(config,{
+    fetch_fn:async()=>{
+      fetchCount++;
+      return fetchCount===1
+        ?new Response(JSON.stringify({commit:{id:request.commit_sha}}),
+            {status:200,headers:{"content-type":"application/json"}})
+        :new Response(Buffer.from("test-archive"),{status:200});
+    },
+    command_runner:async(command,args)=>{
+      if(command==="docker"&&args[0]==="exec"&&args[2]==="bash"&&
+         String(args[4]).includes("vitest run tests/frontend")){
+        return {exit_code:1,timed_out:false,
+          stdout:" FAIL  tests/frontend/access.test.tsx > " +
+            "SECRET_TEST_TITLE_MUST_NOT_LEAK",
+          stderr:"AssertionError PRIVATE_ASSERTION_CONTENT"};
+      }
+      return {exit_code:0,timed_out:false,stdout:"",stderr:""};
+    }
+  });
+  const result=await worker.run(request);
+  assert.equal(result.status,"fail");
+  assert.deepEqual(result.failing_test_files,["tests/frontend/access.test.tsx"]);
+  assert.ok(!JSON.stringify(result).includes("SECRET_TEST_TITLE"));
+  assert.ok(!JSON.stringify(result).includes("PRIVATE_ASSERTION"));
+  assert.equal(result.phases.find(p=>p.phase==="build")?.status,"skipped");
+});
+
+test("Acceptance FAIL preserves check IDs on the exact SHA and still cleans the container",async()=>{
+  const summary={failed_checks:["ui_pending_actions"],timed_out:false,unclassified_failure:false};
+  let fetched=0,cleaned=false;
+  const executor=new IsolatedDockerRunnerExecutor({...config,
+    acceptance_enabled:true,acceptance_dir:resolve("researcher-owned","acceptance")},{
+    fetch_fn:async()=>++fetched===1
+      ?new Response(JSON.stringify({commit:{id:request.commit_sha}}),{status:200})
+      :new Response(Buffer.from("fake-tar-gz"),{status:200}),
+    command_runner:async(_command,args)=>{
+      if(args[0]==="rm")cleaned=true;
+      return args.at(-1)===runnerResearcherAcceptanceCommand
+        ?{exit_code:1,timed_out:false,stdout:"[researcher-acceptance] failure_summary "+
+          JSON.stringify(summary),stderr:"PRIVATE_ASSERTION"}
+        :{exit_code:0,timed_out:false,stdout:"",stderr:""};
+    }
+  });
+  const result=await executor.run(request);
+  assert.equal(result.status,"fail");
+  assert.equal(result.project_tests?.status,"pass");
+  assert.equal(result.researcher_acceptance?.status,"fail");
+  assert.equal(result.tested_commit_sha,request.commit_sha);
+  assert.deepEqual(result.acceptance_failure,summary);
+  assert.ok(cleaned);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION/u);
+});
+
+test("A real Playwright command failure produces sanitized locations on exact SHA and cleans up",async()=>{
+  let fetched=0,cleaned=false;
+  const worker=new IsolatedDockerRunnerExecutor(config,{
+    fetch_fn:async()=>++fetched===1
+      ?new Response(JSON.stringify({commit:{id:request.commit_sha}}),{status:200})
+      :new Response(Buffer.from("test-archive"),{status:200}),
+    command_runner:async(_command,args)=>{
+      if(args[0]==="rm")cleaned=true;
+      if(args[0]==="exec"&&String(args[4]).includes("npm run test:e2e"))
+        return {exit_code:1,timed_out:false,stdout:
+          "tests/e2e/user-profile.spec.ts:8:55\nexpect(locator).toBeVisible() failed\nPRIVATE_SOURCE",
+          stderr:"PRIVATE_CREDENTIAL"};
+      return {exit_code:0,timed_out:false,stdout:"",stderr:""};
+    }
+  });
+  const result=await worker.run(request);
+  assert.equal(result.tested_commit_sha,request.commit_sha);
+  assert.equal(result.phases.find(p=>p.phase==="playwright_e2e")?.status,"fail");
+  assert.equal(result.researcher_acceptance?.status,"skipped");
+  assert.equal(result.project_e2e_failure?.locations[0]?.check_id,"baseline_user_profile");
+  assert.equal(cleaned,true);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_SOURCE|PRIVATE_CREDENTIAL/);
+});
+
+test("host Docker CLI subprocess strips every inherited Gemini, GitHub, injected Node and shell credential",()=>{
+ const parent={
+  PATH:process.env.PATH??"/usr/bin",
+  HOME:process.env.HOME??"/tmp",
+  DOCKER_HOST:"unix:///var/run/docker.sock",
+  GEMINI_API_KEY:"forbidden-google-secret",
+  GOOGLE_API_KEY:"forbidden-second-google-secret",
+  OPENAI_API_KEY:"forbidden-openai-secret",
+  GH_TOKEN:"forbidden-github-token",
+  GITHUB_TOKEN:"forbidden-github-app-token",
+  ACTIONS_ID_TOKEN_REQUEST_TOKEN:"forbidden-oidc-token",
+  ACTIONS_ID_TOKEN_REQUEST_URL:"https://example.invalid/oidc",
+  NODE_OPTIONS:"--require malicious-bootstrap.js",
+  LD_PRELOAD:"/tmp/malicious.so",
+  HTTPS_PROXY:"https://user:password@example.invalid",
+  UNSCOPED_BEARER_TOKEN:"forbidden-private-token"
+ };
+ const safe=isolatedDockerCliEnvironment(parent);
+ assert.equal(Object.getPrototypeOf(safe),null);
+ assert.equal(safe.PATH,parent.PATH);
+ assert.equal(safe.HOME,parent.HOME);
+ assert.equal(safe.DOCKER_HOST,parent.DOCKER_HOST);
+ for(const key of Object.keys(parent).filter(k=>![
+  "PATH","HOME","DOCKER_HOST"
+ ].includes(k)))assert.equal(safe[key],undefined,key);
+ assert.equal(JSON.stringify(safe).includes("forbidden"),false);
+ const probe=spawnSync(process.execPath,["-e",
+  "process.stdout.write(JSON.stringify({google:process.env.GEMINI_API_KEY,github:process.env.GH_TOKEN,oidc:process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,docker:process.env.DOCKER_HOST,preload:process.env.LD_PRELOAD}))"
+ ],{encoding:"utf8",timeout:5000,env:safe});
+ assert.equal(probe.status,0);
+ assert.deepEqual(JSON.parse(probe.stdout),{
+  docker:"unix:///var/run/docker.sock"
+ });
+});
+
+test("Docker subprocess allowlist ignores unknown keys, empty and control-character values",()=>{
+ const input={
+  HOME:"/home/runner",DOCKER_HOST:"tcp://docker.local:2376",
+  DOCKER_TLS_VERIFY:"1",DOCKER_CERT_PATH:"/home/runner/.docker/certs",
+  DOCKER_CONFIG:"/home/runner/.docker",
+  EXFILTRATION_ENDPOINT:"https://elsewhere.invalid",
+  LANG:"en_US.UTF-8",
+  PATH:"/bin:\n/tmp/evil",
+  TMPDIR:"/tmp\0injected",
+  TEMP:""
+ };
+ const env=isolatedDockerCliEnvironment(input);
+ assert.deepEqual({...env},{
+  HOME:input.HOME,DOCKER_HOST:input.DOCKER_HOST,
+  DOCKER_TLS_VERIFY:"1",DOCKER_CERT_PATH:input.DOCKER_CERT_PATH,
+  DOCKER_CONFIG:input.DOCKER_CONFIG,LANG:input.LANG
+ });
 });

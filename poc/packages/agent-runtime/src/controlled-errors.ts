@@ -1,3 +1,4 @@
+import {safeToolFailureReason, toolFailureReasonFields, type ToolFailureReason} from "../../../mcp-shared/src/tool-failure-reason.ts";
 export type ControlledToolErrorKind =
   | "authorization_denied"
   | "tests_failed"
@@ -9,17 +10,19 @@ export class ControlledToolError extends Error {
   readonly kind: ControlledToolErrorKind;
   readonly statusCode?: number;
   readonly details?: unknown;
+  readonly reason?: ToolFailureReason;
 
   constructor(
     kind: ControlledToolErrorKind,
     message: string,
-    options: { statusCode?: number; details?: unknown } = {}
+    options: { statusCode?: number; details?: unknown; reason?: ToolFailureReason } = {}
   ) {
     super(message);
     this.name = "ControlledToolError";
     this.kind = kind;
     this.statusCode = options.statusCode;
     this.details = options.details;
+    this.reason = safeToolFailureReason(options.reason);
   }
 }
 
@@ -29,6 +32,7 @@ export function controlledToolErrorPayload(error: unknown): {
     kind: ControlledToolErrorKind;
     message: string;
     details?: unknown;
+    reason?: ToolFailureReason;
   };
 } {
   if (error instanceof ControlledToolError) {
@@ -36,6 +40,7 @@ export function controlledToolErrorPayload(error: unknown): {
       ok: false,
       error: {
         kind: error.kind,
+        ...toolFailureReasonFields(error),
         message: error.message,
         ...(error.details === undefined ? {} : { details: error.details })
       }

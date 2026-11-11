@@ -1,4 +1,12 @@
+import {createHash} from "node:crypto";
+import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import { ProviderUnavailableError } from "./errors.ts";
+import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
+  type TypecheckLocation}
+  from "../../test-runner-controller/src/typecheck-diagnostics.ts";
+import {sanitizeVitestFailureFiles}
+  from "../../test-runner-controller/src/vitest-failure-files.ts";
 import type { RunnerPhaseExecutionResult } from "./types.ts";
 
 type FetchLike = typeof fetch;
@@ -34,7 +42,33 @@ export interface RunnerClientResult {
   researcher_acceptance?: RunnerPhaseExecutionResult & {
     phase: "researcher_acceptance";
   };
+  acceptance_failure?: import("../../test-runner-controller/src/types.ts").RunnerRunResult["acceptance_failure"];
   log_reference?: string;
+  typecheck_diagnostics?: TypecheckLocation[];
+  typecheck_error_codes?: string[];
+  failing_test_files?: string[];
+  project_e2e_failure?: NonNullable<ReturnType<typeof import("../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
+}
+
+const trustedResultWitnesses=new WeakMap<RunnerClientResult,Readonly<{
+ client:RunnerClient;request:string;digest:string
+}>>();
+const digest=(v:unknown)=>createHash("sha256").update(JSON.stringify(v)).digest("hex");
+/** A response must be the UNMODIFIED original result object produced by
+ * this precise authenticated RunnerClient instance and request. Branding
+ * alone does not prove Docker ran; it prevents model-forged result objects.
+ */
+export function assertTrustedRunnerClientResult(
+ client:RunnerClient,request:RunnerClientRequest,result:RunnerClientResult
+):void{
+ const proof=result&&trustedResultWitnesses.get(result);
+ if(!proof||proof.client!==client||proof.request!==digest(request)||
+    proof.digest!==digest(result)||
+    result.request_id!==request.request_id||
+    result.repository!==request.repository||
+    result.branch!==request.branch||
+    result.tested_commit_sha!==request.commit_sha)
+  throw new ProviderUnavailableError("Runner result lacks authenticated owner-bound request provenance");
 }
 
 const PHASES = new Set([
@@ -155,6 +189,15 @@ export class RunnerClient {
       throw new ProviderUnavailableError("Runner returned an unexpected profile");
     }
 
+    // An authenticated controller must not report PASS while sending any
+    // failure evidence (even an empty or malformed failure field).
+    if(status==="pass"&&[
+      "acceptance_failure","typecheck_diagnostics","typecheck_error_codes",
+      "failing_test_files","project_e2e_failure"
+    ].some(key=>Object.hasOwn(body,key)&&body[key]!==null))
+      throw new ProviderUnavailableError(
+        "Runner PASS response contains contradictory failure evidence");
+
     const projectTests =
       body.project_tests === undefined
         ? undefined
@@ -186,7 +229,19 @@ export class RunnerClient {
       );
     }
 
+    const acceptanceFailure = status==="fail"&&projectStatus==="pass"&&
+      researcherAcceptance?.status==="fail"&&
+      parsePhases(body.phases).every(p=>p.phase==="researcher_acceptance"
+        ?p.status==="fail":p.status==="pass")
+      ?safeAcceptanceFailureSummary(body.acceptance_failure):null;
+    const firstFailedPhase=parsePhases(body.phases).find(p=>p.status==="fail")?.phase;
+    const vitestFailurePhase=firstFailedPhase==="backend_tests"||firstFailedPhase==="frontend_tests"
+      ?firstFailedPhase:null;
+    const projectE2eFailure=status==="fail"&&firstFailedPhase==="playwright_e2e"
+      ?safeProjectE2eFailureDiagnostic(body.project_e2e_failure):null;
     const result: RunnerClientResult = {
+      ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
+      ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
       request_id: string(body.request_id, "request_id"),
       repository: string(body.repository, "repository"),
       branch: string(body.branch, "branch"),
@@ -211,7 +266,17 @@ export class RunnerClient {
         : {}),
       ...(typeof body.log_reference === "string" && body.log_reference.length > 0
         ? { log_reference: body.log_reference }
-        : {})
+        : {}),
+      ...(status==="fail"&&body.typecheck_diagnostics!==undefined
+        ?{typecheck_diagnostics:sanitizeTypecheckLocations(body.typecheck_diagnostics)}
+        :{}),
+      ...(status==="fail"&&body.typecheck_error_codes!==undefined&&
+         parsePhases(body.phases).some(p=>p.phase==="typecheck"&&p.status==="fail")
+        ?{typecheck_error_codes:sanitizeTypecheckErrorCodes(body.typecheck_error_codes)}
+        :{}),
+      ...(status==="fail"&&vitestFailurePhase&&body.failing_test_files!==undefined
+        ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files,
+           vitestFailurePhase)}: {})
     };
 
     if (
@@ -225,6 +290,9 @@ export class RunnerClient {
       );
     }
 
+    trustedResultWitnesses.set(result,Object.freeze({
+      client:this,request:digest(request),digest:digest(result)
+    }));
     return result;
   }
 }

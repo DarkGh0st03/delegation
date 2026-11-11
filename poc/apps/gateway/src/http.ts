@@ -68,6 +68,38 @@ export function createGatewayHttpServer(runtime: GatewayRuntime): Server {
         return;
       }
 
+      // Authorization-only bundle: checks all DC/VP permissions and all OPA
+      // inputs before returning, but cannot execute a batch of provider effects.
+      if (method === "POST" && url === "/v1/authorization/prepare-composite") {
+        const body = await readJson(request);
+        json(response, 201, runtime.prepareComposite(body));
+        return;
+      }
+
+      if (method === "POST" && url === "/v1/authorization/verify-composite") {
+        const body = await readJson(request);
+        json(response, 200, await runtime.verifyComposite(body));
+        return;
+      }
+
+      if (method === "POST" && url === "/v1/authorization/prepare-read-composite") {
+        const body=await readJson(request);
+        json(response,201,await runtime.prepareReadComposite(body));
+        return;
+      }
+
+      if (method === "POST" && url === "/v1/authorization/execute-read-composite") {
+        const body=await readJson(request);
+        const controller=new AbortController();
+        const onPrematureClose=()=>{if(!response.writableEnded)controller.abort();};
+        response.once("close",onPrematureClose);
+        try{
+          const result=await runtime.executeReadComposite(body,controller.signal);
+          if(!response.destroyed)json(response,200,result);
+        }finally{response.removeListener("close",onPrematureClose);}
+        return;
+      }
+
       if (method === "POST" && url === "/v1/authorization/execute") {
         const body = await readJson(request);
         const controller=new AbortController();

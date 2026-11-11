@@ -480,3 +480,221 @@ test("createPullRequest maps duplicate PR validation failures to provider confli
     ProviderConflictError
   );
 });
+
+
+test("approved PR refuses changed HEAD before creating provider-side PR",async()=>{
+  const approved="a".repeat(40);
+  let posts=0;
+  const client=clientWith((async (url,init)=>{
+    if(init?.method==="POST")posts++;
+    return new Response(JSON.stringify({
+      name:"feature/account-suspension",
+      commit:{id:"b".repeat(40)}
+    }),{status:200});
+  }) as typeof fetch);
+  await assert.rejects(()=>client.createPullRequest(
+    "feature/account-suspension","main","Review","",approved
+  ),ProviderConflictError);
+  assert.equal(posts,0);
+});
+
+
+test("approved PR detects changed Gitea head during POST, never attests it",async()=>{
+  const approved="a".repeat(40),changed="b".repeat(40);
+  let gets=0,posts=0;
+  const client=clientWith((async(_url,init)=>{
+    if(init?.method==="POST"){
+      posts++;
+      return new Response(JSON.stringify({
+        id:77,number:7,
+        head:{ref:"feature/account-suspension",sha:changed},
+        base:{ref:"main"}
+      }),{status:201});
+    }
+    gets++;
+    return new Response(JSON.stringify({
+      name:"feature/account-suspension",commit:{id:approved}
+    }),{status:200});
+  }) as typeof fetch);
+  await assert.rejects(()=>client.createPullRequest(
+    "feature/account-suspension","main","Review","",approved
+  ),ProviderUnavailableError);
+  assert.equal(gets,1);
+  assert.equal(posts,1);
+  // Gitea might have created the PR during this race. Its effect must not
+  // be recorded as a verified success or used to authorize a merge.
+});
+test("malformed attested PR SHA is rejected before any Gitea request",async()=>{
+  let touches=0;
+  const client=clientWith((async()=>{
+    touches++;
+    throw Error("No network request allowed");
+  }) as typeof fetch);
+  await assert.rejects(()=>client.createPullRequest(
+    "feature/account-suspension","main","Review","", "not-a-sha"
+  ),ProviderConflictError);
+  assert.equal(touches,0);
+});
+
+test("R143 Gitea creates exactly one draft only on accepted SHA; rechecks PR and branch",async()=>{
+ const wanted="a".repeat(40),main="b".repeat(40);
+ let posts=0,headReads=0,confirmationReads=0;
+ const c=clientWith((async(url,init)=>{
+  const u=String(url),method=init?.method??"GET";
+  if(u.endsWith("/branches/feature%2Fr143-fix")){
+   headReads++;
+   return new Response(JSON.stringify({
+    name:"feature/r143-fix",commit:{id:wanted}
+   }),{status:200});
+  }
+  if(u.endsWith("/branches/main"))
+   return new Response(JSON.stringify({name:"main",commit:{id:main}}),
+    {status:200});
+  const pr={
+   id:12,number:3,state:"open",merged:false,draft:true,
+   head:{ref:"feature/r143-fix",sha:wanted},
+   base:{ref:"main",sha:main},
+   html_url:"http://gitea:3000/thesis/iam-console-poc/pulls/3"
+  };
+  if(u.endsWith("/pulls")&&method==="POST"){
+   posts++;const body=JSON.parse(String(init?.body));
+   assert.deepEqual(body,{
+    head:"feature/r143-fix",base:"main",title:"WIP: Review corrected tests",
+    body:"Owner-reviewed correction"
+   });
+   return new Response(JSON.stringify(pr),{status:201});
+  }
+  if(u.endsWith("/pulls/3")&&method==="GET"){
+   confirmationReads++;
+   return new Response(JSON.stringify(pr),{status:200});
+  }
+  throw Error("Unapproved R143 Gitea request "+method+" "+u);
+ }) as typeof fetch);
+ const r=await c.createDraftPullRequest(
+  "feature/r143-fix","main","Review corrected tests",wanted,
+  "Owner-reviewed correction"
+ );
+ assert.equal(posts,1);assert.equal(headReads,2);
+ assert.equal(confirmationReads,1);
+ assert.equal(r.draft,true);assert.equal(r.open,true);
+ assert.equal(r.merged,false);assert.equal(r.head_revision,wanted);
+ assert.equal(r.number,3);
+});
+test("R150.10.3 Gitea draft title uses WIP protocol once; does not send ignored draft field",async()=>{
+ const accepted="a".repeat(40),main="b".repeat(40);
+ let submittedTitle=null,posts=0;
+ const c=clientWith((async(url,init)=>{
+  const u=String(url);
+  if(u.endsWith("/branches/feature%2Fr143-fix"))
+   return new Response(JSON.stringify({name:"feature/r143-fix",
+    commit:{id:accepted}}),{status:200});
+  if(u.endsWith("/branches/main"))
+   return new Response(JSON.stringify({name:"main",commit:{id:main}}),
+    {status:200});
+  if(u.endsWith("/pulls")&&init?.method==="POST"){
+   posts++;
+   const request=JSON.parse(String(init.body));
+   assert.equal(Object.hasOwn(request,"draft"),false,
+    "Unsupported Gitea API draft request field must not be relied on");
+   submittedTitle=request.title;
+   return new Response(JSON.stringify({
+    id:4,number:5,state:"open",merged:false,
+    draft:request.title.startsWith("WIP: "),
+    head:{ref:"feature/r143-fix",sha:accepted},
+    base:{ref:"main",sha:main}
+   }),{status:201});
+  }
+  if(u.endsWith("/pulls/5")&&init?.method==="GET")
+   return new Response(JSON.stringify({
+    id:4,number:5,state:"open",merged:false,draft:true,
+    head:{ref:"feature/r143-fix",sha:accepted},
+    base:{ref:"main",sha:main}
+   }),{status:200});
+  throw Error("Unexpected Gitea draft request");
+ }) as typeof fetch);
+ const out=await c.createDraftPullRequest(
+  "feature/r143-fix","main","WIP: Verify repaired code",accepted
+ );
+ assert.equal(submittedTitle,"WIP: Verify repaired code");
+ assert.equal(posts,1);
+ assert.equal(out.draft,true);
+ let sent=0;
+ const bad=clientWith(async()=>{
+  sent++;
+  throw Error("no requests");
+ });
+ await assert.rejects(bad.createDraftPullRequest(
+  "feature/r143-fix","main","x".repeat(158),accepted
+ ),ProviderConflictError);
+ assert.equal(sent,0);
+});
+test("R143 refuses changed Gitea head before POST and does not open a PR",async()=>{
+ let posts=0;const c=clientWith((async(url,init)=>{
+  if(init?.method==="POST"){posts++;throw Error("POST not allowed");}
+  if(String(url).endsWith("/branches/feature%2Fr143-fix"))
+   return new Response(JSON.stringify({
+    name:"feature/r143-fix",commit:{id:"c".repeat(40)}
+   }),{status:200});
+  throw Error("Unapproved Gitea request");
+ }) as typeof fetch);
+ await assert.rejects(c.createDraftPullRequest(
+  "feature/r143-fix","main","Review","a".repeat(40)
+ ),ProviderConflictError);
+ assert.equal(posts,0);
+});
+test("R143 refuses non-draft PR response, without a dangerous second POST",async()=>{
+ const accepted="a".repeat(40),main="b".repeat(40);let posts=0;
+ const c=clientWith((async(url,init)=>{
+  const u=String(url);
+  if(u.endsWith("/branches/feature%2Fr143-fix"))
+   return new Response(JSON.stringify({
+    name:"feature/r143-fix",commit:{id:accepted}
+   }),{status:200});
+  if(u.endsWith("/branches/main"))
+   return new Response(JSON.stringify({name:"main",commit:{id:main}}),
+    {status:200});
+  if(u.endsWith("/pulls")&&init?.method==="POST"){
+   posts++;
+   return new Response(JSON.stringify({
+    id:9,number:10,state:"open",merged:false,draft:false,
+    head:{ref:"feature/r143-fix",sha:accepted},
+    base:{ref:"main",sha:main}
+   }),{status:201});
+  }
+  throw Error("Unapproved R143 request");
+ }) as typeof fetch);
+ await assert.rejects(c.createDraftPullRequest(
+  "feature/r143-fix","main","Review",accepted
+ ),ProviderUnavailableError);
+ assert.equal(posts,1,"Never retry a potentially created non-draft PR");
+});
+
+for(const mode of ['valid','closed','merged','not-draft','wrong-number','head-race','base-moved']){
+ test('R353.6 independent Draft PR observation '+mode,async()=>{
+  const head='a'.repeat(40),base='b'.repeat(40),branch='feature/r3536';
+  let headReads=0,prReads=0;
+  const c=clientWith((async(url,init)=>{
+   assert.equal(init?.method,'GET','completion observation must never POST');
+   const u=String(url);
+   if(u.endsWith('/branches/feature%2Fr3536')){
+    headReads++;
+    return Response.json({name:branch,commit:{id:mode==='head-race'&&headReads>1?'c'.repeat(40):head}});
+   }
+   if(u.endsWith('/branches/main'))
+    return Response.json({name:'main',commit:{id:mode==='base-moved'?'c'.repeat(40):base}});
+   assert.ok(u.endsWith('/pulls/3'));prReads++;
+   return Response.json({id:12,number:mode==='wrong-number'?4:3,
+    state:mode==='closed'?'closed':'open',merged:mode==='merged',
+    draft:mode!=='not-draft',head:{ref:branch,sha:head},base:{ref:'main',sha:base}});
+  }) as typeof fetch);
+  const observe=()=>c.inspectDraftPullRequest({number:3,headBranch:branch,
+   baseBranch:'main',expectedHeadSha:head,expectedBaseSha:base});
+  if(mode==='valid'){
+   const result=await observe();
+   assert.equal(result.id,12);assert.equal(result.number,3);
+   assert.equal(result.head_revision,head);assert.equal(result.base_revision,base);
+   assert.equal(result.draft,true);assert.equal(result.merged,false);
+   assert.equal(prReads,1);assert.equal(headReads,2);
+  }else await assert.rejects(observe());
+ });
+}

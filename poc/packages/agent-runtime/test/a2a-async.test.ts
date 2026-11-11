@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {createServer} from "node:net";
 import {setTimeout as sleep} from "node:timers/promises";
 import {Role,TaskState} from "@a2a-js/sdk";
 import {ClientFactory,ClientFactoryOptions,ServiceParameters,withA2AExtensions} from "@a2a-js/sdk/client";
@@ -137,4 +138,36 @@ test("protected initial A2A sendMessage cannot return delegation metadata even w
       assert.equal(JSON.stringify(later).includes(EVIDENCE),false);
     }
   }finally{await server.close();}
+});
+
+test("A2A Express 5 startup rejects an occupied port and cannot report a fake ready server",async()=>{
+  const occupied=createServer();
+  await new Promise<void>((resolve,reject)=>{
+    occupied.once("error",reject);
+    occupied.listen(0,"127.0.0.1",resolve);
+  });
+  let returnedServer:Awaited<ReturnType<typeof startSpecializedAgentServer>>|undefined;
+  try{
+    const address=occupied.address();
+    assert.ok(address&&typeof address!=="string");
+    let startupError:unknown;
+    try{
+      returnedServer=await startSpecializedAgentServer({
+        role:"backend",host:"127.0.0.1",port:address.port,
+        delegatedAuthorization:true,capabilityProfile:"approved-plan",
+        taskHandler:async()=>{throw Error("must never accept protected task");}
+      });
+    }catch(error){startupError=error;}
+    // Explicit cleanup of an unexpectedly resolved server prevents this
+    // regression from hanging the entire CI suite for 35 minutes.
+    assert.equal(returnedServer,undefined,
+      "a failed Express 5 bind must not return a ready A2A server");
+    assert.ok(startupError,"port collision must reject startup");
+    assert.match(String(startupError),/EADDRINUSE|address already in use/u);
+  }finally{
+    await returnedServer?.close().catch(()=>{});
+    await new Promise<void>((resolve,reject)=>{
+      occupied.close(error=>error?reject(error):resolve());
+    });
+  }
 });

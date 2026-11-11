@@ -1,0 +1,1191 @@
+/** Actual ADK loop; owner hooks below are explicit offline simulations.
+ * These tests verify control flow, not native provider/credential evidence. */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {BaseLlm} from '@google/adk';
+import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../src/trusted-authority-only-adaptive-work-loop.mjs';
+import {selectTrustedRepairDiagnosticRead} from '../src/trusted-authority-only-repair-diagnostic-gate.mjs';
+const branch='feature/account-suspension',repo='gitea://gitea.local/thesis/iam-console-poc';
+const grant=role=>({operation:role==='test'?'run_tests':'update_file',
+ resource:repo+'/branches/feature%2Faccount-suspension'+(role==='test'?'':'/files/apps/'+role+'.ts')});
+const diagnosticRead=()=>({operation:'read_file',
+ resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend.ts'});
+const candidate=(role,index,permissions=[grant(role)])=>({action:'delegate',task:{
+ task_id:'task-'+index,agent_id:role,depends_on:index?['task-'+(index-1)]:[],permissions,
+ instruction:'Perform '+role+' approved work'}});
+class Decisions extends BaseLlm{
+ calls=0;requests=[];
+ constructor(sequence,onTurn){super({model:'r355-free-scripted-adaptive-adk'});this.sequence=sequence;this.onTurn=onTurn;}
+ async *generateContentAsync(req){this.requests.push(req);const turn=this.calls++;this.onTurn?.(turn);
+  const response=this.sequence[this.calls-1];
+  yield {content:{role:'model',parts:[{text:JSON.stringify(response)}]}};
+ }
+ connect(){throw Error('Paid models forbidden');}
+}
+function fixture({a2aOnly=false,failTask=false}={}){
+ const verified=[],events=[];let head='a'.repeat(40),retired=false;
+ const hooks={
+  async readContext(){if(retired)throw Error('retired');return {requirement:'Implement Account Suspension',branch,
+   rootPermissions:['backend','frontend','test'].map(grant),
+   agents:Object.fromEntries(['backend','frontend','test'].map(agent_id=>[agent_id,{capabilities:[grant(agent_id).operation]}])),
+   previousTasks:verified.map(p=>({task_id:p.task_id,agent_id:p.agent_id})),nextEpoch:verified.length+1,
+   executionProgress:{current_head_sha:head,completed_work:verified.map(p=>({task_id:p.task_id,agent_id:p.agent_id,
+    operation:grant(p.agent_id).operation,instruction:p.instruction}))}};},
+  async beforeDecision(){events.push('decision');},
+  async executeTask(task){
+   events.push('dispatch:'+task.agent_id);
+   if(failTask)throw Error('original provider failed');
+   if(a2aOnly)return {status:'a2a_completed',provider_completion_attested:true};
+   if(task.agent_id!=='test')head=(verified.length+11).toString(16).repeat(40).slice(0,40);
+   verified.push({...task,tested:task.agent_id==='test'?head:undefined});events.push('gateway_attested:'+task.agent_id);
+  },
+  async confirmReady(){
+   events.push('independent_current_test');
+   const last=verified.filter(p=>p.agent_id==='test').at(-1);
+   if(!last||last.tested!==head)throw Error('no independent current Test');
+   return {status:'owner_verified_tested_head_not_pr_authorized',tested_commit_sha:head,
+    task_id:last.task_id,runtime_task_id:'runtime-'+last.task_id};
+  },
+  async retire(){retired=true;events.push('retire');}
+ };
+ return {hooks,verified,events,move:()=>{head='f'.repeat(40);},get retired(){return retired;}};
+}
+for(const roles of [['frontend','backend','test'],['backend','test']]){
+ test('R355 model selects work order '+roles.join(' -> '),async()=>{
+  const f=fixture(),model=new Decisions([...roles.map((r,i)=>candidate(r,i)),{action:'ready_for_pr',reason:'Validation is complete'}]);
+  const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+  assert.equal(result.status,'owner_adaptive_work_ready_for_pr');assert.equal(result.pr_created,false);
+  assert.equal(result.executed_tasks,roles.length);assert.equal(f.retired,false);
+  assert.deepEqual(f.events.filter(x=>x.startsWith('dispatch:')),roles.map(r=>'dispatch:'+r));
+  assert.equal(model.calls,roles.length+1);
+  for(let i=0;i<roles.length;i++)assert.ok(f.events.indexOf('gateway_attested:'+roles[i])<f.events.lastIndexOf('decision'));
+  assert.equal(JSON.stringify(model.requests).includes('private-child-token'),false);
+ });
+}
+for(const mode of ['premature','stale-test','a2a-only','provider-failed','scope-escalation','branch-child','head-race','budget','aborted','extra-fields']){
+ test('R355 adaptive loop fails closed '+mode,async()=>{
+  const f=fixture({a2aOnly:mode==='a2a-only',failTask:mode==='provider-failed'}),abort=new AbortController();
+  let sequence=[candidate('backend',0),{action:'ready_for_pr',reason:'Request PR'}];
+  if(mode==='premature')sequence=[{action:'ready_for_pr',reason:'Premature'}];
+  if(mode==='stale-test')sequence=[candidate('test',0),candidate('backend',1),{action:'ready_for_pr',reason:'Old test'}];
+  if(mode==='scope-escalation')sequence=[candidate('backend',0,[{operation:'update_file',resource:repo+'/branches/main/files/secrets.ts'}])];
+  if(mode==='branch-child')sequence=[candidate('backend',0,[{operation:'create_branch',resource:repo}])];
+  if(mode==='extra-fields')sequence=[{...candidate('backend',0),root_credential_id:'untrusted-root'}];
+  const model=new Decisions(sequence,()=>{if(mode==='head-race')f.move();if(mode==='aborted')abort.abort();});
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,
+   maxSteps:mode==='budget'?1:8,signal:abort.signal}));
+  assert.equal(f.retired,true);assert.equal(f.events.at(-1),'retire');
+  if(['premature','scope-escalation','branch-child','head-race','aborted','extra-fields'].includes(mode))
+   assert.equal(f.verified.length,0);
+  if(mode==='a2a-only')assert.equal(model.calls,1,'unattested A2A output cannot unlock another model turn');
+ });
+}
+test('R383.1 one adaptive owner can modify three different files via distinct signed Child Tasks and retest latest HEAD',async()=>{
+ const f=fixture();
+ const backendSecondary={operation:'update_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-handler.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(backendSecondary);
+  return ctx;
+ };
+ const actions=[
+  candidate('backend',0),
+  candidate('backend',1,[backendSecondary]),
+  candidate('frontend',2),
+  candidate('test',3),
+  {action:'ready_for_pr',reason:'All three exact-file Tasks and final Test independently completed'}
+ ];
+ const model=new Decisions(actions);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:5
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,4);
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.equal(result.pr_created,false,
+  'signed Test proof is not a model-authorized PR');
+ assert.deepEqual(f.verified.map(t=>t.task_id),
+  ['task-0','task-1','task-2','task-3']);
+ assert.deepEqual(f.verified.slice(0,3).map(t=>t.permissions[0].resource),
+  [grant('backend').resource,backendSecondary.resource,
+   grant('frontend').resource]);
+ assert.deepEqual(f.verified.map(t=>t.permissions.length),[1,1,1,1],
+  'each Child holds only its own signed single native effect');
+ assert.equal(new Set(f.verified.slice(0,3)
+  .map(t=>t.permissions[0].resource)).size,3);
+ assert.equal(f.retired,false);
+ assert.equal(model.calls,5);
+ assert.deepEqual(f.events.filter(e=>e.startsWith('dispatch:')),
+  ['dispatch:backend','dispatch:backend','dispatch:frontend','dispatch:test']);
+});
+
+for(const mode of ['two-writes','read-foreign-then-write',
+ 'write-then-read-foreign','read-and-run-tests']){
+ test('R383.1 adaptive model cannot mix unrelated native effects: '+mode,async()=>{
+  const f=fixture(),base=grant('backend');
+  const foreign={operation:'update_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-other.ts'};
+  const readSame={operation:'read_file',resource:base.resource};
+  const readForeign={operation:'read_file',resource:foreign.resource};
+  // R384.3 CREATE has its own authorized, single-effect test below.
+  const cases={
+   'two-writes':[base,foreign],
+   'read-foreign-then-write':[readForeign,base],
+   'write-then-read-foreign':[base,readForeign],
+   'read-and-run-tests':[readSame,grant('test')]
+  };
+  const original=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   ctx.rootPermissions.push(foreign,readSame,readForeign);
+   ctx.agents.backend.capabilities.push('read_file','run_tests');
+   return ctx;
+  };
+  const model=new Decisions([candidate('backend',0,cases[mode])]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks,maxSteps:2
+  }),/Task choice denied/u);
+  assert.equal(f.verified.length,0,
+   'no mixed-effect proposal may reach a real Child/Task');
+  assert.equal(f.retired,true);
+  assert.equal(model.calls,1);
+ });
+}
+
+test('R355 model can stop blocked without fabricating completion',async()=>{
+ const f=fixture(),model=new Decisions([{action:'blocked',reason:'Required authority is unavailable'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+ assert.equal(result.status,'owner_adaptive_work_blocked');assert.equal(result.executed_tasks,0);
+ assert.equal(f.retired,true);assert.equal(result.pr_created,false);
+});
+
+/** R355.2: the simulated owner is the ONLY party allowed to convert the
+ * original controlled Runner FAIL into an authenticated observation. The
+ * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
+function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0,acceptanceFailure,failingTestFiles,maxVerifiedFailures=2}={}){
+ const done=[],events=[],history=[];let epoch=1,head='a'.repeat(40),failure,retired=false,failedAttempts=0;
+ const permission=grant;
+ const hooks={
+  async readContext(){if(retired)throw Error('retired');
+   return {
+    requirement:'Implement Account Suspension',branch,maxVerifiedFailures,
+    rootPermissions:[...['backend','frontend','test'].map(permission),diagnosticRead()],
+    agents:Object.fromEntries(['backend','frontend','test'].map(agent_id=>[
+     agent_id,{capabilities:[permission(agent_id).operation,
+      ...(agent_id==='backend'?['read_file']:[])]}])),
+    previousTasks:done.map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
+    nextEpoch:epoch,
+    executionProgress:{current_head_sha:head,completed_work:done.map(p=>({
+     task_id:p.task_id,agent_id:p.agent_id,
+     operation:p.permissions.find(g=>['update_file','create_file','run_tests'].includes(g.operation))?.operation??'read_file',
+     instruction:p.instruction}))},
+    ...(failure?{verifiedFailure:{failed_phase:failure.failed_phase,
+     source_evidence_sha256:failure.source_evidence_sha256,
+     ...(failure.failing_test_files?{failing_test_files:failure.failing_test_files}:{}),
+     ...(failure.acceptance_failure?{acceptance_failure:failure.acceptance_failure}:{})},
+     verifiedFailureHistory:history.map(f=>({
+      failed_task_id:f.failed_task_id,failed_phase:f.failed_phase,
+      source_evidence_sha256:f.source_evidence_sha256,
+      tested_commit_sha:f.tested_commit_sha
+     }))}:{})
+   };
+  },
+  async beforeDecision(){events.push('decision');},
+  async executeTask(task){
+   events.push('dispatch:'+task.task_id);epoch++;
+   const runsTests=task.permissions.some(g=>g.operation==='run_tests');
+   if(task.agent_id===failRole&&(failRole!=='test'||runsTests)&&
+      done.length>=failAfter&&failedAttempts<failCount){
+    failedAttempts++;
+    events.push('original-runner-fail');
+    if(task.agent_id!=='test'||throwTest)
+     throw Error('A2A Test FAILED: untrusted error is NOT proof');
+    return {status:'owner_verified_native_test_failure_preflight_only'};
+   }
+   if(task.permissions.some(g=>['update_file','create_file'].includes(g.operation)))
+    head='b'.repeat(40);
+   done.push({...task,tested:runsTests?head:undefined});
+   events.push('gateway_attested:'+task.task_id);
+  },
+  async observeVerifiedTestFailure({task,context}){
+   events.push('original-owner-observe-runner-fail');
+   if(failedAttempts>maxVerifiedFailures)
+    throw Error('trusted owner recovery attempt budget exhausted');
+   const original={status:'owner_verified_native_test_failure_preflight_only',
+    failed_task_id:task.task_id,
+    failed_runtime_task_id:'dispatch_'+'F'.repeat(22),
+    gateway_task_completed:false,recovery_authorized:false,
+    tested_commit_sha:context.executionProgress.current_head_sha,
+    failed_phase:acceptanceFailure?'researcher_acceptance':failingTestFiles?'frontend_tests':'typecheck',
+    ...(failingTestFiles?{failing_test_files:failingTestFiles}:{}),
+    ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
+    source_evidence_sha256:String.fromCharCode(98+failedAttempts).repeat(64)};
+   if(forgery==='wrong-status')return {...original,status:'a2a_claimed_test_fail'};
+   if(forgery==='wrong-head')return {...original,tested_commit_sha:'f'.repeat(40)};
+   if(forgery==='wrong-digest')return {...original,source_evidence_sha256:'not-a-digest'};
+   failure=original;
+   history.push(original);
+   return original;
+  },
+  async confirmReady(){events.push('independent_latest_runner_pass');
+   const test=done.filter(p=>p.tested!==undefined).at(-1);
+   if(!test||test.tested!==head)throw Error('no verified current Test');
+   return {status:'owner_verified_tested_head_not_pr_authorized',
+    task_id:test.task_id,runtime_task_id:'dispatch_'+'P'.repeat(22),
+    tested_commit_sha:test.tested};
+  },
+  async retire(){retired=true;events.push('retire');}
+ };
+ return {hooks,done,events,get retired(){return retired;}};
+}
+test('R355.2 independently verified Test FAIL is observable, not a completed dependency',async()=>{
+ const f=verifiedFailureFixture();
+ const backend=candidate('backend',1);
+ backend.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),backend,candidate('test',2),
+  {action:'ready_for_pr',reason:'The replacement Test PASS is independently attested'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2,'original FAIL cannot count as completion');
+ assert.equal(result.source_test_task_id,'task-2');
+ assert.equal(result.pr_created,false);
+ assert.equal(f.retired,false);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,1);
+ assert.equal(f.done.length,2);
+ assert.equal(f.done.some(x=>x.task_id==='task-0'),false);
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-2']);
+ const prompts=JSON.stringify(model.requests);
+ assert.match(prompts,/independent_runner_failure/u);
+ assert.match(prompts,/typecheck/u);
+ assert.equal(prompts.includes('A2A Test FAILED: untrusted error'),false);
+ assert.ok(f.events.indexOf('original-owner-observe-runner-fail')<
+  f.events.indexOf('dispatch:task-1'));
+});
+for(const forgery of ['wrong-status','wrong-head','wrong-digest']){
+ test('R355.2 forged Test FAIL cannot unlock model continuation: '+forgery,async()=>{
+  const f=verifiedFailureFixture({forgery});
+  const model=new Decisions([candidate('test',0),candidate('backend',1)]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+   /not independently verified/u);
+  assert.equal(model.calls,1);
+  assert.equal(f.retired,true);
+  assert.equal(f.done.length,0);
+ });
+}
+test('R355.2 Backend tool failure cannot masquerade as recoverable Test FAIL',async()=>{
+ const f=verifiedFailureFixture({failRole:'backend'});
+ const model=new Decisions([candidate('backend',0),candidate('test',1)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /untrusted error is NOT proof/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.retired,true);
+ assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
+test('R355.6 untrusted thrown Test A2A failure cannot invoke recovery observer',async()=>{
+ const f=verifiedFailureFixture({throwTest:true});
+ const model=new Decisions([candidate('test',0),candidate('backend',1)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /untrusted error is NOT proof/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.retired,true);
+ assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
+test('R376.0 verified Runner FAIL admits bounded read-only diagnosis before repair',async()=>{
+ const f=verifiedFailureFixture();
+ const inspect=candidate('backend',1,[diagnosticRead()]);
+ inspect.task.depends_on=[];
+ const edit=candidate('backend',2);
+ edit.task.depends_on=['task-1'];
+ const retest=candidate('test',3);
+ retest.task.depends_on=['task-2'];
+ const model=new Decisions([candidate('test',0),inspect,edit,retest,
+  {action:'ready_for_pr',reason:'Latest independently verified Runner PASS'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:5});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,3);
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-2','task-3']);
+ assert.equal(f.retired,false);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,1);
+ const afterRead=JSON.stringify(model.requests[2]);
+ assert.match(afterRead,/read_file/u);
+ assert.match(afterRead,/task-1/u);
+ assert.match(afterRead,/independently_gateway_completed_tasks/u);
+ assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
+});
+test('R385.6 strict native D1 refuses repair UPDATE with no independently completed diagnostic read',async()=>{
+ const f=verifiedFailureFixture();
+ let called=0;
+ f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('original signed diagnostic read missing');};
+ const repair=candidate('backend',1);repair.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),repair]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true,maxSteps:4
+ }),/original signed diagnostic read missing/u);
+ assert.equal(called,1);
+ assert.equal(f.events.includes('dispatch:task-1'),false,
+  'an UPDATE cannot cause provider effects before signed diagnostic evidence');
+ assert.equal(f.retired,true,'ambiguous diagnostic source must retire the original root');
+});
+test('R385.6 strict native D1 accepts separate signed current-HEAD read before Backend correction',async()=>{
+ const f=verifiedFailureFixture();
+ const inspect=candidate('backend',1,[diagnosticRead()]);inspect.task.depends_on=[];
+ const repair=candidate('backend',2);repair.task.depends_on=['task-1'];
+ const retest=candidate('test',3);retest.task.depends_on=['task-2'];
+ const resource=grant('backend').resource;
+ let calls=0;
+ f.hooks.verifyRepairDiagnostic=async({task,context})=>{
+  calls++;
+  const read=f.done.find(p=>p.task_id==='task-1');
+  return selectTrustedRepairDiagnosticRead({
+   repairTask:task,failedEpoch:1,
+   currentHead:context.executionProgress.current_head_sha,
+   readRecords:read?[{
+    task_id:read.task_id,agent_id:read.agent_id,epoch:2,
+    revision:context.executionProgress.current_head_sha,resource,
+    signed_permissions:read.permissions,gateway_task_completed:true,
+    evidence_sha256:'c'.repeat(64),gateway_evidence_sha256:'c'.repeat(64)
+   }]:[]
+  });
+ };
+ const model=new Decisions([candidate('test',0),inspect,repair,retest,
+  {action:'ready_for_pr',reason:'Authenticated retest independently accepted'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:5,requireVerifiedRepairDiagnostic:true
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-1','task-2','task-3']);
+ assert.equal(calls,1);
+ assert.equal(f.retired,false);
+ assert.ok(f.events.indexOf('dispatch:task-1')<f.events.indexOf('dispatch:task-2'));
+});
+test('R385.6 strict post-FAIL policy cannot be bypassed through CREATE',async()=>{
+ const f=verifiedFailureFixture();
+ let called=0;
+ f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('not applicable');};
+ const fresh=candidate('backend',1,[{operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/new-handler.ts'}]);
+ fresh.task.depends_on=[];
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{const x=await original();
+  x.rootPermissions.push(...fresh.task.permissions);
+  x.agents.backend.capabilities.push('create_file');
+  return x;
+ };
+ const model=new Decisions([candidate('test',0),fresh]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true
+ }),/strict post-FAIL CREATE needs a separate authenticated investigation policy/u);
+ assert.equal(called,0);
+ assert.equal(f.events.includes('dispatch:task-1'),false);
+ assert.equal(f.retired,true);
+});
+test('R385.6 missing owner verifier is rejected before first model or Child',async()=>{
+ const f=verifiedFailureFixture();
+ const model=new Decisions([candidate('test',0)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true
+ }),/invalid original owner loop configuration/u);
+ assert.equal(model.calls,0);
+ assert.equal(f.events.length,0);
+});
+test('R385.6 strict diagnostic policy does not invent a read requirement before the first failure',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ let called=0;
+ f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('not expected for D0');};
+ const model=new Decisions([candidate('backend',0),candidate('test',1),
+  {action:'ready_for_pr',reason:'Independently verified initial Test'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,requireVerifiedRepairDiagnostic:true
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(called,0);
+ assert.equal(f.retired,false);
+});
+
+test('R376.2 independently attested source excerpt reaches next ADK repair decision only at current HEAD',async()=>{
+ const f=verifiedFailureFixture();
+ const read=f.hooks.readContext;
+ const excerpt='export const accountPending = true; // untrusted source DATA';
+ f.hooks.readContext=async()=>{
+  const state=await read();
+  if(state.executionProgress.current_head_sha==='a'.repeat(40)&&
+     state.previousTasks.some(row=>row.task_id==='task-1'))
+   state.executionProgress.source_observations=[{
+    task_id:'task-1',agent_id:'backend',path:'apps/backend.ts',
+    revision:state.executionProgress.current_head_sha,
+    source_sha256:'d'.repeat(64),source_bytes:excerpt.length,
+    excerpt,excerpt_truncated:false,evidence_sha256:'e'.repeat(64)
+   }];
+  return state;
+ };
+ const inspect=candidate('backend',1,[diagnosticRead()]);inspect.task.depends_on=[];
+ const repair=candidate('backend',2);repair.task.depends_on=['task-1'];
+ const retest=candidate('test',3);retest.task.depends_on=['task-2'];
+ const model=new Decisions([candidate('test',0),inspect,repair,retest,
+  {action:'ready_for_pr',reason:'Latest independently verified Test PASS'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:5});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,3);
+ assert.equal(result.source_test_task_id,'task-3');
+ assert.equal(f.retired,false);
+ const modelRepairInput=JSON.stringify(model.requests[2]);
+ assert.match(modelRepairInput,/source_observations/u);
+ assert.ok(modelRepairInput.includes(excerpt),'repair can use owner-attested read result');
+ assert.ok(!JSON.stringify(model.requests[3]).includes(excerpt),
+  'stale diagnostic bytes cannot follow a mutation to a different HEAD');
+});
+for(const kind of ['foreign-task','wrong-head','bad-digest','over-budget']){
+ test('R376.2 malformed source observation cannot reach ADK: '+kind,async()=>{
+  const f=verifiedFailureFixture();
+  const orig=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const state=await orig();
+   if(state.previousTasks.some(p=>p.task_id==='task-1')){
+    const item={
+     task_id:kind==='foreign-task'?'foreign':'task-1',
+     agent_id:'backend',path:'apps/backend.ts',
+     revision:kind==='wrong-head'?'f'.repeat(40):state.executionProgress.current_head_sha,
+     source_sha256:kind==='bad-digest'?'nonsense':'a'.repeat(64),
+     source_bytes:50,excerpt:kind==='over-budget'?'x'.repeat(4097):'bounded diagnostic',
+     excerpt_truncated:false,evidence_sha256:'b'.repeat(64)
+    };
+    state.executionProgress.source_observations=[item];
+   }
+   return state;
+  };
+  const inspect=candidate('backend',1,[diagnosticRead()]);inspect.task.depends_on=[];
+  const repair=candidate('backend',2);repair.task.depends_on=['task-1'];
+  const model=new Decisions([candidate('test',0),inspect,repair]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks,maxSteps:3
+  }),/Task choice denied/u);
+  assert.equal(model.calls,2);
+  assert.deepEqual(f.done.map(x=>x.task_id),['task-1']);
+  assert.equal(f.retired,true);
+ });
+}
+test('R377.0 read-only investigation before any failure informs the next model turn',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const orig=f.hooks.readContext;
+ const excerpt='export function suspendAccount() { return false; }';
+ f.hooks.readContext=async()=>{
+  const state=await orig();
+  if(state.executionProgress.current_head_sha==='a'.repeat(40)&&
+     state.previousTasks.some(p=>p.task_id==='task-0'))
+   state.executionProgress.source_observations=[{
+    task_id:'task-0',agent_id:'backend',path:'apps/backend.ts',
+    revision:state.executionProgress.current_head_sha,
+    source_sha256:'d'.repeat(64),source_bytes:excerpt.length,
+    excerpt,excerpt_truncated:false,evidence_sha256:'e'.repeat(64)
+   }];
+  return state;
+ };
+ const inspect=candidate('backend',0,[diagnosticRead()]);
+ const edit=candidate('backend',1);
+ const verify=candidate('test',2);
+ const model=new Decisions([inspect,edit,verify,
+  {action:'ready_for_pr',reason:'Independent Test is current'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:4});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,3);
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-0','task-1','task-2']);
+ assert.equal(f.retired,false);
+ assert.equal(f.events.some(e=>e==='original-owner-observe-runner-fail'),false);
+ const next=JSON.stringify(model.requests[1]);
+ assert.match(next,/source_observations/u);
+ assert.ok(next.includes(excerpt),'model sees private independently attested read DATA');
+ assert.ok(!JSON.stringify(model.requests[2]).includes(excerpt),
+  'new HEAD invalidates prior source observation');
+ assert.ok(!JSON.stringify(model.requests).includes('independently_verified_test_failures'),
+  'no failure can be fabricated to authorize an investigation');
+});
+test('R377.0 pre-failure read outside signed Engineer root is denied',async()=>{
+ const f=fixture();
+ const read=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await read();
+  ctx.agents.backend.capabilities.push('read_file');
+  // No read_file in the signed root: advertised capability cannot grant it.
+  return ctx;
+ };
+ const model=new Decisions([candidate('backend',0,[diagnosticRead()])]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.verified.length,0);
+ assert.equal(f.retired,true);
+});
+test('R383.0 Test agent reads its signed project test source before any failure, then only a real Test run proves PR readiness',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const testPath='tests/backend/account.test.ts';
+ const resource=repo+'/branches/feature%2Faccount-suspension/files/'+testPath;
+ const readGrant={operation:'read_file',resource};
+ const original=f.hooks.readContext;
+ const excerpt='test("account suspension", () => { assert.equal(1, 2); });';
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(readGrant);
+  ctx.agents.test.capabilities.push('read_file');
+  if(ctx.previousTasks.some(p=>p.task_id==='task-0')){
+   ctx.executionProgress.source_observations=[{
+    task_id:'task-0',agent_id:'test',path:testPath,
+    revision:ctx.executionProgress.current_head_sha,
+    source_sha256:'f'.repeat(64),
+    source_bytes:excerpt.length,excerpt,excerpt_truncated:false,
+    evidence_sha256:'e'.repeat(64)
+   }];
+  }
+  return ctx;
+ };
+ const inspect=candidate('test',0,[readGrant]);
+ const testRun=candidate('test',1);
+ const model=new Decisions([inspect,testRun,
+  {action:'ready_for_pr',reason:'Current independent project Test passed'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.equal(result.source_test_task_id,'task-1',
+  'a Test read is not an independently completed run_tests');
+ assert.deepEqual(f.done.map(row=>row.permissions.map(p=>p.operation)),
+  [['read_file'],['run_tests']]);
+ assert.equal(f.retired,false);
+ const next=JSON.stringify(model.requests[1]);
+ assert.match(next,/source_observations/u);
+ assert.match(next,/account suspension/u,
+  'the independently observed project test body reaches the next ADK decision');
+ // JSON encodes quote marks in the LLM request twice; do not compare
+ // the raw unescaped TypeScript source to the serialized request bytes.
+ assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
+
+for(const mode of ['missing-signed-root','missing-test-capability','non-project-test-file']){
+ test('R383.0 Test read cannot bypass '+mode,async()=>{
+  const f=verifiedFailureFixture({failCount:0});
+  const target=mode==='non-project-test-file'?'apps/backend.ts':
+   'tests/backend/account.test.ts';
+  const readGrant={operation:'read_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/'+target};
+  const original=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   if(mode!=='missing-signed-root')ctx.rootPermissions.push(readGrant);
+   if(mode!=='missing-test-capability')ctx.agents.test.capabilities.push('read_file');
+   return ctx;
+  };
+  const model=new Decisions([candidate('test',0,[readGrant])]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+   /Task choice denied/u);
+  assert.equal(f.done.length,0,'no unsigned read Task can be marked complete');
+  assert.equal(f.retired,true);
+ });
+}
+
+test('R383.0 forged Test source observation cannot reach a later ADK decision',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const target='tests/backend/account.test.ts';
+ const readGrant={operation:'read_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/'+target};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(readGrant);
+  ctx.agents.test.capabilities.push('read_file');
+  if(ctx.previousTasks.length){
+   // The first actual Child read is completed, but this untrusted
+   // observation tries to replace the independently authenticated
+   // application test source with a different path.
+   ctx.executionProgress.source_observations=[{
+    task_id:'task-0',agent_id:'test',path:'apps/backend.ts',
+    revision:ctx.executionProgress.current_head_sha,
+    source_sha256:'f'.repeat(64),source_bytes:5,
+    excerpt:'false',excerpt_truncated:false,evidence_sha256:'e'.repeat(64)
+   }];
+  }
+  return ctx;
+ };
+ const model=new Decisions([
+  candidate('test',0,[readGrant]),
+  candidate('test',1),
+  {action:'ready_for_pr',reason:'untrusted proof'}
+ ]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ }),/Task choice denied/u);
+ assert.equal(model.calls,1,'the forged source was rejected before a model retry');
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-0']);
+ assert.equal(f.retired,true);
+});
+
+test('R377.0 Test read of a non-project source remains denied before any failure',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.agents.test.capabilities.push('read_file');
+  return ctx;
+ };
+ const model=new Decisions([candidate('test',0,[diagnosticRead()])]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.done.length,0);
+ assert.equal(f.retired,true);
+});
+test('R376.1 a Test-role read cannot replace signed run_tests authority',async()=>{
+ const f=verifiedFailureFixture();
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  // Even when a trusted registry advertises the capability, the Test
+  // specialist cannot execute a recovery diagnosis disguised as a read.
+  ctx.agents.test.capabilities.push('read_file');
+  return ctx;
+ };
+ const inspect=candidate('test',1,[diagnosticRead()]);
+ inspect.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),inspect]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,2);
+ assert.equal(f.done.length,0);
+ assert.equal(f.retired,true);
+});
+test('R376.0 diagnostic read outside immutable Engineer root is denied',async()=>{
+ const f=verifiedFailureFixture();
+ const inspect=candidate('backend',1,[{
+  operation:'read_file',resource:repo+'/branches/main/files/private.ts'}]);
+ inspect.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),inspect]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/u);
+ assert.equal(model.calls,2);
+ assert.equal(f.done.length,0);
+ assert.equal(f.retired,true);
+});
+test('R355.7 adaptive Test FAIL twice, two different corrections, final Test PASS',async()=>{
+ const f=verifiedFailureFixture({failCount:2});
+ const backend=candidate('backend',1);
+ backend.task.depends_on=[];
+ const frontend=candidate('frontend',3);
+ frontend.task.depends_on=['task-1'];
+ const model=new Decisions([
+  candidate('test',0),backend,candidate('test',2),frontend,
+  candidate('test',4),
+  {action:'ready_for_pr',reason:'Last independent Test passes on current SHA'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,
+  maxSteps:6});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.source_test_task_id,'task-4');
+ assert.equal(result.executed_tasks,3);
+ assert.equal(f.retired,false);
+ assert.equal(model.calls,6);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,2);
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-3','task-4']);
+ const second=JSON.stringify(model.requests[1]);
+ const fourth=JSON.stringify(model.requests[3]);
+ assert.ok(second.includes('c'.repeat(64)));
+ assert.ok(fourth.includes('d'.repeat(64)));
+ assert.ok(fourth.includes('c'.repeat(64)),'prior failure remains visible in bounded history');
+ assert.ok(fourth.includes('independently_verified_test_failures'));
+ assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
+});
+test('R384.5 owner permits three verified FAILs, distinct repairs and latest-head retest',async()=>{
+ const f=verifiedFailureFixture({failCount:3,maxVerifiedFailures:3});
+ const b1=candidate('backend',1);b1.task.depends_on=[];
+ const f2=candidate('frontend',3);f2.task.depends_on=['task-1'];
+ const b3=candidate('backend',5);b3.task.depends_on=['task-3'];
+ const model=new Decisions([
+  candidate('test',0),b1,candidate('test',2),f2,candidate('test',4),b3,
+  candidate('test',6),
+  {action:'ready_for_pr',reason:'Independent final Test PASS on current HEAD'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:8
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.source_test_task_id,'task-6');
+ assert.equal(result.executed_tasks,4);
+ assert.equal(result.pr_created,false);
+ assert.equal(f.retired,false);
+ assert.equal(model.calls,8);
+ assert.equal(f.events.filter(e=>e==='original-owner-observe-runner-fail').length,3);
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-1','task-3','task-5','task-6']);
+ assert.ok(JSON.stringify(model.requests[5]).includes('e'.repeat(64)));
+ assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
+});
+test('R355.7 third Test FAIL exceeds owner recovery budget and retires root',async()=>{
+ const f=verifiedFailureFixture({failCount:3});
+ const backend=candidate('backend',1);
+ backend.task.depends_on=[];
+ const frontend=candidate('frontend',3);
+ frontend.task.depends_on=['task-1'];
+ const model=new Decisions([candidate('test',0),backend,
+  candidate('test',2),frontend,candidate('test',4),
+  {action:'ready_for_pr',reason:'Do not reach readiness'}]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:6}),/recovery attempt budget exhausted/u);
+ assert.equal(f.retired,true);
+ assert.equal(model.calls,5);
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-3']);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,3);
+});
+for(const [field,value] of [
+ ['source_evidence_sha256','not-an-authenticated-digest'],
+ ['failed_task_id','other-test'],
+ ['tested_commit_sha','f'.repeat(40)]
+]){
+ test('R377.2 owner proof must match appended failure history: '+field,async()=>{
+  const f=verifiedFailureFixture();
+  const read=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const data=await read();
+   if(data.verifiedFailureHistory)data.verifiedFailureHistory[0][field]=value;
+   return data;
+  };
+  const model=new Decisions([candidate('test',0)]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+   /FAIL history differs from the original owner proof/);
+  assert.equal(model.calls,1);
+  assert.equal(f.retired,true);
+ });
+}
+test('R377.2 recovery cannot reuse a failed Task ID',async()=>{
+ const f=verifiedFailureFixture();
+ const model=new Decisions([candidate('test',0),candidate('backend',0)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /Task choice denied/);
+ assert.equal(f.events.filter(x=>x==='dispatch:task-0').length,1);
+ assert.equal(f.retired,true);
+});
+test('R377.2 a newer FAIL invalidates an earlier PASS on the same HEAD',async()=>{
+ const f=verifiedFailureFixture({failAfter:1});
+ const model=new Decisions([candidate('test',0),candidate('test',1),
+  {action:'ready_for_pr',reason:'Use the earlier PASS'}]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /verified Test FAIL requires a new independently completed Test/);
+ assert.deepEqual(f.done.map(p=>p.task_id),['task-0']);
+ assert.equal(f.events.includes('independent_latest_runner_pass'),false);
+ assert.equal(f.retired,true);
+});
+// R366: no PR readiness from an older/forged Test receipt or a HEAD
+// change while the original owner awaits independent verification.
+for(const mode of ['foreign-test-id','wrong-tested-head','head-moved-during-proof',
+ 'missing-runtime-task-id']){
+ test('R366 adaptive ready proof stays bound to latest Test and current owner: '+mode,async()=>{
+  const f=fixture();
+  const original=f.hooks.confirmReady;
+  f.hooks.confirmReady=async()=>{
+   const proof=await original();
+   if(mode==='foreign-test-id')return {...proof,task_id:'foreign-test'};
+   if(mode==='wrong-tested-head')return {...proof,tested_commit_sha:'f'.repeat(40)};
+   if(mode==='missing-runtime-task-id')return {...proof,runtime_task_id:''};
+   f.move();
+   return proof;
+  };
+  const model=new Decisions([candidate('test',0),
+   {action:'ready_for_pr',reason:'Independent current Test required'}]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks
+  }),/independent current Test proof or original owner context changed/u);
+  assert.equal(f.retired,true);
+  assert.equal(model.calls,2);
+  assert.equal(f.verified.length,1,'valid prior Test stays in the completion ledger');
+ });
+}
+test('R355 retirement failure is reported as unconfirmed',async()=>{
+ const f=fixture(),model=new Decisions([{action:'ready_for_pr',reason:'Premature'}]);
+ f.hooks.retire=async()=>{throw Error('native unavailable');};
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),/retirement unconfirmed/);
+});
+
+test('R375 owner can complete 15 separately verified decisions without widening any Task',async()=>{
+ const f=fixture();
+ const sequence=[
+  ...Array.from({length:13},(_,i)=>candidate('backend',i)),
+  candidate('test',13),
+  {action:'ready_for_pr',reason:'The latest real Test proof is independent'}
+ ];
+ const model=new Decisions(sequence);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:15});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,14);
+ assert.equal(model.calls,15);
+ assert.equal(f.verified.length,14);
+ assert.equal(f.retired,false);
+ assert.equal(result.pr_created,false);
+});
+test('R384.5 owner can allocate twenty separate changes plus final Test and readiness',async()=>{
+ const f=fixture();
+ const tasks=[...Array.from({length:20},(_,i)=>candidate('backend',i)),
+  candidate('test',20),{action:'ready_for_pr',reason:'Test PASS independently attested'}];
+ const model=new Decisions(tasks);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:22});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,21);
+ assert.equal(model.calls,22);
+ assert.equal(f.verified.length,21);
+ assert.equal(f.retired,false);
+});
+test('R385.10 original owner admits 24 signed Tasks then a separate terminal readiness decision',async()=>{
+ const f=fixture();
+ const sequence=[...Array.from({length:23},(_,i)=>candidate('backend',i)),
+  candidate('test',23),
+  {action:'ready_for_pr',reason:'Only the original owner verifies current Test HEAD'}];
+ const model=new Decisions(sequence);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:25});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,24);
+ assert.equal(result.pr_created,false);
+ assert.equal(result.source_test_task_id,'task-23');
+ assert.equal(model.calls,25);
+ assert.equal(f.verified.length,24);
+ assert.equal(f.retired,false);
+});
+test('R385.10 original adaptive owner rejects unbudgeted 26th decision',async()=>{
+ const f=fixture();
+ const model=new Decisions([candidate('backend',0)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:26
+ }),/invalid original owner loop configuration/u);
+ assert.equal(model.calls,0);
+ assert.equal(f.verified.length,0);
+});
+
+test('R377.3 verified FAIL can select a separate signed Test repair and then retest',async()=>{
+ const f=verifiedFailureFixture();
+ const resource=repo+'/branches/feature%2Faccount-suspension/files/tests/backend/account.test.ts';
+ const permissions=['read_file','update_file'].map(operation=>({resource,operation}));
+ const read=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await read();
+  ctx.rootPermissions.push(...permissions);
+  ctx.agents.test.capabilities.push('read_file','update_file');
+  return ctx;
+ };
+ const repair=candidate('test',1,permissions);
+ repair.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),repair,candidate('test',2),
+  {action:'ready_for_pr',reason:'The separate retest passed'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+ assert.equal(result.source_test_task_id,'task-2');
+ assert.deepEqual(f.done.map(p=>[p.task_id,p.tested!==undefined]),
+  [['task-1',false],['task-2',true]]);
+});
+
+for(const check of ['ui_pending_actions','untrusted raw assertion']){
+ test('R377.4 adaptive ADK receives only catalogued acceptance labels: '+check,async()=>{
+  const f=verifiedFailureFixture({acceptanceFailure:{
+   failed_checks:[check],timed_out:false,unclassified_failure:false
+  }});
+  const repair=candidate('frontend',1);
+  repair.task.depends_on=[];
+  const model=new Decisions([candidate('test',0),repair,candidate('test',2),
+   {action:'ready_for_pr',reason:'The separate retest passed'}]);
+  const run=runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+  if(check==='ui_pending_actions'){
+   assert.equal((await run).source_test_task_id,'task-2');
+   const prompt=JSON.stringify(model.requests[1]);
+   assert.match(prompt,/acceptance_failure/u);
+   assert.match(prompt,/ui_pending_actions/u);
+   assert.match(prompt,/verified_failure_preflight_only_not_approval/u);
+  }else{
+   await assert.rejects(run,/Task choice denied/u);
+   assert.equal(model.calls,1);
+   assert.equal(f.retired,true);
+  }
+ });
+}
+
+for(const authorized of [true,false]){
+ test('R377.5 ADK Vitest path requires an original signed read: '+authorized,async()=>{
+  const path='tests/frontend/account.test.tsx';
+  const f=verifiedFailureFixture({failingTestFiles:[path]});
+  const read=f.hooks.readContext;
+  f.hooks.readContext=async()=>{
+   const ctx=await read();
+   if(authorized)ctx.rootPermissions.push({
+    resource:grant('test').resource+'/files/'+path,operation:'read_file'
+   });
+   return ctx;
+  };
+  const model=new Decisions([candidate('test',0),{action:'blocked',reason:'Stop after diagnosis'}]);
+  const run=runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+  if(authorized){
+   assert.equal((await run).status,'owner_adaptive_work_blocked');
+   assert.match(JSON.stringify(model.requests[1]),/failing_test_files/u);
+   assert.match(JSON.stringify(model.requests[1]),/account\.test\.tsx/u);
+  }else{
+   await assert.rejects(run,/Task choice denied/u);
+   assert.equal(model.calls,1);
+  }
+ });
+}
+
+for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete','premature-pr']){
+ test('R377.9 adaptive specialist no-change '+mode,async()=>{
+  const f=fixture();
+  const update=grant('backend'),read={...update,operation:'read_file'};
+  const task=candidate('backend',0,[read,update]);
+  const repair=candidate('backend',1,[read,update]);
+  repair.task.depends_on=[];
+  const ready={action:'ready_for_pr',reason:'Request verified PR readiness'};
+  const originalRead=f.hooks.readContext,originalExecute=f.hooks.executeTask;
+  let stop;
+  f.hooks.readContext=async()=>{
+   const context=await originalRead();
+   context.rootPermissions.push(read);
+   context.agents.backend.capabilities.push('read_file');
+   if(stop){
+    context.nextEpoch++;
+    context.specialistNoChange=stop;
+   }
+   return context;
+  };
+  f.hooks.executeTask=async(choice,before)=>{
+   if(stop)return originalExecute(choice);
+   stop={task_id:choice.task_id,agent_id:choice.agent_id,
+    read_revision:before.executionProgress.current_head_sha,
+    read_evidence_sha256:'e'.repeat(64)};
+   if(mode==='changed-head')f.move();
+   return {status:'owner_verified_specialist_no_change',observation:stop,
+    gateway_task_completed:false,recovery_authorized:false};
+  };
+  if(mode==='reuse-task')repair.task.task_id='task-0';
+  if(mode==='depend-on-incomplete')repair.task.depends_on=['task-0'];
+  const model=new Decisions([task,mode==='premature-pr'?ready:repair,candidate('test',2),ready]);
+  const result=runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+  if(mode==='recover'){
+   assert.equal((await result).source_test_task_id,'task-2');
+   assert.deepEqual(f.verified.map(p=>p.task_id),['task-1','task-2']);
+   assert.match(JSON.stringify(model.requests[1]),/independently_verified_specialist_no_change/u);
+  }else{
+   await assert.rejects(result,mode==='changed-head'?/did not preserve/:
+    mode==='premature-pr'?/new independently completed Test/:/Task choice denied/);
+   assert.equal(f.retired,true);
+   assert.equal(f.verified.length,0);
+  }
+ });
+}
+
+/** R384.3: owner decision is only a recommendation. A real CREATE still
+ * requires R384.2's prebound native Child, pinned absent path, Rust VP,
+ * OPA, Gitea CAS, independent MAC and completion before a Test can run.
+ * This fixture simulates owner hook completions; it is NOT an E2E proof.
+ */
+test('R384.3 adaptive owner permits exactly one signed CREATE Task followed by new Test on created HEAD',async()=>{
+ const f=fixture();
+ const create={operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(create);
+  ctx.agents.backend.capabilities.push('create_file');
+  ctx.executionProgress.completed_work=ctx.executionProgress.completed_work.map((p,i)=>({
+   ...p,operation:f.verified[i].permissions[0].operation
+  }));
+  return ctx;
+ };
+ const decisions=[
+  candidate('backend',0,[create]),
+  candidate('test',1),
+  {action:'ready_for_pr',reason:'Current post-create HEAD independently tested'}
+ ];
+ const model=new Decisions(decisions);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.equal(result.source_test_task_id,'task-1');
+ assert.equal(result.pr_created,false);
+ assert.deepEqual(f.verified.map(x=>x.permissions[0].operation),
+  ['create_file','run_tests']);
+ assert.deepEqual(f.events.filter(x=>x.startsWith('gateway_attested:')),
+  ['gateway_attested:backend','gateway_attested:test']);
+ assert.equal(f.retired,false);
+});
+for(const mode of [
+ 'no-signed-create','no-role-capability','test-cannot-create',
+ 'two-creates','create-plus-update','create-plus-read','create-wrong-branch'
+]){
+ test('R384.3 adaptive model CREATE is denied before any owner effect: '+mode,async()=>{
+  const f=fixture(),original=f.hooks.readContext;
+  const create={operation:'create_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created.ts'};
+  const create2={operation:'create_file',
+   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created2.ts'};
+  const read={operation:'read_file',resource:create.resource};
+  const update={operation:'update_file',resource:create.resource};
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   if(mode!=='no-signed-create')
+    ctx.rootPermissions.push(create,create2,read,update);
+   if(mode!=='no-role-capability'){
+    ctx.agents.backend.capabilities.push('create_file','read_file');
+    ctx.agents.test.capabilities.push('create_file');
+   }
+   return ctx;
+  };
+  let choice=candidate('backend',0,[create]);
+  if(mode==='test-cannot-create')choice=candidate('test',0,[create]);
+  if(mode==='two-creates')choice=candidate('backend',0,[create,create2]);
+  if(mode==='create-plus-update')choice=candidate('backend',0,[create,update]);
+  if(mode==='create-plus-read')choice=candidate('backend',0,[read,create]);
+  if(mode==='create-wrong-branch')choice=candidate('backend',0,[{
+   operation:'create_file',
+   resource:repo+'/branches/feature%2Fforeign/files/apps/backend-created.ts'
+  }]);
+  const model=new Decisions([choice]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+   model,hooks:f.hooks,maxSteps:1
+  }),/Task choice denied/u);
+  assert.equal(f.verified.length,0);
+  assert.equal(f.retired,true);
+  assert.deepEqual(f.events.filter(x=>x.startsWith('dispatch:')),[]);
+ });
+}
+
+test('R384.3 adaptive CREATE selected after independently authenticated Test FAIL requires new Test before PR readiness',async()=>{
+ const f=verifiedFailureFixture();
+ const created={operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-new-d1.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(created);
+  ctx.agents.backend.capabilities.push('create_file');
+  return ctx;
+ };
+ const repair=candidate('backend',1,[created]);
+ repair.task.depends_on=[]; // failed Test is NOT a completed dependency
+ const retest=candidate('test',2);
+ const model=new Decisions([
+  candidate('test',0),
+  repair,
+  retest,
+  {action:'ready_for_pr',reason:'New HEAD retested with independent Runner PASS'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:4
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2,'failed Test is not a completed Task');
+ assert.equal(result.source_test_task_id,'task-2');
+ assert.equal(result.tested_commit_sha,'b'.repeat(40));
+ assert.equal(result.pr_created,false);
+ assert.deepEqual(f.done.map(row=>row.task_id),['task-1','task-2']);
+ assert.deepEqual(f.done.map(row=>row.permissions[0].operation),
+  ['create_file','run_tests']);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,1);
+ assert.ok(f.events.indexOf('original-owner-observe-runner-fail')<
+  f.events.indexOf('dispatch:task-1'));
+ assert.ok(f.events.indexOf('gateway_attested:task-1')<
+  f.events.indexOf('dispatch:task-2'));
+ const prompts=JSON.stringify(model.requests);
+ assert.match(prompts,/independent_runner_failure/u);
+ assert.match(prompts,/create_file/u);
+ assert.equal(prompts.includes('A2A Test FAILED: untrusted error'),false);
+ assert.equal(f.retired,false);
+});
+
+/** R386 owner-hook simulation, not native provider evidence. Real CREATE
+ * still requires independent signed Root/Child, VP/OPA, absent file and CAS. */
+test('R386 adaptive Test CREATE uses one exact project-test source Task then retests',async()=>{
+ const f=verifiedFailureFixture({failCount:0});
+ const create={operation:'create_file',
+  resource:repo+'/branches/feature%2Faccount-suspension/files/tests/backend/new-account.test.ts'};
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(create);
+  ctx.agents.test.capabilities.push('create_file');
+  return ctx;
+ };
+ const model=new Decisions([
+  candidate('test',0,[create]),candidate('test',1),
+  {action:'ready_for_pr',reason:'Exact new test source independently tested'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.equal(result.source_test_task_id,'task-1');
+ assert.equal(result.pr_created,false);
+ assert.deepEqual(f.done.map(t=>t.permissions[0].operation),['create_file','run_tests']);
+ assert.deepEqual(f.events.filter(t=>t.startsWith('gateway_attested:')),
+  ['gateway_attested:task-0','gateway_attested:task-1']);
+ assert.equal(f.retired,false);
+});
+
+test('R434 owner may execute a registered specialist file Task, then only verified Test readiness',async()=>{
+ const f=fixture(),role='invoice',source=grant(role);
+ const original=f.hooks.readContext;
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(source);
+  ctx.agents[role]={capabilities:['update_file']};
+  return ctx;
+ };
+ const model=new Decisions([
+  candidate(role,0),candidate('test',1),
+  {action:'ready_for_pr',reason:'Independent Test completion on current source HEAD'}
+ ]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+  model,hooks:f.hooks,maxSteps:3
+ });
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2);
+ assert.deepEqual(f.verified.map(p=>p.agent_id),[role,'test']);
+ assert.equal(result.source_test_task_id,'task-1');
+ assert.equal(result.pr_created,false);
+ assert.equal(f.retired,false);
+});
+test('R434 dynamic specialist no-change never completes a Task or grants Test authority',async()=>{
+ for(const invalid of [false,true]){
+  const f=fixture(),role='invoice',update=grant(role),read={...update,operation:'read_file'};
+  const original=f.hooks.readContext;
+  let noChange;
+  f.hooks.readContext=async()=>{
+   const ctx=await original();
+   ctx.rootPermissions.push(update,read);
+   ctx.agents[role]={capabilities:['read_file','update_file']};
+   if(noChange){ctx.nextEpoch++;ctx.specialistNoChange=noChange;}
+   return ctx;
+  };
+  f.hooks.executeTask=async(task,before)=>{
+   noChange={task_id:task.task_id,agent_id:role,
+    read_revision:before.executionProgress.current_head_sha,
+    read_evidence_sha256:'f'.repeat(64)};
+   return {status:'owner_verified_specialist_no_change',
+    observation:noChange,gateway_task_completed:invalid,recovery_authorized:false};
+  };
+  const model=new Decisions([
+   candidate(role,0,[read,update]),
+   {action:'blocked',reason:'No additional verified Test effects'}
+  ]);
+  if(invalid){
+   await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
+    model,hooks:f.hooks,maxSteps:2
+   }),/specialist no-change is not bound/u);
+   assert.equal(model.calls,1);
+  }else{
+   const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({
+    model,hooks:f.hooks,maxSteps:2
+   });
+   assert.equal(result.status,'owner_adaptive_work_blocked');
+   assert.equal(result.executed_tasks,0);
+   assert.equal(model.calls,2);
+  }
+  assert.equal(f.verified.length,0);
+  assert.equal(f.retired,true);
+ }
+});

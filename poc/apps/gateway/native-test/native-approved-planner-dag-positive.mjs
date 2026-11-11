@@ -1,0 +1,1903 @@
+import {loadTrustedRunnerTypecheckContext} from "../../../packages/orchestrator-runtime/src/trusted-runner-typecheck-context.ts";
+import {loadTrustedRunnerAssertionContext} from "../../../packages/orchestrator-runtime/src/trusted-runner-assertion-context.ts";
+import {selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selection.mjs";
+import {verifiedFailedCreatedTestPaths} from "./verified-failed-generated-test-selection.mjs";
+import {collectSignedGeneratedTestEditScope} from "./verified-generated-test-edit-scope.mjs";
+import {verifyD1EditorRevision} from "./d1-editor-revision.mjs";
+import {D1GatewayOperationAudit} from "./d1-gateway-operation-audit.mjs";
+import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
+import {corroborateF4ProjectTestProvenance}
+ from "./f4-project-test-provenance.mjs";
+import {corroborateF4ControlledRetest}
+ from "./f4-controlled-retest-evidence.mjs";
+import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
+import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
+import {collectAcceptanceRepairCandidateScope} from "./acceptance-repair-candidate-scope.mjs";
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
+/**
+ * One native, signed four-task DAG over the disposable Gitea repository:
+ *   branch -> Backend -> Frontend -> Test
+ * Real Rust/EVM task-scoped children, native VP, OPA, Gateway provider effects,
+ * HTTP A2A SDK, and exact-SHA Docker Runner with independent acceptance.
+ * All 11 reference changes are named in the signed plan, not applied by an
+ * out-of-band bootstrap. This is deterministic test code, NOT Gemini output.
+ */
+import assert from "node:assert/strict";
+import {randomBytes,randomInt,generateKeyPairSync,createHash} from "node:crypto";
+import {createServer} from "node:net";
+import {mkdtemp,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {fileURLToPath} from "node:url";
+import {GatewayRuntime} from "../src/runtime.ts";
+import {GiteaClient} from "../src/gitea-client.ts";
+import {GiteaExecutor} from "../src/gitea-executor.ts";
+import {RunnerClient} from "../src/runner-client.ts";
+import {invokeNativeCrypto} from "../../../packages/agent-runtime/src/native-crypto-ipc.ts";
+import {OpaPolicyClient} from "../src/policy-client.ts";
+import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
+import {IsolatedDockerRunnerExecutor} from
+  "../../test-runner-controller/src/isolated-executor.ts";
+import {createRunnerHttpServer} from
+  "../../test-runner-controller/src/http.ts";
+
+import {TrustedApprovedA2ADispatcher} from
+  "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
+import {TrustedAdkIntegrationReviewer,OfflineIntegrationReviewModel}
+ from "../../../packages/orchestrator-runtime/src/trusted-adk-integration-review.ts";
+import {completeNativeVerifiedFailureHandoff} from
+  "./native-owner-verified-failure-handoff.mjs";
+import {startSpecializedAgentServer} from
+  "../../../packages/agent-runtime/src/server.ts";
+import {DeterministicA2AOrchestrator} from
+  "../../../packages/agent-runtime/src/orchestrator.ts";
+import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {selectTrustedD1AgentModelActivation} from
+  "./trusted-d1-agent-model-activation.mjs";
+import {SIGNED_GEMINI_PILOT}
+  from "../../../scripts/signed-gemini-pilot-consent.mjs";
+import {SourceWitnessedOfflineAdkModel}
+  from "./source-witnessed-offline-adk-model.mjs";
+import {SourceDerivedRouteOfflineAdkModel}
+  from "./source-derived-route-offline-adk-model.mjs";
+import {buildOfflineAdkScriptsFromApprovedPlan}
+  from "./approved-plan-offline-adk-call-scripts.mjs";
+import {bindModelsToApprovedRoleTasks}
+  from "./approved-plan-agent-model-binding.mjs";
+import {assertApprovedPlanScope,planDigest as hashApprovedPlan} from
+  "../../../packages/plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
+import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
+  from "../src/canonical.ts";
+import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
+import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
+import {classifyApprovedDagFailure,safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
+import {safeSignedTaskRef} from "../../../packages/agent-runtime/src/signed-task-diagnostic-ref.mjs";
+import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
+import {compareTrustedTypecheckRevisions}
+  from "../../test-runner-controller/scripts/typecheck-revision-comparison.mjs";
+import {auditTrustedTypecheckPermissionScope}
+  from "../../test-runner-controller/scripts/typecheck-permission-scope-audit.mjs";
+import {nominateTrustedTypecheckRepair}
+  from "../../test-runner-controller/scripts/typecheck-repair-nomination.mjs";
+import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes} from
+  "../../test-runner-controller/src/typecheck-diagnostics.ts";
+import {sanitizeVitestFailureFiles} from
+  "../../test-runner-controller/src/vitest-failure-files.ts";
+
+const adapterUrl="http://127.0.0.1:8090";
+const EDIT_ROLES=["backend","frontend"];
+const ROLES=[...EDIT_ROLES,"test"];
+const SHA=/^[0-9a-f]{40}$/u;
+async function signedVp(credentialId,challenge,token){
+  const body={
+    credential_id:credentialId,
+    disclosed_permissions:[challenge.required_permission],
+    audience:challenge.audience,challenge:challenge.challenge
+  };
+  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  if(socketPath){
+    // The canonical signed DAG must sign the Orchestrator's own Gateway
+    // operations through the SAME Rust issuer used for root/child DCs.
+    // A native denial is terminal: do not attempt the Adapter HTTP route.
+    const issued=await invokeNativeCrypto({socketPath,token,timeoutMs:30000},
+      "create_presentation",body);
+    const signed=issued&&typeof issued==="object"&&!Array.isArray(issued)
+      ?issued.signed_vp:undefined;
+    assert.ok(typeof signed==="string"&&signed.length>100,
+      "Native Rust Orchestrator VP was not signed");
+    return signed;
+  }
+  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+    throw Error("Canonical signed DAG requires native Rust Orchestrator VP signing");
+  // Historical offline fixtures without the canonical native-MCP flag.
+  const response=await fetch(adapterUrl+"/v1/presentations",{
+    method:"POST",headers:{authorization:"Bearer "+token,
+      "content-type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  assert.equal(response.status,200,"Historical Rust Adapter must sign exact permission");
+  const signed_vp=(await response.json()).signed_vp;
+  assert.ok(typeof signed_vp==="string"&&signed_vp.length>100);
+  return signed_vp;
+}
+async function freePort(){
+  const listener=createServer();
+  await new Promise((resolve,reject)=>{
+    listener.once("error",reject);listener.listen(0,"127.0.0.1",resolve);
+  });
+  const number=listener.address().port;
+  await new Promise(resolve=>listener.close(resolve));
+  return number;
+}
+export async function runNativePositiveApprovedDag({
+  coordinator,reviewGate,approvedPlans,sessionId,planDigest,baseSha,
+  operationalRootId,branch,planningFiles,
+  referenceFiles,scenarioId,repo,giteaBase,
+  readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
+  /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
+  approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
+  offlineTypecheckProbe=false,offlineMultiTypecheckProbe=false,
+  offlineTypecheckExpectedCode="TS2820",
+  offlineAcceptanceProbe=false,offlineProjectTestProbe=false,
+  offlineGeneratedTestProbe=false,offlineMultiTest=false,onPilotPhase,onPilotError,
+  /** Owner-private capability supplied ONLY by an authenticated trusted
+   * host. Never from Gemini, A2A, MCP, CLI arguments or plan JSON.
+   * The owner must have already armed the original Rust-root-bound intake
+   * and independently configured Gateway's signed-epoch admission. */
+  trustedOwnerRecovery
+}){
+  const offlineSemanticProbe=offlineAcceptanceProbe||offlineProjectTestProbe;
+  if(!["TS2820","TS2724"].includes(offlineTypecheckExpectedCode)||
+     (offlineTypecheckExpectedCode==="TS2724"&&
+       (!offlineTypecheckProbe||offlineMultiTypecheckProbe||realGeminiPilot)))
+    throw Error("Unsupported trusted offline typecheck fixture");
+  if(offlineProjectTestProbe&&offlineAcceptanceProbe)throw Error("Separate semantic fixture modes required");
+  if(offlineRecovery&&(realGeminiPilot||
+     typeof approvedAgentModelFactory!=="function"))
+    throw Error("Signed-DAG recovery is a host-selected offline fixture only");
+  if(offlineMultiTest&&(!(offlineRecovery||offlineGeneratedTestProbe)||realGeminiPilot||
+     typeof approvedAgentModelFactory!=="function"))
+    throw Error("Multiple Test A2A Tasks require signed offline recovery fixture");
+  if(offlineSemanticProbe&&(realGeminiPilot||offlineTypecheckProbe||offlineRecovery||
+     (offlineMultiTest&&!offlineGeneratedTestProbe)||
+     !trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"))
+    throw Error("Acceptance repair probe requires a separate original zero-billing owner");
+  if(offlineTypecheckProbe&&(realGeminiPilot||offlineRecovery||offlineMultiTest||
+     typeof approvedAgentModelFactory!=="function"))
+    throw Error("Typecheck fault probe requires a scripted nonbillable signed DAG");
+  if(offlineMultiTypecheckProbe&&
+     (!offlineTypecheckProbe||realGeminiPilot||offlineRecovery||offlineMultiTest||
+      !trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"))
+    throw Error("Two-error D1 requires original nonbillable signed owner");
+  if(trustedOwnerRecovery!==undefined&&(
+     typeof trustedOwnerRecovery!=="object"||
+     trustedOwnerRecovery===null||
+     typeof trustedOwnerRecovery.continueWithinActiveRoot!=="function"||
+     !trustedOwnerRecovery.gateway||!trustedOwnerRecovery.intake))
+    throw Error("R150.4 requires owner-bound original Gateway, intake and continuation");
+  if((realGeminiPilot&&typeof approvedAgentModelFactory!=="function")||
+     (approvedAgentModelFactory!==undefined&&
+      typeof approvedAgentModelFactory!=="function"))
+    throw Error("Approved model factory must be host-owned");
+  assert.match(giteaBase,/^http:\/\/127\.0\.0\.1:\d+$/u);
+  assert.match(baseSha,SHA);
+  for(const token of [readerToken,writerToken,orchestratorToken,
+    ...ROLES.map(role=>agentTokens[role])])
+    assert.ok(typeof token==="string"&&token.length>10);
+  assert.equal(coordinator.phase,"execution");
+  assert.match(scenarioId,/^[a-z][a-z0-9-]{0,63}$/u);
+  if(!approvedAgentModelFactory&&
+     (!["account-suspension","department-directory"].includes(scenarioId)||
+     !referenceFiles||typeof referenceFiles!=="object"||
+     Array.isArray(referenceFiles)))
+    throw Error("Invalid offline implementation fixture");
+  // The signed, authenticated Engineer receipt determines every file/operation.
+  // Reference payloads remain scripted test inputs, NEVER a grant of authority.
+  const signed=await reviewGate.loadAuthenticatedApproval(sessionId);
+  assert.equal(hashApprovedPlan(signed.plan),planDigest);
+  const grants=assertApprovedPlanScope(signed.plan,signed.approval,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    expectedEngineerDid:engineerDid
+  });
+  // A single generic compiler selects tool calls from the AUTHENTICATED
+  // Engineer-signed plan. Only the resulting code bytes remain test fixtures.
+  // No reference fixture chooses the resources, roles or permissions.
+  if(realGeminiPilot)onPilotPhase?.("model_binding");
+  const hostModels=approvedAgentModelFactory
+    ? bindModelsToApprovedRoleTasks({
+        plan:signed.plan,approvedRows:grants,
+        modelFactory:approvedAgentModelFactory
+      })
+    : null;
+  // In the zero-billing CI, script contents are supplied by independent
+  // offline acceptance fixtures. With host-selected ADK models, NO fixture
+  // payload is supplied to the model factory or the ADK worker.
+  const offlineScripts=hostModels?null:buildOfflineAdkScriptsFromApprovedPlan({
+    plan:signed.plan,approvedRows:grants,repo,branch,
+    implementationContents:referenceFiles
+  });
+  if(hostModels)
+    assert.deepEqual(hostModels.selected_roles,[...ROLES],
+      "This existing three-role native acceptance harness requires all roles");
+  if(realGeminiPilot)onPilotPhase?.("dag_preflight");
+  const ready=preflightApprovedPilotDag({plan:signed.plan,grants,repo,branch});
+  const {taskIdsByRole,branchTaskId,reviewTaskId}=ready;
+  const allSpecialistTaskIds=ROLES.flatMap(role=>taskIdsByRole[role]);
+  const root=canonicalRepositoryUri(repo);
+  const scopedBranch=canonicalBranchUri(repo,branch);
+  const filePrefix=scopedBranch+"/files/";
+  const approvedFiles=(role,operation)=>grants.filter(g=>
+    g.agent_id===role&&g.operation===operation).map(g=>{
+    assert.ok(g.resource.startsWith(filePrefix),"Wrong approved file branch");
+    const encoded=g.resource.slice(filePrefix.length);
+    const parts=encoded.split("/");
+    assert.ok(parts.length>0&&parts.every(x=>x.length>0));
+    const decoded=parts.map(decodeURIComponent);
+    assert.ok(decoded.every(x=>x&&x!=="."&&x!==".."&&
+      !x.includes("/")&&!x.includes("\\")&&!/[\x00-\x1f\x7f]/u.test(x)),
+      "Invalid approved file path");
+    const path=decoded.join("/");
+    assert.equal(canonicalFileUri(repo,branch,path),g.resource);
+    return path;
+  });
+  const files={},readableFiles={};
+  let implementationGrantCount=0;
+  for(const role of EDIT_ROLES){
+    const writes=approvedFiles(role,"update_file");
+    const reads=approvedFiles(role,"read_file");
+    // Approved edits are capabilities, not mandatory model actions.
+    // Genuine read-only work is confirmed through Gateway snapshot evidence.
+    // A Planner may grant extra read-only source context. Every writable
+    // file still needs an approved read in its own Task, verified separately
+    // by the per-dispatch source-read guard below.
+    const grantsByTask=grants.filter(g=>g.agent_id===role);
+    for(const write of grantsByTask.filter(g=>g.operation==="update_file")){
+      assert.ok(grantsByTask.some(read=>
+        read.task_id===write.task_id&&read.operation==="read_file"&&
+        read.resource===write.resource),
+      "Every signed implementation edit requires same-Task read authority");
+    }
+    implementationGrantCount+=writes.length+reads.length;
+    files[role]=[...new Set(writes)];
+    readableFiles[role]=[...new Set(reads)];
+  }
+  const approvedTestCreates=approvedFiles("test","create_file");
+  const approvedTestUpdates=approvedFiles("test","update_file");
+  const approvedTestReads=approvedFiles("test","read_file");
+  // Test is allowed zero, one or many edits, all derived from signed
+  // permission rows. The controlled Runner remains mandatory.
+  const testGrants=grants.filter(g=>g.agent_id==="test");
+  const {createdTestFiles,updatedTestFiles,readableTestFiles,
+    expectedWriteKeys:expectedTestWriteKeys}=analyzeApprovedTestEdits({
+      creates:approvedTestCreates,updates:approvedTestUpdates,
+      reads:approvedTestReads,testGrants
+    });
+  const allowedNonFile=[
+    ["orchestrator","create_branch",root],
+    ["orchestrator","create_pull_request",root],
+    ["test","run_tests",scopedBranch]
+  ];
+  for(const [role,operation,resource] of allowedNonFile){
+    assert.equal(grants.filter(g=>g.agent_id===role&&
+      g.operation===operation&&g.resource===resource).length,1);
+  }
+  const approvedCount=implementationGrantCount+
+    approvedTestCreates.length+approvedTestUpdates.length+
+    approvedTestReads.length+allowedNonFile.length;
+  assert.equal(grants.length,approvedCount,
+    "Signed plan contains unexpected extra tool grants");
+  const implementationFiles=[...files.backend,...files.frontend];
+  const expectedImplementationWriteKeys=new Set(grants.filter(g=>
+    EDIT_ROLES.includes(g.agent_id)&&g.operation==="update_file").map(g=>
+    g.task_id+"\0"+g.operation+"\0"+g.resource));
+  // A later approved Test Task may read the regression source written by
+  // an earlier Test Task. That new path is NOT present on main and must not
+  // be fetched during baseline capture; the Gateway still enforces each
+  // task's actual signed read and checks Gitea state when invoked.
+  const expectedExisting=[...new Set([
+    ...implementationFiles,...readableFiles.backend,
+    ...readableFiles.frontend,...approvedTestReads
+  ])].filter(path=>!createdTestFiles.includes(path));
+  // Task-level permissions determine who may edit a file. An approved
+  // Test Task can legitimately update a source file previously edited by
+  // Backend when the DAG orders the two writes. The shared plan compiler
+  // and pilot preflight reject unordered competing writers.
+  for(const path of createdTestFiles)
+    assert.ok(!expectedExisting.includes(path),
+      "New Test files must not be read from main");
+  if(!hostModels)assert.deepEqual(
+    [...implementationFiles,...approvedTestCreates].sort(),
+    Object.keys(referenceFiles).sort());
+  const reader=new GiteaClient({
+    baseUrl:giteaBase,token:readerToken,owner:repo.owner,
+    repository:repo.repository,timeoutMs:20000
+  });
+  const writer=new GiteaClient({
+    baseUrl:giteaBase,token:writerToken,owner:repo.owner,
+    repository:repo.repository,timeoutMs:20000
+  });
+  if(realGeminiPilot)onPilotPhase?.("baseline_reads");
+  const originals={};
+  for(const path of expectedExisting){
+    const result=await reader.readTextFile("main",path,baseSha);
+    assert.equal(result.revision,baseSha);
+    originals[path]=result.content;
+    if(!hostModels)assert.notEqual(result.content,referenceFiles[path],
+      "Native offline fixture must actually change approved baseline");
+  }
+  await assert.rejects(()=>reader.getBranchMetadata(branch));
+  const repositoryUri="gitea://"+repo.authority+"/"+repo.owner+"/"+repo.repository;
+  const runnerToken=randomBytes(32).toString("hex");
+  const runLogs=await mkdtemp(join(tmpdir(),"native-approved-dag-runner-"));
+  const executor=new IsolatedDockerRunnerExecutor({
+    gitea_base_url:giteaBase,gitea_owner:repo.owner,
+    gitea_repository:repo.repository,gitea_token:readerToken,
+    docker_image:process.env.TEST_RUNNER_DOCKER_IMAGE??"node:22.15.0-bookworm",
+    phase_timeout_ms:300000,total_timeout_ms:840000,
+    log_dir:runLogs,acceptance_enabled:true,
+    failure_evidence_dir:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR || undefined,
+    acceptance_dir:fileURLToPath(new URL("../../../runner/acceptance/",import.meta.url))
+  });
+  const runnerServer=createRunnerHttpServer({
+    bind_host:"127.0.0.1",bind_port:0,gateway_token:runnerToken,
+    contract:{repository:repositoryUri,branch}
+  },executor);
+  await new Promise((resolve,reject)=>{
+    runnerServer.once("error",reject);
+    runnerServer.listen(0,"127.0.0.1",resolve);
+  });
+  const runnerClient=new RunnerClient({
+    baseUrl:"http://127.0.0.1:"+runnerServer.address().port,
+    gatewayToken:runnerToken,timeoutMs:845000
+  });
+  const gateway=new GatewayRuntime({
+    bind_host:"127.0.0.1",bind_port:0,
+    prepare:{audience:"cloud-access-gateway",
+      request_ttl_ms:120000,repository:repo},
+    opa_url:opaUrl,opa_timeout_ms:15000,
+    provider_mode:"mock",gitea_timeout_ms:15000
+  },{
+    approvedPlans,verifier:loadDirectCoreRustVerifier(),
+    policy:new OpaPolicyClient({baseUrl:opaUrl,timeoutMs:15000}),
+    executor:new GiteaExecutor(writer,runnerClient,repositoryUri)
+  });
+  const reads={backend:0,frontend:0},
+    writes={backend:0,frontend:0};
+  let testCalls=0,testCreates=0,testUpdates=0,testReads=0,
+    runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
+  const runnerHistory=[];
+  let firstF4Provenance=null,firstF4WriteSequence=null;
+  // F5: owner-private proof of actually executed F3 reviews. Only digest,
+  // signed Task IDs and counts may leave this host; no prompts or paths.
+  const f5IntegrationReviewReceipts=[];
+  let createdPr=null;
+  const childIds={},activeChildByRole={},activeTaskByRole={},
+    servers=[],urls={},models={};
+  // R156: the signed DAG uses ADK FunctionTools directly against Gateway.
+  // Only the separately authenticated, task-bound cryptographic MCP remains.
+  // The historic repository-routing MCP is not started by this entry point.
+  const cryptoMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
+  if(cryptoMcpEnabled&&(!process.env.ADAPTER_ENGINEER_NATIVE_SOCKET||
+     !process.env.ADAPTER_ENGINEER_NATIVE_SOCKET.startsWith("/")))
+    throw Error("Canonical signed DAG requires the native Rust issuer socket");
+  let privateCryptoMcpCalls=0;
+  let signedTestOutOfScopeDenied=false;
+  let observedTypecheckProbe=null;
+  let verifiedRepairTarget=null;
+  let deniedCrossRoleTestProbes=0;
+  const roleMcpKeys={},rolePorts={};
+  let admittedBackendRepair=null,admittedFrontendRepair=null,admittedTestEdit=null,admittedTestRepair=null;
+  const activeD1Repair=()=>admittedBackendRepair??admittedFrontendRepair??admittedTestEdit;
+  const isSignedImplementationTask=(role,id)=>taskIdsByRole[role].includes(id)||
+    (role==="backend"&&admittedBackendRepair?.taskId===id)||
+    (role==="frontend"&&admittedFrontendRepair?.taskId===id);
+  const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
+  const readPathsPerTask=new Map();
+  const writePaths={backend:new Set(),frontend:new Set(),test:new Set()};
+  // A create grant is not proof of a created file: record only successful
+  // Gateway-corrobated create_file effects, not merely approved candidates.
+  const observedCreatedPaths=new Set();
+  const observedTestWriteKeys=new Set();
+  const observedImplementationWriteKeys=new Map();
+  const observedTestEditEffects=new Map();
+  const d1GatewayAudit=new D1GatewayOperationAudit();
+  let implementationWriteSequence=0;
+  const writeKey=(taskId,operation,path)=>
+    taskId+"\0"+operation+"\0"+canonicalFileUri(repo,branch,path);
+  const adkGatewayBase="http://approved-native-gateway.invalid";
+  const reply=(body,status=200)=>new Response(JSON.stringify(body),{
+    status,headers:{"content-type":"application/json"}
+  });
+  // ADK makes real controlled FunctionTool calls; this small in-process
+  // transport only avoids opening an unauthenticated public Gateway port.
+  // The Gateway itself still validates signed plans, live Rust VPs, OPA
+  // and Gitea/Docker provider effects for EVERY operation.
+  const adkFetchFor=role=>async(url,options)=>{
+    const target=String(url);
+    if(target.startsWith(adapterUrl+"/")){
+      if(process.env.ENGINEER_CORE_NATIVE_MODE==="1")
+        throw Error("Canonical signed A2A cannot contact retired Adapter HTTP");
+      return fetch(url,options);
+    }
+    if(!target.startsWith(adkGatewayBase+"/v1/authorization/"))
+      throw Error("ADK attempted unknown transport");
+    let prepareStage="request_validation_rejected";
+    let d1Prepare=null,d1ExecuteRequestId=null;
+    try{
+      const request=JSON.parse(String(options?.body));
+      if(target===adkGatewayBase+"/v1/authorization/execute"&&typeof request.request_id==="string")
+        d1ExecuteRequestId=request.request_id;
+      if(target===adkGatewayBase+"/v1/authorization/prepare"){
+        prepareStage="runtime_scope_rejected";
+        assert.equal(request.agent_role,role);
+        if(d1GatewayAudit.attempt({role,runtimeTaskId:request.task_id,tool:request.tool}))
+          d1Prepare={runtimeTaskId:request.task_id,tool:request.tool};
+        const repair=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:admittedTestRepair??admittedTestEdit;
+        if(repair)assert.equal(request.task_id,repair.runtimeTaskId,
+          "D1 request must use its active runtime Task binding");
+        assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+        if(role==="test"&&offlineRecovery&&!signedTestOutOfScopeDenied){
+          // Genuine live Gateway denial with the active signed Test Task
+          // binding. Frontend source remains writable only by its own role,
+          // regardless of the Test Task's valid DC or model instructions.
+          const foreignPath=files.frontend[0];
+          assert.ok(foreignPath&&!approvedTestUpdates.includes(foreignPath),
+            "Recovery fixture must test a genuinely unapproved Test resource");
+          const headBefore=await reader.getBranchMetadata(branch);
+          assert.throws(()=>gateway.prepare({
+            task_id:request.task_id,agent_role:"test",
+            tool:"update_file",arguments:{
+              branch,path:foreignPath,content:"// forbidden Test role update"
+            }
+          }),e=>e?.code==="approved_plan_denied",
+          "A signed Test Task must not expand its repair permission scope");
+          const headAfter=await reader.getBranchMetadata(branch);
+          assert.equal(headAfter.commit_sha,headBefore.commit_sha,
+            "Denied cross-role repair must leave the Gitea branch unchanged");
+          signedTestOutOfScopeDenied=true;
+        }
+        if(role==="test"){
+          const op=request.tool;
+          assert.ok(["create_file","read_file","update_file","run_tests"].includes(op));
+          if(op==="create_file"){
+            assert.ok(createdTestFiles.includes(request.arguments.path));
+            assert.equal(request.arguments.branch,branch);
+          }else if(op==="read_file"){
+            assert.ok(approvedTestReads.includes(request.arguments.path));
+            assert.equal(request.arguments.branch,branch);
+          }else if(op==="update_file"){
+            assert.ok(updatedTestFiles.includes(request.arguments.path));
+            assert.equal(request.arguments.branch,branch);
+            assert.ok(readPathsPerTask.get(activeTaskByRole.test)
+              ?.has(request.arguments.path),
+              "Test edit must read its approved source in this same Task");
+            assert.equal(typeof request.arguments.content,"string");
+            assert.ok(request.arguments.content.length>0&&
+              request.arguments.content.length<=250000);
+          }else{
+            assert.equal(request.arguments.branch,branch);
+            assert.equal(request.arguments.profile,"poc-default");
+            // This Task may run tests without consuming every granted edit.
+            // Functional acceptance, not authorization cardinality, decides success.
+          }
+        }else{
+          assert.ok(["read_file","update_file"].includes(request.tool));
+          assert.ok((request.tool==="read_file"
+            ?readableFiles[role]:files[role]).includes(request.arguments.path),
+            "Task request must stay inside signed read/write resource scope");
+          assert.equal(request.arguments.branch,branch);
+          if(request.tool==="update_file"){
+            // A previous Task's read cannot satisfy this independently
+            // delegated Task's source-witness requirement.
+            prepareStage="source_witness_missing";
+            assert.ok(readPathsPerTask.get(activeTaskByRole[role])
+              ?.has(request.arguments.path),
+              "Each approved implementation Task must read before its write");
+            prepareStage="request_validation_rejected";
+            if(hostModels){
+              assert.equal(typeof request.arguments.content,"string");
+              assert.ok(request.arguments.content.length>0&&
+                request.arguments.content.length<=250000,
+                "Host-selected model must supply bounded complete file text");
+            }else{
+              assert.equal(request.arguments.content,
+                referenceFiles[request.arguments.path]);
+            }
+          }
+        }
+        prepareStage="gateway_prepare_unclassified";
+        const prepared=gateway.prepare(request);
+        if(d1Prepare){d1GatewayAudit.prepared({...d1Prepare,requestId:prepared.request_id});d1Prepare=null;}
+        return reply(prepared,201);
+      }
+      if(target===adkGatewayBase+"/v1/authorization/execute"){
+        const repairBinding=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:admittedTestRepair??admittedTestEdit;
+        const executed=await gateway.execute(request);
+        assert.equal(executed.policy.allow,true);
+        assert.equal(executed.policy.policy_version,"phase6-approved-branch-v2");
+        assert.equal(executed.verified_delegation.presenter_id,
+          process.env["ADAPTER_ID_"+role.toUpperCase()]);
+        assert.equal(executed.verified_delegation.credential_id,
+          activeChildByRole[role]);
+        const effect=executed.execution;
+        d1GatewayAudit.confirmed({requestId:request.request_id,effect});
+        d1ExecuteRequestId=null;
+        if(role!=="test"){
+          assert.equal(effect.provider,"gitea");
+          assert.ok((effect.tool==="read_file"
+            ?readableFiles[role]:files[role]).includes(effect.path),
+            "Verified provider effect must stay within approved operation scope");
+          if(effect.tool==="read_file"){
+            // Agents may legitimately re-read after updating a source file.
+            // Compare to the actual signed-branch provider state, not the
+            // historical baseline fixture.
+            const current=await reader.readTextFile(branch,effect.path);
+            assert.equal(effect.content,current.content);
+            const roleTaskId=activeTaskByRole[role];
+            assert.ok(isSignedImplementationTask(role,roleTaskId));
+            if(!readPathsPerTask.has(roleTaskId))
+              readPathsPerTask.set(roleTaskId,new Set());
+            readPathsPerTask.get(roleTaskId).add(effect.path);
+            if(!readPaths[role].has(effect.path)){
+              readPaths[role].add(effect.path);
+              reads[role]++;
+            }
+          }else if(effect.tool==="update_file"){
+            assert.ok(readPathsPerTask.get(activeTaskByRole[role])
+              ?.has(effect.path),
+              "A signed Task may not reuse another Task's prior read");
+            assert.match(effect.commit_sha,SHA);
+            const key=writeKey(activeTaskByRole[role],"update_file",effect.path);
+            assert.ok(expectedImplementationWriteKeys.has(key),
+              "Implementation effect must match the same signed Task grant");
+            observedImplementationWriteKeys.set(key,Object.freeze({
+              taskId:activeTaskByRole[role],role,
+              runtimeTaskId:repairBinding?.runtimeTaskId??null,
+              credentialId:executed.verified_delegation.credential_id,
+              operation:"update_file",branch:effect.branch,path:effect.path,
+              commitSha:effect.commit_sha,sequence:++implementationWriteSequence
+            }));
+            if(!writePaths[role].has(effect.path)){
+              writePaths[role].add(effect.path);
+              writes[role]++;
+              // Only observed, approved mutations count toward the result.
+            }
+            latestSha=effect.commit_sha;
+          }else throw Error("ADK attempted unexpected approved provider operation");
+        }else if(effect.tool==="read_file"&&role==="test"){
+          assert.equal(effect.provider,"gitea");
+          assert.ok(approvedTestReads.includes(effect.path));
+          const current=await reader.readTextFile(branch,effect.path);
+          assert.equal(effect.content,current.content);
+          const activeTestTask=activeTaskByRole.test;
+          assert.ok(taskIdsByRole.test.includes(activeTestTask)||admittedTestEdit?.taskId===activeTestTask);
+          if(!readPathsPerTask.has(activeTestTask))
+            readPathsPerTask.set(activeTestTask,new Set());
+          readPathsPerTask.get(activeTestTask).add(effect.path);
+          if(!readPaths.test.has(effect.path)){
+            readPaths.test.add(effect.path);
+            testReads++;
+          }
+        }else if(effect.tool==="update_file"&&role==="test"){
+          assert.equal(effect.provider,"gitea");
+          assert.ok(updatedTestFiles.includes(effect.path));
+          assert.ok(readPathsPerTask.get(activeTaskByRole.test)
+            ?.has(effect.path),
+            "A Test edit cannot reuse a separate Task's prior source read");
+          assert.match(effect.commit_sha,SHA);
+          const key=writeKey(activeTaskByRole.test,"update_file",effect.path);
+          assert.ok(expectedTestWriteKeys.has(key),
+            "Test update must belong to the active signed Task");
+          // Rewriting after a repair attempt is allowed; each granted edit
+          // must still be observed at least once.
+          if(!observedTestWriteKeys.has(key)){
+            observedTestWriteKeys.add(key);
+            testCalls++;testUpdates++;
+          }
+          if(admittedTestEdit?.taskId===activeTaskByRole.test){
+            observedTestEditEffects.set(key,Object.freeze({
+              taskId:activeTaskByRole.test,role:"test",runtimeTaskId:admittedTestEdit.runtimeTaskId,
+              credentialId:executed.verified_delegation.credential_id,
+              operation:"update_file",branch:effect.branch,path:effect.path,
+              commitSha:effect.commit_sha,sequence:++implementationWriteSequence
+            }));
+          }
+          writePaths.test.add(effect.path);
+          const head=await reader.getBranchMetadata(branch);
+          assert.equal(head.commit_sha,effect.commit_sha);
+        }else if(effect.tool==="create_file"){
+          assert.equal(effect.provider,"gitea");
+          assert.ok(createdTestFiles.includes(effect.path));
+          assert.match(effect.commit_sha,SHA);
+          const key=writeKey(activeTaskByRole.test,"create_file",effect.path);
+          assert.ok(expectedTestWriteKeys.has(key),
+            "Test creation must belong to the active signed Task");
+          assert.ok(!observedTestWriteKeys.has(key),
+            "The same signed Task cannot create a file twice");
+          observedTestWriteKeys.add(key);
+          writePaths.test.add(effect.path);
+          observedCreatedPaths.add(effect.path);
+          const head=await reader.getBranchMetadata(branch);
+          assert.equal(head.commit_sha,effect.commit_sha);
+          testCalls++;testCreates++;
+        }else if(effect.tool==="run_tests"){
+          // The approved DAG controls task order. A permission is a ceiling,
+          // never an obligation to invoke that tool. The Docker Runner
+          // independently determines whether the scenario actually works.
+          const pinned=await reader.getBranchMetadata(branch);
+          assert.equal(effect.provider,"runner");
+          assert.equal(effect.tested_commit_sha,pinned.commit_sha);
+          // Preserve only independently sanitized TypeScript error codes,
+          // never compiler messages, source snippets, or unapproved paths.
+          const typecheckCodes=effect.status==="fail"&&
+            effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
+            ?(effect.typecheck_error_codes!==undefined
+              ?sanitizeTypecheckErrorCodes(effect.typecheck_error_codes)
+              :[...new Set(sanitizeTypecheckLocations(
+                effect.typecheck_diagnostics).map(x=>x.code))].sort()):[];
+          const scopeAudit=effect.status==="fail"&&
+            effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
+            ?auditTrustedTypecheckPermissionScope({
+              diagnostics:sanitizeTypecheckLocations(effect.typecheck_diagnostics),
+              planningFiles,approvedRows:grants,
+              operationalPermissions:coordinator.trustedOperationalAuthority().permissions,
+              repo,branch
+            }):null;
+          const revisionComparison=effect.status==="fail"&&
+            effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
+            ?await compareTrustedTypecheckRevisions({
+              diagnostics:sanitizeTypecheckLocations(effect.typecheck_diagnostics),
+              planningFiles,createdPaths:[...observedCreatedPaths],
+              observedWrites:writePaths,
+              reader,branch,baseSha,testedSha:pinned.commit_sha
+            }):null;
+          const repairNomination=scopeAudit&&revisionComparison
+            ?nominateTrustedTypecheckRepair({
+              diagnostics:sanitizeTypecheckLocations(effect.typecheck_diagnostics),
+              planningFiles,approvedRows:grants,
+              operationalPermissions:coordinator.trustedOperationalAuthority().permissions,
+              repo,branch,observedWrites:writePaths,
+              revisionComparison
+            }):null;
+          // The Docker Runner has already attributed compiler locations to
+          // the signed original Backend/Frontend Gitea writes. Give the
+          // post-FAIL Planner that ONE proven file/role, not a list to guess.
+          if((realGeminiPilot||offlineMultiTypecheckProbe)&&runnerRuns===0&&
+             repairNomination&&
+             repairNomination.diagnostic_files>=1&&
+             repairNomination.diagnostic_files<=8&&
+             repairNomination.unresolved_files===0&&
+             repairNomination.outside_operational_scope===0&&
+             repairNomination.test_candidates===0){
+            const locations=sanitizeTypecheckLocations(effect.typecheck_diagnostics);
+            const paths=[...new Set(locations.map(d=>d.path))];
+            const root=coordinator.trustedOperationalAuthority().permissions;
+            const targets=[];
+            for(const path of paths){
+              const roles=EDIT_ROLES.filter(role=>writePaths[role].has(path));
+              if(roles.length!==1)break;
+              const role=roles[0],resource=canonicalFileUri(repo,branch,path);
+              const original=grants.filter(g=>g.agent_id===role&&
+                g.resource===resource&&["read_file","update_file"].includes(g.operation));
+              const ids=[...new Set(original.map(g=>g.task_id))];
+              if(ids.length!==1||!["read_file","update_file"].every(operation=>
+                 original.some(g=>g.task_id===ids[0]&&g.operation===operation)&&
+                 root.some(g=>g.resource===resource&&g.operation===operation)))break;
+              targets.push(Object.freeze({role,resource}));
+            }
+            if(targets.length===paths.length&&
+               targets.filter(t=>t.role==="backend").length===
+                repairNomination.backend_candidates&&
+               targets.filter(t=>t.role==="frontend").length===
+                repairNomination.frontend_candidates){
+              if(targets.length===1)
+                verifiedRepairTarget=Object.freeze({
+                  status:"verified_runner_single_file_repair_target",
+                  tested_commit_sha:pinned.commit_sha,...targets[0]
+                });
+              else if(targets.length>1&&
+                  targets.some(t=>t.role==="backend")&&
+                  targets.some(t=>t.role==="frontend"))
+                verifiedRepairTarget=Object.freeze({
+                  status:"verified_runner_multi_file_repair_targets",
+                  tested_commit_sha:pinned.commit_sha,
+                  targets:Object.freeze(targets)
+                });
+            }
+          }
+          if((realGeminiPilot||offlineProjectTestProbe)&&runnerRuns===0&&effect.status==="fail"&&
+             ["backend_tests","frontend_tests"].includes(effect.phases?.find(p=>p.status==="fail")?.phase)){
+            // F4: owner-private, source-free observation; a failing test
+            // never establishes implementation or test fault causality.
+            // No model request, signed grant, repair Task or provider call.
+            try{
+              const f4=corroborateF4ProjectTestProvenance({
+                runnerOutcome:effect,testedSha:pinned.commit_sha,branch,
+                observedWrites:writePaths,observedTestCreates:observedCreatedPaths
+              });
+              firstF4Provenance=f4;
+              firstF4WriteSequence=implementationWriteSequence;
+              process.stderr.write("[native-dag-adk] f4_project_test_evidence "+
+                JSON.stringify(f4)+"\\n");
+            }catch{
+              process.stderr.write("[native-dag-adk] f4_project_test_evidence "+
+                JSON.stringify({status:"unavailable",causal_attribution:"not_established"})+"\\n");
+            }
+            try{verifiedRepairTarget=collectProjectTestRepairCandidateScope({
+              effect,testedSha:pinned.commit_sha,repo,branch,approvedRows:grants,
+              rootPermissions:coordinator.trustedOperationalAuthority().permissions,
+              observedWrites:writePaths,observedTestCreates:observedCreatedPaths
+            });}catch{verifiedRepairTarget=null;}
+            if(offlineProjectTestProbe)assert.ok(verifiedRepairTarget,"Real project test failure needs original signed candidates");
+          }
+          if((realGeminiPilot||offlineAcceptanceProbe)&&runnerRuns===0&&
+             effect.status==="fail"&&effect.project_tests?.status==="pass"&&
+             effect.researcher_acceptance?.status==="fail"){
+            // Scope comes ONLY from the actual Runner and original signed
+            // Gateway write ledger, never a reference fixture or fault path.
+            // Ineligible diagnostics/scope cannot authorize a model call, but
+            // must not turn a genuine completed Runner FAIL into HTTP denial.
+            try{
+              verifiedRepairTarget=collectAcceptanceRepairCandidateScope({
+                effect,testedSha:pinned.commit_sha,repo,branch,approvedRows:grants,
+                rootPermissions:coordinator.trustedOperationalAuthority().permissions,
+                observedWrites:writePaths
+              });
+            }catch{verifiedRepairTarget=null;}
+            if(offlineAcceptanceProbe)assert.ok(verifiedRepairTarget,
+              "Semantic fixture must provide real original acceptance repair candidates");
+          }
+          if(offlineTypecheckProbe&&!admittedTestRepair){
+            assert.equal(effect.status,"fail");
+            assert.deepEqual(typecheckCodes,[offlineTypecheckExpectedCode]);
+            assert.ok(scopeAudit&&revisionComparison,
+              "Signed-root coverage and pinned-revision evidence required");
+            assert.equal(scopeAudit.outside_planning_snapshot,0);
+            assert.equal(scopeAudit.outside_signed_plan_write,0);
+            assert.equal(scopeAudit.outside_operational_root_write,0);
+            assert.equal(scopeAudit.within_operational_root_write,
+              offlineMultiTypecheckProbe?2:1);
+            assert.equal(scopeAudit.within_test_task_write,0);
+            assert.equal(scopeAudit.covered_by_backend_write,1);
+            assert.equal(scopeAudit.covered_by_frontend_write,
+              offlineMultiTypecheckProbe?1:0);
+            assert.equal(revisionComparison.diagnostic_files,
+              offlineMultiTypecheckProbe?2:1);
+            assert.equal(revisionComparison.different_blob_from_base,
+              offlineMultiTypecheckProbe?2:1);
+            assert.equal(revisionComparison.backend_writes_observed,1);
+            if(offlineMultiTypecheckProbe)
+              assert.equal(revisionComparison.frontend_writes_observed,1);
+            assert.equal(revisionComparison.test_writes_observed,0);
+            assert.equal(revisionComparison.unverifiable_files,0);
+            assert.ok(repairNomination,
+              "R92 requires a source-free, authenticated candidate decision");
+            assert.equal(repairNomination.backend_candidates,1);
+            assert.equal(repairNomination.frontend_candidates,
+              offlineMultiTypecheckProbe?1:0);
+            assert.equal(repairNomination.test_candidates,0);
+            assert.equal(repairNomination.unresolved_files,0);
+            assert.equal(repairNomination.signed_task_review_required,true);
+            assert.equal(repairNomination.permissions_issued,false);
+            assert.equal(repairNomination.task_dispatched,false);
+            assert.equal(repairNomination.retry_started,false);
+            // R91: even a hostile Test Agent with its own valid signed Task
+            // and live child DC cannot transform Runner diagnostics into new
+            // file capabilities. Exercise the ACTUAL Gateway prepare boundary,
+            // not a mock classifier, while the Test Task is still active.
+            const diagnostic=sanitizeTypecheckLocations(
+              effect.typecheck_diagnostics).find(d=>files.backend.includes(d.path));
+            assert.ok(diagnostic&&files.backend.includes(diagnostic.path),
+              "Compiler diagnostic must name an approved Backend file");
+            assert.ok(!approvedTestReads.includes(diagnostic.path)&&
+              !approvedTestUpdates.includes(diagnostic.path),
+              "Cross-role target must genuinely be outside signed Test scope");
+            assert.ok(taskIdsByRole.test.includes(activeTaskByRole.test),
+              "Denied request must use the currently signed Test Task");
+            const beforeDenied=await reader.getBranchMetadata(branch);
+            assert.equal(beforeDenied.commit_sha,pinned.commit_sha);
+            for(const tool of ["read_file","update_file"]){
+              assert.throws(()=>gateway.prepare({
+                task_id:activeTaskByRole.test,agent_role:"test",tool,
+                arguments:{
+                  branch,path:diagnostic.path,
+                  ...(tool==="update_file"?{content:"FORBIDDEN_UNAPPROVED_WRITE"}:{})
+                }
+              }),e=>e?.code==="approved_plan_denied",
+              "Runner evidence cannot expand an already signed Test Task");
+              deniedCrossRoleTestProbes++;
+            }
+            const afterDenied=await reader.getBranchMetadata(branch);
+            assert.equal(afterDenied.commit_sha,beforeDenied.commit_sha,
+              "Denied cross-role requests must not mutate Gitea");
+            observedTypecheckProbe=Object.freeze({
+              codes:typecheckCodes,scope:scopeAudit,revision:revisionComparison,
+              repairNomination
+            });
+          }
+          const failedProjectPhase=effect.phases?.find(p=>p.status==="fail")?.phase;
+          const projectFailure=(failedProjectPhase==="backend_tests"||failedProjectPhase==="frontend_tests")
+            ?safeProjectTestFailureDiagnostic({phase:failedProjectPhase,
+              failed_test_file_count:sanitizeVitestFailureFiles(
+                effect.failing_test_files,failedProjectPhase).length}):null;
+          process.stderr.write("[native-dag-adk] docker_phase_status "+
+            JSON.stringify({
+              status:effect.status,
+              phases:effect.phases?.map(x=>({phase:x.phase,status:x.status})),
+              project_tests:effect.project_tests?.status,
+              researcher_acceptance:effect.researcher_acceptance?.status,
+              ...(failedProjectPhase==="playwright_e2e"&&safeProjectE2eFailureDiagnostic(effect.project_e2e_failure)
+                ?{project_e2e_failure:safeProjectE2eFailureDiagnostic(effect.project_e2e_failure)}:{}),
+              ...(projectFailure?{project_test_failure:projectFailure}:{}),
+              ...(effect.status==="fail"&&effect.project_tests?.status==="pass"&&
+                effect.researcher_acceptance?.status==="fail"&&
+                safeAcceptanceFailureSummary(effect.acceptance_failure)
+                ?{acceptance_failure:safeAcceptanceFailureSummary(effect.acceptance_failure)}:{}),
+              ...(typecheckCodes.length?
+                {typecheck_error_codes:typecheckCodes}:{}),
+              ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),
+              ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{}),
+              ...(repairNomination?{typecheck_repair_nomination:repairNomination}:{})
+            })+"\n");
+          // A completed provider operation can legitimately report FAIL.
+          // Return its real result to the controlled Test tool, which reports
+          // tests_failed. Do not convert a functional failure to HTTP 403.
+          // No A2A completion, trusted PASS, or PR is possible on failure.
+          const verdict=verifyPilotRunnerOutcome(effect,pinned.commit_sha);
+          runnerRuns++;runnerOutcome=effect;
+          runnerHistory.push(effect);
+          if(firstF4Provenance&&runnerRuns===2&&effect.status==="pass"){
+            // F4: a second independently attested Docker PASS is an
+            // observation, not unique proof of the initial defect.
+            const fresh=[
+              ...observedImplementationWriteKeys.values(),
+              ...observedTestEditEffects.values()
+            ].filter(x=>Number.isSafeInteger(x.sequence)&&
+              x.sequence>firstF4WriteSequence);
+            try{
+              const differential=corroborateF4ControlledRetest({
+                firstRunner:runnerHistory[0],recoveredRunner:effect,
+                firstProvenance:firstF4Provenance,branch,repairWrites:fresh
+              });
+              process.stderr.write("[native-dag-adk] f4_controlled_retest "+
+                JSON.stringify(differential)+"\\n");
+            }catch{
+              process.stderr.write("[native-dag-adk] f4_controlled_retest "+
+                JSON.stringify({status:"inconclusive",causal_attribution:"not_established"})+"\\n");
+            }
+          }
+          if(!verdict.passed){
+            process.stderr.write("[native-dag-adk] runner_failed "+
+              JSON.stringify({category:"functional_acceptance_failure"})+"\n");
+          }
+        }else throw Error("ADK Test Agent attempted unexpected operation");
+        return reply(executed);
+      }
+      throw Error("Unsupported trusted Gateway route");
+    }catch(error){
+      if(d1Prepare)d1GatewayAudit.rejectedPrepare(d1Prepare);
+      if(d1ExecuteRequestId)d1GatewayAudit.rejectedExecute(d1ExecuteRequestId);
+      // The model sees a generic denied result, never raw provider exceptions,
+      // confidential request arguments, VP, source data or service tokens.
+      process.stderr.write("[native-dag-adk] controlled_denial "+
+        JSON.stringify({role,kind:error?.constructor?.name??"Error",
+          code:error?.code??"unknown"})+"\n");
+      return reply({error:"trusted_operation_denied",
+        ...(target.endsWith("/prepare")?{prepare_reason:error?.prepare_reason??prepareStage}:{})},403);
+    }
+  };
+  if(realGeminiPilot)onPilotPhase?.("agent_bootstrap");
+  try{
+    if(cryptoMcpEnabled){
+      // Task-local in-process cryptographic MCP; no shared HTTP listener.
+      for(const role of ROLES){
+        const keys=generateKeyPairSync("ed25519");
+        roleMcpKeys[role]={
+          signingPrivateKeyPem:keys.privateKey.export({
+            type:"pkcs8",format:"pem"
+          }).toString(),
+          signingPublicKeyPem:keys.publicKey.export({
+            type:"spki",format:"pem"
+          }).toString()
+        };
+        rolePorts[role]=await freePort();
+      }
+    }
+    for(const role of EDIT_ROLES){
+      const targets=files[role];
+      const scripted=offlineScripts?.[role];
+      if(scripted)assert.deepEqual(scripted.flatMap(c=>
+        c.name==="update_file"?[c.args.path]:[]).sort(),[...targets].sort(),
+        "Signed plan must determine all scripted ADK writes");
+      const model=hostModels?.models[role]??new OfflineApprovedAdkModel(role,scripted);
+      models[role]=model;
+      const server=await startSpecializedAgentServer({
+        role,host:"127.0.0.1",
+        port:cryptoMcpEnabled?rolePorts[role]:await freePort(),
+        delegatedAuthorization:true,capabilityProfile:"approved-plan",
+        ...(cryptoMcpEnabled?{mcpTaskSigning:roleMcpKeys[role]}:{}),
+        adk:{
+          model,gatewayBaseUrl:adkGatewayBase,
+           ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+             ? {}:{adapterBaseUrl:adapterUrl}),
+          adapterToken:agentTokens[role],fetchFn:adkFetchFor(role),
+          maxModelTurns:realGeminiPilot
+            ?SIGNED_GEMINI_PILOT.maxTurnsPerTask[role]
+            :scripted?scripted.length+2:24,
+          maxModelCallMs:realGeminiPilot
+            ?SIGNED_GEMINI_PILOT.maxModelCallMs:hostModels?90000:30000,
+          ...(realGeminiPilot?{generateContentConfig:{
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerRole[role],
+            thinkingConfig:{thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel}
+          }}:{}),
+          gatewayTimeoutMs:30000
+        }
+      });
+      servers.push(server);urls[role]=server.baseUrl;
+    }
+    const testScript=offlineScripts?.test;
+    if(testScript){
+      assert.deepEqual(testScript.map(c=>c.name),
+        ["create_file","run_tests"],
+        "Offline test fixture must keep its one scripted create and final Runner");
+      assert.equal(testScript[0].args.path,createdTestFiles[0]);
+    }
+    const testModel=hostModels?.models.test??
+      new OfflineApprovedAdkModel("test",testScript);
+    models.test=testModel;
+    const testAgent=await startSpecializedAgentServer({
+      role:"test",host:"127.0.0.1",
+      port:cryptoMcpEnabled?rolePorts.test:await freePort(),
+      delegatedAuthorization:true,capabilityProfile:"approved-plan",
+      ...(cryptoMcpEnabled?{mcpTaskSigning:roleMcpKeys.test}:{}),
+      adk:{
+        model:testModel,gatewayBaseUrl:adkGatewayBase,
+         ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+           ? {}:{adapterBaseUrl:adapterUrl}),
+        adapterToken:agentTokens.test,fetchFn:adkFetchFor("test"),
+        maxModelTurns:realGeminiPilot
+          ?SIGNED_GEMINI_PILOT.maxTurnsPerTask.test:hostModels?24:4,
+        maxModelCallMs:realGeminiPilot
+          ?SIGNED_GEMINI_PILOT.maxModelCallMs:hostModels?90000:30000,
+        ...(realGeminiPilot?{generateContentConfig:{
+          maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerRole.test,
+          thinkingConfig:{thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel}
+        }}:{}),
+        gatewayTimeoutMs:30000
+      }
+    });
+    servers.push(testAgent);urls.test=testAgent.baseUrl;
+    // R150.7: retain the SAME protected A2A transport/Agent Card endpoints
+    // while the original Rust root is live. Only the authenticated owner
+    // can receive these ports; they do not create a Task, DC or permission.
+    const protectedTransport=new DeterministicA2AOrchestrator({
+      deadlineMs:realGeminiPilot
+        ?SIGNED_GEMINI_PILOT.maxA2aTaskMs:500000,
+      initialIntervalMs:50,maxIntervalMs:250
+    });
+    const protectedA2A={async sendProtectedTask(request){
+      // The same immutable hints are consumed by ADK and the private MCP registry.
+      // This check precedes sendMessage and therefore specialized model inference.
+      const role=["backend","frontend","test"].find(role=>
+        activeTaskByRole[role]===request.subtask.subtask_id);
+      assert.ok(role,"Preflight requires current trusted role Task");
+      if(offlineGeneratedTestProbe&&process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR&&
+         admittedTestEdit?.taskId===request.subtask.subtask_id){
+        const diagnostic=JSON.parse(request.subtask.instruction.split("\n")[1]).diagnostic_assertions;
+        assert.ok(diagnostic?.assertions.some(a=>a.role==="test"&&
+          request.subtask.approved_file_permissions.some(p=>p.operation==="read_file"&&
+            canonicalFileUri(repo,branch,p.path)===a.resource)),
+          "The protected Test-editor A2A message must carry only Task-readable assertions");
+      }
+      if(offlineTypecheckProbe&&offlineTypecheckExpectedCode==="TS2724"&&
+         runnerRuns===1&&role==="backend"){
+        const diagnostic=JSON.parse(request.subtask.instruction.split("\n")[1]).diagnostic_typecheck;
+        assert.equal(diagnostic?.tested_commit_sha,runnerOutcome.tested_commit_sha);
+        assert.equal(diagnostic?.branch,branch);
+        assert.ok(diagnostic.diagnostics.some(d=>d.role==="backend"&&d.code==="TS2724"&&
+          d.message.includes("ACCOUNT_STATU")&&
+          request.subtask.approved_file_permissions.some(p=>p.operation==="read_file"&&
+            canonicalFileUri(repo,branch,p.path)===d.resource)),
+          "TS2724 protected Backend D1 must receive the verified scoped compiler message");
+      }
+      approvedPlans.assertRuntimeFileGrants(request.trusted_gateway_task_id,role,
+        request.subtask.branch,request.subtask.approved_file_permissions??[]);
+      return protectedTransport.sendProtectedTask(request);
+    }};
+    if(trustedOwnerRecovery?.bindOriginalA2APorts){
+      await trustedOwnerRecovery.bindOriginalA2APorts({
+        agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
+        getVerifiedRepairTarget:()=>verifiedRepairTarget,
+        getVerifiedRunnerTypecheckContext:roles=>loadTrustedRunnerTypecheckContext({
+          directory:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR,effect:runnerOutcome,
+          repo,branch,approvedRows:grants,
+          rootPermissions:coordinator.trustedOperationalAuthority().permissions,roles
+        }),
+        getVerifiedRunnerAssertionContext:roles=>loadTrustedRunnerAssertionContext({
+          directory:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR,effect:runnerOutcome,
+          repo,branch,approvedRows:grants,
+          rootPermissions:coordinator.trustedOperationalAuthority().permissions,roles
+        }),
+        // Owner-only alternative repair scope. No model, A2A or shared MCP
+        // can request new grants: this only provides eligible original Test
+        // files whose creation and failure were observed by real providers.
+        async getVerifiedGeneratedTestEditScope(){
+          if(runnerRuns!==1||runnerOutcome?.status!=="fail"||
+             !["backend_tests","frontend_tests"].includes(
+               runnerOutcome.phases?.find(p=>p.status==="fail")?.phase)||
+             observedCreatedPaths.size===0)
+            return null;
+          const failedPhase=runnerOutcome.phases.find(p=>p.status==="fail")?.phase;
+          const rawFailed=runnerOutcome.failing_test_files;
+          const failedPaths=sanitizeVitestFailureFiles(rawFailed,failedPhase);
+          if(!Array.isArray(rawFailed)||rawFailed.length===0||
+             failedPaths.length!==rawFailed.length)
+            throw Error("Generated Test scope requires complete trusted Runner failures");
+          // A Test-created file that did NOT fail is not an investigation
+          // candidate. The absence of overlap is ordinary ineligibility,
+          // not an error that may suppress a valid Backend source repair.
+          const failedCreatedPaths=failedPaths.filter(path=>observedCreatedPaths.has(path));
+          if(failedCreatedPaths.length===0)return null;
+          const existing=grants.filter(g=>g.agent_id==="test"&&
+            ["read_file","update_file"].includes(g.operation));
+          const root=coordinator.trustedOperationalAuthority().permissions;
+          const eligible=failedCreatedPaths.some(path=>{
+            const resource=canonicalFileUri(repo,branch,path);
+            const rows=existing.filter(g=>g.resource===resource);
+            return new Set(rows.map(g=>g.task_id)).size===1&&
+              ["read_file","update_file"].every(operation=>
+                rows.some(g=>g.operation===operation)&&
+                root.some(g=>g.resource===resource&&g.operation===operation));
+          });
+          if(!eligible)return null;
+          const head=await reader.getBranchMetadata(branch);
+          if(head.commit_sha!==runnerOutcome.tested_commit_sha)
+            throw Error("Test-edit scope stale after signed Docker FAIL");
+          return collectSignedGeneratedTestEditScope({
+            runnerOutcome,originalCreatedPaths:observedCreatedPaths,
+            branch,failedSha:runnerOutcome.tested_commit_sha,repo,
+            approvedRows:grants,rootPermissions:root
+          });
+        },
+        selectTestEditD1:epoch=>{
+          const failedGeneratedPaths=verifiedFailedCreatedTestPaths({
+            runnerOutcome,originalCreatedPaths:observedCreatedPaths,
+            branch,failedSha:runnerOutcome?.tested_commit_sha
+          });
+          const selected=selectSignedNativeTestEditD1Tasks({
+            epoch,planDigest:epoch.plan_digest,branchUri:scopedBranch,
+            originalCreatedTestFileUris:failedGeneratedPaths.map(p=>canonicalFileUri(repo,branch,p)),
+            originalApprovedTestGrants:grants.filter(g=>g.agent_id==="test"),
+            originalRootPermissions:coordinator.trustedOperationalAuthority().permissions
+          });
+          const paths=selected.fileUris.map(uri=>failedGeneratedPaths.find(p=>canonicalFileUri(repo,branch,p)===uri));
+          if(paths.some(p=>!p))throw Error("D1 generated Test paths lack original provider evidence");
+          return Object.freeze({...selected,paths:Object.freeze(paths)});
+        },
+        async armVerifiedD1TestEdit({taskId,role,runtimeTaskId,credentialId,path,paths=[path],failedSha}){
+          if(admittedTestEdit||admittedTestRepair||role!=="test"||
+             !(realGeminiPilot||offlineProjectTestProbe)||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId??"")||
+             !credentialId||!SHA.test(failedSha??"")||runnerHistory.length!==1||
+             runnerOutcome?.status!=="fail"||runnerOutcome.tested_commit_sha!==failedSha||
+             !Array.isArray(paths)||paths[0]!==path||
+             (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
+            throw Error("D1 Test editor requires original failed SHA and fresh child");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory(),epoch=history.at(-1);
+          if(history.length!==2||epoch.root_credential_id!==operationalRootId)
+            throw Error("D1 Test editor root mismatch");
+          const failedGeneratedPaths=verifiedFailedCreatedTestPaths({
+            runnerOutcome,originalCreatedPaths:observedCreatedPaths,
+            branch,failedSha
+          });
+          const selected=selectSignedNativeTestEditD1Tasks({
+            epoch,planDigest:epoch.plan_digest,branchUri:scopedBranch,
+            originalCreatedTestFileUris:failedGeneratedPaths.map(p=>canonicalFileUri(repo,branch,p)),
+            originalApprovedTestGrants:grants.filter(g=>g.agent_id==="test"),
+            originalRootPermissions:coordinator.trustedOperationalAuthority().permissions
+          });
+          if(taskId!==selected.testEditTaskId||paths.length!==selected.fileUris.length||
+             new Set(paths).size!==paths.length||paths.some(p=>
+              !selected.fileUris.includes(canonicalFileUri(repo,branch,p))||
+              !approvedTestReads.includes(p)||!updatedTestFiles.includes(p)))
+            throw Error("D1 Test editor differs from signed original scope");
+          const mode=selectTrustedD1AgentModelActivation({role:"test",taskId,model:models.test,
+            scriptedModelClass:OfflineApprovedAdkModel,allowGenerative:realGeminiPilot});
+          if(mode.needs_scripted_arming)models.test.armTrustedD1GeneratedTestRepair({branch,path,paths,failedSha,taskId});
+          d1GatewayAudit.begin({role,taskId,runtimeTaskId});
+          admittedTestEdit=Object.freeze({taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha});
+          activeTaskByRole.test=taskId;activeChildByRole.test=credentialId;
+          for(const p of paths)expectedTestWriteKeys.add(writeKey(taskId,"update_file",p));
+        },
+        async verifyD1EditorRevision(task,previousSha){
+          const binding=task.role==="backend"?admittedBackendRepair:task.role==="frontend"?admittedFrontendRepair:admittedTestEdit;
+          const head=await reader.getBranchMetadata(branch);
+          const writes=[...(task.role==="test"?observedTestEditEffects:observedImplementationWriteKeys).values()];
+          const taskWriteCount=writes.filter(x=>x.taskId===task.task_id).length;
+          const d1Audit=d1GatewayAudit.snapshot({role:task.role,taskId:task.task_id,
+            runtimeTaskId:task.runtime_task_id,taskWriteCount,headChanged:head.commit_sha!==previousSha});
+          try{
+            return verifyD1EditorRevision({task,binding,branch,previousSha,
+              headSha:head.commit_sha,writes});
+          }catch(error){
+            const categories=["revision_baseline_mismatch","no_confirmed_editor_write",
+              "editor_effect_binding_mismatch","provider_head_mismatch","unchanged_editor_revision"];
+            if(categories.includes(error.category))process.stderr.write(JSON.stringify({
+              event:"d1_editor_revision",role:task.role,category:error.category,
+              ...(safeSignedTaskRef(task.runtime_task_id)
+                ?{task_ref:safeSignedTaskRef(task.runtime_task_id)}:{}),
+              // Confirmed effects only: these do not count model attempts.
+              task_write_count:taskWriteCount,
+              runtime_write_count:writes.filter(x=>x.runtimeTaskId===task.runtime_task_id).length,
+              head_changed:head.commit_sha!==previousSha,
+              ...d1Audit
+            })+"\n");
+            throw error;
+          }
+        },
+        async armVerifiedD1TestRun({
+          taskId,role,runtimeTaskId,credentialId,repairedSha
+        }){
+          if(admittedTestRepair||!activeD1Repair()||
+             !(offlineTypecheckProbe||offlineSemanticProbe||realGeminiPilot)||
+             role!=="test"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
+             !credentialId||!SHA.test(repairedSha)||
+             runnerOutcome?.status!=="fail"||
+             runnerHistory.length!==1||
+             repairedSha===runnerOutcome.tested_commit_sha||
+             (await reader.getBranchMetadata(branch)).commit_sha!==repairedSha)
+            throw Error("R150.9 real D1 Test requires exact repaired SHA and distinct child");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
+          const epoch=history.at(-1);
+          const task=epoch?.plan.tasks.find(t=>t.id===taskId);
+          if(history.length!==2||task?.agent_id!=="test"||
+             epoch.root_credential_id!==operationalRootId||
+             !epoch.plan.tasks.filter(t=>
+               epoch.plan.requested_permissions.some(g=>g.task_id===t.id&&g.operation==="update_file")).every(repair=>{
+               const visited=new Set(),pending=[...task.depends_on];
+               while(pending.length){
+                 const id=pending.pop();
+                 if(visited.has(id))continue;
+                 visited.add(id);
+                 pending.push(...(epoch.plan.tasks.find(t=>t.id===id)?.depends_on??[]));
+               }
+               return visited.has(repair.id);
+             })||
+             !epoch.plan.requested_permissions.some(g=>
+               g.task_id===taskId&&g.agent_id==="test"&&
+               g.operation==="run_tests"&&g.resource===scopedBranch))
+            throw Error("R150.9 Test not granted by independently admitted D1");
+          const modelMode=selectTrustedD1AgentModelActivation({
+            role:"test",taskId,model:models.test,
+            scriptedModelClass:OfflineApprovedAdkModel,
+            allowGenerative:realGeminiPilot
+          });
+          if(modelMode.needs_scripted_arming)
+            models.test.armTrustedD1TestRun({branch,taskId});
+          // A real model continues within a NEW signed A2A Task; the
+          // original trusted Gateway still enforces role/Task/VP/OPA scope.
+          admittedTestRepair=Object.freeze({
+            taskId,runtimeTaskId,credentialId,repairedSha
+          });
+          activeChildByRole.test=credentialId;
+          activeTaskByRole.test=taskId;
+        },
+        async armVerifiedD1BackendRepair({
+          taskId,role,runtimeTaskId,credentialId,path,paths=[path],failedSha
+        }){
+          // Only the original trusted owner may invoke this after real
+          // R134 child issuance. Source/model claims grant NOTHING.
+          if(admittedTestRepair||admittedBackendRepair?.taskId===taskId||
+             !(offlineTypecheckProbe||offlineSemanticProbe||realGeminiPilot)||
+             role!=="backend"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
+             !credentialId||!SHA.test(failedSha)||
+             runnerOutcome?.status!=="fail"||
+             !Array.isArray(paths)||paths.length<1||paths.length>8||paths[0]!==path||
+             new Set(paths).size!==paths.length||paths.some(p=>
+               !files.backend.includes(p)||!readableFiles.backend.includes(p))||
+             (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
+            throw Error("R150.8 trusted Backend repair binding NO-GO");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
+          const epoch=history.at(-1),task=epoch?.plan.tasks.find(t=>t.id===taskId);
+          const resources=paths.map(p=>canonicalFileUri(repo,branch,p));
+          if(history.length!==2||task?.agent_id!=="backend"||
+             epoch.root_credential_id!==operationalRootId||
+             !resources.every(resource=>["read_file","update_file"].every(operation=>
+               epoch.plan.requested_permissions.some(g=>
+                 g.task_id===taskId&&g.agent_id==="backend"&&
+                 g.resource===resource&&g.operation===operation))))
+            throw Error("R150.8 owner D1 repair outside signed epoch scope");
+          // A new A2A Task receives a distinct source-read journal and
+          // only its independently signed exact write key may be observed.
+          const modelMode=selectTrustedD1AgentModelActivation({
+            role:"backend",taskId,model:models.backend,
+            scriptedModelClass:SourceDerivedRouteOfflineAdkModel,
+            allowGenerative:realGeminiPilot
+          });
+          if(modelMode.needs_scripted_arming){
+            if(paths.length!==1&&!offlineSemanticProbe)
+              throw Error("Scripted compiler repair supports one observed source");
+            const arm=offlineProjectTestProbe?models.backend.armTrustedD1ProjectTestRepair:offlineAcceptanceProbe
+              ?models.backend.armTrustedD1AcceptanceRepair
+              :models.backend.armTrustedD1TypecheckRepair;
+            if(typeof arm!=="function")throw Error("Offline D1 fixture repair method missing");
+            arm.call(models.backend,{branch,path,paths,failedSha,taskId});
+          }
+          d1GatewayAudit.begin({role,taskId,runtimeTaskId});
+          admittedBackendRepair=Object.freeze({
+            taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha
+          });
+          activeChildByRole.backend=credentialId;
+          activeTaskByRole.backend=taskId;
+          for(const p of paths)expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",p));
+        },
+        async armVerifiedD1FrontendRepair({
+          taskId,role,runtimeTaskId,credentialId,path,paths=[path],failedSha
+        }){
+          // Bind the same original Frontend identity to fresh signed D1 grants.
+          // Deterministic fault repair is restricted to nonbillable fixtures.
+          if((!realGeminiPilot&&!offlineMultiTypecheckProbe&&!offlineProjectTestProbe)||admittedTestRepair||
+             admittedFrontendRepair?.taskId===taskId||
+             role!=="frontend"||
+             !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
+             !credentialId||!SHA.test(failedSha)||
+             runnerOutcome?.status!=="fail"||
+             !Array.isArray(paths)||paths.length<1||paths.length>8||paths[0]!==path||
+             new Set(paths).size!==paths.length||paths.some(p=>
+               !files.frontend.includes(p)||!readableFiles.frontend.includes(p))||
+             (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
+            throw Error("R151.72 Frontend D1 repair requires live failed-SHA");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
+          const epoch=history.at(-1),task=epoch?.plan.tasks.find(t=>t.id===taskId);
+          const resources=paths.map(p=>canonicalFileUri(repo,branch,p));
+          if(history.length!==2||task?.agent_id!=="frontend"||
+             epoch.root_credential_id!==operationalRootId||
+             !resources.every(resource=>["read_file","update_file"].every(operation=>
+               epoch.plan.requested_permissions.some(g=>
+                 g.task_id===taskId&&g.agent_id==="frontend"&&
+                 g.operation===operation&&g.resource===resource))))
+            throw Error("R151.72 Frontend D1 outside signed permission set");
+          const mode=selectTrustedD1AgentModelActivation({
+            role:"frontend",taskId,model:models.frontend,
+            scriptedModelClass:OfflineApprovedAdkModel,
+            allowGenerative:realGeminiPilot
+          });
+          if(mode.needs_scripted_arming){
+            if(offlineProjectTestProbe)models.frontend.armTrustedD1ProjectTestRepair({branch,path,paths,failedSha,taskId});
+            else{
+              if(paths.length!==1)throw Error("Scripted Frontend compiler repair supports one observed source");
+              models.frontend.armTrustedD1TypecheckRepair({branch,path,failedSha,taskId});
+            }
+          }
+          d1GatewayAudit.begin({role,taskId,runtimeTaskId});
+          admittedFrontendRepair=Object.freeze({
+            taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha
+          });
+          activeChildByRole.frontend=credentialId;
+          activeTaskByRole.frontend=taskId;
+          for(const p of paths)expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",p));
+        }
+      });
+    }
+    if(realGeminiPilot)onPilotPhase?.("dispatcher_setup");
+    const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
+      approvals:reviewGate,coordinator,sessionId,
+      expectedPlanDigest:planDigest,baseRevision:baseSha,
+      expectedEngineerDid:engineerDid,agentBaseUrls:urls,
+      verifiedImplementationRead:async pins=>
+        approvedPlans.readVerifiedImplementationSummary(pins),
+      // Zero-billing ADK integration review. A future generative reviewer
+      // requires its own separately authorized model/budget; the current
+      // real pilot must NOT silently gain additional paid calls.
+      integrationReview:async input=>{
+        const review=await new TrustedAdkIntegrationReviewer(
+          new OfflineIntegrationReviewModel()).review(input);
+        // The signed dispatcher independently re-verifies this result
+        // before issuing any Test Child DC or constructing Test instruction.
+        f5IntegrationReviewReceipts.push(Object.freeze({
+          taskId:input.test_task_id,planDigest:review.plan_digest,
+          evidenceDigest:review.evidence_digest,
+          sourceTaskIds:Object.freeze(review.source_tasks.map(x=>x.task_id))
+        }));
+        return review;
+      },
+      // No recovery is enabled unless the trusted host supplies BOTH the
+      // original Gateway and independently validated same-root epoch intake.
+      // Dispatcher.load additionally enforces their exact owner binding.
+      ...(trustedOwnerRecovery?{verifiedTestFailureRecovery:{
+        gateway:trustedOwnerRecovery.gateway,
+        intake:trustedOwnerRecovery.intake
+      }}:{}),
+      a2a:protectedA2A,
+      adapter:{
+        ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+          ? {}:{adapterBaseUrl:adapterUrl}),
+        bearerToken:orchestratorToken,timeoutMs:30000},
+      async authorityForTask(taskId,role){
+        assert.ok(ROLES.includes(role));
+        assert.ok(taskIdsByRole[role].includes(taskId),
+          "Child authority must belong to a signed role Task");
+        assert.equal(childIds[taskId],undefined,
+          "Each approved Task receives exactly one fresh child DC");
+        const credentialId="urn:native:approved-dag-"+role+"-"+
+          randomBytes(8).toString("hex");
+        childIds[taskId]=credentialId;
+        activeChildByRole[role]=credentialId;
+        activeTaskByRole[role]=taskId;
+        return {
+          parent_credential_id:operationalRootId,
+          credential_id:credentialId,
+          valid_from:new Date(Date.now()-1000).toISOString(),
+          validity_seconds:realGeminiPilot
+            ?SIGNED_GEMINI_PILOT.childCredentialValiditySeconds:300,
+          credential_status:{type:"BitstringStatusListEntry",
+            statusPurpose:"revocation",
+            statusListIndex:String(randomInt(66001,69000)),
+            statusListCredential:"https://status.example/lists/approved-dag"}
+        };
+      }
+    });
+    for(const taskId of allSpecialistTaskIds)await assert.rejects(
+      dispatcher.dispatch(taskId),/dependencies/);
+    assert.equal(observedImplementationWriteKeys.size,0);
+    if(realGeminiPilot)onPilotPhase?.("a2a_dispatch");
+    const result=await dispatcher.executeApprovedDag({
+      ...(trustedOwnerRecovery?{
+        beforeTask:async()=>{
+          // A real Docker phase may last longer than the Gateway's durable
+          // operational lease. Only the authenticated owner IPC renews it;
+          // neither an A2A Task nor a model can choose its TTL or root.
+          await trustedOwnerRecovery.gateway.renewLease(sessionId,planDigest);
+        },
+        beforeCompletion:async()=>{
+          await trustedOwnerRecovery.gateway.renewLease(sessionId,planDigest);
+        }
+      }:{}),
+      async invokeOrchestratorTask(planId,runtimeTaskId){
+        if(planId===reviewTaskId){
+          // Approval of the repository operation is a separate signed Task.
+          // It may run only after the Test Agent's provider-corroborated
+          // exact-SHA Docker and independent researcher acceptance.
+          if(realGeminiPilot){
+            // Gemini may recover from a real Docker FAIL under the same signed grants.
+            // Final provider-corroborated PASS and exact SHA checks remain mandatory.
+            assert.ok(Number.isSafeInteger(runnerRuns)&&
+              runnerRuns>=1&&runnerRuns<=6,
+              "Live signed Test Tasks require bounded Docker runs");
+          }else assert.equal(runnerRuns,offlineRecovery?2:1);
+          assert.equal(runnerOutcome?.status,"pass");
+          assert.equal(runnerOutcome?.project_tests?.status,"pass");
+          assert.equal(runnerOutcome?.researcher_acceptance?.status,"pass");
+          assert.equal((await reader.getBranchMetadata(branch)).commit_sha,
+            runnerOutcome.tested_commit_sha);
+          assert.throws(()=>gateway.prepare({
+            task_id:runtimeTaskId,agent_role:"orchestrator",
+            tool:"create_pull_request",arguments:{
+              head_branch:"main",base_branch:"main",title:"Unapproved main PR"
+            }
+          }),e=>e?.code==="approved_plan_denied");
+          const prepared=gateway.prepare({
+            task_id:runtimeTaskId,agent_role:"orchestrator",
+            tool:"create_pull_request",arguments:{
+              head_branch:branch,base_branch:"main",
+              title:"Reviewed "+scenarioId+" changes",
+              body:"Engineer-signed plan digest: "+planDigest+
+                "\nExact tested feature SHA: "+runnerOutcome.tested_commit_sha+
+                "\nHuman approval and merge are NOT performed by this run."
+            }
+          });
+          const vp=await signedVp(
+            operationalRootId,prepared,orchestratorToken);
+          const executed=await gateway.execute({
+            request_id:prepared.request_id,signed_vp:vp
+          });
+          assert.equal(executed.execution.provider,"gitea");
+          assert.equal(executed.execution.tool,"create_pull_request");
+          assert.equal(executed.execution.head_branch,branch);
+          assert.equal(executed.execution.base_branch,"main");
+          assert.equal(executed.execution.revision,
+            runnerOutcome.tested_commit_sha);
+          assert.ok(Number.isSafeInteger(
+            executed.execution.pull_request_number));
+          createdPr=executed.execution;
+          return;
+        }
+        assert.equal(planId,branchTaskId);
+        assert.throws(()=>gateway.prepare({
+          task_id:runtimeTaskId,agent_role:"orchestrator",
+          tool:"create_branch",arguments:{
+            base_branch:"main",branch:"feature/not-approved"}
+        }),/approved plan/i);
+        const prep=gateway.prepare({
+          task_id:runtimeTaskId,agent_role:"orchestrator",
+          tool:"create_branch",arguments:{base_branch:"main",branch}
+        });
+        const jwt=await signedVp(
+          operationalRootId,prep,orchestratorToken);
+        const created=await gateway.execute({
+          request_id:prep.request_id,signed_vp:jwt
+        });
+        assert.equal(created.execution.tool,"create_branch");
+        assert.equal(created.execution.commit_sha,baseSha);
+        assert.equal((await reader.getBranchMetadata(branch)).commit_sha,baseSha);
+      }
+    }).catch(error=>{
+      if(realGeminiPilot){
+        onPilotError?.(classifyApprovedDagFailure(error));
+      }
+      if(offlineTypecheckProbe){
+        // Real Docker FAIL and trusted provider observations must precede
+        // any expected-failure classification: agent prose cannot supply them.
+        assert.ok(observedTypecheckProbe);
+        assert.equal(deniedCrossRoleTestProbes,2,
+          "Both malicious signed Test read and write must be denied");
+        assert.equal(runnerRuns,1);
+        assert.equal(runnerOutcome?.status,"fail");
+        assert.equal(runnerOutcome?.project_tests?.status,"fail");
+        assert.equal(runnerOutcome?.researcher_acceptance?.status,"skipped");
+        assert.equal(runnerOutcome?.phases.find(p=>p.status==="fail")?.phase,
+          "typecheck");
+        assert.equal(createdPr,null);
+        assert.ok(!dispatcher.completedTaskIds.includes(reviewTaskId));
+        assert.equal(coordinator.phase,"closed",
+          "Failing DAG must retire its issued operational root");
+        return null;
+      }
+      if(offlineMultiTest){
+        // Only plan-generated Task IDs and fixed diagnostic categories enter
+        // logs. NEVER publish exception text, provider payloads, DCs or VPs.
+        const classify=classifyApprovedDagFailure;
+        process.stderr.write("[native-dag-adk] multi_test_safe_diagnostic "+
+          JSON.stringify({
+            completed_task_ids:dispatcher.completedTaskIds.filter(id=>
+              signed.plan.tasks.some(task=>task.id===id)),
+            issued_task_ids:Object.keys(childIds).filter(id=>
+              signed.plan.tasks.some(task=>task.id===id)),
+            category:classify(error),
+            cause_category:classify(error?.cause),
+            failure_trace:safeApprovedDagFailureTrace(error),
+            runner_runs:runnerRuns,
+            runner_status:["pass","fail"].includes(runnerOutcome?.status)
+              ?runnerOutcome.status:"unknown",
+            first_failed_phase:[
+              "dependency_install","typecheck","backend_tests","frontend_tests",
+              "build","playwright_e2e","researcher_acceptance"
+            ].includes(runnerOutcome?.phases?.find(p=>p.status==="fail")?.phase)
+              ?runnerOutcome.phases.find(p=>p.status==="fail").phase:"none",
+            runner_project_status:["pass","fail"].includes(
+              runnerOutcome?.project_tests?.status)
+              ?runnerOutcome.project_tests.status:"unknown",
+            signed_test_write_count:testCalls,
+            // R118: trusted failed-phase evidence and bounded model progress.
+            // Never log model text, raw Vitest output, repository source,
+            // credential material, or unapproved file paths.
+            test_model_turns:Number.isSafeInteger(models.test?.calls)?
+              models.test.calls:null,
+            scripted_test_call_count:Array.isArray(offlineScripts?.test)?
+              offlineScripts.test.length:null,
+            failed_test_files_scoped:(()=>{
+              const files=sanitizeVitestFailureFiles(
+                runnerOutcome?.failing_test_files,"backend_tests");
+              const grants=new Set(approvedTestReads);
+              return Object.freeze({
+                count:files.length,
+                readable:files.filter(path=>grants.has(path)).length,
+                unreadable:files.filter(path=>!grants.has(path)).length,
+                explicit_referral:runnerOutcome?.repair_requires_new_approval===true
+              });
+            })()
+          })+"\n");
+      }
+      throw error;
+    });
+    if(result?.status==="verified_test_failure_suspended"){
+      // Genuine R112 Gateway fail evidence, owner D1 continuation and native
+      // Rust revocation all belong to the SAME original operational root.
+      // The helper intentionally never claims D1 Runner PASS or PR authority.
+      const handoff=await completeNativeVerifiedFailureHandoff({
+        result,coordinator,sessionId,rootPlanDigest:planDigest,
+        operationalRootId,trustedOwnerRecovery,onPilotPhase
+      });
+      assert.equal(createdPr,null,
+        "Original DAG cannot publish PR after a verified Test FAIL");
+      return handoff;
+    }
+    if(offlineTypecheckProbe){
+      assert.equal(result,null,"Failed DAG must not be accepted");
+      assert.equal((await reader.getBranchMetadata("main")).commit_sha,baseSha);
+      assert.equal((await reader.getBranchMetadata(branch)).commit_sha,
+        runnerOutcome.tested_commit_sha);
+      assert.throws(()=>gateway.prepare({
+        task_id:"after_expected_typecheck_failure",agent_role:"backend",
+        tool:"update_file",arguments:{
+          branch,path:files.backend[0],content:"forbidden"
+        }
+      }),e=>e?.code==="approved_plan_denied");
+      return Object.freeze({
+        status:"expected_typecheck_failure",typecheck_probe_verified:true,
+        signed_test_cross_role_gateway_denials:deniedCrossRoleTestProbes,
+        signed_dag_completed:false,scenario_id:scenarioId,
+        approved_work_branch:branch,real_a2a_sdk:true,
+        a2a_tasks_dispatched:dispatcher.completedTaskIds.length,
+        native_rust_child_credentials:Object.keys(childIds).length,
+        real_gitea:true,live_opa:true,main_unchanged:true,
+        operational_root_revoked:true,pr_created:false,merge_calls:0,
+        source_writes:observedImplementationWriteKeys.size,
+        created_test_files:testCreates,runner_runs:runnerRuns,
+        test_runner_runs:runnerRuns,
+        project_tests:"fail",researcher_acceptance:"skipped",
+        first_failed_phase:"typecheck",
+        typecheck_error_codes:observedTypecheckProbe.codes,
+        typecheck_permission_scope_audit:observedTypecheckProbe.scope,
+        typecheck_revision_comparison:observedTypecheckProbe.revision,
+        typecheck_repair_nomination:observedTypecheckProbe.repairNomination
+      });
+    }
+    if(realGeminiPilot)onPilotPhase?.("result_verification");
+    assert.equal(coordinator.phase,"closed");
+    assert.equal(result.plan_digest,planDigest);
+    assert.deepEqual(
+      new Set(result.completed_task_ids),
+      new Set(signed.plan.tasks.map(t=>t.id))
+    );
+    assert.ok(createdPr,"A signed, provider-confirmed PR must be opened");
+    // F5 acceptance gate: the very same signed real-Gitea/Docker run
+    // must attest F2 -> F3 -> completed Test for every original Task.
+    // Scripted ADK has fixture outputs: this is a TRANSPORT/CONTRACT
+    // proof, never an independently generated software correctness claim.
+    const f5Implementations=dispatcher.verifiedImplementationSummaries;
+    const f5ImplementerTasks=signed.plan.tasks.filter(t=>
+      t.agent_id==="backend"||t.agent_id==="frontend");
+    const f5TestTasks=signed.plan.tasks.filter(t=>t.agent_id==="test");
+    assert.equal(f5Implementations.length,f5ImplementerTasks.length,
+      "F5 every signed implementation must have exact Gateway F2 evidence");
+    assert.deepEqual(
+      [...new Set(f5Implementations.map(x=>x.plan_task_id))].sort(),
+      f5ImplementerTasks.map(x=>x.id).sort()
+    );
+    assert.ok(f5Implementations.every(x=>
+      x.status==="gateway_verified_implementation"&&
+      x.plan_digest===planDigest&&x.branch===branch&&
+      x.session_id===sessionId&&SHA.test(x.revision)&&
+      x.gateway_provider_effect_count>=1&&
+      Array.isArray(x.changed_files)&&x.changed_files.every(file=>
+        SHA.test(file.commit_sha)&&
+        ["update_file","create_file"].includes(file.operation))));
+    assert.equal(f5IntegrationReviewReceipts.length,f5TestTasks.length,
+      "F5 every signed Test must receive an ADK integration review");
+    assert.deepEqual(
+      f5IntegrationReviewReceipts.map(x=>x.taskId).sort(),
+      f5TestTasks.map(x=>x.id).sort()
+    );
+    assert.ok(f5IntegrationReviewReceipts.every(x=>
+      x.planDigest===planDigest&&
+      /^[a-f0-9]{64}$/u.test(x.evidenceDigest)&&
+      x.sourceTaskIds.length>0&&
+      x.sourceTaskIds.every(id=>f5Implementations.some(v=>
+        v.plan_task_id===id))));
+    const f5VerifiedMutations=f5Implementations.reduce(
+      (count,x)=>count+x.changed_files.length,0);
+    assert.ok(f5VerifiedMutations<=32*f5Implementations.length,
+      "F5 bounded verified provider mutation evidence required");
+    if(realGeminiPilot){
+      assert.deepEqual(
+        new Set(result.specialized_results.map(x=>x.role)),new Set(ROLES));
+    }else assert.deepEqual(result.specialized_results.map(x=>x.role),
+      offlineMultiTest?["backend","frontend","test","test"]:ROLES);
+    if(offlineMultiTest){
+      const signedTests=result.specialized_results.filter(x=>x.role==="test");
+      assert.equal(signedTests.length,2);
+      assert.equal(signedTests[0].artifact.test_outcome,"not_run",
+        "Test preparation must not borrow the later Runner permission");
+      assert.equal(signedTests[1].artifact.test_outcome,"pass");
+      assert.ok(childIds["test-preparation"]&&childIds.test);
+      assert.notEqual(childIds["test-preparation"],childIds.test,
+        "Independent signed Test A2A Tasks require distinct Rust child DCs");
+      assert.equal(runnerRuns,2,
+        "Only final Test Task may invoke failed and repaired Docker runs");
+    }
+    for(const role of EDIT_ROLES){
+      // Any actual write must have its own approved source read. A resource
+      // granted for writing may remain untouched by the model.
+      assert.ok([...writePaths[role]].every(path=>readPaths[role].has(path)));
+      assert.ok(reads[role]<=readableFiles[role].length);
+      assert.ok(writes[role]<=files[role].length);
+    }
+    assert.ok(testCalls<=expectedTestWriteKeys.size);
+    assert.ok(observedTestWriteKeys.size<=expectedTestWriteKeys.size);
+    assert.ok(observedImplementationWriteKeys.size<=
+      expectedImplementationWriteKeys.size);
+    assert.ok(testCreates<=approvedTestCreates.length);
+    assert.ok(testUpdates<=approvedTestUpdates.length+(admittedTestEdit?.paths.length??0));
+    assert.ok(testReads<=readableTestFiles.length);
+    if(realGeminiPilot){
+      // Gemini may recover from a real Docker FAIL under the same signed grants.
+      // Final provider-corroborated PASS and exact SHA checks remain mandatory.
+      assert.ok(Number.isSafeInteger(runnerRuns)&&
+        runnerRuns>=1&&runnerRuns<=6,
+        "Live signed Test Tasks require bounded Docker runs");
+    }else assert.equal(runnerRuns,offlineRecovery?2:1);
+    assert.equal(runnerHistory.length,runnerRuns);
+    let failedTestSha=null;
+    if(offlineRecovery){
+      assert.equal(signedTestOutOfScopeDenied,true,
+        "Signed recovery must prove a cross-role repair is refused by Gateway");
+      const [failed,recovered]=runnerHistory;
+      assert.equal(failed.status,"fail",
+        "First signed-DAG run must fail in actual isolated Docker");
+      assert.equal(failed.project_tests?.status,"fail");
+      assert.equal(failed.researcher_acceptance?.status,"skipped");
+      assert.equal(failed.phases.find(p=>p.status==="fail")?.phase,"backend_tests");
+      assert.match(failed.tested_commit_sha,SHA);
+      assert.equal(recovered.status,"pass");
+      assert.equal(recovered.project_tests?.status,"pass");
+      assert.equal(recovered.researcher_acceptance?.status,"pass");
+      assert.notEqual(failed.tested_commit_sha,recovered.tested_commit_sha,
+        "Signed Test repair must produce a new commit before retesting");
+      assert.equal(runnerOutcome.tested_commit_sha,recovered.tested_commit_sha);
+      failedTestSha=failed.tested_commit_sha;
+    }
+    if(!hostModels){
+      assert.equal(models.backend.calls,2*files.backend.length+1);
+      assert.equal(models.frontend.calls,2*files.frontend.length+1);
+      assert.equal(models.test.calls,3);
+    }
+    // R156: repository and Runner FunctionTools have been verified by the
+    // trusted Gateway counters above. Each confirmed operation must still
+    // produce a cryptographic VP via the separate private crypto MCP.
+    if(cryptoMcpEnabled){
+      privateCryptoMcpCalls=servers.reduce((n,server)=>
+        n+(server.cryptoProofCount?.()??0),0);
+      const mandatoryOperations=reads.backend+reads.frontend+
+        writes.backend+writes.frontend+testReads+testCalls+runnerRuns;
+      assert.ok(privateCryptoMcpCalls>=mandatoryOperations,
+        "Every confirmed direct Gateway tool operation requires local crypto MCP");
+    }
+    if(!hostModels)assert.ok(result.specialized_results.every(x=>
+      x.artifact.model_id?.startsWith("offline-signed-approved-plan-")));
+    assert.equal(Object.keys(childIds).length,allSpecialistTaskIds.length);
+    assert.equal(new Set(Object.values(childIds)).size,
+      allSpecialistTaskIds.length,
+      "Every signed specialist Task must receive an independent child DC");
+    const finalTestResult=result.specialized_results.find(x=>
+      x.role==="test"&&x.artifact.test_outcome==="pass");
+    assert.ok(finalTestResult,"Approved final Test Task was not dispatched");
+    assert.equal(finalTestResult.artifact.test_outcome,"pass");
+    assert.equal(finalTestResult.artifact.tested_commit_sha,
+      runnerOutcome.tested_commit_sha);
+    for(const path of expectedExisting){
+      const updated=await reader.readTextFile(branch,path);
+      if(!hostModels){
+        assert.equal(updated.content,referenceFiles[path]);
+      }else{
+        const actuallyWritten=writePaths.backend.has(path)||
+          writePaths.frontend.has(path)||writePaths.test.has(path);
+        if(!actuallyWritten)assert.equal(updated.content,originals[path],
+          "A resource not actually written must remain unchanged");
+        assert.ok(updated.content.length>0);
+      }
+      const unchanged=await reader.readTextFile("main",path,baseSha);
+      assert.equal(unchanged.content,originals[path]);
+    }
+    for(const path of writePaths.test){
+      const savedTest=await reader.readTextFile(branch,path);
+      if(!hostModels)
+        assert.equal(savedTest.content,referenceFiles[path]);
+      else{
+        assert.ok(savedTest.content.length>0);
+        // Commit receipts rather than an assumed textual difference prove
+        // the operation; independent acceptance checks intended behavior.
+      }
+    }
+    const witnessModel=models.frontend instanceof SourceWitnessedOfflineAdkModel
+      ? models.frontend : null;
+    if(witnessModel){
+      const witness=witnessModel.sourceWitness;
+      assert.ok(witness,"Model must have read actual Gitea source before update");
+      assert.equal(witness.branch,branch);
+      assert.ok(files.frontend.includes(witness.path));
+      const sourceDigest=createHash("sha256")
+        .update(originals[witness.path],"utf8").digest("hex");
+      assert.equal(witness.source_sha256,sourceDigest);
+      const stored=await reader.readTextFile(branch,witness.path);
+      assert.ok(stored.content.endsWith(
+        "// block-b-source-read-sha256:"+sourceDigest+"\n"
+      ),"Signed, VP-authorized Gitea update must preserve source witness");
+      assert.ok(readPaths.frontend.has(witness.path));
+      assert.ok(writePaths.frontend.has(witness.path));
+      const api=witnessModel.derivedApiProof;
+      if(api){
+        assert.equal(api.branch,branch);
+        assert.ok(files.frontend.includes(api.path));
+        assert.equal(api.source_sha256,createHash("sha256")
+          .update(originals[api.path],"utf8").digest("hex"));
+        const updated=await reader.readTextFile(branch,api.path);
+        assert.ok(updated.content.includes(
+          "export async function suspendUser(id: string)"));
+        assert.ok(updated.content.includes(
+          "export async function reactivateUser(id: string)"));
+        assert.ok(readPaths.frontend.has(api.path));
+        assert.ok(writePaths.frontend.has(api.path));
+        assert.equal(api.action_count,2);
+      }
+    }
+    const derivedRoutes=models.backend instanceof SourceDerivedRouteOfflineAdkModel
+      ? models.backend : null;
+    if(derivedRoutes){
+      const proof=derivedRoutes.derivedRouteProof;
+      assert.ok(proof,"Route change must originate from a real ADK read");
+      assert.equal(proof.branch,branch);
+      assert.ok(files.backend.includes(proof.path));
+      assert.equal(proof.source_sha256,createHash("sha256")
+        .update(originals[proof.path],"utf8").digest("hex"));
+      const committed=await reader.readTextFile(branch,proof.path);
+      assert.ok(committed.content!==originals[proof.path]);
+      assert.ok(readPaths.backend.has(proof.path));
+      assert.ok(writePaths.backend.has(proof.path));
+      assert.ok(proof.directive_count>=1);
+      const ctrl=derivedRoutes.derivedControllerProof;
+      if(ctrl){
+        assert.equal(ctrl.branch,branch);
+        assert.ok(files.backend.includes(ctrl.path));
+        assert.equal(ctrl.source_sha256,createHash("sha256")
+          .update(originals[ctrl.path],"utf8").digest("hex"));
+        const saved=await reader.readTextFile(branch,ctrl.path);
+        assert.ok(saved.content.includes(
+          "response.json(service.suspendUser(String(request.params.id)))"));
+        assert.ok(saved.content.includes(
+          "response.json(service.reactivateUser(String(request.params.id)))"));
+        assert.ok(saved.content.includes("AccountStatusConflictError"));
+        assert.ok(saved.content.includes('code: "ACCOUNT_STATUS_CONFLICT"'));
+        assert.ok(readPaths.backend.has(ctrl.path));
+        assert.ok(writePaths.backend.has(ctrl.path));
+      }
+      const status=derivedRoutes.derivedStatusProof;
+      if(status){
+        assert.equal(status.branch,branch);
+        assert.ok(files.backend.includes(status.path));
+        assert.equal(status.source_sha256,createHash("sha256")
+          .update(originals[status.path],"utf8").digest("hex"));
+        const actual=await reader.readTextFile(branch,status.path);
+        assert.ok(actual.content.includes(
+          'export type AccountStatus = "ACTIVE" | "SUSPENDED";'));
+        assert.ok(actual.content.includes('  SUSPENDED: "SUSPENDED"'));
+        assert.ok(readPaths.backend.has(status.path));
+        assert.ok(writePaths.backend.has(status.path));
+      }
+    }
+    const head=await reader.getBranchMetadata(branch);
+    assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
+    assert.equal(createdPr.revision,head.commit_sha);
+    // R97.3: independently recover the REAL Runner success from the
+    // Gateway's RETIRED signed Test Task store, not A2A/agent artifacts or
+    // the local runnerOutcome variable. This check is exercised by live
+    // Rust/OPA/Gitea/Docker in the existing no-billing signed DAG CI.
+    // The terminal in-memory Gateway session alone is not proof that the
+    // native Rust operational root and durable owner journal are retired.
+    await coordinator.assertOperationalClosureConfirmed();
+    const signedRunGrant=testGrants.find(g=>g.operation==="run_tests");
+    assert.ok(signedRunGrant);
+    const retiredRunner=approvedPlans.readVerifiedRunnerEffect({
+      session_id:sessionId,task_id:signedRunGrant.task_id,
+      branch,tested_commit_sha:head.commit_sha
+    });
+    assert.equal(retiredRunner.status,"pass");
+    assert.equal(retiredRunner.tested_commit_sha,head.commit_sha);
+    assert.deepEqual(retiredRunner.phases.map(x=>x.phase),
+      runnerOutcome.phases.map(x=>x.phase));
+    assert.ok(retiredRunner.phases.every(x=>x.status==="pass"));
+    assert.equal(retiredRunner.project_tests.status,"pass");
+    assert.equal(retiredRunner.researcher_acceptance.status,"pass");
+    assert.equal((await reader.getBranchMetadata("main")).commit_sha,baseSha);
+    assert.throws(()=>gateway.prepare({
+      task_id:"after_closed",agent_role:"backend",
+      tool:"update_file",arguments:{
+        branch,path:files.backend[0],content:"unapproved"
+      }
+    }),e=>e?.code==="approved_plan_denied");
+    return {
+      status:"pass",signed_dag_completed:true,
+      retired_gateway_runner_proof_verified:true,
+      f5_original_f2_f3_test_handoff_verified:true,
+      f5_f2_implementation_task_count:f5Implementations.length,
+      f5_f2_attested_provider_mutations:f5VerifiedMutations,
+      f5_f3_adk_review_count:f5IntegrationReviewReceipts.length,
+      f5_f3_review_mode:"offline_deterministic_adk_metadata_only",
+      f5_f3_test_brief_structural_only:true,
+      scenario_id:scenarioId,approved_work_branch:branch,
+      completed_task_ids:result.completed_task_ids,
+      real_a2a_sdk:true,
+      a2a_tasks_dispatched:result.specialized_results.length,
+      native_rust_child_credentials:allSpecialistTaskIds.length,
+      native_verifier:true,live_opa:true,real_gitea:true,
+      source_reads:reads.backend+reads.frontend+testReads,
+      source_writes:observedImplementationWriteKeys.size+testUpdates,
+      created_test_files:testCreates,
+      manifest_source:"engineer_signed_approved_plan",
+      test_runner_runs:runnerRuns,
+      recovery_verified:offlineRecovery,
+      multi_test_a2a_independent_authority_verified:offlineMultiTest,
+      test_cross_role_repair_denied:signedTestOutOfScopeDenied,
+      ...(offlineRecovery?{failed_test_sha:failedTestSha}:{}),
+      test_runner_phases:runnerOutcome.phases.map(x=>x.phase),
+      project_tests:runnerOutcome.project_tests.status,
+      researcher_acceptance:runnerOutcome.researcher_acceptance.status,
+      tested_commit_sha:runnerOutcome.tested_commit_sha,
+      main_unchanged:true,operational_root_revoked:true,
+      approved_branch_sha:head.commit_sha,
+      pr_created:true,pull_request_number:createdPr.pull_request_number,
+      pull_request_url:createdPr.url??null,merge_calls:0,
+      adk_agents_executed:3,
+      // Model injection alone does not establish independent code generation.
+      // Scripted ADK instances carry source bytes in their tool-call payloads,
+      // even when the native runner did not receive a referenceFiles argument.
+      scripted_adk_no_paid_model:Object.values(models).every(
+        model=>model instanceof OfflineApprovedAdkModel||
+          model instanceof SourceWitnessedOfflineAdkModel||
+          model instanceof SourceDerivedRouteOfflineAdkModel),
+      model_source:realGeminiPilot
+        ? "real_gemini_four_models_signed_test_approval"
+        : derivedRoutes
+          ? "host_supplied_source_derived_routes_with_remaining_fixtures"
+        : witnessModel
+          ? "host_supplied_hybrid_source_witness_and_fixture"
+        : hostModels
+          ? (Object.values(models).every(model=>
+              model instanceof OfflineApprovedAdkModel)
+              ? "host_supplied_scripted_tool_calls"
+              : "host_supplied_unclassified_adk_models")
+          : "inline_scripted_tool_calls",
+      source_derived_functional_route_verified:derivedRoutes!==null,
+      source_derived_frontend_api_verified:
+        witnessModel?.derivedApiProof!==null&&
+        witnessModel?.derivedApiProof!==undefined,
+      source_derived_controller_verified:derivedRoutes?.derivedControllerProof!==null&&
+        derivedRoutes?.derivedControllerProof!==undefined,
+      source_derived_status_verified:derivedRoutes?.derivedStatusProof!==null&&
+        derivedRoutes?.derivedStatusProof!==undefined,
+      source_derived_functional_file_count:
+        (derivedRoutes?.derivedFileCount??0)+
+        Number(witnessModel?.derivedApiProof!==null&&
+          witnessModel?.derivedApiProof!==undefined),
+      remaining_prepackaged_application_file_count:
+        11-(derivedRoutes?.derivedFileCount??0)-
+          Number(witnessModel?.derivedApiProof!==null&&
+            witnessModel?.derivedApiProof!==undefined),
+      source_witnessed_native_dag_verified:witnessModel!==null,
+      source_witnessed_model_still_uses_fixture_code:witnessModel!==null,
+      fixture_scripted_payloads_reach_adk_runner:Object.values(models).some(
+        model=>model instanceof OfflineApprovedAdkModel),
+      independent_model_software_output_verified:realGeminiPilot,
+      real_gemini_pilot:realGeminiPilot,
+      engineer_review_type:realGeminiPilot
+        ? "signed_test_fixture_not_human":"offline_fixture",
+      approved_shared_mcp_enabled:false,
+      approved_crypto_mcp_enabled:cryptoMcpEnabled,
+      direct_gateway_function_tools_enabled:true,
+      shared_mcp_http_requests:0,
+      private_crypto_mcp_http_requests:0,
+      private_crypto_mcp_local_proofs:privateCryptoMcpCalls,
+      adk_model_turns:{
+        backend:models.backend instanceof OfflineApprovedAdkModel||
+          models.backend instanceof SourceDerivedRouteOfflineAdkModel
+          ?models.backend.calls:null,
+        frontend:models.frontend instanceof OfflineApprovedAdkModel||
+          models.frontend instanceof SourceWitnessedOfflineAdkModel
+          ?models.frontend.calls:null,
+        test:models.test instanceof OfflineApprovedAdkModel
+          ?models.test.calls:null
+      }
+    };
+  }finally{
+    try{
+      for(const server of servers.reverse())await server.close();
+    }finally{
+      await new Promise(resolve=>runnerServer.close(resolve));
+      await rm(runLogs,{recursive:true,force:true});
+    }
+  }
+}

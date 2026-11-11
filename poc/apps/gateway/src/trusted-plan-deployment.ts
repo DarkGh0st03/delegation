@@ -1,0 +1,176 @@
+/**
+ * Opt-in deployed control plane: the real GatewayRuntime shares its approved
+ * plan registry with an authenticated owner-only Unix socket listener.
+ * No public management HTTP endpoints; no fake task-completion attestor.
+ */
+import {readFile,open,lstat} from "node:fs/promises";
+import {dirname,resolve} from "node:path";
+import {constants} from "node:fs";
+import {SignedEngineerApprovalFileStore} from
+  "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
+import {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
+import {GatewayCorroboratedTaskAttestor} from "./trusted-task-observation.ts";
+import {createTrustedPlanIpcServer} from "./trusted-plan-ipc.ts";
+import {TrustedPlanningRevisions} from "./planning-revisions.ts";
+import {TrustedPlanningRetirementStore} from "./trusted-planning-retirement-store.ts";
+import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
+import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayNativeRootStatusReader}
+ from "./trusted-gateway-native-root-status.ts";
+import {TrustedGatewayRootVpVerifier}
+ from "./trusted-root-vp-verification.ts";
+import {TrustedRootVpSocketClient}
+ from "../../../packages/orchestrator-runtime/src/trusted-root-vp-private-ipc.ts";
+import {AdapterVerifierClient} from "./adapter-client.ts";
+import {loadDirectCoreRustVerifier} from "./direct-core-loader.ts";
+import {GiteaClient} from "./gitea-client.ts";
+import type {GatewayRuntimeConfig} from "./config.ts";
+
+const ENV=[
+  "TRUSTED_PLAN_IPC_SOCKET","TRUSTED_PLAN_IPC_SECRET_FILE",
+  "TRUSTED_PLAN_APPROVAL_DIR","TRUSTED_PLAN_ENGINEER_DID",
+  "TRUSTED_PLAN_KEY_ID","TRUSTED_PLAN_PUBLIC_KEY_FILE",
+  "TRUSTED_PLAN_PLANNING_RETIREMENT_DIR",
+  "TRUSTED_PLAN_OPERATIONAL_SESSION_DIR"
+] as const;
+
+async function pinnedPublicKey(path:string):Promise<string>{
+  const full=resolve(path);
+  const dir=await lstat(dirname(full));
+  if(!dir.isDirectory()||dir.isSymbolicLink()||(dir.mode&0o077)!==0){
+    throw Error("Trusted public key directory must be owner-only");
+  }
+  const fd=await open(full,constants.O_RDONLY|constants.O_NOFOLLOW);
+  try{
+    const meta=await fd.stat();
+    if(!meta.isFile()||(meta.mode&0o022)!==0||meta.size>8192||
+       meta.size===0)throw Error("Invalid trusted public key file");
+    return fd.readFile({encoding:"utf8"});
+  }finally{await fd.close();}
+}
+
+export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
+  if(!ENV.some(name=>process.env[name]))return null;
+  // An operationally trusted host MUST NOT run without the independently
+  // authenticated, pinned Gitea Planning registry. In particular the
+  // mock provider is never a substitute for the real read-only root.
+  if(config.provider_mode==="mock"||
+     !config.gitea_base_url||!config.gitea_gateway_token)
+    throw Error("Trusted Gateway Planning requires real authenticated Gitea");
+  if(ENV.some(name=>!process.env[name]?.trim())){
+    throw Error("Incomplete trusted plan IPC configuration; fail closed");
+  }
+  const value=(key:typeof ENV[number])=>process.env[key]!;
+  const engineerDid=value("TRUSTED_PLAN_ENGINEER_DID");
+  const keyId=value("TRUSTED_PLAN_KEY_ID");
+  const publicKey=await pinnedPublicKey(value("TRUSTED_PLAN_PUBLIC_KEY_FILE"));
+  const approvals=new SignedEngineerApprovalFileStore({
+    directory:value("TRUSTED_PLAN_APPROVAL_DIR"),
+    engineerDid,trustedKeys:{
+      [keyId]:{engineer_did:engineerDid,public_key_pem:publicKey}
+    }
+  });
+  // Optional independent Gateway watchdog: this TTL lives in the Gateway
+  // process and does NOT rely on Engineer Node timers for expiry. Admitted
+  // GitHub execution refuses any Gateway without this configured.
+  const leaseRaw=process.env.TRUSTED_PLAN_OPERATIONAL_LEASE_MS;
+  if(leaseRaw!==undefined&&!/^[1-9]\d{3,5}$/u.test(leaseRaw))
+    throw Error("Invalid trusted Gateway operational lease duration");
+  const retirementStore=new TrustedPlanningRetirementStore(
+    value("TRUSTED_PLAN_PLANNING_RETIREMENT_DIR"));
+  // Verify both independently durable Gateway ledgers BEFORE any
+  // private IPC listener or public provider endpoint can start.
+  await retirementStore.assertReady();
+  const operationalSessionStore=new TrustedOperationalSessionStore(
+    value("TRUSTED_PLAN_OPERATIONAL_SESSION_DIR"));
+  await operationalSessionStore.assertReady();
+  const planningRevisions=new TrustedPlanningRevisions(new GiteaClient({
+    baseUrl:config.gitea_base_url,
+    token:config.gitea_gateway_token,
+    owner:config.prepare.repository.owner,
+    repository:config.prepare.repository.repository,
+    timeoutMs:config.gitea_timeout_ms
+  }),{retirementStore});
+  // Optional independently inspected operator-mounted 0700 epoch folder.
+  // This is NOT a native Rust authority source or admitted Gateway intake.
+  const sharedDir=process.env.TRUSTED_PLAN_EPOCH_LEDGER_DIR;
+  const inspectNative=process.env.TRUSTED_PLAN_NATIVE_ROOT_STATUS_INSPECT;
+  const inspectScope=process.env.TRUSTED_PLAN_NATIVE_ROOT_SCOPE_INSPECT;
+  const inspectVp=process.env.TRUSTED_PLAN_NATIVE_ROOT_VP_INSPECT;
+  if(inspectVp!==undefined&&inspectVp!=="1")
+   throw Error("Invalid trusted root VP inspection flag");
+  if(inspectVp==="1"&&(inspectScope!=="1"||
+     !process.env.TRUSTED_PLAN_ROOT_VP_SOCKET||
+     !process.env.TRUSTED_PLAN_ROOT_VP_SECRET_FILE||
+     !process.env.TRUSTED_PLAN_ROOT_VP_AUDIENCE))
+   throw Error("Trusted root VP requires signed issuance scope and private signer IPC");
+  if(inspectScope!==undefined&&inspectScope!=="1")
+   throw Error("Invalid native Rust issued root comparison flag");
+  if(inspectScope==="1"&&(inspectNative!=="1"||
+     !process.env.TRUSTED_PLAN_ORCHESTRATOR_DID?.startsWith("did:")))
+   throw Error("Native issued root scope requires pinned Orchestrator DID and anchored status");
+  if(inspectNative!==undefined&&inspectNative!=="1")
+   throw Error("Invalid native Rust root status inspection flag");
+  const directCore=process.env.ENGINEER_CORE_NATIVE_MODE==="1";
+  // Production Gateway must not silently substitute issuer-proxied
+  // verification or issuer inspection after the Engineer moves to Rust
+  // Node-API. All authorization is still independently checked by Core.
+  if(directCore&&config.verifier_mode!=="core-rust")
+   throw Error("Direct Engineer deployment requires independent Core Rust Gateway verifier");
+  const issuerInspectToken=directCore
+   ?process.env.ADAPTER_CALLER_GATEWAY
+   :config.adapter_gateway_token;
+  const issuerSocket=directCore
+   ?process.env.ADAPTER_ENGINEER_NATIVE_SOCKET
+   :undefined;
+  if(inspectNative==="1"&&(!sharedDir||!issuerInspectToken||
+     (directCore?!issuerSocket:!config.adapter_url)))
+   throw Error("Native root status requires signed epoch journal and authenticated Rust issuer transport");
+  const nativeRootStatus=inspectNative==="1"?
+   new TrustedGatewayNativeRootStatusReader({
+    ...(directCore?{nativeSocketPath:issuerSocket!}:{baseUrl:config.adapter_url!}),
+    gatewayToken:issuerInspectToken!
+   }):undefined;
+  // Gateway holds ONLY a public-only independent Rust VP verifier and
+  // the authenticated root-VP HMAC socket. No issuer signing keys or
+  // privileged Orchestrator bearer are available to the Gateway.
+  const rootVpVerifier=inspectVp==="1"?
+   new TrustedGatewayRootVpVerifier({
+    verifier:directCore
+     ?loadDirectCoreRustVerifier()
+     :new AdapterVerifierClient({
+       baseUrl:config.adapter_url!,gatewayToken:config.adapter_gateway_token!
+      }),
+    signer:await TrustedRootVpSocketClient.connect({
+     socketPath:process.env.TRUSTED_PLAN_ROOT_VP_SOCKET!,
+     secretFile:process.env.TRUSTED_PLAN_ROOT_VP_SECRET_FILE!
+    }),
+    audience:process.env.TRUSTED_PLAN_ROOT_VP_AUDIENCE!
+   }):undefined;
+  const signedEpochInspector=sharedDir?
+    new TrustedGatewaySignedEpochInspector({
+     directory:sharedDir,approvals,
+     ...(nativeRootStatus?{nativeRootStatus}:{}),
+     ...(inspectScope==="1"?{
+      trustedOrchestratorDid:process.env.TRUSTED_PLAN_ORCHESTRATOR_DID!
+     }:{}),
+     ...(rootVpVerifier?{rootVpVerifier}:{})
+    }):undefined;
+  if(signedEpochInspector)await signedEpochInspector.assertReady();
+  const plans=new TrustedApprovedExecutionPlans({
+    repository:config.prepare.repository,engineerDid,approvals,
+    operationalSessionStore,
+    ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),
+    ...(rootVpVerifier?{remoteEpochInspector:signedEpochInspector}:{}),
+    // Gateway independently corroborates private Coordinator observations
+    // using results retained from authorized provider I/O.
+    completionAttestor:new GatewayCorroboratedTaskAttestor()
+  });
+  const ipc=await createTrustedPlanIpcServer({
+    socketPath:value("TRUSTED_PLAN_IPC_SOCKET"),
+    secretFile:value("TRUSTED_PLAN_IPC_SECRET_FILE"),plans,
+    planningRevisions,signedEpochInspector
+  });
+  // SAME instance must be installed into GatewayRuntime.prepare/execute.
+  return {plans,planningRevisions,ipc};
+}

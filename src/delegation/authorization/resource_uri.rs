@@ -36,6 +36,52 @@ impl ResourceUri {
         &self.0
     }
 
+    /// Explicit recursive Gitea directory scope. Other URI kinds retain exact
+    /// matching. Encoded path components are deliberately not expanded here.
+    pub fn contains_resource(&self, child: &Self) -> bool {
+        if self == child {
+            return true;
+        }
+        let Some(parent) = self.gitea_scope() else {
+            return false;
+        };
+        let Some(child) = child.gitea_scope() else {
+            return false;
+        };
+        parent.0 == child.0
+            && parent.1 == "directories"
+            && child.2.len() >= parent.2.len()
+            && parent.2.iter().zip(child.2.iter()).all(|(a, b)| a == b)
+    }
+
+    fn gitea_scope(&self) -> Option<(Vec<&str>, &str, Vec<&str>)> {
+        let rest = self.0.strip_prefix("gitea://")?;
+        let parts: Vec<_> = rest.split('/').collect();
+        if parts.len() < 6 || parts[3] != "branches" {
+            return None;
+        }
+        // Repository identity and branch are compared verbatim. URI aliases
+        // never broaden authority. Reject query/fragment and empty segments.
+        if parts
+            .iter()
+            .any(|p| p.is_empty() || *p == "." || *p == ".." || p.contains(['?', '#', '\\']))
+        {
+            return None;
+        }
+        if parts[5] != "directories" && parts[5] != "files" {
+            return None;
+        }
+        if parts[5] == "files" && parts.len() == 6 {
+            return None;
+        }
+        // Conservative first contract: no percent-encoded path segments.
+        // In particular, encoded separators and dot traversal cannot expand.
+        if parts[6..].iter().any(|p| p.contains('%')) {
+            return None;
+        }
+        Some((parts[..5].to_vec(), parts[5], parts[6..].to_vec()))
+    }
+
     fn is_valid_scheme(scheme: &str) -> bool {
         let mut chars = scheme.chars();
 
@@ -130,6 +176,34 @@ impl<'de> Deserialize<'de> for ResourceUri {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recursive_gitea_scope_respects_component_and_identity_boundaries() {
+        let base = "gitea://gitea.local/thesis/repo/branches/feature%2Fwork";
+        let uri = |suffix: &str| ResourceUri::new(format!("{base}/{suffix}")).unwrap();
+        let scope = uri("directories/apps/backend");
+        assert!(scope.contains_resource(&uri("directories/apps/backend/src")));
+        assert!(scope.contains_resource(&uri("files/apps/backend/src/user.rs")));
+        assert!(uri("directories").contains_resource(&scope));
+        for suffix in [
+            "files/apps/backend-extra/user.rs",
+            "files/apps/backend/../secret",
+            "files/apps/backend/%2E%2E/secret",
+            "files/apps/backend/a%2Fb",
+            "files/apps/backend//user.rs",
+            "files/apps/backend/user.rs?query",
+        ] {
+            assert!(!scope.contains_resource(&uri(suffix)), "{suffix}");
+        }
+        for foreign in [
+            "gitea://other/thesis/repo/branches/feature%2Fwork/files/apps/backend/a",
+            "gitea://gitea.local/thesis/other/branches/feature%2Fwork/files/apps/backend/a",
+            "gitea://gitea.local/thesis/repo/branches/main/files/apps/backend/a",
+        ] {
+            assert!(!scope.contains_resource(&ResourceUri::new(foreign.into()).unwrap()));
+        }
+        assert!(!uri("files/apps/backend").contains_resource(&uri("files/apps/backend/a")));
+    }
 
     #[test]
     fn accepts_absolute_resource_uris() {

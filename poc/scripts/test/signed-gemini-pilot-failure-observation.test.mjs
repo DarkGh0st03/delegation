@@ -1,0 +1,201 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {classifySafeGeminiPilotFailure} from
+  "../signed-gemini-pilot-failure-observation.mjs";
+import {safeNativeDockerFailureDiagnostic} from
+  "../../apps/test-runner-controller/scripts/native-dag-result-diagnostic.mjs";
+import {extractSafeGeminiPilotDockerEvidence} from
+  "../../apps/test-runner-controller/scripts/gemini-pilot-safe-docker-evidence.mjs";
+import {readFileSync} from "node:fs";
+const PHASES=[
+  "dependency_install","typecheck","backend_tests","frontend_tests",
+  "build","playwright_e2e","researcher_acceptance"
+];
+const docker=(failed)=>({
+  status:"fail",first_failed_phase:failed,
+  phases:PHASES.map(p=>({phase:p,status:p===failed?"fail":
+    PHASES.indexOf(p)<PHASES.indexOf(failed)?"pass":"skipped"})),
+  typecheck_error_codes:["TS2304","TS2688"],
+  raw_output:"PRIVATE_TS_SOURCE_DO_NOT_LEAK"
+});
+
+test("Compiler failure is observed but never attributed to Gemini reasoning",()=>{
+  const result=classifySafeGeminiPilotFailure({
+    docker_phase_evidence:docker("typecheck"),
+    gemini_pilot_diagnostic:{
+      stage:"delegated_agents_gitea_docker",category:"unclassified_failure",
+      planning_rejection:{reason:"execution_dag_incompatible"},
+      private_source:"PRIVATE_SOURCE"
+    }
+  });
+  assert.deepEqual(result,{
+    observed_failure:"docker_typecheck_failure",
+    first_failed_phase:"typecheck",
+    causal_attribution:"not_established"
+  });
+  assert.ok(!JSON.stringify(result).includes("PRIVATE"));
+  assert.ok(!JSON.stringify(result).includes("execution_dag_incompatible"));
+});
+test("A later failure phase remains separate from compiler and model attribution",()=>{
+  assert.deepEqual(classifySafeGeminiPilotFailure({
+    docker_phase_evidence:docker("playwright_e2e")
+  }),{
+    observed_failure:"docker_other_phase_failure",
+    first_failed_phase:"playwright_e2e",
+    causal_attribution:"not_established"
+  });
+});
+test("Provider failure and actual Planning rejection use separate observations",()=>{
+  assert.deepEqual(classifySafeGeminiPilotFailure({
+    gemini_pilot_diagnostic:{stage:"gemini_planning",
+      category:"model_provider_failure",model_failure:"quota_or_rate_limit"}
+  }),{
+    observed_failure:"model_provider_failure_reported",
+    model_failure_category:"quota_or_rate_limit",
+    causal_attribution:"not_established"
+  });
+  assert.deepEqual(classifySafeGeminiPilotFailure({
+    gemini_pilot_diagnostic:{stage:"gemini_planning",
+      category:"planner_contract_rejected",
+      planning_rejection:{stage:"contract",reason:"invalid_permissions"}}
+  }),{
+    observed_failure:"planner_contract_rejection_reported",
+    causal_attribution:"not_established"
+  });
+});
+test("A recovered earlier draft rejection is not a new Planning failure",()=>{
+  assert.deepEqual(classifySafeGeminiPilotFailure({
+    gemini_pilot_diagnostic:{stage:"delegated_agents_gitea_docker",
+      category:"unclassified_failure",
+      planning_rejection:{stage:"contract",reason:"execution_dag_incompatible"}}
+  }),{
+    observed_failure:"delegated_execution_failure_unclassified",
+    causal_attribution:"not_established"
+  });
+});
+test("Untrusted and inconsistent phase markers fail closed",()=>{
+  const secret="SENSITIVE_STACK_OR_COMPILER_OUTPUT";
+  const malformed=[
+    {...docker("typecheck"),first_failed_phase:"build"},
+    {...docker("typecheck"),phases:[{phase:secret,status:"fail"}]},
+    {...docker("typecheck"),phases:PHASES.map(p=>({
+      phase:p,status:"skipped"}))},
+    {...docker("typecheck"),status:"success"}
+  ];
+  for(const d of malformed){
+    const result=classifySafeGeminiPilotFailure({
+      docker_phase_evidence:d,
+      gemini_pilot_diagnostic:{stage:"gemini_plan_proposed",
+        category:"unclassified_failure",model_failure:secret}
+    });
+    assert.deepEqual(result,{
+      observed_failure:"failure_without_verified_phase",
+      causal_attribution:"not_established"
+    });
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
+});
+test("Unknown provider error strings never leave failure observation",()=>{
+  const result=classifySafeGeminiPilotFailure({
+    gemini_pilot_diagnostic:{stage:"gemini_planning",
+      category:"model_provider_failure",model_failure:"PRIVATE_EXCEPTION"}
+  });
+  assert.deepEqual(result,{
+    observed_failure:"failure_without_verified_phase",
+    causal_attribution:"not_established"
+  });
+});
+
+test("real Docker marker -> native whitelist -> CI log -> artifact whitelist -> interpretation",()=>{
+  const secret="SECRET_PRIVATE_COMPILER_OUTPUT_AND_SIGNED_VP";
+  const untrusted={
+    status:"fail",project_tests:"fail",researcher_acceptance:"skipped",
+    phases:PHASES.map((phase,i)=>({
+      phase,status:i<1?"pass":i===1?"fail":"skipped",
+      source:secret
+    })),
+    typecheck_error_codes:["TS2304","TS2688"],
+    private_tool_response:secret
+  };
+  const native=safeNativeDockerFailureDiagnostic(
+    "[native-dag-adk] docker_phase_status "+JSON.stringify(untrusted));
+  assert.equal(native?.first_failed_phase,"typecheck");
+  assert.deepEqual(native?.typecheck_error_codes,["TS2304","TS2688"]);
+  assert.ok(!JSON.stringify(native).includes(secret));
+  const wrapped={
+    stage:"signed_dag_disposable_docker_acceptance",
+    ...native,
+    gemini_pilot_diagnostic:{
+      stage:"delegated_agents_gitea_docker",
+      category:"unclassified_failure",
+      planning_rejection:{stage:"contract",reason:"execution_dag_incompatible"}
+    },
+    private_model_text:secret
+  };
+  const log="untrusted model output "+secret+"\n"+
+    "[trusted-positive-ci] native_dag_failure "+JSON.stringify(wrapped)+"\n";
+  const publicDocker=extractSafeGeminiPilotDockerEvidence(log);
+  assert.deepEqual(publicDocker,native);
+  const classification=classifySafeGeminiPilotFailure({
+    docker_phase_evidence:publicDocker,
+    gemini_pilot_diagnostic:wrapped.gemini_pilot_diagnostic
+  });
+  assert.deepEqual(classification,{
+    observed_failure:"docker_typecheck_failure",
+    first_failed_phase:"typecheck",
+    causal_attribution:"not_established"
+  });
+  const artifact=JSON.stringify({
+    docker_phase_evidence:publicDocker,failure_observation:classification
+  });
+  assert.ok(!artifact.includes(secret));
+  assert.ok(!artifact.includes("execution_dag_incompatible"));
+});
+
+// R426: the removed paid workflow no longer hosts a separate public filter.
+// The active native CI path still requires a bounded trusted D1 allowlist.
+test("R426 native D1 milestones remain bounded to original Owner evidence",()=>{
+  const root=new URL("../../../",import.meta.url);
+  const native=readFileSync(new URL("poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs",root),"utf8");
+  const owner=readFileSync(new URL("poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs",root),"utf8");
+  function allowlist(source){
+    const anchor='["not_started"';
+    const start=source.indexOf(anchor);
+    const end=start<0?-1:source.indexOf("].includes(item.delegated_phase)",start);
+    assert.ok(start>=0&&end>start&&end-start<1200,
+      "Trusted delegated-phase allowlist must be an explicit bounded literal");
+    return JSON.parse("["+source.slice(start+1,end)+"]");
+  }
+  const child=allowlist(native);
+  const milestones=["trusted_owner_repair_handoff","d1_repair_planning",
+    "d1_epoch_admitted","d1_editor_preparation",
+    "d1_editor_revision_verified","d1_test_preparation",
+    "d1_test_gateway_confirmed"];
+  for(const phase of milestones){
+    assert.ok(child.includes(phase),"Missing safe D1 phase: "+phase);
+    if(phase!=="trusted_owner_repair_handoff")
+      assert.ok(owner.includes('pilotDelegatedPhase="'+phase+'"'),
+        "Trusted owner does not produce phase: "+phase);
+  }
+  for(const phase of ["d1_feedback_verification","d1_history_verification","d1_discovery",
+    "d1_planner_preflight","d1_scope_selection","d1_model_proposal",
+    "d1_validation_reservation","d1_gateway_admission","d1_admitted_execution"])
+    assert.ok(child.includes(phase),"Missing bounded recovery substep: "+phase);
+  for(const unsafe of ["PRIVATE_SOURCE","model_selected_phase","d1_unknown"])
+    assert.ok(!child.includes(unsafe));
+});
+
+
+test("D1 insufficient evidence preserves original Docker failure without claiming culpability",()=>{
+ const diagnostic={stage:"delegated_agents_gitea_docker",delegated_phase:"d1_scope_selection",
+  category:"repair_insufficient_evidence",detail:"SECRET"};
+ const report=classifySafeGeminiPilotFailure({docker_phase_evidence:docker("backend_tests"),
+  gemini_pilot_diagnostic:diagnostic});
+ assert.deepEqual(report,{observed_failure:"docker_other_phase_failure",first_failed_phase:"backend_tests",
+  recovery_stop:"insufficient_evidence",causal_attribution:"not_established"});
+ assert.equal(classifySafeGeminiPilotFailure({gemini_pilot_diagnostic:diagnostic}).observed_failure,
+  "repair_stopped_insufficient_evidence");
+ for(const bad of [{...diagnostic,stage:"setup"},{...diagnostic,delegated_phase:"d1_editor_preparation"}])
+  assert.equal("recovery_stop" in classifySafeGeminiPilotFailure({gemini_pilot_diagnostic:bad}),false);
+ assert.doesNotMatch(JSON.stringify(report),/SECRET/);
+});

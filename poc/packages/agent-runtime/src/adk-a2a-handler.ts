@@ -10,35 +10,74 @@ import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
+import {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
+import {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
+import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
+ type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
-import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
+import {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
+import { createAdkSpecializedAgent, type AdkControlledToolOutcome,
+ type AdkGenerationConfig,type TrustedAdditionalReadOnlyAdkRole}
+ from "./adk-specialized-agents.ts";
+import {safeSignedTaskRef} from "./signed-task-diagnostic-ref.mjs";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
-import { safeAdkRequestShape } from "./adk-request-shape.ts";
-import {safeAdkResponseShape, type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
+import {safeAdkRequestShape,safeAdkFunctionHistoryShape} from "./adk-request-shape.ts";
+import {safeAdkResponseShape,classifyAdkResponseFailure,
+  type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
 
 type FetchLike = typeof fetch;
+/** Content-free owner observation, NOT model provenance or signed proof. */
+export interface TrustedOriginalModelCallWindow {
+ readonly task_id:string;readonly credential_id:string;
+ readonly runtime_task_id:string;readonly role:"backend"|"frontend"|"test";
+ readonly call_index_before:number;readonly call_index_after:number;
+}
+function originalModelCalls(model:BaseLlm):number{
+ const read=(model as BaseLlm & {
+  publicSummary?:()=>{calls_started?:unknown}
+ }).publicSummary;
+ if(typeof read!=="function")throw Error("Original A2A model call witness NO-GO");
+ const n=read.call(model)?.calls_started;
+ if(typeof n!=="number"||!Number.isSafeInteger(n)||n<0)
+  throw Error("Original A2A model call witness NO-GO");
+ return n;
+}
 
 export interface AdkA2ATaskHandlerConfig {
+  /** Signed Worker startup only; not LLM/A2A-provided role metadata. */
+  trustedAdditionalReadOnlyRole?:TrustedAdditionalReadOnlyAdkRole;
+  /** Owner-only registry of exact A2A Task/Child/operation bindings. */
+  trustedEffectTaskRegistry?:TrustedEffectStagingTaskRegistry;
+  /** Original trusted owner only, emitted after a Gateway-confirmed Task. */
+  trustedOriginalModelCallWindow?:(
+   witness:Readonly<TrustedOriginalModelCallWindow>
+  )=>void|Promise<void>;
+  /** Offline worker only: owner-pinned Task selected by the ORIGINAL
+   * authenticated effect registry, never selected by A2A/model claims. */
+  trustedOriginalWorkerIpcTaskBinding?:(
+    pin:Readonly<{role:"backend"|"frontend"|"test";
+      task_id:string;credential_id:string;runtime_task_id:string}>
+  )=>()=>void;
   model: BaseLlm;
   gatewayBaseUrl: string;
-  adapterBaseUrl: string;
+  /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
+  adapterBaseUrl?: string;
   adapterToken: string;
+  /** Trusted A2A host only; never selected by Task, MCP or ADK. */
+  nativePresentationTransport?: "direct"|"mcp-stdio";
   maxModelTurns?: number;
   maxModelCallMs?: number;
   generateContentConfig?: AdkGenerationConfig;
   scopeModelPaths?: boolean;
   gatewayTimeoutMs?: number;
-  /** Optional shared-MCP spike: trusted Agent worker task registry. */
-  mcpTaskRegistry?: PrivateMcpTaskRegistry;
-  mcpSharedUrl?: string;
-  /** Explicitly opt update_file into MCP; read_file remains the default. */
-  mcpUpdateFile?: boolean;
-  /** Test Agent only: opt-in to MCP create_file for the one allowed E2E path. */
-  mcpCreateFile?: boolean;
-  /** Test Agent only: route controlled run_tests via the shared MCP server. */
-  mcpRunTests?: boolean;
+  /** Private Task signer for one-shot crypto VP proofs; not model tools. */
+  mcpTaskRegistry?:PrivateMcpTaskRegistry;
+  /** Opt-in private Child signer for one exact Gateway-bound Backend read. */
+  trustedBackendDiscovery?:TrustedBackendDiscoveryA2ABinding;
+  /** Trusted Backend host's dynamic, one-use owner-prebound discovery slot. */
+  trustedBackendDiscoverySlot?:TrustedBackendDiscoveryTaskSlot;
   fetchFn?: FetchLike;
 }
 
@@ -59,6 +98,9 @@ class BoundedModel extends BaseLlm {
   budgetExceeded = false;
   effectiveModelVersion: string | null = null;
   providerErrorCategory: AdkFailureCategory | null = null;
+  lastFinishReason:string|null=null;
+  lastHistoryShape={function_call_messages:0,
+    function_call_messages_missing_signature:0};
   providerErrorDiagnostic: AdkSafeFailureDiagnostic | null = null;
   readonly delegate: BaseLlm;
   readonly limit: number;
@@ -87,6 +129,8 @@ class BoundedModel extends BaseLlm {
       throw new Error("ADK model turn budget exhausted");
     }
     this.turns += 1;
+    this.lastFinishReason=null;
+    this.lastHistoryShape=safeAdkFunctionHistoryShape(request);
     // Optional, content-free comparison with the successful Gemini ADK smoke.
     // Never log provider payloads, system prompts, tool schema or evidence.
     // Explicitly disabled for routine scripted and production runs.
@@ -120,7 +164,10 @@ class BoundedModel extends BaseLlm {
           this.effectiveModelVersion = response.modelVersion;
         }
         const responseShape = safeAdkResponseShape(response);
-        if (responseShape.finish_reason !== null) finishReason = responseShape.finish_reason;
+        if (responseShape.finish_reason !== null){
+          finishReason = responseShape.finish_reason;
+          this.lastFinishReason=finishReason;
+        }
         functionCallParts += responseShape.function_call_parts;
         textParts += responseShape.text_parts;
         const usage = response.usageMetadata;
@@ -133,6 +180,12 @@ class BoundedModel extends BaseLlm {
         const maybeThoughts = (usage as {thoughtsTokenCount?: unknown} | undefined)?.thoughtsTokenCount;
         if (typeof maybeThoughts === "number" && Number.isFinite(maybeThoughts))
           thinkingTokens = maybeThoughts;
+        // A provider reply stopped by MAX_TOKENS is incomplete. In particular,
+        // never hand a partially generated functionCall to the ADK tool runner:
+        // that could otherwise execute a side effect before terminal failure
+        // detection. This does not retry a paid request or expand task grants.
+        if (responseShape.finish_reason === "MAX_TOKENS")
+          throw new Error("ADK model output truncated before controlled tool execution");
         yield response;
       }
     } catch (error) {
@@ -164,20 +217,55 @@ class BoundedModel extends BaseLlm {
  */
 export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): DeterministicTaskHandler {
   // Reject bad configuration at server startup, before accepting any requests.
-  if (config.mcpUpdateFile && !config.mcpSharedUrl) {
-    throw new Error("Shared MCP update_file requires MCP to be configured");
-  }
-  if (config.mcpCreateFile && !config.mcpSharedUrl) {
-    throw new Error("Shared MCP create_file requires MCP to be configured");
-  }
-  if (config.mcpRunTests && !config.mcpSharedUrl) {
-    throw new Error("Shared MCP run_tests requires MCP to be configured");
-  }
-  if (Boolean(config.mcpSharedUrl) !== Boolean(config.mcpTaskRegistry)) {
-    throw new Error("Shared MCP requires both a task registry and shared URL");
-  }
-  if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
-    throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
+  // Programmatic users of the ADK handler cannot bypass the A2A host's
+  // private Task registry or authority-only staged owner when using a real
+  // interprocess Rust presentation transport.
+  if(config.nativePresentationTransport==="mcp-stdio"&&(
+       process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+       !config.trustedEffectTaskRegistry||!config.mcpTaskRegistry))
+    throw Error("private_native_mcp_requires_owner_bound_task");
+  if(config.trustedOriginalModelCallWindow&&(
+     !config.trustedEffectTaskRegistry||
+     typeof config.trustedOriginalModelCallWindow!=="function"))
+    throw Error("Original A2A model call witness requires owner-pinned Task registry");
+  if(config.trustedOriginalWorkerIpcTaskBinding&&(
+     !config.trustedEffectTaskRegistry||
+     typeof config.trustedOriginalWorkerIpcTaskBinding!=="function"))
+    throw Error("Original worker model IPC requires owner-pinned Task registry");
+  if(config.trustedBackendDiscovery)
+    validateTrustedBackendDiscoveryA2ABinding(config.trustedBackendDiscovery);
+  if(config.trustedBackendDiscovery&&config.trustedBackendDiscoverySlot)
+    throw Error("Backend discovery cannot have two active signing sources");
+  if(config.trustedBackendDiscoverySlot&&
+     !(config.trustedBackendDiscoverySlot instanceof TrustedBackendDiscoveryTaskSlot))
+    throw Error("Untrusted Backend discovery dynamic slot");
+  if(Object.prototype.hasOwnProperty.call(config,"trustedEffectStager"))
+    throw Error("unscoped_authority_only_effect_stager_retired");
+  if(config.trustedEffectTaskRegistry&&
+     !(config.trustedEffectTaskRegistry instanceof TrustedEffectStagingTaskRegistry))
+    throw Error("Invalid trusted effect Task registry");
+  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"&&
+     !config.trustedEffectTaskRegistry)
+    throw Error("Authority-only ADK requires owner-prebound Task staging registry");
+  // Reject stale JavaScript configurations rather than silently ignoring
+  // authority-bearing options removed from the TypeScript interface.
+  if(["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
+       .some(key=>Object.prototype.hasOwnProperty.call(config,key)))
+    throw Error("legacy_repository_mcp_retired");
+  // Reject even an empty retired field supplied by a stale JavaScript
+  // launcher. The ADK executor has no remote cryptographic MCP transport.
+  if(Object.prototype.hasOwnProperty.call(config,"mcpCryptoUrl"))
+    throw Error("legacy_crypto_http_mcp_retired");
+  // The canonical approved DAG uses only task-local MCP crypto and the
+  // SAME native Rust issuer holding the root/child credential state.
+  // Reject absent native signer and remote MCP configurations at bootstrap.
+  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&(
+       !process.env.ADAPTER_ENGINEER_NATIVE_SOCKET||
+       !config.mcpTaskRegistry))
+    throw Error("Canonical signed A2A requires native Rust and task-local crypto MCP");
+  if (!config.adapterToken?.trim() || !config.gatewayBaseUrl?.trim() ||
+      (process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"&&!config.adapterBaseUrl?.trim())) {
+    throw new Error("ADK protected task handler requires Gateway, role token and an available cryptographic transport");
   }
   const turnLimit = config.maxModelTurns ?? 8;
   const maxModelCallMs = config.maxModelCallMs ?? 60_000;
@@ -201,11 +289,54 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   }
 
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
+    const selectedDiscovery=config.trustedBackendDiscoverySlot
+      ?config.trustedBackendDiscoverySlot.bindingFor(context)
+      :selectTrustedBackendDiscoveryA2A(config.trustedBackendDiscovery,context);
+    // This port is claimed once, before model or FunctionTools can run.
+    // A forged A2A Task fails here without falling back to shared effects.
+    const ownerEffect=config.trustedEffectTaskRegistry?.selectFor(context);
+    let releaseOriginalWorkerIpcTask:(()=>void)|undefined;
+    try{
+    // AFTER the original authenticated owner->agent Task/Child binding
+    // matched the exact A2A context, allow one Task to use the worker model.
+    if(config.trustedOriginalWorkerIpcTaskBinding){
+      if(!ownerEffect||!context.trusted_gateway_task_id||
+         !["backend","frontend","test"].includes(context.role))
+        throw Error("Original worker model IPC Task is not authenticated");
+      releaseOriginalWorkerIpcTask=config.trustedOriginalWorkerIpcTaskBinding(
+        Object.freeze({
+          role:context.role as "backend"|"frontend"|"test",
+          task_id:context.subtask.subtask_id,
+          credential_id:context.delegation_evidence.credential_id,
+          runtime_task_id:context.trusted_gateway_task_id
+        })
+      );
+      if(typeof releaseOriginalWorkerIpcTask!=="function")
+        throw Error("Original worker model IPC Task release missing");
+    }
+    // Signed Task/Child/role/operation pins were already matched by selectFor.
+    const beforeCalls=config.trustedOriginalModelCallWindow
+      ?originalModelCalls(config.model):null;
+    if(config.trustedOriginalModelCallWindow&&!ownerEffect)
+      throw Error("Original A2A model call witness requires a signed Task");
     const taskStart = performance.now();
+    // A signed Test preparation Task may create/update tests without owning
+    // the separate final Docker run_tests grant. Never infer the runner
+    // capability from its Test role or from another Task's permission.
+    const signedTask=context.trusted_gateway_task_id!==undefined&&
+      context.subtask.approved_file_permissions!==undefined;
+    const taskRef=signedTask?safeSignedTaskRef(context.trusted_gateway_task_id):null;
+    // R385.15: a Task with signed file grants receives Runner ONLY when
+    // the original owner explicitly attested run_tests. An omitted flag
+    // cannot create model-visible authority; historical unsigned fixtures
+    // keep the compatibility behavior and Gateway remains authoritative.
+    const mayRunTests=context.role==="test"&&
+      (!signedTask||context.subtask.approved_run_tests===true);
     const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
       (durationMs, inputTokens, outputTokens, thinkingTokens, turn, responseShape) => {
         process.stdout.write(JSON.stringify({
           event:"adk_llm_timing",role:context.role,turn,
+          ...(taskRef?{task_ref:taskRef}:{}),
           duration_ms:durationMs,input_tokens:inputTokens,
           output_tokens:outputTokens,thinking_tokens:thinkingTokens,
           ...responseShape,
@@ -219,40 +350,90 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       adapterBaseUrl: config.adapterBaseUrl,
       adapterToken: config.adapterToken,
       evidence: context.delegation_evidence,
+      // R204: trusted signed Tasks use native Rust issuance when the
+      // shared CryptoRuntime socket is mounted. Native failure is terminal.
+      ...(context.trusted_gateway_task_id&&process.env.ADAPTER_ENGINEER_NATIVE_SOCKET
+        ?{nativeSocketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET}:{}),
+      ...(config.nativePresentationTransport==="mcp-stdio"
+        ?{nativePresentationTransport:"mcp-stdio" as const}:{}),
       ...(signal ? {signal} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
+    // The task-local crypto MCP and direct Gateway client use the SAME
+    // exact-Child presentation. Never fall back to a generic Adapter bearer.
+    const discoveryEvidence=selectedDiscovery?{
+      credentialId:context.delegation_evidence.credential_id,
+      presenterId:context.delegation_evidence.presenter_id,
+      createPresentation:(p:import("./delegation-evidence-handler.ts")
+       .PreparedGatewayAuthorization)=>selectedDiscovery.createSignedPresentation(p)
+    }:undefined;
+    const cryptoPresentation = config.mcpTaskRegistry
+      ? new LocalCryptoMcpBridge({
+          registry:config.mcpTaskRegistry,taskId:context.task_id
+        })
+      : selectedDiscovery;
     const gatewayClient = new GatewayControlledToolClient({
+      ...(ownerEffect?{trustedEffectStager:ownerEffect}:{}),
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
-      taskId: context.task_id,
+      taskId: context.trusted_gateway_task_id??context.task_id,
       evidenceHandler,
+      ...(selectedDiscovery&&config.trustedBackendDiscoverySlot?{
+        onTrustedDiscoveryRead:(result:unknown)=>
+          config.trustedBackendDiscoverySlot!.captureGatewaySource(
+           context.trusted_gateway_task_id!,result)
+      }:{}),
+      ...(signedTask?{
+        approvedDiagnosticReadPaths:context.subtask.approved_file_permissions!
+          .filter(p=>p.operation==="read_file").map(p=>p.path),
+        approvedDiagnosticWritePaths:context.subtask.approved_file_permissions!
+          .filter(p=>p.operation==="update_file").map(p=>p.path)
+      }:{}),
+      ...(cryptoPresentation ? {cryptoPresentation} : {}),
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
-      ...(config.mcpRunTests ? {runnerExecuteTimeoutMs: 960_000} : {}),
+      // Signed Test Tasks invoke Docker through the Gateway FunctionTool.
+      // Timeout does not grant run_tests or widen signed permissions.
+      ...(context.role==="test"&&context.trusted_gateway_task_id
+        ? {runnerExecuteTimeoutMs:960_000} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
     // Gateway client and its private evidence; MCP never receives them.
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
-      {allowUpdateFile: config.mcpUpdateFile === true,
-       allowCreateFile: config.mcpCreateFile === true && context.role==="test",
-       allowRunTests: config.mcpRunTests === true && context.role==="test"});
+      { ...(context.trusted_gateway_task_id
+         ? {
+             allowedPaths:context.subtask.relevant_paths,
+             ...(context.subtask.approved_file_permissions!==undefined
+               ?{approvedBranch:context.subtask.branch}:{}),
+             ...(context.subtask.approved_file_permissions!==undefined
+               ? {allowedFilePermissions:context.subtask.approved_file_permissions}:{})
+           } : {}),
+       evidenceHandler:discoveryEvidence??evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
-      ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
-      ...(config.mcpCreateFile ? {mcpCreateFile:true} : {}),
-      ...(config.mcpRunTests ? {mcpRunTests:true} : {}),
-      ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
-        endpoint:config.mcpSharedUrl,
-        bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)
-      }} : {}),
+      ...(config.trustedAdditionalReadOnlyRole?{
+        trustedAdditionalReadOnlyRole:config.trustedAdditionalReadOnlyRole
+      }:{}),
+      ...(signedTask&&context.role==="test"
+        ?{trustedRunTestsAllowed:mayRunTests}:{}),
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
       ...(config.scopeModelPaths ? {scopeModelPaths: true} : {}),
+      ...(context.trusted_gateway_task_id
+        ? {
+            trustedBranch:context.subtask.branch,
+            trustedTaskPaths:context.subtask.relevant_paths,
+            ...(context.subtask.approved_file_permissions!==undefined
+              ? {trustedFilePermissions:context.subtask.approved_file_permissions}:{})
+          }:{}),
+      ...(taskRef?{diagnosticTaskRef:taskRef}:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });
-    const {agent, mcpToolset} = configured;
-    const appName = "account_suspension_adk_" + context.role;
+    const {agent} = configured;
+    const appName = context.trusted_gateway_task_id &&
+      context.subtask.approved_file_permissions !== undefined
+      ? "delegated_adk_" + context.role
+      : "account_suspension_adk_" + context.role;
     const userId = "delegated_a2a";
     const sessionService = new InMemorySessionService();
     const runner = new Runner({agent, appName, sessionService});
@@ -263,18 +444,34 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const visible = modelVisibleTaskContext(context);
     let eventErrorCategory: AdkFailureCategory | null = null;
     let eventErrorDiagnostic: AdkSafeFailureDiagnostic | null = null;
+    const failForFreshReview=():never=>{
+      // A failure to repair within signed file grants is never a completed
+      // A2A Task, even if the model later emits "done" or tests "passed".
+      process.stderr.write(JSON.stringify({
+        event:"adk_task_outcome",role:context.role,
+        ...(taskRef?{task_ref:taskRef}:{}),
+        category:"repair_requires_new_approval",model_turns:model.turns,
+        ...(progress.typecheckScopeSummary
+          ?{typecheck_scope_summary:progress.typecheckScopeSummary}:{}),
+        ...progress.snapshot()
+      })+"\n");
+      throw new Error("ADK Test repair requires fresh Engineer approval");
+    };
     const reportFailure = (category: AdkFailureCategory, diagnostic: AdkSafeFailureDiagnostic | null): void => {
       // Static labels/counters only. Never log raw error messages, file paths,
       // untrusted LLM text, DC/VP material, task metadata or Gateway tokens.
       process.stderr.write(JSON.stringify({
         event: "adk_safe_diagnostic",
         role: context.role,
+        ...(taskRef?{task_ref:taskRef}:{}),
         category,
         // Numeric HTTP status is present ONLY if supplied as a structured
         // provider field. Textual "503" never becomes http_status=503.
         http_status: diagnostic?.http_status ?? null,
         classification_source: diagnostic?.classification_source ?? "fallback",
         error_type: diagnostic?.error_type ?? "other",
+        invalid_request_cause:diagnostic?.invalid_request_cause ?? null,
+        ...model.lastHistoryShape,
         model_turns: model.turns,
         successful_tools: events.filter(e => e.payload.ok).length,
         rejected_tools: events.filter(e => !e.payload.ok).length,
@@ -297,19 +494,30 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         }
       }
     } catch (error) {
+      if(context.role==="test"&&progress.requiresFreshEngineerApproval)
+        failForFreshReview();
       const diagnostic = model.providerErrorDiagnostic ?? inspectAdkFailure(error);
       const category = model.budgetExceeded ? "model_turn_budget" :
-        model.providerErrorCategory ?? diagnostic.category;
+        classifyAdkResponseFailure(
+          model.providerErrorCategory ?? diagnostic.category,
+          model.lastFinishReason);
       reportFailure(category, model.budgetExceeded ? null : diagnostic);
       throw new Error("ADK protected model failure: " + category);
-    } finally {
-      // ADK holds MCP sessions; release them on success, denial or model failure.
-      await mcpToolset?.close();
     }
-    if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
+    if(context.role==="test"&&progress.requiresFreshEngineerApproval)
+      failForFreshReview();
+    // A final MAX_TOKENS response is incomplete even if ADK ends its run
+    // without an explicit error event. Never attest a read-only revision as
+    // completed implementation after the last model output was truncated.
+    const outputTruncated = model.lastFinishReason === "MAX_TOKENS";
+    if (model.budgetExceeded || model.providerErrorCategory ||
+        eventErrorCategory || outputTruncated) {
       const category = model.budgetExceeded ? "model_turn_budget" :
-        model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error";
-      reportFailure(category, model.budgetExceeded ? null :
+        outputTruncated ? "model_output_truncated" :
+        classifyAdkResponseFailure(
+          model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error",
+          model.lastFinishReason);
+      reportFailure(category, model.budgetExceeded || outputTruncated ? null :
         model.providerErrorDiagnostic ?? eventErrorDiagnostic);
       throw new Error("ADK protected model failure: " + category);
     }
@@ -317,20 +525,44 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const filesModified = new Set<string>();
     const filesCreated = new Set<string>();
     const errors: string[] = [];
+    // R120: a Test FAIL is terminal for this signed Task. Repair requires
+    // a fresh Task/child, never an erasure by later model output.
+    let outstandingTestFailure = false;
     let revision: string | null = null;
+    let readRevision: string | null = null;
+    let conflictingReadRevisions = false;
+    let readEvidenceCount = 0;
     let testedCommitSha: string | undefined;
     let runnerProfile: "poc-default" | undefined;
     let projectTests: "pass" | "fail" | undefined;
     let researcherAcceptance: "pass" | "fail" | "skipped" | undefined;
     for (const event of events) {
       if (!event.payload.ok) {
-        errors.push(event.payload.error.kind);
+        if(event.name==="run_tests"&&
+           event.payload.error.kind==="tests_failed"&&
+           context.role==="test"&&mayRunTests){
+          outstandingTestFailure=true;
+          testedCommitSha=undefined;
+          runnerProfile=undefined;
+          projectTests=undefined;
+          researcherAcceptance=undefined;
+        }else errors.push(event.payload.error.kind);
         continue;
       }
       const result = object(event.payload.result);
       if (!result) {
         if (event.name !== "read_file") errors.push("malformed_tool_result");
         continue;
+      }
+      if (event.name === "read_file") {
+        // Read-only work may complete on the exact, Gateway-proven snapshot.
+        const observed = result.revision;
+        if (typeof observed === "string" && SHA.test(observed)) {
+          if (readRevision !== null && observed !== readRevision)
+            conflictingReadRevisions = true;
+          readRevision = observed;
+          readEvidenceCount++;
+        }
       }
       if (event.name === "update_file" || event.name === "create_file") {
         const path = event.arguments.path;
@@ -358,27 +590,81 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         runnerProfile = "poc-default";
         projectTests = pt;
         researcherAcceptance = ra;
+        // A synthetic later PASS never clears this Task's prior FAIL.
       }
     }
+    if(outstandingTestFailure)errors.push("tests_failed");
+    // Unlike a file mutation, read-only work does not produce a new commit.
+    // It must still return one consistent provider-authenticated revision.
+    if (revision === null && conflictingReadRevisions)
+      errors.push("inconsistent_read_revision");
+    if (revision === null && readEvidenceCount > 0 &&
+        !conflictingReadRevisions) revision = readRevision;
     // Not an acceptable completed A2A task if any controlled tool failed.
     // This also prevents LLM prose from papering over denial or a malformed SHA.
     if (errors.length > 0 || revision === null) {
       // No model text, file names or raw tool errors; only static categories
       // and safe aggregate counts. Fail closed exactly as before.
+      const staticKinds=new Set([
+        "authorization_denied","tests_failed","tool_unavailable",
+        "invalid_tool_call","iteration_limit","invalid_commit_result",
+        "invalid_test_result","malformed_tool_result",
+        "inconsistent_read_revision"
+      ]);
+      const staticTools=new Set([
+        "read_file","update_file","create_file","run_tests"
+      ]);
+      // Safe, file-free diagnostic to distinguish a Gateway refusal from
+      // malformed MCP evidence and a model's invalid tool request. Never
+      // print the original exception, provider payload, paths or credentials.
+      const failedKinds=[...new Set(errors.filter(k=>staticKinds.has(k)))].sort();
+      const failedOperations=[...new Set(events.filter(e=>!e.payload.ok)
+        .map(e=>e.name).filter(name=>staticTools.has(name)))].sort();
       process.stderr.write(JSON.stringify({
         event:"adk_task_outcome",role:context.role,
+        ...(taskRef?{task_ref:taskRef}:{}),
         category:errors.length > 0 ? "controlled_tool_failures" : "no_confirmed_revision",
         model_turns:model.turns,
+        failed_error_kinds:failedKinds,
+        failed_operations:failedOperations,
         ...progress.snapshot()
       }) + "\n");
+    }
+    if(ownerEffect?.stagedTool==="read_then_update"&&ownerEffect.reportNoChange&&
+       errors.length===0&&events.length===1&&readEvidenceCount===1&&
+       events[0]?.name==="read_file"&&!signal?.aborted){
+      await ownerEffect.reportNoChange();
+      throw new Error("ADK specialist ended after read without producing an update");
     }
     if (errors.length > 0) throw new Error("ADK controlled task failed: " + [...new Set(errors)].join(", "));
     if (revision === null) throw new Error("ADK task produced no confirmed repository revision");
 
     const testOutcome = projectTests === "pass" && researcherAcceptance === "pass"
       ? "pass" : (projectTests === "fail" || researcherAcceptance === "fail") ? "fail" : "not_run";
-    if (context.role === "test" && testOutcome !== "pass") {
-      throw new Error("ADK Test Agent requires passing controlled test evidence");
+    if (context.role === "test") {
+      // A write following successful tests invalidates the tested SHA;
+      // functional success cannot attest a newer, untested revision.
+      if(mayRunTests&&testedCommitSha!==undefined&&
+         revision!==testedCommitSha)
+        throw new Error("ADK Test Task changed repository after final Runner");
+      if(mayRunTests && testOutcome !== "pass")
+        throw new Error("ADK signed Test run requires passing controlled test evidence");
+      if(!mayRunTests && (testOutcome!=="not_run"||
+         (filesModified.size+filesCreated.size===0&&readEvidenceCount===0)))
+        throw new Error("ADK Test preparation Task requires verified Gateway file operations without Runner");
+    }
+    if(config.trustedOriginalModelCallWindow){
+      const afterCalls=originalModelCalls(config.model);
+      if(beforeCalls===null||afterCalls<=beforeCalls||
+         afterCalls-beforeCalls!==model.turns)
+        throw Error("Original A2A model call witness NO-GO");
+      await config.trustedOriginalModelCallWindow(Object.freeze({
+       task_id:context.subtask.subtask_id,
+       credential_id:context.delegation_evidence.credential_id,
+       runtime_task_id:context.trusted_gateway_task_id!,
+       role:context.role,call_index_before:beforeCalls,
+       call_index_after:afterCalls
+      }));
     }
     process.stdout.write(JSON.stringify({
       event:"adk_role_timing",role:context.role,
@@ -400,5 +686,16 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(projectTests ? {project_tests: projectTests} : {}),
       ...(researcherAcceptance ? {researcher_acceptance: researcherAcceptance} : {})
     };
+    }finally{
+      // Active-task revocation cannot be inferred from model output.
+      try{releaseOriginalWorkerIpcTask?.();}
+      finally{
+        try{selectedDiscovery?.fence();}
+        finally{
+          if(ownerEffect)
+            config.trustedEffectTaskRegistry!.retireFor(context.trusted_gateway_task_id!);
+        }
+      }
+    }
   };
 }

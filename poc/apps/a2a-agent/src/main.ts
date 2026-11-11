@@ -3,9 +3,14 @@ import {
   createGeminiAdkModel,
   SPECIALIZED_AGENT_ROLES,
   startSpecializedAgentServer,
+  TrustedEffectStagingTaskRegistry,
+  connectTrustedOwnerEffectStagingClient,
+  createTrustedEffectAgentBindingServer,
   type SpecializedAgentRole
 } from "@thesis/agent-runtime";
-import {resolveMcpToolFlags} from "./mcp-tool-flags.ts";
+import {requireProductionDirectGatewayTools,requireProductionNativeCrypto,
+ selectOwnerPrivateNativeMcpSigning} from "./mcp-tool-flags.ts";
+import {generateKeyPairSync} from "node:crypto";
 
 function roleFromEnvironment(value: string | undefined): SpecializedAgentRole {
   if (
@@ -69,6 +74,24 @@ const roleToken = {
   frontend: "ADAPTER_CALLER_FRONTEND",
   test: "ADAPTER_CALLER_TEST"
 }[role];
+const architecture=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+if(architecture!==undefined&&
+   architecture!=="authority-only"&&architecture!=="legacy-signed-dag")
+ throw Error("Unsupported Gateway architecture selector");
+const ownerOnly=architecture==="authority-only";
+// Native MCP signing transport is trusted-host opt-in ONLY. The A2A Task,
+// model and Agent Card cannot choose or broaden this cryptographic path.
+const nativeMcpOptIn=selectOwnerPrivateNativeMcpSigning(
+ process.env,architecture,engine);
+if(ownerOnly&&engine!=="adk")
+ throw Error("Authority-only Task binding requires ADK runtime");
+const effectRegistry=ownerOnly?new TrustedEffectStagingTaskRegistry():undefined;
+const ownerIpcFiles=[
+ "ADK_OWNER_STAGE_SOCKET","ADK_OWNER_STAGE_SECRET_FILE",
+ "ADK_PRIVATE_TASK_BIND_SOCKET","ADK_PRIVATE_TASK_BIND_SECRET_FILE"
+] as const;
+if(!ownerOnly&&ownerIpcFiles.some(name=>process.env[name]!==undefined))
+ throw Error("Private authority-only Task transport cannot run in legacy mode");
 const provider = process.env.ADK_MODEL_PROVIDER ?? "openai";
 if (engine === "adk" && provider !== "openai" && provider !== "gemini") {
   throw new Error("ADK_MODEL_PROVIDER must be openai or gemini");
@@ -82,35 +105,61 @@ const adk = engine === "adk"
           })
         : new OpenAIAdkModel({ apiKey: required("OPENAI_API_KEY") }),
       gatewayBaseUrl: required("GATEWAY_URL"),
-      adapterBaseUrl: required("DELEGATION_ADAPTER_URL"),
+      ...(effectRegistry?{trustedEffectTaskRegistry:effectRegistry}:{}),
+      // One native Rust crypto socket handles Child DC and VP; no Adapter HTTP URL.
       adapterToken: required(roleToken),
+      ...(nativeMcpOptIn
+        ?{nativePresentationTransport:"mcp-stdio" as const}:{}),
       maxModelTurns: turnsFromEnvironment(),
       maxModelCallMs: modelCallTimeoutFromEnvironment(),
       gatewayTimeoutMs: gatewayTimeoutForRole(role)
     }
   : undefined;
 
-// MCP is opt-in. All existing workflows remain on local FunctionTools by default.
-const sharedMcpUrl = process.env.ADK_MCP_SHARED_URL?.trim();
-if (sharedMcpUrl && engine !== "adk") {
-  throw new Error("ADK_MCP_SHARED_URL requires AGENT_RUNTIME_ENGINE=adk");
-}
-function pemSecret(name: string): string {
-  return required(name).replaceAll("\\n", "\n");
-}
-const mcpTaskSigning = sharedMcpUrl
-  ? {signingPrivateKeyPem:pemSecret("MCP_TASK_SIGNING_PRIVATE_KEY"),
-     signingPublicKeyPem:pemSecret("MCP_TASK_SIGNING_PUBLIC_KEY")}
+// Production ADK must use direct Gateway FunctionTools and task-local crypto
+// backed by ONE native Rust issuer; no remote MCP worker or HTTP downgrade.
+requireProductionDirectGatewayTools(process.env);
+requireProductionNativeCrypto(process.env,engine);
+if(engine==="adk")process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+const localKeys=engine==="adk" ? generateKeyPairSync("ed25519") : undefined;
+const mcpTaskSigning=localKeys
+  ? {signingPrivateKeyPem:localKeys.privateKey.export({
+       format:"pem",type:"pkcs8"}).toString(),
+     signingPublicKeyPem:localKeys.publicKey.export({
+       format:"pem",type:"spki"}).toString()}
   : undefined;
-const mcpToolFlags=resolveMcpToolFlags(process.env,role,engine,sharedMcpUrl);
-const runtime = await startSpecializedAgentServer({
+// Owner-provisioned paths point to 0600 secret files in 0700 directories.
+ // Env values select endpoints only: no Task, Child, HEAD or signer is
+ // accepted from environment variables, A2A metadata, MCP or model calls.
+const stageClient=effectRegistry
+ ?await connectTrustedOwnerEffectStagingClient({
+   socketPath:required("ADK_OWNER_STAGE_SOCKET"),
+   secretFile:required("ADK_OWNER_STAGE_SECRET_FILE")
+  }):undefined;
+const bindingServer=effectRegistry&&stageClient
+ ?await createTrustedEffectAgentBindingServer({
+   socketPath:required("ADK_PRIVATE_TASK_BIND_SOCKET"),
+   secretFile:required("ADK_PRIVATE_TASK_BIND_SECRET_FILE"),
+   registry:effectRegistry,ownerStageClient:stageClient,
+   expectedRole:role
+  }):undefined;
+await bindingServer?.start(); // HMAC owner bind ready BEFORE A2A starts
+let runtime:Awaited<ReturnType<typeof startSpecializedAgentServer>>;
+try{
+ runtime=await startSpecializedAgentServer({
   role,
   port,
   host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
-  ...(adk ? { adk: {...adk, ...(sharedMcpUrl ? {mcpSharedUrl:sharedMcpUrl} : {}),
-    ...mcpToolFlags} } : {}),
-  ...(mcpTaskSigning ? {mcpTaskSigning} : {})
-});
+  ...(adk ? { adk } : {}),
+  ...(mcpTaskSigning ? {mcpTaskSigning} : {}),
+  // The canonical Agent Card DID must equal the role's actual native
+  // Rust signer DID, never the old synthetic Agent Card identity.
+  ...(ownerOnly?{nativeSignerDid:required("ADAPTER_ID_"+role.toUpperCase())}:{})
+ });
+}catch(error){
+ await bindingServer?.close(); // close and fence pending Task pins
+ throw error;
+}
 
 process.stdout.write(
   JSON.stringify({
@@ -123,8 +172,10 @@ process.stdout.write(
 );
 
 async function shutdown(): Promise<void> {
-  await runtime.close();
-  process.exit(0);
+  const result=await Promise.allSettled([
+    runtime.close(),bindingServer?.close()
+  ]);
+  process.exit(result.some(r=>r.status==="rejected")?1:0);
 }
 
 process.on("SIGTERM", () => void shutdown());

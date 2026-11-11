@@ -2,6 +2,7 @@ export * from "./specialized-agents.ts";
 export * from "./tool-registry.ts";
 export * from "./llm-client.ts";
 export * from "./gateway-tool-client.ts";
+export type {CryptoPresentationPort} from "./crypto-presentation-port.ts";
 export * from "./delegation-evidence-handler.ts";
 export * from "./controlled-errors.ts";
 export * from "./agent-controller.ts";
@@ -17,3 +18,21 @@ export * from "./adk-a2a-handler.ts";
 export * from "./openai-adk-model.ts";
 export * from "./gemini-adk-model.ts";
 export { BaseLlm } from "@google/adk";
+export {TrustedBackendDiscoveryCryptoPresentation} from "./trusted-backend-discovery-crypto-presentation.ts";
+export {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A} from "./trusted-backend-discovery-a2a-binding.ts";
+export {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
+export {createTrustedBackendDiscoveryTaskBindingServer,TrustedBackendDiscoveryTaskBindingSocketClient} from "./trusted-backend-discovery-task-binding-ipc.ts";
+
+export {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host.ts";
+
+export {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
+
+export {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
+
+export {
+ TrustedOwnerEffectStagingRegistry,
+ createTrustedOwnerEffectStagingServer,
+ connectTrustedOwnerEffectStagingClient,
+ createTrustedEffectAgentBindingServer,
+ connectTrustedEffectAgentBindingClient
+} from "./trusted-effect-staging-unix-ipc.ts";

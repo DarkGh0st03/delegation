@@ -11,13 +11,16 @@ import {
   type LlmResponse
 } from "@google/adk";
 import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
+import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "../src/approved-specialized-profiles.ts";
+import {createSpecializedAgentCard} from "../src/cards.ts";
 import {
   ControlledToolError,
   createAdkSpecializedAgent,
   SPECIALIZED_AGENT_PROFILES,
   type SpecializedAgentRole
 } from "../src/index.ts";
-import type {AdkGenerationConfig} from "../src/adk-specialized-agents.ts";
+import {safeMcpToolTiming,
+  type AdkGenerationConfig} from "../src/adk-specialized-agents.ts";
 
 const BRANCH = "feature/account-suspension";
 const PATHS: Record<SpecializedAgentRole, string> = {
@@ -53,7 +56,7 @@ class ScriptedAdkLlm extends BaseLlm {
 async function exercise(role: SpecializedAgentRole, tool: string, args: Record<string, unknown>,
   invoke: (name: string, args: Record<string, unknown>) => Promise<unknown>,
   generateContentConfig?: AdkGenerationConfig,
-  scopeModelPaths = false) {
+  scopeModelPaths = false, trustedBranch?:string) {
   const model = new ScriptedAdkLlm(tool, args);
   const calls: Array<{name:string; args:Record<string,unknown>}> = [];
   const gatewayClient = {
@@ -67,7 +70,8 @@ async function exercise(role: SpecializedAgentRole, tool: string, args: Record<s
   const built = createAdkSpecializedAgent({
     role, model, gatewayClient: gatewayClient as never,
     ...(generateContentConfig ? {generateContentConfig} : {}),
-    ...(scopeModelPaths ? {scopeModelPaths: true} : {})
+    ...(scopeModelPaths ? {scopeModelPaths: true} : {}),
+    ...(trustedBranch?{trustedBranch}:{})
   });
   const sessionService = new InMemorySessionService();
   const appName = "thesis_phase2_adk_" + role;
@@ -80,7 +84,7 @@ async function exercise(role: SpecializedAgentRole, tool: string, args: Record<s
     userId,sessionId,
     newMessage: {role:"user",parts:[{text:JSON.stringify({
       task_id:"phase2-task",role,subtask:{
-        instruction:"Inspect permitted file",branch:BRANCH,
+        instruction:"Inspect permitted file",branch:trustedBranch??BRANCH,
         relevant_paths:[PATHS[role]]
       }
     })}]}
@@ -327,21 +331,582 @@ test("32,000-token Gemini 3.8 LOW budget reaches each role's native ADK requests
   }
 });
 
-test("MCP-enabled Test Agent exposes run_tests once as a controlled FunctionTool",()=>{
-  // Check the ADK tool registry, not source-file spelling/formatting.
-  // The separate timeout tests verify the MCP SDK request options.
+test("R195 Test Agent has exactly one direct Gateway run_tests FunctionTool",()=>{
+ const built=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("run_tests",{
+     branch:BRANCH,profile:"poc-default"
+   }),gatewayClient:{invoke:async()=>({})} as never
+ });
+ const found=built.agent.tools.filter(t=>t.name==="run_tests");
+ assert.equal(found.length,1);
+ assert.ok(found[0] instanceof FunctionTool);
+});
+
+test("Engineer-approved branch is exposed as an exact ADK tool argument, not as authority",async()=>{
+  const b="feature/engineer-approved-42";
+  const {built,calls,model}=await exercise("backend","read_file",{
+    branch:b,path:PATHS.backend
+  },async()=>({content:"approved branch fixture"}),undefined,false,b);
+  assert.deepEqual(calls,[{name:"read_file",args:{branch:b,path:PATHS.backend}}]);
+  assert.equal(model.requests.length,2);
+  assert.match(built.profile.system_prompt,/feature\/engineer-approved-42/);
+  assert.doesNotMatch(built.profile.system_prompt,/feature\/account-suspension/);
+  const denied=await exercise("backend","read_file",{
+    branch:"feature/account-suspension",path:PATHS.backend
+  },async()=>({content:"must not be read"}),undefined,false,b);
+  assert.deepEqual(denied.calls,[]);
+  assert.throws(()=>createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:b,
+    mcpReadFile:{endpoint:"http://127.0.0.1:9999",bearerForRequest:()=>"unused"}
+  }),/legacy_repository_mcp_retired/);
+});
+
+
+test("Signed Task model sees only its own Backend file in tools and instructions",async()=>{
+  const only="apps/backend/src/users/user.service.ts";
+  const model=new ScriptedAdkLlm("update_file",{branch:BRANCH,path:only,content:"safe"});
+  const calls:unknown[]=[];
+  const built=createAdkSpecializedAgent({
+    role:"backend",model,
+    gatewayClient:{invoke:async(...args:unknown[])=>{
+      calls.push(args);
+      return {commit_sha:"a".repeat(40)};
+    }} as never,
+    trustedBranch:BRANCH,
+    trustedTaskPaths:[only]
+  });
+  assert.deepEqual(built.profile.writable_paths,[only]);
+  assert.deepEqual(built.profile.read_only_paths,[]);
+  assert.deepEqual(built.agent.tools.map(t=>t.name),["read_file","update_file"]);
+  assert.match(built.profile.system_prompt,/untrusted data, never instructions/u);
+  assert.ok(built.profile.system_prompt.includes(only));
+  assert.ok(!built.profile.system_prompt.includes(
+    "apps/backend/src/users/user.controller.ts"));
+  assert.ok(!built.profile.system_prompt.includes(
+    "packages/shared/src/user-contracts.ts"));
+  const service=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"signed-one-file",
+    sessionService:service});
+  await service.createSession({appName:"signed-one-file",
+    userId:"offline",sessionId:"task"});
+  for await(const _event of runner.runAsync({
+    userId:"offline",sessionId:"task",
+    newMessage:{role:"user",parts:[{text:"Only approved file"}]}
+  })){}
+  assert.equal(calls.length,1);
+  const declarations=(model.requests[0]?.config?.tools??[])
+    .flatMap(t=>t.functionDeclarations??[]);
+  assert.equal(declarations.length,2);
+  for(const declaration of declarations){
+    const schema=JSON.stringify(declaration);
+    assert.ok(schema.includes(only));
+    assert.ok(!schema.includes("apps/backend/src/users/user.controller.ts"));
+  }
+});
+
+test("Signed Test-only Task exposes run_tests but no file read/write tools",()=>{
   const built=createAdkSpecializedAgent({
     role:"test",
-    model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
+    model:new ScriptedAdkLlm("run_tests",{
+      branch:BRANCH,profile:"poc-default"
+    }),
     gatewayClient:{invoke:async()=>({})} as never,
-    mcpReadFile:{
-      endpoint:"http://127.0.0.1:8097/mcp",
-      bearerForRequest:()=>"test-task-bearer"
-    },
-    mcpRunTests:true
+    trustedBranch:BRANCH,
+    trustedTaskPaths:[]
   });
-  assert.ok(built.mcpToolset);
-  const bounded= built.agent.tools.filter(tool=>tool.name==="run_tests");
-  assert.equal(bounded.length,1);
-  assert.ok(bounded[0] instanceof FunctionTool);
+  assert.deepEqual(built.agent.tools.map(x=>x.name),["run_tests"]);
+  assert.deepEqual(built.profile.writable_paths,[]);
+  assert.deepEqual(built.profile.creatable_paths,[]);
+  assert.deepEqual(built.profile.read_only_paths,[]);
+  assert.doesNotMatch(built.profile.system_prompt,
+    /tests\/backend\/user\.service\.test\.ts/u);
+});
+
+test("R195 signed Test preparation cannot call Docker until fresh authorization",()=>{
+ const path="apps/backend/tests/account-suspension.test.ts";
+ const pending=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("create_file",{
+     branch:BRANCH,path,content:"test content"
+   }),gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:BRANCH,trustedTaskPaths:[path],
+   trustedFilePermissions:[{operation:"create_file",path}],
+   trustedRunTestsAllowed:false
+ });
+ assert.deepEqual(pending.agent.tools.map(t=>t.name),["create_file"]);
+ assert.ok(pending.profile.system_prompt.includes("cannot invoke run_tests"));
+ const final=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("run_tests",{
+     branch:BRANCH,profile:"poc-default"
+   }),gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:BRANCH,trustedTaskPaths:[],
+   trustedFilePermissions:[],trustedRunTestsAllowed:true
+ });
+ assert.deepEqual(final.agent.tools.map(t=>t.name),["run_tests"]);
+});
+
+test("Signed role refuses path not included in its Task-scoped tool enum",async()=>{
+  const permitted="apps/backend/src/users/user.service.ts";
+  const other="apps/backend/src/users/user.controller.ts";
+  const model=new ScriptedAdkLlm("update_file",{
+    branch:BRANCH,path:other,content:"not approved"
+  });
+  let gatewayCalls=0;
+  const built=createAdkSpecializedAgent({
+    role:"backend",model,
+    gatewayClient:{invoke:async()=>{
+      gatewayCalls++;
+      return {commit_sha:"a".repeat(40)};
+    }} as never,
+    trustedTaskPaths:[permitted]
+  });
+  const svc=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"scoped-denial",sessionService:svc});
+  await svc.createSession({appName:"scoped-denial",userId:"u",sessionId:"s"});
+  for await(const _event of runner.runAsync({userId:"u",sessionId:"s",
+    newMessage:{role:"user",parts:[{text:"Use only approved file"}]}
+  })){}
+  assert.equal(gatewayCalls,0);
+});
+
+test("R195 signed path hints stay strict and obsolete MCP options fail closed",()=>{
+ const make=(paths:readonly string[])=>createAdkSpecializedAgent({
+   role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+   gatewayClient:{invoke:async()=>({})} as never,
+   trustedTaskPaths:paths
+ });
+ for(const invalid of ["../secret.ts","/tmp/secret","apps//thing.ts",
+   "apps/file\u0000.ts","apps\\secret.ts","apps/./secret.ts"," apps/file.ts"])
+  assert.throws(()=>make([invalid]),/Invalid private approved Task path hints/u);
+ const signed=make(["apps/backend/src/users/user.service.ts"]);
+ assert.deepEqual(signed.agent.tools.map(t=>t.name),["read_file","update_file"]);
+ assert.throws(()=>createAdkSpecializedAgent({
+   role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+   gatewayClient:{invoke:async()=>({})} as never,
+   mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",bearerForRequest:()=>"x"}
+ } as never),/legacy_repository_mcp_retired/);
+});
+
+test("R195 signed Test-only Task exposes only direct run_tests",()=>{
+ const built=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("run_tests",{
+     branch:BRANCH,profile:"poc-default"
+   }),gatewayClient:{invoke:async()=>({})} as never,
+   trustedTaskPaths:[]
+ });
+ assert.deepEqual(built.agent.tools.map(t=>t.name),["run_tests"]);
+ assert.ok(built.agent.tools[0] instanceof FunctionTool);
+});
+
+test("Approved read-only context cannot become a write tool, even for a normally writable role file",async()=>{
+ const target="apps/backend/src/users/user.service.ts";
+ const context="apps/backend/src/users/user.controller.ts";
+ const fileRights=[
+   {operation:"read_file" as const,path:target},
+   {operation:"update_file" as const,path:target},
+   {operation:"read_file" as const,path:context}
+ ];
+ const model=new ScriptedAdkLlm("update_file",{
+   branch:BRANCH,path:context,content:"unexpected write"
+ });
+ let calls=0;
+ const built=createAdkSpecializedAgent({
+   role:"backend",model,
+   gatewayClient:{invoke:async()=>{calls++;return {commit_sha:"a".repeat(40)};}} as never,
+   trustedTaskPaths:[target,context],trustedFilePermissions:fileRights
+ });
+ assert.deepEqual(built.profile.writable_paths,[target]);
+ assert.deepEqual(built.profile.read_only_paths,[context]);
+ assert.ok(built.profile.system_prompt.includes("- "+context));
+ const svc=new InMemorySessionService();
+ const runner=new Runner({agent:built.agent,appName:"signed-read-context",sessionService:svc});
+ await svc.createSession({appName:"signed-read-context",userId:"u",sessionId:"s"});
+ for await(const _event of runner.runAsync({userId:"u",sessionId:"s",
+   newMessage:{role:"user",parts:[{text:"Read context, write only approved target"}]}
+ })){}
+ assert.equal(calls,0);
+ const declarations=(model.requests[0]?.config?.tools??[])
+   .flatMap(t=>t.functionDeclarations??[]);
+ const r=JSON.stringify(declarations.find(t=>t.name==="read_file"));
+ const w=JSON.stringify(declarations.find(t=>t.name==="update_file"));
+ assert.ok(r.includes(target)&&r.includes(context));
+ assert.ok(w.includes(target)&&!w.includes(context));
+});
+
+test("Approved write alone does not imply read permission; unsupported grants cannot broaden profile",()=>{
+ const target="apps/backend/src/users/user.service.ts";
+ const make=(rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>)=>
+   createAdkSpecializedAgent({
+     role:"backend",
+     model:new ScriptedAdkLlm("update_file",{branch:BRANCH,path:target,content:"ok"}),
+     gatewayClient:{invoke:async()=>({commit_sha:"a".repeat(40)})} as never,
+     trustedTaskPaths:[target],trustedFilePermissions:rights
+   });
+ const writeOnly=make([{operation:"update_file",path:target}]);
+ assert.deepEqual(writeOnly.agent.tools.map(t=>t.name),["update_file"]);
+ assert.deepEqual(writeOnly.profile.read_only_paths,[]);
+ const readOnly=make([{operation:"read_file",path:target}]);
+ assert.deepEqual(readOnly.agent.tools.map(t=>t.name),["read_file"]);
+ assert.deepEqual(readOnly.profile.writable_paths,[]);
+ assert.throws(()=>make([{operation:"read_file",path:"apps/backend/src/users/other.ts"}]),
+   /Invalid signed Task operation-specific file hints/);
+ assert.throws(()=>make([{operation:"read_file",path:target},
+   {operation:"read_file",path:target}]),/Duplicate signed Task file operation/);
+});
+
+
+test("Signed Backend plan on an unrelated repository is scoped by exact permissions, not demo files",async()=>{
+  const branch="feature/invoice-review";
+  const target="services/billing/src/invoice.ts";
+  const context="packages/domain/src/money.ts";
+  const model=new ScriptedAdkLlm("read_file",{branch,path:context});
+  const calls:Array<{name:string;args:Record<string,unknown>}>=[];
+  const built=createAdkSpecializedAgent({
+    role:"backend",model,
+    gatewayClient:{invoke:async(name:string,args:Record<string,unknown>)=>{
+      calls.push({name,args});
+      return {provider:"gitea",content:"export const cents = 100;"};
+    }} as never,
+    trustedBranch:branch,
+    trustedTaskPaths:[target,context],
+    trustedFilePermissions:[
+      {operation:"read_file",path:target},
+      {operation:"update_file",path:target},
+      {operation:"read_file",path:context}
+    ]
+  });
+  assert.equal(built.agent.name,"delegated_backend");
+  assert.deepEqual(built.profile.writable_paths,[target]);
+  assert.deepEqual(built.profile.read_only_paths,[context]);
+  assert.deepEqual(built.agent.tools.map(x=>x.name),["read_file","update_file"]);
+  assert.ok(built.profile.system_prompt.includes(branch));
+  assert.match(built.profile.system_prompt,
+    /Before every update_file, first call read_file for that exact existing path in this same Task/u);
+  assert.match(built.profile.system_prompt,
+    /A read from a previous Task is not evidence for this Task/u);
+  assert.match(built.profile.system_prompt,
+    /If that read is not authorized, fails, or the source is unavailable, do not attempt to write/u);
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
+  assert.ok(!built.profile.system_prompt.includes("apps/backend/src/users/user.service.ts"));
+  const service=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"other-repository",
+    sessionService:service});
+  await service.createSession({appName:"other-repository",userId:"u",sessionId:"s"});
+  for await(const _ of runner.runAsync({userId:"u",sessionId:"s",
+    newMessage:{role:"user",parts:[{text:"Inspect approved billing context"}]}
+  })){}
+  assert.deepEqual(calls,[{name:"read_file",args:{branch,path:context}}]);
+  const declarations=(model.requests[0]?.config?.tools??[])
+    .flatMap(x=>x.functionDeclarations??[]);
+  const read=JSON.stringify(declarations.find(x=>x.name==="read_file"));
+  const write=JSON.stringify(declarations.find(x=>x.name==="update_file"));
+  assert.ok(read.includes(target)&&read.includes(context));
+  assert.ok(write.includes(target)&&!write.includes(context));
+  assert.ok(!read.includes("apps/backend/src/users/user.controller.ts"));
+});
+
+test("Signed non-demo Frontend read grant never permits a write to its context",async()=>{
+  const branch="feature/invoice-review";
+  const context="web/src/api/billing-client.ts";
+  const target="web/src/views/InvoiceView.tsx";
+  let calls=0;
+  const model=new ScriptedAdkLlm("update_file",{
+    branch,path:context,content:"unapproved"
+  });
+  const built=createAdkSpecializedAgent({
+    role:"frontend",model,
+    gatewayClient:{invoke:async()=>{calls++;return {commit_sha:"a".repeat(40)};}} as never,
+    trustedBranch:branch,
+    trustedTaskPaths:[target,context],
+    trustedFilePermissions:[
+      {operation:"read_file",path:context},
+      {operation:"update_file",path:target}
+    ]
+  });
+  assert.deepEqual(built.profile.read_only_paths,[context]);
+  assert.deepEqual(built.profile.writable_paths,[target]);
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension/u);
+  const service=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"signed-frontend",
+    sessionService:service});
+  await service.createSession({appName:"signed-frontend",userId:"u",sessionId:"s"});
+  for await(const _ of runner.runAsync({userId:"u",sessionId:"s",
+    newMessage:{role:"user",parts:[{text:"Use only approved files"}]}
+  })){}
+  assert.equal(calls,0);
+});
+
+test("Signed Test Task may create a newly approved test path without expanding its tools",()=>{
+  const path="spec/invoices/invoice-flow.spec.ts";
+  const branch="feature/invoice-review";
+  const built=createAdkSpecializedAgent({
+    role:"test",model:new ScriptedAdkLlm("create_file",{
+      branch,path,content:"test('example', () => {});"
+    }),
+    gatewayClient:{invoke:async()=>({commit_sha:"a".repeat(40)})} as never,
+    trustedBranch:branch,
+    trustedTaskPaths:[path],
+    trustedFilePermissions:[{operation:"create_file",path}]
+  });
+  assert.deepEqual(built.agent.tools.map(x=>x.name),["create_file"]);
+  assert.deepEqual(built.profile.creatable_paths,[path]);
+  assert.deepEqual(built.profile.read_only_paths,[]);
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension/u);
+  assert.equal(built.agent.name,"delegated_test");
+});
+
+test("Unsigned A2A path hints still cannot expand Account Suspension static role file list",()=>{
+  const foreign="services/billing/src/invoice.ts";
+  const built=createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedTaskPaths:[foreign]
+  });
+  assert.deepEqual(built.agent.tools.map(x=>x.name),[]);
+  assert.deepEqual(built.profile.writable_paths,[]);
+  assert.ok(built.profile.system_prompt.includes("Account Suspension"));
+  assert.throws(()=>createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedFilePermissions:[{operation:"read_file",path:foreign}]
+  }),/Invalid signed Task operation-specific file hints/);
+});
+
+test("R195 dynamic-branch Gateway FunctionTools follow signed grants",()=>{
+ const branch="feature/invoice-sort",path="src/billing/invoice.ts";
+ const built=createAdkSpecializedAgent({
+   role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+   gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:branch,trustedTaskPaths:[path],
+   trustedFilePermissions:[{operation:"read_file",path},{operation:"update_file",path}]
+ });
+ assert.deepEqual(built.agent.tools.map(t=>t.name),["read_file","update_file"]);
+ assert.deepEqual(built.profile.read_only_paths,[]);
+ assert.deepEqual(built.profile.writable_paths,[path]);
+ assert.equal(built.agent.name,"delegated_backend");
+ assert.match(built.profile.system_prompt,/feature\/invoice-sort/);
+ assert.doesNotMatch(built.profile.system_prompt,/account suspension/i);
+});
+
+test("shared MCP ADK tool telemetry keeps only role, operation and outcome",()=>{
+  const secret="NO_PRIVATE_FILE_CONTENT_OR_SIGNED_VP";
+  const accepted=safeMcpToolTiming("backend","read_file",{
+    ok:true,result:{content:secret,branch:secret,path:secret}
+  });
+  assert.deepEqual(accepted,{
+    event:"adk_tool_timing",role:"backend",tool:"read_file",
+    success:true,error_kind:null,duration_ms:null
+  });
+  const denied=safeMcpToolTiming("backend","update_file",{
+    ok:false,error:{kind:"authorization_denied",message:secret,details:secret}
+  });
+  assert.deepEqual(denied,{
+    event:"adk_tool_timing",role:"backend",tool:"update_file",
+    success:false,error_kind:"authorization_denied",duration_ms:null
+  });
+  assert.ok(!JSON.stringify({accepted,denied}).includes(secret));
+  assert.ok(Object.isFrozen(denied));
+});
+
+test("Signed implementation Tasks include generic type-safety self-review without expanding grants",()=>{
+  const branch="feature/type-safe-contract-review";
+  const file="src/components/StatusPanel.tsx";
+  const rights=[
+    {operation:"read_file" as const,path:file},
+    {operation:"update_file" as const,path:file}
+  ];
+  for(const role of ["backend","frontend"] as const){
+    const built=createAdkSpecializedAgent({
+      role,model:new ScriptedAdkLlm("read_file",{branch,path:file}),
+      gatewayClient:{invoke:async()=>({})} as never,
+      trustedBranch:branch,trustedTaskPaths:[file],
+      trustedFilePermissions:rights
+    });
+    const prompt=built.profile.system_prompt;
+    assert.match(prompt,/known union\/enum literal values/u);
+    assert.match(prompt,/mutually exclusive types/u);
+    assert.match(prompt,/Do not guess a type, imported symbol, or status literal/u);
+    assert.match(prompt,/not a claim that the project typecheck or tests passed/u);
+    assert.deepEqual(built.profile.writable_paths,[file]);
+    assert.deepEqual(built.profile.read_only_paths,[]);
+    assert.deepEqual(built.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
+    assert.doesNotMatch(prompt,/Account Suspension/u);
+  }
+  const testAgent=createAdkSpecializedAgent({
+    role:"test",model:new ScriptedAdkLlm("run_tests",{branch,profile:"poc-default"}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:branch,trustedTaskPaths:[],
+    trustedFilePermissions:[],trustedRunTestsAllowed:true
+  });
+  assert.doesNotMatch(testAgent.profile.system_prompt,/known union\/enum literal values/u);
+  assert.deepEqual(testAgent.agent.tools.map(tool=>tool.name),["run_tests"]);
+});
+
+test("R157 signed A2A Agent capabilities use generic role tools, not demo path templates",()=>{
+ const target="services/reviews/src/review.ts";
+ const signed=({role,rights}:{role:SpecializedAgentRole;
+  rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>})=>
+  createAdkSpecializedAgent({
+   role,model:new ScriptedAdkLlm("read_file",{
+    branch:"feature/review-queue",path:target
+   }),
+   gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:"feature/review-queue",
+   trustedTaskPaths:[target],
+   trustedFilePermissions:rights
+  });
+ for(const role of ["backend","frontend"] as const){
+  const built=signed({role,rights:[{operation:"read_file",path:target},
+   {operation:"update_file",path:target}]});
+  assert.deepEqual(built.profile.tools,["read_file","update_file","create_file"]);
+  assert.deepEqual(built.profile.writable_paths,[target]);
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
+  assert.ok(!built.profile.system_prompt.includes("user.service.ts"));
+ }
+ const testAgent=signed({role:"test",rights:[{operation:"create_file",path:target}]});
+ assert.deepEqual(testAgent.profile.tools,["read_file","update_file","create_file","run_tests"]);
+ assert.deepEqual(testAgent.agent.tools.map(t=>t.name),["create_file"],
+  "signed Test file creation does not inherit Docker Runner authority");
+ assert.doesNotMatch(testAgent.profile.system_prompt,/Account Suspension|account-suspension/u);
+});
+
+test("R282 signed Backend/Frontend create_file requires exact private approved Task grant",()=>{
+ const path="services/billing/src/invoice-helper.ts";
+ for(const role of ["backend","frontend"] as const){
+  const make=(rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>)=>
+   createAdkSpecializedAgent({
+    role,model:new ScriptedAdkLlm("create_file",{
+     branch:"feature/invoice-sort",path,content:"export const helper=true;"
+    }),gatewayClient:{invoke:async()=>({commit_sha:"a".repeat(40)})} as never,
+    trustedBranch:"feature/invoice-sort",trustedTaskPaths:[path],
+    trustedFilePermissions:rights
+   });
+  const granted=make([{operation:"create_file",path}]);
+  assert.deepEqual(granted.agent.tools.map(x=>x.name),["create_file"]);
+  assert.deepEqual(granted.profile.creatable_paths,[path]);
+  const notGranted=make([{operation:"read_file",path}]);
+  assert.deepEqual(notGranted.agent.tools.map(x=>x.name),["read_file"]);
+  assert.deepEqual(notGranted.profile.creatable_paths,[]);
+ }
+});
+
+test("R379.2 verified role capabilities are stable while signed Task grants change",()=>{
+  for(const role of ["backend","frontend","test"] as const){
+    const path=PATHS[role];
+    const fromCard=createSpecializedAgentCard(role,"http://127.0.0.1:7001")
+      .capabilities.extensions?.[0]?.params?.taskCapabilities;
+    const permitted=APPROVED_SPECIALIZED_AGENT_PROFILES[role].tools;
+    assert.deepEqual(fromCard,permitted,"published Agent Card must match role's ADK capabilities");
+    const make=(operations:readonly ("read_file"|"update_file"|"create_file")[])=>
+      createAdkSpecializedAgent({
+        role,model:new ScriptedAdkLlm("read_file",{branch:BRANCH,path}),
+        gatewayClient:{invoke:async()=>{throw Error("No effects permitted in capability test");}} as never,
+        trustedBranch:BRANCH,
+        trustedTaskPaths:[path],
+        trustedFilePermissions:operations.map(operation=>({operation,path})),
+        ...(role==="test"?{trustedRunTestsAllowed:false}:{})
+      });
+    const read=make(["read_file"]);
+    const write=make(["read_file","update_file"]);
+    const create=make(["create_file"]);
+    for(const current of [read,write,create]){
+      assert.deepEqual(current.profile.tools,fromCard,
+        "permanent tool capabilities cannot be expanded or narrowed by a Task grant");
+      assert.ok(!current.agent.tools.some(tool=>tool.name==="run_tests"),
+        "a file Task must not inherit Runner authority");
+    }
+    assert.deepEqual(read.agent.tools.map(tool=>tool.name),["read_file"]);
+    assert.deepEqual(write.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
+    assert.deepEqual(create.agent.tools.map(tool=>tool.name),["create_file"]);
+    assert.deepEqual(read.profile.writable_paths,[]);
+    assert.deepEqual(write.profile.writable_paths,[path]);
+    assert.deepEqual(create.profile.creatable_paths,[path]);
+    assert.equal(permitted.includes("run_tests"),role==="test");
+  }
+});
+
+test("R379.2 Test Agent Runner visibility is independent of its published capabilities",()=>{
+  const built=createAdkSpecializedAgent({
+    role:"test",model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
+    gatewayClient:{invoke:async()=>{throw Error("No Runner effect permitted");}} as never,
+    trustedBranch:BRANCH,trustedTaskPaths:[],
+    trustedFilePermissions:[],trustedRunTestsAllowed:true
+  });
+  assert.deepEqual(built.profile.tools,
+    APPROVED_SPECIALIZED_AGENT_PROFILES.test.tools);
+  assert.deepEqual(built.agent.tools.map(tool=>tool.name),["run_tests"]);
+  assert.equal(built.profile.writable_paths.length,0);
+  assert.equal(built.profile.creatable_paths.length,0);
+});
+
+test("R385.15 signed Test FunctionTools never infer Docker Runner grant from role or file permission",()=>{
+ const file="tests/backend/user.service.test.ts";
+ const gatewayClient={invoke:async()=>{throw Error("unexpected Gateway effect");}} as never;
+ const model=new ScriptedAdkLlm("read_file",{branch:BRANCH,path:file});
+ const signed=(rights:readonly ("read_file"|"update_file"|"create_file")[],
+   runner?:boolean)=>createAdkSpecializedAgent({
+     role:"test",model,gatewayClient,trustedBranch:BRANCH,
+     trustedTaskPaths:rights.length?[file]:[],
+     trustedFilePermissions:rights.map(operation=>({operation,path:file})),
+     ...(runner===undefined?{}:{trustedRunTestsAllowed:runner})
+   });
+ for(const hint of [undefined,false]){
+  const read=signed(["read_file"],hint);
+  assert.deepEqual(read.agent.tools.map(tool=>tool.name),["read_file"],
+   "read-only signed Test must never expose run_tests");
+  assert.match(read.profile.system_prompt,
+   /cannot invoke run_tests; do not claim tests passed/u);
+ }
+ const historicalCreate=signed(["create_file"]);
+ assert.deepEqual(historicalCreate.agent.tools.map(tool=>tool.name),["create_file"],
+  "a signed file Task cannot obtain Runner from generic role capability");
+ const explicitRunner=signed([],true);
+ assert.deepEqual(explicitRunner.agent.tools.map(tool=>tool.name),["run_tests"]);
+ // Historical signed-DAG fixtures may explicitly combine operations in
+ // this adapter. The canonical authority-only A2A owner forbids the mixed
+ // Task BEFORE private binding or provider dispatch.
+ assert.deepEqual(signed(["read_file"],true).agent.tools.map(t=>t.name),
+  ["read_file","run_tests"]);
+ assert.deepEqual(signed(["create_file"],true).agent.tools.map(t=>t.name),
+  ["create_file","run_tests"]);
+ // Unsigned legacy fixtures remain separate and are still Gateway-gated.
+ const legacy=createAdkSpecializedAgent({
+  role:"test",model,gatewayClient,trustedBranch:BRANCH,trustedTaskPaths:[]
+ });
+ assert.deepEqual(legacy.agent.tools.map(tool=>tool.name),["run_tests"]);
+});
+
+test("Additional signed ADK role exposes only its Owner-pinned read grant",()=>{
+ const path="src/approved-source.ts";
+ const make=(profile:{role:string;capabilities:readonly string[]},permissions=[
+  {path,operation:"read_file" as const}
+ ])=>createAdkSpecializedAgent({
+  role:"reviewer" as never,
+  model:new ScriptedAdkLlm("read_file",{branch:BRANCH,path}),
+  gatewayClient:{invoke:async()=>({revision:"a".repeat(40)})} as never,
+  trustedBranch:BRANCH,trustedTaskPaths:[path],
+  trustedFilePermissions:permissions,
+  trustedAdditionalReadOnlyRole:profile
+ });
+ const role={role:"reviewer",capabilities:["read_file"]};
+ const approved=make(role);
+ assert.deepEqual(approved.agent.tools.map(t=>t.name),["read_file"]);
+ assert.deepEqual(approved.profile.writable_paths,[]);
+ assert.deepEqual(approved.profile.creatable_paths,[]);
+ assert.deepEqual(approved.profile.read_only_paths,[path]);
+ assert.equal(approved.profile.can_run_tests,false);
+ for(const invalid of [
+  {role:"frontend",capabilities:["read_file"]},
+  {role:"reviewer",capabilities:["read_file","update_file"]},
+  {role:"reviewer",capabilities:["run_tests"]},
+  {role:"orchestrator",capabilities:["read_file"]}
+ ]){
+  assert.throws(()=>make(invalid),/Owner-pinned read-only signed Task/u);
+ }
+ assert.throws(()=>createAdkSpecializedAgent({
+  role:"reviewer" as never,model:new ScriptedAdkLlm("read_file",{}),
+  gatewayClient:{invoke:async()=>({})} as never,
+  trustedAdditionalReadOnlyRole:role
+ }),/Owner-pinned read-only signed Task/u);
 });

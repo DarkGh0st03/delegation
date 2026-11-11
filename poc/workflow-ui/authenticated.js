@@ -1,0 +1,147 @@
+"use strict";
+// Explicitly separated from the offline mock. Never holds signer keys or DCs.
+(function(){
+  const $=(id)=>document.getElementById(id);
+  let plan=null,csrf=null,digest=null,lock=false,authorityOnly=false;
+  function status(msg,failed=false){
+    $("status").textContent=msg;
+    $("status").style.color=failed?"#a13232":"#1b665e";
+  }
+  function node(tag,value){
+    const el=document.createElement(tag);
+    if(value!==undefined)el.textContent=String(value);
+    return el;
+  }
+  async function api(path,options={}){
+    const response=await fetch(path,{
+      cache:"no-store",credentials:"same-origin",
+      ...options,headers:{"Content-Type":"application/json",...(options.headers||{})}
+    });
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Richiesta rifiutata");
+    return data;
+  }
+  function display(data){
+    authorityOnly=data.protocol==="authority-only";
+    plan=authorityOnly?data.authorization_proposal:data.plan;
+    digest=authorityOnly?data.proposal_digest:data.plan_digest;csrf=data.csrf_token;
+    $("review-heading").textContent=authorityOnly?"Approva i permessi richiesti":"Approva un piano trusted";
+    $("review-source").textContent=authorityOnly
+      ?"Proposta verificata del Planner. Approvi soltanto il perimetro dei permessi; l’Orchestrator gestisce i Task entro quel perimetro."
+      :"Il piano proviene esclusivamente dallo storage trusted del backend.";
+    $("context-label").textContent=authorityOnly?"Sessione e branch":"ID piano/versione";
+    $("digest-label").textContent=authorityOnly?"SHA-256 della proposta di permessi":"SHA-256 esatto del piano da approvare";
+    $("execution-plan-details").hidden=authorityOnly;
+    $("permission-help").textContent=authorityOnly
+      ?"Seleziona soltanto le risorse e le operazioni che vuoi concedere. Nessuna permission è selezionata automaticamente."
+      :"Verifica per ogni agente, Task e risorsa quali operazioni vuoi autorizzare.";
+    $("login").hidden=true;$("approval").hidden=false;
+    $("rejection-actions").hidden=data.reject_enabled!==true;
+    $("reject-confirmation").value="";
+    $("identity").textContent=data.engineer_did;
+    $("repository").textContent=
+      plan.repository.owner+"/"+plan.repository.repository+" @ "+plan.base_revision;
+    $("plan").textContent=authorityOnly?plan.session_id+" · "+plan.branch:plan.plan_id+" · v"+plan.version;
+    $("requirement-view").textContent=plan.requirement;
+    $("digest").textContent=digest;
+    $("confirmation").value="";
+    $("tasks").replaceChildren();$("permissions").replaceChildren();
+    $("assumptions").replaceChildren();$("uncertainties").replaceChildren();
+    if(!authorityOnly)for(const task of plan.tasks){
+      const entry=node("div");
+      entry.append(
+        node("strong",task.id+" · "+task.agent_id+" · "+task.title),
+        node("p",task.description),
+        node("p","Dipende da: "+
+          (task.depends_on.length?task.depends_on.join(", "):"nessun task"))
+      );
+      $("tasks").append(entry);
+    }
+    function renderNotes(target,notes,emptyMessage){
+      if(!notes.length){
+        $(target).append(node("p",emptyMessage));
+        return;
+      }
+      const list=node("ul");
+      for(const note of notes){
+        list.append(node("li",note));
+      }
+      $(target).append(list);
+    }
+    // Use only textContent, never HTML parsing of model-authored strings.
+    renderNotes("assumptions",plan.assumptions??[],"Nessuna assunzione dichiarata.");
+    renderNotes("uncertainties",plan.uncertainties??[],
+      "Nessuna incertezza dichiarata dal Planner.");
+    for(const p of (authorityOnly?data.permissions:plan.requested_permissions)){
+      const label=node("label");
+      const input=node("input");
+      // Explicit opt-in: no requested permission is pre-approved by the UI.
+      input.type="checkbox";input.checked=false;input.value=p.id;
+      input.className="approval-permission";
+      label.append(input,node("span",authorityOnly
+        ?" "+p.operation+" · "+p.resource
+        :" "+p.id+" · "+p.agent_id+" · "+p.operation+" · "+p.resource+" ("+p.reason+")"));
+      $("permissions").append(label);
+    }
+  }
+  async function refresh(){
+    try{display(await api("/api/review"));}catch{
+      $("approval").hidden=true;$("login").hidden=false;
+    }
+  }
+  $("login-button").addEventListener("click",async()=>{
+    if(lock)return;lock=true;
+    try{
+      await api("/api/login",{method:"POST",body:JSON.stringify({
+        password:$("password").value
+      })});
+      $("password").value="";
+      display(await api("/api/review"));
+      status("Autenticazione riuscita. Esamina la proposta e seleziona i permessi.");
+    }catch(e){status(e.message,true);}
+    finally{lock=false;}
+  });
+  $("approve-button").addEventListener("click",async()=>{
+    if(lock||!plan)return;lock=true;
+    try{
+      const ids=[...document.querySelectorAll("input.approval-permission:checked")]
+        .map(x=>x.value);
+      const response=await api("/api/approve",{
+        method:"POST",headers:{"X-CSRF-Token":csrf},
+        body:JSON.stringify({
+          [authorityOnly?"proposal_digest":"plan_digest"]:digest,approved_permission_ids:ids,
+          confirmation:$("confirmation").value
+        })
+      });
+      $("approval").hidden=true;plan=null;csrf=null;digest=null;
+      status("Ricevuta Ed25519 firmata: "+response.decision_id+
+        ". Nessuna root DC emessa.");
+    }catch(e){status(e.message,true);}
+    finally{lock=false;}
+  });
+  $("reject-button").addEventListener("click",async()=>{
+    if(lock||!plan)return;lock=true;
+    try{
+      const result=await api("/api/reject",{
+        method:"POST",headers:{"X-CSRF-Token":csrf},
+        body:JSON.stringify({
+          [authorityOnly?"proposal_digest":"plan_digest"]:digest,confirmation:$("reject-confirmation").value
+        })
+      });
+      $("approval").hidden=true;plan=null;csrf=null;digest=null;
+      status(result.provisional_credential_revoked?
+        "Piano rifiutato. Credenziale preliminare revocata.":
+        "Revoca non confermata: riconciliazione manuale obbligatoria.",
+        !result.provisional_credential_revoked);
+    }catch(e){status(e.message,true);}
+    finally{lock=false;}
+  });
+  $("logout-button").addEventListener("click",async()=>{
+    try{await api("/api/logout",{
+      method:"POST",headers:{"X-CSRF-Token":csrf},body:"{}"
+    });}catch(e){status(e.message,true);return;}
+    csrf=null;plan=null;digest=null;$("approval").hidden=true;
+    $("login").hidden=false;status("Sessione terminata.");
+  });
+  void refresh();
+})();

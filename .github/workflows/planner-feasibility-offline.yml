@@ -1,0 +1,77 @@
+# R5A dedicated short preflight. No provider keys or paid inference.
+name: Planner Feasibility Offline Preflight
+on:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - ".github/workflows/planner-feasibility-offline.yml"
+      - "poc/scripts/run-gemini-planner-fixture.mjs"
+      - "poc/scripts/account-suspension-source-readiness.mjs"
+      - "poc/scripts/check-gemini-planner-model-access.mjs"
+      - "poc/scripts/planner-feasibility-eval.mjs"
+      - "poc/scripts/f1-real-gitea-gemini-probe.mjs"
+      - "poc/scripts/f1-planner-offline-comparison.mjs"
+      - "poc/scripts/test/f1-planner-offline-comparison.test.mjs"
+      - "poc/scripts/test/planner-feasibility-eval.test.mjs"
+      - "poc/scripts/test/run-gemini-planner-fixture.test.mjs"
+      - "poc/scripts/account-suspension-planning-config.mjs"
+      - "poc/scripts/f1-real-planning-parity-manifest.mjs"
+      - "poc/scripts/test/f1-real-planning-parity-manifest.test.mjs"
+      - "poc/scripts/test/account-suspension-planning-config.test.mjs"
+      - "poc/scripts/test/check-gemini-planner-model-access.test.mjs"
+      - "poc/packages/orchestrator-runtime/src/trusted-adk-planner.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-planning-discovery-ledger.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-engineer-authority.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts"
+      - "poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts"
+      - "poc/apps/gateway/src/execute.ts"
+      - "poc/apps/gateway/src/composite-authorization.ts"
+      - "poc/apps/gateway/src/direct-core-verifier.ts"
+      - "poc/apps/gateway/test/direct-core-verifier.test.ts"
+      - "poc/apps/gateway/test/planning-revision-pinning.test.ts"
+      - "poc/apps/gateway/test/composite-authorization.test.ts"
+      - "poc/apps/gateway/native-test/f1-planner-ablation.test.mjs"
+      - "poc/apps/test-runner-controller/fixtures/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: planner-feasibility-offline-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  planner-offline:
+    name: Planner read-only boundaries + benchmark validity (no Gemini)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned dependencies without install scripts
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Validate offline benchmark and cost-control tests
+        run: |
+          node --test poc/scripts/test/f1-real-planning-parity-manifest.test.mjs poc/scripts/test/account-suspension-planning-config.test.mjs poc/scripts/test/planner-feasibility-eval.test.mjs poc/scripts/test/run-gemini-planner-fixture.test.mjs poc/scripts/test/check-gemini-planner-model-access.test.mjs
+      - name: Compare saved Planner quality offline without any model call
+        run: node --experimental-strip-types --test poc/scripts/test/f1-planner-offline-comparison.test.mjs
+      - name: Validate actual ADK read-only Planner contract using scripted model
+        run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
+      - name: R350.14 and R380.0–R380.2 verify pinned read-only Gateway Planning and dynamic discovery
+        run: node --experimental-strip-types --test --test-name-pattern="R350.14|R380.0|R380.1|R380.2" poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts
+      - name: R380.3 verify native result corroboration and pinned Planning scope offline
+        run: node --experimental-strip-types --test poc/apps/gateway/test/direct-core-verifier.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts poc/apps/gateway/test/composite-authorization.test.ts
+      - name: F1 frozen old/new requirement x guidance (no inference)
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/f1-planner-ablation.test.mjs
+      - name: Assert no Gemini API key or manual billable execution in this workflow
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          echo "Isolated Planner preflight passed without any provider inference."

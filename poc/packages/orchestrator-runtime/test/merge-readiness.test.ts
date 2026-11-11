@@ -6,7 +6,7 @@ const a="a".repeat(40),b="b".repeat(40),c="c".repeat(40);
 const owner={id:101,login:"software-engineer"};
 const ci={id:102,login:"trusted-security-ci"};
 const pr={
-  number:3,state:"open",merged:false,mergeable:true,
+  number:3,state:"open",merged:false,draft:false,mergeable:true,
   head:{ref:"feature/account-suspension",sha:a,
     repo:{full_name:"thesis/iam-console-poc"}},
   base:{ref:"main",sha:b,repo:{full_name:"thesis/iam-console-poc"}}
@@ -99,6 +99,8 @@ test("feature moved, base moved, merged PR and weak branch protection all deny",
   await denied({"/branches/main":{commit:{id:c}}},"pr_revision_mismatch");
   await denied({"/pulls/3":{...pr,merged:true,state:"closed"}},"pr_not_open");
   await denied({"/pulls/3":{...pr,mergeable:false}},"pr_not_mergeable");
+  await denied({"/pulls/3":{...pr,draft:true}},"pr_is_draft");
+  await denied({"/pulls/3":{...pr,draft:undefined}},"pr_is_draft");
   await denied({"/pulls/3":{...pr,head:{...pr.head,sha:c}}},"pr_revision_mismatch");
   await denied({"/branch_protections/main":{...protection,required_approvals:0}},
     "branch_protection_insufficient");

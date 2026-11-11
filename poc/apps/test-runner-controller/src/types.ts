@@ -35,6 +35,7 @@ export interface RunnerResearcherAcceptanceResult extends RunnerPhaseResult {
   phase: "researcher_acceptance";
 }
 
+import type {TypecheckLocation} from "./typecheck-diagnostics.ts";
 export interface RunnerRunResult {
   request_id: string;
   repository: string;
@@ -46,6 +47,19 @@ export interface RunnerRunResult {
   project_tests?: RunnerProjectTestsResult;
   researcher_acceptance?: RunnerResearcherAcceptanceResult;
   log_reference?: string;
+  /** Fixed researcher check IDs only; diagnostic, never repair authorization. */
+  acceptance_failure?: Readonly<{
+    failed_checks: readonly string[];
+    timed_out: boolean;
+    unclassified_failure: boolean;
+  }>;
+  /** Trusted metadata only; agents must filter by approved read paths. */
+  typecheck_diagnostics?: TypecheckLocation[];
+  /** Fileless, source-free compiler error codes for diagnostics only. */
+  typecheck_error_codes?: string[];
+  /** Vitest FAIL paths only; no assertion text. Filter through signed read grants. */
+  failing_test_files?: string[];
+  project_e2e_failure?: NonNullable<ReturnType<typeof import("../scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
 }
 
 export interface RunnerExecutor {

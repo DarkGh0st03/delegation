@@ -1,9 +1,15 @@
+import {extractPrivateVitestFailures} from "./private-vitest-failures.ts";
+import {retainFailureEvidence} from "./failure-evidence.ts";
+import {extractProjectE2eFailureDiagnostic} from "../scripts/project-e2e-failure-diagnostic.mjs";
+import {extractAcceptanceFailureSummary} from "./acceptance-diagnostics.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import {extractTypecheckLocations,extractTypecheckErrorCodes} from "./typecheck-diagnostics.ts";
+import {extractVitestFailureFiles} from "./vitest-failure-files.ts";
 import type {
   RunnerExecutor,
   RunnerPhaseName,
@@ -11,6 +17,36 @@ import type {
   RunnerRunRequest,
   RunnerRunResult
 } from "./types.ts";
+
+/**
+ * Host Docker CLI is a subprocess of the trusted Runner, not of the
+ * untrusted repository. It must NOT inherit a model/API secret from the
+ * Owner process (or NODE_OPTIONS, LD_PRELOAD, GitHub OIDC, injected proxy
+ * settings, etc.) even if one was accidentally present in process.env.
+ *
+ * Explicit Docker-client OS settings only, with no wildcard/prefix passthru.
+ * This is subprocess hygiene, NOT proof of isolated owner memory, provider
+ * billing control or confidentiality from a malicious Docker daemon.
+ */
+const DOCKER_CLI_CHILD_KEYS=Object.freeze([
+ "PATH","Path","HOME","USERPROFILE","SYSTEMROOT","SystemRoot","WINDIR",
+ "COMSPEC","TEMP","TMP","TMPDIR","LANG","LC_ALL","APPDATA","LOCALAPPDATA",
+ "XDG_RUNTIME_DIR","DOCKER_HOST","DOCKER_CONFIG","DOCKER_CONTEXT",
+ "DOCKER_CERT_PATH","DOCKER_TLS_VERIFY","DOCKER_API_VERSION",
+ "DOCKER_DEFAULT_PLATFORM"
+]);
+export function isolatedDockerCliEnvironment(
+ source:NodeJS.ProcessEnv
+):NodeJS.ProcessEnv{
+ const child:NodeJS.ProcessEnv=Object.create(null);
+ for(const name of DOCKER_CLI_CHILD_KEYS){
+  const value=source[name];
+  if(typeof value==="string"&&value.length>0&&
+     ![...value].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127))
+    child[name]=value;
+ }
+ return child;
+}
 
 const MAX_COMMAND_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024;
@@ -26,6 +62,7 @@ export interface IsolatedRunnerConfig {
   phase_timeout_ms: number;
   total_timeout_ms?: number;
   log_dir: string;
+  failure_evidence_dir?: string;
   acceptance_enabled?: boolean;
   acceptance_dir?: string;
 }
@@ -72,7 +109,7 @@ const FIXED_PHASES: ReadonlyArray<{
       "cleanup() { kill \"$backend_pid\" \"$frontend_pid\" 2>/dev/null || true; }; " +
       "trap cleanup EXIT; " +
       "wait_port() { for _ in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/\"$1\") >/dev/null 2>&1 && return 0; sleep 0.5; done; echo \"Timed out waiting for port $1\" >&2; return 1; }; " +
-      "wait_port 3000; wait_port 5173; npm run test:e2e"
+      "wait_port 3000; wait_port 5173; npm run test:e2e -- --workers=1"
   }
 ];
 
@@ -100,7 +137,7 @@ async function defaultCommandRunner(
   return await new Promise<CommandResult>((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: process.env,
+      env: isolatedDockerCliEnvironment(process.env),
       stdio: ["ignore", "pipe", "pipe"]
     });
 
@@ -259,8 +296,14 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     const logReference = `runner-log://${logId}`;
     const logs: string[] = [];
     const phases: RunnerPhaseResult[] = [];
+    let typecheckDiagnostics:ReturnType<typeof extractTypecheckLocations>=[];
+    let typecheckErrorCodes:string[]=[];
+    let failingTestFiles:string[]=[];
+    let projectE2eFailure:ReturnType<typeof extractProjectE2eFailureDiagnostic>=null;
+    let acceptanceFailure:ReturnType<typeof extractAcceptanceFailureSummary>=null;
     let containerCreateAttempted = false;
     let failed = false;
+    let privateVitestFailure:ReturnType<typeof extractPrivateVitestFailures>|undefined;
 
     try {
       signal.throwIfAborted();
@@ -354,9 +397,14 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           continue;
         }
 
+        const privateVitest=this.#config.failure_evidence_dir&&
+          (fixed.phase==="backend_tests"||fixed.phase==="frontend_tests");
+        const reportPath="/tmp/private-"+fixed.phase+"-vitest.json";
+        const command=privateVitest?fixed.command+
+          " --reporter=default --reporter=json --outputFile="+reportPath:fixed.command;
         const result = await executeCommand(
           "docker",
-          ["exec", containerName, "bash", "-lc", fixed.command]
+          ["exec", containerName, "bash", "-lc", command]
       );
 
         logs.push(
@@ -366,6 +414,23 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         if (result.exit_code === 0 && !result.timed_out) {
           phases.push({ phase: fixed.phase, status: "pass" });
         } else {
+          if(fixed.phase==="playwright_e2e")
+            projectE2eFailure=extractProjectE2eFailureDiagnostic(
+              result.stdout,result.stderr,result.timed_out);
+          if(fixed.phase==="typecheck"&&!result.timed_out){
+            typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
+            typecheckErrorCodes=extractTypecheckErrorCodes(result.stdout,result.stderr);
+          }
+          if((fixed.phase==="frontend_tests"||fixed.phase==="backend_tests")&&
+             !result.timed_out)
+            failingTestFiles=extractVitestFailureFiles(
+              result.stdout,result.stderr,fixed.phase);
+          if(privateVitest&&(fixed.phase==="backend_tests"||fixed.phase==="frontend_tests")){
+            // A fixed Runner-owned path, never a path supplied by an agent.
+            const report=await executeCommand("docker",["exec",containerName,"cat",reportPath]);
+            privateVitestFailure=extractPrivateVitestFailures(
+              report.exit_code===0&&!report.timed_out?report.stdout:"",fixed.phase);
+          }
           failed = true;
           phases.push({
             phase: fixed.phase,
@@ -403,6 +468,9 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
             status: "pass"
           };
         } else {
+          acceptanceFailure = result.timed_out
+            ? {failed_checks: [], timed_out: true, unclassified_failure: true}
+            : extractAcceptanceFailureSummary(result.stdout, result.stderr);
           failed = true;
           researcherAcceptance = {
             phase: "researcher_acceptance",
@@ -424,6 +492,10 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         { mode: 0o600 }
       );
 
+      if(failed&&this.#config.failure_evidence_dir){
+        await retainFailureEvidence({directory:this.#config.failure_evidence_dir,
+          archivePath,log:logs.join("\n"),request,phases,privateVitestFailure,logReference});
+      }
       signal.throwIfAborted();
       return {
         request_id: request.request_id,
@@ -433,6 +505,14 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         runner_profile: request.profile,
         status: failed ? "fail" : "pass",
         phases,
+        ...(typecheckDiagnostics.length>0
+          ?{typecheck_diagnostics:typecheckDiagnostics}:{}),
+        ...(typecheckErrorCodes.length>0
+          ?{typecheck_error_codes:typecheckErrorCodes}:{}),
+        ...(failingTestFiles.length>0
+          ?{failing_test_files:failingTestFiles}:{}),
+        ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
+        ...(acceptanceFailure ? {acceptance_failure: acceptanceFailure} : {}),
         project_tests: {
           status: projectStatus,
           phases: projectPhases

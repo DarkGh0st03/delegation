@@ -1,7 +1,11 @@
+import type { Operation as RustOperation } from "./operation-catalog.ts";
+
 export const AGENT_ROLES = ["orchestrator", "backend", "frontend", "test"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export const TOOL_NAMES = [
+  "read_repository",
+  "list_directory",
   "read_file",
   "update_file",
   "create_file",
@@ -11,13 +15,8 @@ export const TOOL_NAMES = [
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
-export type Operation =
-  | "read_file"
-  | "update_file"
-  | "create_file"
-  | "create_branch"
-  | "create_pull_request"
-  | "run_tests";
+/** Catalog membership is not provider support or delegated authority. */
+export type Operation = RustOperation;
 
 export interface Permission {
   resource: string;
@@ -25,6 +24,14 @@ export interface Permission {
 }
 
 export type NormalizedToolRequest =
+  | {
+      tool: "read_repository";
+      arguments: Record<string, never>;
+    }
+  | {
+      tool: "list_directory";
+      arguments: { branch: string; path: string };
+    }
   | {
       tool: "read_file";
       arguments: { branch: string; path: string };
@@ -79,6 +86,19 @@ export interface PreparedRequestRecord {
   audience: string;
   challenge: string;
   request_fingerprint: string;
+  /** Trusted Gateway-only Planning pin, never accepted in caller tool args. */
+  pinned_revision?: string;
+  /** Created solely by the trusted approval registry, never user JSON. */
+  approved_plan_digest?: string;
+  approved_plan_task_id?: string;
+  /** R288 trusted, staged authority binding. Not execution authority. */
+  authority_only_digest?: string;
+  authority_only_plan_task_id?: string;
+  authority_only_agent_did?: string;
+  /** Trusted signed-plan-derived branch, never public caller input. */
+  approved_work_branch?: string;
+  /** Trusted-only Runner SHA, never supplied by ADK, MCP or caller arguments. */
+  approved_tested_head_sha?:string;
   created_at_ms: number;
   expires_at_ms: number;
   consumed: boolean;
@@ -106,6 +126,8 @@ export interface PrepareAuditEvent {
   resource_uri: string;
   operation: Operation;
   prepare_ms: number;
+  pinned_revision?: string;
+  approved_plan_digest?: string;
 }
 
 export interface ExecuteAuditEvent {
@@ -129,6 +151,8 @@ export interface ExecuteAuditEvent {
   vp_size_bytes: number;
   chain_depth?: number;
   disclosed_permission_count?: number;
+  pinned_revision?: string;
+  approved_plan_digest?: string;
   provider_revision?: string;
   provider_commit_sha?: string;
   provider_blob_sha?: string;
@@ -144,7 +168,29 @@ export interface ExecuteAuditEvent {
   provider: "mock" | "gitea" | "runner";
 }
 
-export type AuditEvent = PrepareAuditEvent | ExecuteAuditEvent;
+export interface CompositeAuthorizationAuditEvent {
+  event: "composite_authorization_prepared" | "composite_authorization_verified";
+  timestamp: string;
+  request_id: string;
+  task_id: string;
+  agent_role: AgentRole;
+  permission_count: number;
+  decision: "pending" | "allow" | "deny";
+  reason: string;
+  provider_result: "not_called";
+}
+
+export type AuditEvent =
+  | PrepareAuditEvent
+  | ExecuteAuditEvent
+  | CompositeAuthorizationAuditEvent
+  | {
+      event:"composite_read_executed";
+      timestamp:string;request_id:string;task_id:string;agent_role:AgentRole;
+      permission_count:number;decision:"allow"|"deny";
+      reason:string;provider_result:"success"|"error"|"not_called";
+      pinned_revision:string;
+    };
 
 export interface AuditSink {
   emit(event: AuditEvent): void;
@@ -159,6 +205,8 @@ export interface VerifiedDelegation {
   presenter_id: string;
   credential_id: string;
   issuer_id: string;
+  /** Rust-authenticated root provenance. Optional for historical verifier fixtures. */
+  root_credential_id?: string;
   permissions: Permission[];
   hierarchy_depth: number;
   expiration: string | number;
@@ -174,6 +222,16 @@ export interface VerificationRequest {
 
 export interface VerifierPort {
   verify(request: VerificationRequest): Promise<VerifiedDelegation>;
+  /** Optional during migration: absence must fail closed for composite requests. */
+  verifyMultiple?(request: MultipleVerificationRequest): Promise<VerifiedDelegation>;
+}
+
+export interface MultipleVerificationRequest {
+  presenter: AgentRole;
+  audience: string;
+  challenge: string;
+  required_permissions: Permission[];
+  signed_vp: string;
 }
 
 export interface MockExecutionResult {
@@ -181,6 +239,33 @@ export interface MockExecutionResult {
   performed: false;
   tool: ToolName;
   request_fingerprint: string;
+}
+
+export interface GiteaReadRepositoryExecutionResult {
+  provider: "gitea";
+  performed: true;
+  tool: "read_repository";
+  full_name: string;
+  default_branch: string;
+  revision: string;
+  object_format_name?: string;
+}
+
+export interface GiteaDirectoryEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  size?: number;
+}
+
+export interface GiteaListDirectoryExecutionResult {
+  provider: "gitea";
+  performed: true;
+  tool: "list_directory";
+  branch: string;
+  path: string;
+  revision: string;
+  entries: GiteaDirectoryEntry[];
 }
 
 export interface GiteaReadFileExecutionResult {
@@ -280,11 +365,21 @@ export interface RunnerExecutionResult {
   project_tests?: RunnerProjectTestsExecutionResult;
   researcher_acceptance?: RunnerResearcherAcceptanceExecutionResult;
   log_reference?: string;
+  /** Sanitized compiler locations, never raw stderr/source. */
+  typecheck_diagnostics?: import("../../test-runner-controller/src/typecheck-diagnostics.ts").TypecheckLocation[];
+  /** Whitelisted TypeScript codes; not a signed Task grant. */
+  typecheck_error_codes?: string[];
+  /** Bounded Vitest failed file paths, never text or source. */
+  failing_test_files?: string[];
+  project_e2e_failure?: NonNullable<ReturnType<typeof import("../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
+  acceptance_failure?: import("../../test-runner-controller/src/types.ts").RunnerRunResult["acceptance_failure"];
 }
 
 export type ExecutionResult =
   | MockExecutionResult
   | GiteaReadFileExecutionResult
+  | GiteaReadRepositoryExecutionResult
+  | GiteaListDirectoryExecutionResult
   | GiteaCreateBranchExecutionResult
   | GiteaCreateFileExecutionResult
   | GiteaUpdateFileExecutionResult
@@ -295,6 +390,8 @@ export interface ExecutionPort {
   readonly provider: "mock" | "gitea";
   providerFor?(record: PreparedRequestRecord): "mock" | "gitea" | "runner";
   execute(record: PreparedRequestRecord, signal?: AbortSignal): Promise<ExecutionResult>;
+  /** Trusted provider's immutable commit for an authorized read-only bundle. */
+  resolveReadRevision?(branch:string):Promise<string>;
 }
 
 export interface ExecuteAuthorizationResponse {
@@ -312,6 +409,9 @@ export interface PolicyInput {
   tool: ToolName;
   arguments: Record<string, unknown>;
   required_permission: Permission;
+  pinned_revision?: string;
+  approved_plan_digest?: string;
+  approved_work_branch?: string;
   repository: GatewayRepositoryConfig;
   verified_delegation: {
     presenter_id: string;

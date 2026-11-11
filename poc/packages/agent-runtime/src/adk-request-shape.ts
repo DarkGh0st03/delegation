@@ -93,3 +93,28 @@ export function safeAdkRequestShape(request: LlmRequest): AdkSafeRequestShape {
     thinking_level: thinkingLevel
   };
 }
+
+/** Count the first functionCall per model content block in outgoing ADK
+ * history. Gemini 3 requires its original thought signature in each step.
+ * Parallel secondary calls may legitimately lack a signature, so they are
+ * deliberately not counted. Never return signature bytes or function names.
+ */
+export function safeAdkFunctionHistoryShape(request:LlmRequest):{
+  function_call_messages:number;
+  function_call_messages_missing_signature:number;
+}{
+  let function_call_messages=0;
+  let function_call_messages_missing_signature=0;
+  const contents=Array.isArray(request.contents)?request.contents:[];
+  for(const raw of contents){
+    const content=record(raw);
+    if(content?.role!=="model"||!Array.isArray(content.parts))continue;
+    const first=content.parts.find((part:unknown)=>record(part)?.functionCall);
+    if(!first)continue;
+    function_call_messages++;
+    const signature=record(first)?.thoughtSignature;
+    if(typeof signature!=="string"||signature.length===0)
+      function_call_messages_missing_signature++;
+  }
+  return {function_call_messages,function_call_messages_missing_signature};
+}

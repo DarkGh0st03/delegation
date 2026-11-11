@@ -1,0 +1,194 @@
+/**
+ * Gateway-side adapter for an IN-PROCESS native Rust DelegationVerifier.
+ *
+ * Important: this is an integration contract, not a cryptographic verifier.
+ * Implementations MUST call the actual Core Rust verifier (including trust,
+ * accumulator and live status-list resolvers). No TypeScript signature,
+ * credential, trust or status verification is implemented here.
+ *
+ * A native binding cannot safely use the issuance Adapter's private in-memory
+ * public-material cache: the future native build must use a shared, verified,
+ * read-only public-material/status source, anchored to the real EVM registry.
+ */
+import {giteaPermissionCovers}
+ from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
+import {
+  VerificationRejectedError,
+  VerificationUnavailableError
+} from "./errors.ts";
+import type {
+  AgentRole, MultipleVerificationRequest, Permission,
+  VerificationRequest, VerifiedDelegation, VerifierPort
+} from "./types.ts";
+
+export type CoreRustIdentityMap = Readonly<Record<string,string>>;
+
+/** Method signature mirrors Rust Verifier::verify_verifiable_presentation. */
+export interface CoreRustBinding {
+  verify_verifiable_presentation(
+    authorization_context_json: string,
+    signed_vp: string
+  ): string | Promise<string>;
+}
+
+const ROLES:readonly AgentRole[]=[
+ "orchestrator","backend","frontend","test"
+];
+const ADDITIONAL_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+
+function validIdentity(id:unknown): id is string {
+  return typeof id==="string" && id.trim()===id &&
+    id.length>4 && id.length<=1024 && id.startsWith("did:");
+}
+function permission(value:unknown): Permission {
+  if (value===null || typeof value!=="object" || Array.isArray(value)) {
+    throw new Error("Malformed Rust VerifiedDelegation permission");
+  }
+  const p=value as Record<string,unknown>;
+  if (typeof p.resource!=="string" || !p.resource ||
+      typeof p.operation!=="string" || !p.operation) {
+    throw new Error("Malformed Rust VerifiedDelegation permission fields");
+  }
+  return {resource:p.resource,operation:p.operation as Permission["operation"]};
+}
+function samePermission(a:Permission,b:Permission):boolean {
+  return a.resource===b.resource && a.operation===b.operation;
+}
+function validateRustResult(
+  raw:unknown, expectedPresenter:string, required:readonly Permission[],
+  allowGiteaScopeCoverage:boolean
+):VerifiedDelegation {
+  const value=typeof raw==="string" ? JSON.parse(raw) as unknown : raw;
+  if(value===null || typeof value!=="object" || Array.isArray(value)) {
+    throw new Error("Malformed Rust VerifiedDelegation result");
+  }
+  const v=value as Record<string,unknown>;
+  if(v.presenter_id!==expectedPresenter ||
+     typeof v.credential_id!=="string" || !v.credential_id ||
+     typeof v.issuer_id!=="string" || !v.issuer_id ||
+     !Array.isArray(v.permissions) || v.permissions.length===0 ||
+     !Number.isSafeInteger(v.hierarchy_depth) || (v.hierarchy_depth as number)<0 ||
+     !(typeof v.expiration==="string" || typeof v.expiration==="number")) {
+    throw new Error("Invalid native Rust verifier response or presenter mismatch");
+  }
+  if(v.root_credential_id!==undefined&&
+     (typeof v.root_credential_id!=="string"||
+      !v.root_credential_id.trim()||
+      v.root_credential_id!==v.root_credential_id.trim()||
+      v.root_credential_id.length>1024)){
+    throw new Error("Malformed verified Rust root credential provenance");
+  }
+  const verified=v.permissions.map(permission);
+  if(!required.every(p=>verified.some(actual=>
+    samePermission(actual,p)||
+    (allowGiteaScopeCoverage&&giteaPermissionCovers(actual,p))))) {
+    throw new Error("Native Rust verifier response omits an authorized permission");
+  }
+  return {
+    presenter_id:v.presenter_id,
+    credential_id:v.credential_id,
+    issuer_id:v.issuer_id,
+    ...(typeof v.root_credential_id==="string"
+      ? {root_credential_id:v.root_credential_id} : {}),
+    permissions:verified,
+    hierarchy_depth:v.hierarchy_depth as number,
+    expiration:v.expiration
+  };
+}
+
+export class DirectCoreRustVerifier implements VerifierPort {
+  readonly #binding: CoreRustBinding;
+  readonly #identities:CoreRustIdentityMap;
+  readonly #allowGiteaScopeCoverage:boolean;
+
+  constructor(binding:CoreRustBinding, identities:CoreRustIdentityMap,
+    options?:Readonly<{allowGiteaScopeCoverage?:boolean}>) {
+    if(!binding || typeof binding.verify_verifiable_presentation!=="function") {
+      throw new Error("A loaded native Rust Core verifier binding is required");
+    }
+    const roles=identities&&typeof identities==="object"&&!Array.isArray(identities)
+      ?Object.keys(identities):[];
+    if(roles.length<ROLES.length||roles.length>ROLES.length+13||
+       !ROLES.every(role=>Object.hasOwn(identities,role))||
+       roles.some(role=>!ROLES.includes(role as AgentRole)&&
+         (!ADDITIONAL_ROLE.test(role)||
+          ["engineer","gateway","constructor","prototype"].includes(role))))
+      throw Error("Invalid trusted Rust Core presenter identity roster");
+    for(const role of roles){
+      if(!Object.hasOwn(identities,role)||!validIdentity(identities[role])){
+        throw new Error("Trusted DID identity missing for Rust Core role: "+role);
+      }
+    }
+    if(new Set(roles.map(role=>identities[role])).size!==roles.length){
+      throw new Error("Rust Core role identities must be distinct");
+    }
+    this.#binding=binding;
+    this.#identities=Object.freeze({...identities});
+    this.#allowGiteaScopeCoverage=options?.allowGiteaScopeCoverage===true;
+  }
+
+  /** Must be explicitly enabled by the trusted authority-only owner. */
+  get allowsGiteaScopeCoverage():boolean {
+    return this.#allowGiteaScopeCoverage;
+  }
+
+  async verify(request:VerificationRequest):Promise<VerifiedDelegation> {
+    return this.#verify(
+      request.presenter,request.audience,request.challenge,
+      [request.required_permission],request.signed_vp
+    );
+  }
+
+  async verifyMultiple(request:MultipleVerificationRequest):Promise<VerifiedDelegation>{
+    return this.#verify(
+      request.presenter,request.audience,request.challenge,
+      request.required_permissions,request.signed_vp
+    );
+  }
+
+  async #verify(
+    role:AgentRole,audience:string,challenge:string,
+    required:readonly Permission[],signedVp:string
+  ):Promise<VerifiedDelegation>{
+    const presenterId=Object.hasOwn(this.#identities,role)
+     ?this.#identities[role]:undefined;
+    if(!validIdentity(presenterId) ||
+       typeof audience!=="string" || !audience.trim() ||
+       typeof challenge!=="string" || !challenge.trim() ||
+       !Array.isArray(required) || required.length===0 || required.length>128 ||
+       typeof signedVp!=="string" || !signedVp.trim() ||
+       signedVp.length>2_000_000 ||
+       required.some(p=>p===null || typeof p!=="object" ||
+         typeof p.resource!=="string" || !p.resource ||
+         typeof p.operation!=="string" || !p.operation) ||
+       new Set(required.map(p=>JSON.stringify([p.resource,p.operation]))).size!==required.length) {
+      throw new VerificationRejectedError("Invalid Rust Core authorization context");
+    }
+    // This exact shape is deserialized by Core Rust AuthorizationContext:
+    // singleton remains wire-compatible, composite uses its plural field.
+    const context={
+      presenter_id:presenterId,audience,challenge,
+      ...(required.length===1
+        ? {required_permission:required[0]}
+        : {required_permissions:required})
+    };
+    let nativeResult:unknown;
+    try {
+      nativeResult=await this.#binding.verify_verifiable_presentation(
+        JSON.stringify(context),signedVp
+      );
+    }catch{
+      // A native error is not evidence of a successful verification. Do not
+      // leak internal resolver, key, RPC or signed-VP information to callers.
+      throw new VerificationRejectedError("Rust Core rejected the signed VP or trust context");
+    }
+    try {
+      return validateRustResult(nativeResult,presenterId,required,
+        this.#allowGiteaScopeCoverage);
+    }catch{
+      throw new VerificationUnavailableError(
+        "Native Rust Core returned an inconsistent verification result"
+      );
+    }
+  }
+}

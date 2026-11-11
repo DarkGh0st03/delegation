@@ -7,6 +7,13 @@ import type {
 
 function policyArguments(record: PreparedRequestRecord): Record<string, unknown> {
   switch (record.request.tool) {
+    case "read_repository":
+      return {};
+    case "list_directory":
+      return {
+        branch: record.request.arguments.branch,
+        path: record.request.arguments.path
+      };
     case "read_file":
       return {
         branch: record.request.arguments.branch,
@@ -48,6 +55,9 @@ export function buildPolicyInput(
     tool: record.request.tool,
     arguments: policyArguments(record),
     required_permission: record.required_permission,
+    ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
+    ...(record.approved_plan_digest ? {approved_plan_digest:record.approved_plan_digest} : {}),
+    ...(record.approved_work_branch ? {approved_work_branch:record.approved_work_branch} : {}),
     repository: {
       authority: repository.authority,
       owner: repository.owner,

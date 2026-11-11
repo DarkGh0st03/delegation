@@ -1,9 +1,11 @@
-name: Phase 11 Security Experiments
+# HISTORICAL ONLY: the Phase 11 experiment starts the legacy HTTP
+# Adapter. Never execute it automatically on protected main. Keep as a
+# manually invoked, disposable regression until its unique kill-switch and
+# stale-SHA coverage has been migrated to native Rust/Gateway Security CI.
+# No AI inference, no automatic merge, no authority-only production use.
+name: Phase 11 Security Experiments (Manual Legacy Regression Only)
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -128,11 +130,11 @@ jobs:
           configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
 
       - name: Build Delegation Adapter
-        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http
 
       - name: Start EVM-backed Delegation Adapter
         run: |
-          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/phase11a-adapter.log 2>&1 &
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http > /tmp/phase11a-adapter.log 2>&1 &
           echo $! > /tmp/phase11a-adapter.pid
 
       - name: Start Gateway without Runner

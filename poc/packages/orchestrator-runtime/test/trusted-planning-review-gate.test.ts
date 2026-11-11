@@ -1,0 +1,2123 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {generateKeyPairSync,sign as signJwt,randomBytes,scryptSync,randomInt} from "node:crypto";
+import {mkdtemp,rm,writeFile,chmod,readdir} from "node:fs/promises";
+import {join} from "node:path";
+import {createServer as createNetServer} from "node:net";
+import {tmpdir} from "node:os";
+import {makeApproval,planDigest}
+  from "../../plan-contracts/src/plan.mjs";
+import {signEngineerApproval}
+  from "../../plan-contracts/src/signed-approval.mjs";
+import {RUST_OPERATIONS}
+  from "../../../apps/gateway/src/operation-catalog.ts";
+import {TrustedApprovedExecutionPlans}
+  from "../../../apps/gateway/src/approved-execution-plans.ts";
+import {compilePlanningProposal} from "../src/trusted-adk-planner.ts";
+import {SignedEngineerApprovalFileStore}
+  from "../src/signed-approval-store.ts";
+import {TrustedPlanningReviewGate}
+  from "../src/trusted-planning-review-gate.ts";
+import {TrustedReviewedPlanFile}
+  from "../src/trusted-reviewed-plan-file.ts";
+import {createAuthenticatedEngineerServer}
+  from "../../../apps/orchestrator/src/engineer-approval-server.mjs";
+import {signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint,
+  stageVerifiedPlanningCheckpoint}
+  from "../src/trusted-planning-checkpoint.ts";
+import {SignedPlanningCheckpointFileStore}
+  from "../src/trusted-planning-checkpoint-store.ts";
+import {startPersistedReviewedGeminiHandoff}
+  from "../src/trusted-manual-gemini-handoff.ts";
+import {startPersistedReviewedScriptedHandoff}
+  from "../src/trusted-scripted-offline-handoff.ts";
+import {startAdmittedGithubReviewedScriptedHandoff}
+  from "../src/trusted-admitted-scripted-handoff.ts";
+import {TrustedScriptedGithubAdmissionStore,
+  verifyScriptedGithubManualDispatch}
+  from "../src/trusted-scripted-github-admission.ts";
+import type {DeterministicTaskHandler}
+  from "../../agent-runtime/src/executor.ts";
+import {startAdmittedGithubReviewedGeminiHandoff}
+  from "../src/trusted-admitted-github-handoff.ts";
+import {createReviewedApprovedDagExecution}
+  from "../src/trusted-owner-reviewed-dag-execution.ts";
+import {createTrustedApprovedTaskAuthorityAllocator}
+  from "../src/trusted-approved-task-authority.ts";
+import {TrustedGithubAdmissionReceiptStore}
+  from "../src/trusted-github-admission-store.ts";
+import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
+  from "../src/trusted-operational-recovery-store.ts";
+import {GithubOidcReplayFileStore}
+  from "../src/trusted-github-oidc-replay-store.ts";
+import {startTrustedGithubOidcIntakeServer}
+  from "../src/trusted-github-oidc-intake.ts";
+import {verifyGithubManualGeminiDispatch}
+  from "../src/trusted-manual-github-dispatch.ts";
+import {TrustedEngineerAuthoritySession}
+  from "../src/trusted-engineer-authority.ts";
+import {TrustedExecutionCoordinator}
+  from "../src/trusted-execution-coordinator.ts";
+import {verifyManualGeminiExecutionReadiness,createReviewedGeminiAdkModel,
+  createReviewedGeminiA2ARoleRuntime,startReviewedGeminiA2AServers,
+  verifyPortableManualGeminiHandoff}
+  from "../src/trusted-gemini-execution-readiness.ts";
+
+const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
+const ENGINEER="did:thesis:engineer";
+const REPO={authority:"gitea.local",owner:"thesis",repository:"invoices"};
+const SNAPSHOT={session_id:"review-session-1",repository:REPO,
+  base_revision:SHA,directories:["","src","src/billing"],files:[FILE]};
+const AGENTS={
+  backend:{did:"did:thesis:backend",card_ref:"trusted:backend"},
+  frontend:{did:"did:thesis:frontend",card_ref:"trusted:frontend"},
+  test:{did:"did:thesis:test",card_ref:"trusted:test"}
+};
+const CFG={snapshot:SNAPSHOT,requirement:"Sort invoices by due date",
+  planId:"invoice-plan-1",workBranch:"feature/invoice-sort",agents:AGENTS};
+const CATALOG=new Set(RUST_OPERATIONS);
+function sketch(){
+  return {tasks:[
+    {id:"branch",agent_id:"orchestrator",title:"Create work branch",
+      description:"Create a separate feature branch",depends_on:[],
+      permissions:[{operation:"create_branch",path:null,reason:"Isolate changes"}]},
+    {id:"backend",agent_id:"backend",title:"Implement sorting",
+      description:"Read and update invoice service",depends_on:["branch"],
+      permissions:[
+        {operation:"read_file",path:FILE,reason:"Read source"},
+        {operation:"update_file",path:FILE,reason:"Implement sorting"}
+      ]}
+  ],assumptions:[],uncertainties:[]};
+}
+function root(id:string,index:string){
+  return {credential_id:id,valid_from:new Date().toISOString(),
+    validity_seconds:300,credential_status:{
+      type:"BitstringStatusListEntry" as const,
+      statusPurpose:"revocation" as const,
+      statusListIndex:index,statusListCredential:"https://example.test/status/review"
+    }};
+}
+async function fixture(recovery=false){
+  const directory=await mkdtemp(join(tmpdir(),"approved-review-"));
+  const recoveryDirectory=recovery?
+    await mkdtemp(join(tmpdir(),"operational-recovery-")):undefined;
+  const keys=generateKeyPairSync("ed25519");
+  const publicKey=keys.publicKey.export({format:"pem",type:"spki"}).toString();
+  const privateKey=keys.privateKey.export({format:"pem",type:"pkcs8"}).toString();
+  const signed=new SignedEngineerApprovalFileStore({directory,
+    engineerDid:ENGINEER,trustedKeys:{
+      key1:{engineer_did:ENGINEER,public_key_pem:publicKey}
+    }});
+  const issued:{id:string;permissions:{resource:string;operation:string}[]}[]=[];
+  const revoked:string[]=[];
+  let onOperationalIssue:(()=>Promise<void>)|undefined;
+  let onOperationalRevoke:(()=>Promise<void>)|undefined;
+  const credentials={
+    async issueScopedOrchestratorRoot(input:any){
+      issued.push({id:input.credential_id,
+        permissions:structuredClone(input.permissions)});
+      if(input.credential_id==="urn:operational" && onOperationalIssue)
+        await onOperationalIssue();
+      return {id:input.credential_id,credentialSubject:{
+        per:structuredClone(input.permissions)
+      }};
+    },
+    async revokeRoot(id:string){
+      if(id==="urn:operational"&&onOperationalRevoke)
+        await onOperationalRevoke();
+      revoked.push(id);
+    }
+  };
+  let coordinator!:TrustedExecutionCoordinator;
+  const gate=new TrustedPlanningReviewGate({
+    snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+    authenticatedEngineerDid:ENGINEER,signedApprovals:signed,
+    planningIsActive:()=>coordinator?.phase==="planning"
+  });
+  const authority=new TrustedEngineerAuthoritySession({
+    snapshot:SNAPSHOT,credentials,approvals:gate,
+    authenticatedEngineerDid:ENGINEER
+  });
+  const plans=new TrustedApprovedExecutionPlans({
+    repository:REPO,engineerDid:ENGINEER,approvals:gate,
+    operationalLeaseMs:45_000,
+    completionAttestor:{async confirmCompleted(){return false;}}
+  });
+  coordinator=new TrustedExecutionCoordinator({
+    authority,approvedGatewayPlans:plans,credentials,
+    sessionId:SNAPSHOT.session_id,baseRevision:SHA,
+    ...(recoveryDirectory?{
+      operationalRecovery:new TrustedOperationalRecoveryStore(recoveryDirectory)
+    }:{})
+  });
+  function proposal(){
+    const result=compilePlanningProposal(sketch(),CFG);
+    return {...result,verified_source_reads:1};
+  }
+  async function sign(plan:any,ids:string[],privateOverride?:string){
+    const now=new Date();
+    const approved_at=now.toISOString();
+    const approval=makeApproval(plan,{allowedOperations:CATALOG,
+      decision_id:"engineer-decision-1",approved_by:ENGINEER,approved_at,
+      approved_permission_ids:ids
+    });
+    const receipt=signEngineerApproval({plan,approval,engineerDid:ENGINEER,
+      keyId:"key1",privateKeyPem:privateOverride??privateKey,
+      issuedAt:approved_at,
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    await writeFile(join(directory,SNAPSHOT.session_id+".json"),
+      JSON.stringify(receipt),{mode:0o600});
+  }
+  return {gate,coordinator,issued,revoked,proposal,sign,
+    directory,privateKey,publicKey,
+    replaceReceiptAfterOperationalIssue(handler:()=>Promise<void>){
+      onOperationalIssue=handler;
+    },
+    delayOperationalRevocation(handler:()=>Promise<void>){
+      onOperationalRevoke=handler;
+    },
+    close:async()=>{
+      await rm(directory,{recursive:true,force:true});
+      if(recoveryDirectory)
+        await rm(recoveryDirectory,{recursive:true,force:true});
+    }};
+}
+
+test("signed Engineer review exactly binds Planner digest and approved subset to operational root/Gateway",async()=>{
+  const f=await fixture(true);
+  try{
+    await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")),
+      /prior Planning/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id),
+      /no exact staged Planning proposal/);
+    assert.deepEqual(f.revoked,[]);
+    const proposal=f.proposal();
+    const review=f.gate.stageTrustedProposal(proposal);
+    assert.equal(review.status,"awaiting_engineer_signature");
+    assert.equal(review.plan_digest,planDigest(proposal.plan));
+    assert.deepEqual(review.plan.requested_permissions,proposal.plan.requested_permissions);
+    review.plan.tasks[1].description="malicious mutation to review copy";
+    assert.notEqual(f.gate.reviewPacket().plan.tasks[1].description,
+      "malicious mutation to review copy");
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
+    assert.deepEqual(f.revoked,[]);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const starting=f.coordinator.beginExecution(root("urn:operational","102"));
+    // The first activation reserves the phase synchronously, BEFORE
+    // awaiting journal I/O. A second simultaneous request never issues.
+    await assert.rejects(f.coordinator.beginExecution(
+      root("urn:parallel-root","103")
+    ),/prior Planning/);
+    const active=await starting;
+    assert.equal(active.plan_digest,proposal.digest);
+    assert.equal(f.coordinator.phase,"execution");
+    assert.deepEqual(f.revoked,["urn:preliminary"]);
+    assert.equal(f.issued.length,2);
+    assert.deepEqual(f.issued[1].permissions.map(x=>x.operation),
+      ["create_branch","update_file"]);
+    assert.equal(f.coordinator.trustedOperationalAuthority().plan_digest,
+      proposal.digest);
+    await f.coordinator.closeExecution();
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await f.close();}
+});
+
+test("signed Planning and Engineer review accept up to 64 verified reads but refuse 65",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const base=f.proposal();
+    // These are offline boundary fixtures; the model is never contacted.
+    // Neither passing a count nor a signature is proof of actual Gitea reads.
+    assert.throws(()=>f.gate.stageTrustedProposal({
+      ...base,verified_source_reads:65
+    }),/no grounded, unapproved Planner result/);
+    const packet=f.gate.stageTrustedProposal({
+      ...base,verified_source_reads:64
+    });
+    assert.equal(packet.verified_source_reads,64);
+    assert.equal(packet.status,"awaiting_engineer_signature");
+
+    const signer=generateKeyPairSync("ed25519");
+    const privateKeyPem=signer.privateKey.export({
+      type:"pkcs8",format:"pem"
+    }).toString();
+    const publicKeyPem=signer.publicKey.export({
+      type:"spki",format:"pem"
+    }).toString();
+    const now=Date.now();
+    const signed=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...base,verified_source_reads:64},
+      keyId:"long-discovery",privateKeyPem,
+      issuedAt:new Date(now-1000).toISOString(),
+      expiresAt:new Date(now+300000).toISOString()
+    });
+    const verified=verifyTrustedPlanningCheckpoint(signed,{
+      trustedKeys:{"long-discovery":{public_key_pem:publicKeyPem}},
+      expectedSessionId:SNAPSHOT.session_id,
+      expectedRepository:REPO,
+      expectedBaseRevision:SHA,
+      expectedWorkBranch:CFG.workBranch,
+      nowMs:now
+    });
+    assert.equal(verified.proposal.verified_source_reads,64);
+    assert.throws(()=>signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...base,verified_source_reads:65},
+      keyId:"long-discovery",privateKeyPem,
+      issuedAt:new Date(now-1000).toISOString(),
+      expiresAt:new Date(now+300000).toISOString()
+    }),/no authentic grounded read-only proposal/);
+  }finally{await f.close();}
+});
+
+test("without a persisted signed receipt, Execution fails closed before revocation",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    f.gate.stageTrustedProposal(f.proposal());
+    await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")));
+    assert.equal(f.coordinator.phase,"failed_closed");
+    assert.deepEqual(f.revoked,[]);
+    assert.equal(f.issued.length,1);
+  }finally{await f.close();}
+});
+
+test("altered, independently signed plan is NOT the exact proposal and cannot revoke Planning root",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const original=f.proposal();
+    f.gate.stageTrustedProposal(original);
+    const altered=structuredClone(original.plan);
+    altered.tasks[1].description="Different Engineer-visible work";
+    await f.sign(altered,["permission-1","permission-3"]);
+    await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")),
+      /signed Engineer plan differs from the staged proposal/);
+    assert.deepEqual(f.revoked,[]);
+    assert.equal(f.issued.length,1);
+    assert.equal(f.coordinator.phase,"failed_closed");
+  }finally{await f.close();}
+});
+
+test("changed valid signed decision after root issuance makes Gateway activation revoke the new root",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const p=f.proposal();f.gate.stageTrustedProposal(p);
+    await f.sign(p.plan,["permission-1","permission-3"]);
+    // After Rust issues its independently scoped operational root, replace
+    // the original signed receipt with a different ALSO-valid Engineer
+    // signature on the same plan but a different permission subset.
+    f.replaceReceiptAfterOperationalIssue(async()=>{
+      await f.sign(p.plan,["permission-1","permission-2"]);
+    });
+    await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")),
+      /signed permission decision changed after initial trusted load/);
+    assert.equal(f.coordinator.phase,"failed_closed");
+    assert.deepEqual(f.issued.map(x=>x.id),["urn:preliminary","urn:operational"]);
+    assert.deepEqual(f.issued[1].permissions.map(x=>x.operation),
+      ["create_branch","update_file"]);
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(f.coordinator.beginExecution(root("another","103")));
+  }finally{await f.close();}
+});
+
+test("untrusted review staging is one-shot, scope-bound and requires active Planning",async()=>{
+  const f=await fixture();
+  try{
+    const original=f.proposal();
+    assert.throws(()=>f.gate.stageTrustedProposal(original),/phase is not active/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    for(const mutate of [
+      (x:any)=>{x.status="approved";},
+      (x:any)=>{x.digest="b".repeat(64);},
+      (x:any)=>{x.verified_source_reads=0;},
+      (x:any)=>{x.plan.base_revision="b".repeat(40);},
+      (x:any)=>{x.plan.repository.owner="attacker";},
+      (x:any)=>{x.plan.tasks[1].resources[0]="gitea://attacker/external";}
+    ]){
+      const copy=structuredClone(original);mutate(copy);
+      assert.throws(()=>f.gate.stageTrustedProposal(copy));
+    }
+    f.gate.stageTrustedProposal(original);
+    assert.throws(()=>f.gate.stageTrustedProposal(original),/one immutable proposal/);
+    await assert.rejects(f.gate.loadAuthenticatedApproval("wrong-session"),
+      /no exact staged Planning proposal/);
+    assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+test("untrusted signer and modified receipt cannot authorize an operational root",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const p=f.proposal();f.gate.stageTrustedProposal(p);
+    const rogue=generateKeyPairSync("ed25519").privateKey
+      .export({format:"pem",type:"pkcs8"}).toString();
+    await f.sign(p.plan,["permission-1","permission-3"],rogue);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id),
+      /invalid approval signature/);
+    assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+
+test("manual Gemini readiness requires independent Ed25519 review and never creates authority",async()=>{
+  const f=await fixture();
+  try{
+    const base={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"ci-dummy-non-live-secret",
+      modelName:"gemini-3.8-flash",
+      maxModelTurns:12,
+      maxOutputTokens:16000,
+      trustedPhase:()=>f.coordinator.phase,
+      reviewGate:f.gate
+    };
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base),
+      /active Coordinator/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base),
+      /no staged proposal/);
+    const draft=f.proposal();
+    f.gate.stageTrustedProposal(draft);
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base));
+    assert.equal(f.issued.length,1);
+    assert.deepEqual(f.revoked,[]);
+    await f.sign(draft.plan,["permission-1","permission-3"]);
+    for(const patch of [
+      {githubEventName:"push"},{githubRunAttempt:"2"},
+      {authorizationInput:"I AUTHORIZE"},{geminiApiKey:""},
+      {modelName:"openai-gpt"},{modelName:"gemini-3.8-flash/other"},
+      {maxModelTurns:0},{maxModelTurns:33},
+      {maxOutputTokens:0},{maxOutputTokens:32001}
+    ]){
+      await assert.rejects(verifyManualGeminiExecutionReadiness({
+        ...base,...patch
+      }),/Trusted paid Gemini readiness/);
+    }
+    const ready=await verifyManualGeminiExecutionReadiness(base);
+    assert.equal(ready.plan_digest,draft.digest);
+    assert.equal(ready.base_revision,SHA);
+    assert.equal(ready.model_name,"gemini-3.8-flash");
+    assert.equal(ready.status,"signed_engineer_approved_manual_gemini_ready");
+    assert.deepEqual(ready.approved_permission_ids,
+      ["permission-1","permission-3"]);
+    assert.equal(ready.authenticated_engineer_did,ENGINEER);
+    assert.ok(Object.isFrozen(ready));
+    assert.ok(Object.isFrozen(ready.approved_permission_ids));
+    assert.ok(!JSON.stringify(ready).includes(base.geminiApiKey));
+    assert.deepEqual(f.revoked,[]);
+    assert.equal(f.issued.length,1); // Readiness is never operational issuance
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base),
+      /active Coordinator/);
+  }finally{await f.close();}
+});
+
+test("Gemini manual opt-in does not bypass an altered Engineer-signed plan",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();f.gate.stageTrustedProposal(proposal);
+    const altered=structuredClone(proposal.plan);
+    altered.tasks[1].description="Substitute signed scope";
+    await f.sign(altered,["permission-1","permission-3"]);
+    await assert.rejects(verifyManualGeminiExecutionReadiness({
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"ci-fake-key",modelName:"gemini-3.8-flash",
+      maxModelTurns:8,maxOutputTokens:16000,
+      trustedPhase:()=>f.coordinator.phase,reviewGate:f.gate
+    }),/signed Engineer plan differs from the staged proposal/);
+    assert.equal(f.issued.length,1);
+    assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+
+test("manual Gemini factory constructs ADK model only after signing; no inference or root issuance",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const p=f.proposal();f.gate.stageTrustedProposal(p);
+    const options={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"not-a-real-api-key",
+      modelName:"gemini-3.8-flash",
+      maxModelTurns:8,
+      maxOutputTokens:16000,
+      trustedPhase:()=>f.coordinator.phase,
+      reviewGate:f.gate
+    };
+    await assert.rejects(createReviewedGeminiAdkModel(options));
+    await f.sign(p.plan,["permission-1","permission-3"]);
+    const {model,readiness}=await createReviewedGeminiAdkModel(options);
+    assert.equal(model.model,"gemini-3.8-flash");
+    assert.equal(readiness.plan_digest,p.digest);
+    assert.ok(!JSON.stringify(readiness).includes(options.geminiApiKey));
+    assert.equal(f.issued.length,1);
+    assert.deepEqual(f.revoked,[]);
+    await assert.rejects(createReviewedGeminiAdkModel({
+      ...options,githubRunAttempt:"2"
+    }),/first GitHub Actions attempt/);
+  }finally{await f.close();}
+});
+
+
+test("manual signed Gemini gate transfers identical bounded ADK settings to all three roles",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    const transports={
+      backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend-secret"},
+      frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend-secret"},
+      test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test-secret"}
+    };
+    const options={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"not-a-real-api-key",modelName:"gemini-3.8-flash",
+      maxModelTurns:12,maxOutputTokens:16000,
+      maxModelCallMs:120000,
+      trustedPhase:()=>f.coordinator.phase,
+      reviewGate:f.gate,transports
+    };
+    await assert.rejects(createReviewedGeminiA2ARoleRuntime(options));
+    assert.deepEqual(f.revoked,[]);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const runtime=await createReviewedGeminiA2ARoleRuntime(options);
+    assert.equal(runtime.readiness.plan_digest,proposal.digest);
+    assert.ok(Object.isFrozen(runtime.role_configs));
+    const roles=["backend","frontend","test"] as const;
+    assert.deepEqual(Object.keys(runtime.role_configs),[...roles]);
+    for(const role of roles){
+      const config=runtime.role_configs[role];
+      assert.equal(config.model.model,"gemini-3.8-flash");
+      assert.equal(config.maxModelTurns,12);
+      assert.equal(config.maxModelCallMs,120000);
+      assert.deepEqual(config.generateContentConfig,{maxOutputTokens:16000});
+      assert.equal(config.scopeModelPaths,true);
+      assert.equal(config.adapterToken,transports[role].adapterToken);
+    }
+    assert.notEqual(runtime.role_configs.backend.model,runtime.role_configs.test.model);
+    for(const patch of [
+      {maxModelCallMs:361000},
+      {maxModelCallMs:0},
+      {transports:{...transports,frontend:{...transports.frontend,
+        adapterToken:transports.backend.adapterToken}}},
+      {transports:{...transports,test:{...transports.test,
+        gatewayBaseUrl:"javascript:invalid"}}}
+    ]){
+      await assert.rejects(createReviewedGeminiA2ARoleRuntime({
+        ...options,...patch
+      }),/Trusted paid Gemini readiness/);
+    }
+    assert.equal(f.issued.length,1); // construction is not operational root
+    assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+
+test("trusted operational approval binds startup of three loopback ADK A2A servers without inference",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const input={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"fake-unused-secret",modelName:"gemini-3.8-flash",
+      maxModelTurns:6,maxOutputTokens:12000,maxModelCallMs:30000,
+      trustedPhase:()=>f.coordinator.phase,reviewGate:f.gate,
+      transports:{
+        backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend"},
+        frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend"},
+        test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test"}
+      }
+    };
+    const reviewed=await createReviewedGeminiA2ARoleRuntime(input);
+    const ports={backend:30181,frontend:30182,test:30183};
+    await assert.rejects(startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed,ports
+    }),/operational root/);
+    assert.deepEqual(f.revoked,[]);
+    const active=await f.coordinator.beginExecution(root("urn:operational","102"));
+    assert.equal(active.plan_digest,reviewed.readiness.plan_digest);
+    await assert.rejects(startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed:{...reviewed},ports
+    }),/authenticated minted Gemini runtime/);
+    assert.equal(f.coordinator.phase,"execution");
+    const running=await startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed,ports
+    });
+    try{
+      assert.deepEqual(Object.keys(running.endpoints),
+        ["backend","frontend","test"]);
+      for(const role of ["backend","frontend","test"] as const){
+        assert.equal(running.servers[role].role,role);
+        assert.equal(running.endpoints[role],
+          "http://127.0.0.1:"+ports[role]);
+      }
+      assert.deepEqual(f.revoked,["urn:preliminary"]);
+      assert.equal(f.issued.length,2); // no new child/root DC at startup
+    }finally{await running.close();}
+    await f.coordinator.closeExecution();
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await f.close();}
+});
+
+test("approved Gemini A2A server startup fails closed and revokes operational authority on invalid ports",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const reviewed=await createReviewedGeminiA2ARoleRuntime({
+      githubEventName:"workflow_dispatch",githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"not-real",modelName:"gemini-3.8-flash",
+      maxModelTurns:6,maxOutputTokens:12000,maxModelCallMs:30000,
+      trustedPhase:()=>f.coordinator.phase,reviewGate:f.gate,
+      transports:{
+        backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend"},
+        frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend"},
+        test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test"}
+      }
+    });
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    await assert.rejects(startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed,
+      ports:{backend:30080,frontend:30080,test:30082}
+    }),/distinct, valid local A2A ports/);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await f.close();}
+});
+
+
+test("signed Planning provenance is independent of Engineer receipt and safely stages exact verified proposal",async()=>{
+  const f=await fixture();
+  try{
+    const signing=generateKeyPairSync("ed25519");
+    const publicPem=signing.publicKey.export({format:"pem",type:"spki"}).toString();
+    const privatePem=signing.privateKey.export({format:"pem",type:"pkcs8"}).toString();
+    const proposal=f.proposal();
+    const now=new Date();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal,
+      keyId:"trusted-backend-1",privateKeyPem:privatePem,
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const config={
+      trustedKeys:{"trusted-backend-1":{public_key_pem:publicPem}},
+      expectedSessionId:SNAPSHOT.session_id,
+      expectedRepository:REPO,
+      expectedBaseRevision:SHA,
+      expectedWorkBranch:CFG.workBranch
+    };
+    const verified=verifyTrustedPlanningCheckpoint(ticket,config);
+    assert.equal(verified.proposal.digest,proposal.digest);
+    assert.equal(verified.key_id,"trusted-backend-1");
+    assert.ok(!JSON.stringify(verified).includes(privatePem));
+    assert.throws(()=>stageVerifiedPlanningCheckpoint(f.gate,ticket,config),
+      /Planning phase is not active/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const review=stageVerifiedPlanningCheckpoint(f.gate,ticket,config);
+    assert.equal(review.plan_digest,proposal.digest);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    assert.equal((await f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id))
+      .authenticated_engineer_did,ENGINEER);
+    assert.equal(f.issued.length,1);
+    assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+test("Planning checkpoint refuses forged, altered, stale, wrong-session or unpinned provenance",async()=>{
+  const signing=generateKeyPairSync("ed25519");
+  const publicPem=signing.publicKey.export({format:"pem",type:"spki"}).toString();
+  const privatePem=signing.privateKey.export({format:"pem",type:"pkcs8"}).toString();
+  const now=new Date();
+  const original=compilePlanningProposal(sketch(),CFG);
+  const ticket=signTrustedPlanningCheckpoint({
+    snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+    proposal:{...original,verified_source_reads:1},
+    keyId:"backend-signing-key",privateKeyPem:privatePem,
+    issuedAt:now.toISOString(),
+    expiresAt:new Date(now.getTime()+600000).toISOString()
+  });
+  const config={
+    trustedKeys:{"backend-signing-key":{public_key_pem:publicPem}},
+    expectedSessionId:SNAPSHOT.session_id,
+    expectedRepository:REPO,
+    expectedBaseRevision:SHA,expectedWorkBranch:CFG.workBranch
+  };
+  const changes=[
+    (x:any)=>{x.signature="A".repeat(86);},
+    (x:any)=>{x.proposal.plan.tasks[1].description="attacker substitution";},
+    (x:any)=>{x.snapshot.files=["src/secrets.ts"];},
+    (x:any)=>{x.proposal.digest="0".repeat(64);},
+    (x:any)=>{x.expected_work_branch="feature/attacker";},
+    (x:any)=>{x.snapshot.base_revision="0".repeat(40);},
+    (x:any)=>{x.key_id="attacker";},
+    (x:any)=>{x.proposal.verified_source_reads=0;}
+  ];
+  for(const change of changes){
+    const forged=structuredClone(ticket);change(forged);
+    assert.throws(()=>verifyTrustedPlanningCheckpoint(forged,config));
+  }
+  for(const wrong of [
+    {expectedSessionId:"another-session"},
+    {expectedBaseRevision:"0".repeat(40)},
+    {expectedWorkBranch:"feature/other"},
+    {expectedRepository:{...REPO,owner:"attacker"}},
+    {trustedKeys:{"backend-signing-key":{
+      public_key_pem:generateKeyPairSync("ed25519")
+        .publicKey.export({format:"pem",type:"spki"}).toString()
+    }}},
+    {nowMs:now.getTime()+700000}
+  ]){
+    assert.throws(()=>verifyTrustedPlanningCheckpoint(ticket,{
+      ...config,...wrong
+    }));
+  }
+  const malformed={...ticket,unknown:"value"};
+  assert.throws(()=>verifyTrustedPlanningCheckpoint(malformed,config));
+});
+
+
+test("portable manual handoff verifies separate Planning and Engineer signatures before paid readiness",async()=>{
+  const f=await fixture();
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const proposal=f.proposal();
+    const checkpoint=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal,
+      keyId:"backend-1",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const input={
+      reviewGate:f.gate,checkpoint,
+      checkpointTrust:{
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch,
+        trustedKeys:{ "backend-1":{public_key_pem:backend.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()}}
+      },
+      readiness:{
+        githubEventName:"workflow_dispatch",
+        githubRunAttempt:"1",
+        authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+        geminiApiKey:"only-placeholder-never-used",
+        modelName:"gemini-3.8-flash",
+        maxModelTurns:8,maxOutputTokens:16000,
+        trustedPhase:()=>f.coordinator.phase
+      }
+    };
+    await assert.rejects(verifyPortableManualGeminiHandoff(input),
+      /real trusted Planning coordinator/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const ready=await verifyPortableManualGeminiHandoff(input);
+    assert.equal(ready.status,"signed_engineer_approved_manual_gemini_ready");
+    assert.equal(ready.plan_digest,proposal.digest);
+    assert.deepEqual(ready.approved_permission_ids,
+      ["permission-1","permission-3"]);
+    assert.deepEqual(f.revoked,[]);
+    assert.equal(f.issued.length,1);
+    assert.throws(()=>f.gate.stageTrustedProposal(proposal),
+      /one immutable proposal/);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    assert.equal(f.coordinator.phase,"execution");
+    assert.deepEqual(f.revoked,["urn:preliminary"]);
+    await f.coordinator.closeExecution();
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await f.close();}
+});
+
+
+test("checkpoint file store verifies pinned backend signature and owner-only persistence",async()=>{
+  const directory=await mkdtemp(join(tmpdir(),"trusted-planning-checkpoint-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...compilePlanningProposal(sketch(),CFG),verified_source_reads:1},
+      keyId:"trusted-backend-1",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const store=new SignedPlanningCheckpointFileStore({
+      directory,
+      trust:{
+        trustedKeys:{"trusted-backend-1":{
+          public_key_pem:backend.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,
+        expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const file=join(directory,SNAPSHOT.session_id+".json");
+    await store.persistVerified(ticket);
+    const verified=await store.load();
+    // One immutable, durable signed Planning checkpoint per session.
+    await assert.rejects(store.persistVerified(ticket),error=>{
+      assert.equal((error as NodeJS.ErrnoException).code,"EEXIST");
+      return true;
+    });
+    const invalid=structuredClone(ticket);
+    invalid.proposal.plan.tasks[1].description="injected changed source";
+    await assert.rejects(store.persistVerified(invalid),
+      /Signed Planning checkpoint:/);
+    assert.equal((await store.load()).proposal.digest,ticket.proposal.digest);
+    assert.equal(verified.proposal.digest,ticket.proposal.digest);
+    const modified=structuredClone(ticket);
+    modified.proposal.plan.tasks[1].description="injected changed source";
+    await writeFile(file,JSON.stringify(modified),{mode:0o600});
+    // Scope integrity is independently checked even before the signature.
+    await assert.rejects(store.load(),/Signed Planning checkpoint:/);
+    // writeFile({mode}) does NOT reset permissions on an existing inode.
+    // Deliberately chmod the fixture to prove the secure store rejects it.
+    await writeFile(file,JSON.stringify(ticket));
+    await chmod(file,0o644);
+    await assert.rejects(store.load(),/owner-only/);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("trusted manual host loads persisted backend signature + Engineer receipt then activates three A2A roles",async()=>{
+  const f=await fixture();
+  const folder=await mkdtemp(join(tmpdir(),"manual-gemini-host-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const plan=f.proposal();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal:plan,
+      keyId:"backend-host",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    await writeFile(join(folder,SNAPSHOT.session_id+".json"),
+      JSON.stringify(ticket),{mode:0o600});
+    const checkpointStore=new SignedPlanningCheckpointFileStore({
+      directory:folder,trust:{
+        trustedKeys:{"backend-host":{
+          public_key_pem:backend.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const manual={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"non-billable-dummy",modelName:"gemini-3.8-flash",
+      maxModelTurns:8,maxOutputTokens:8000
+    };
+    const transports={
+      backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend-token"},
+      frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend-token"},
+      test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test-token"}
+    };
+    const input={
+      coordinator:f.coordinator,reviewGate:f.gate,checkpointStore,
+      manual,transports,maxModelCallMs:30000,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:30581,frontend:30582,test:30583}
+    };
+    await assert.rejects(startPersistedReviewedGeminiHandoff(input),
+      /Active verified Planning root/);
+    assert.equal(f.issued.length,0);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await assert.rejects(startPersistedReviewedGeminiHandoff(input));
+    assert.equal(f.issued.length,1);
+    await f.sign(plan.plan,["permission-1","permission-3"]);
+    // The unsigned input object cannot override the trusted phase.
+    const launched=await startPersistedReviewedGeminiHandoff(input);
+    try{
+      assert.equal(launched.readiness.plan_digest,plan.digest);
+      assert.equal(launched.operational_root_id,"urn:operational");
+      assert.deepEqual(Object.keys(launched.endpoints),
+        ["backend","frontend","test"]);
+      assert.equal(f.coordinator.phase,"execution");
+      assert.equal(f.issued.length,2);
+      assert.deepEqual(f.revoked,["urn:preliminary"]);
+      // Simulate the trusted dispatcher starting shutdown BEFORE the
+      // Engineer host. The Coordinator enters phase=closed synchronously,
+      // but native Rust revocation has not finished yet.
+      let unblock:()=>void=()=>{};
+      const revocationBarrier=new Promise<void>(resolve=>{unblock=resolve;});
+      f.delayOperationalRevocation(()=>revocationBarrier);
+      const inFlight=f.coordinator.closeExecution();
+      assert.equal(f.coordinator.phase,"closed");
+      const hostStop=launched.close();
+      assert.equal(hostStop,launched.close()); // same close promise
+      let hostClosed=false;
+      void hostStop.then(()=>{hostClosed=true;},()=>{});
+      await Promise.resolve();
+      assert.equal(hostClosed,false);
+      assert.deepEqual(f.revoked,["urn:preliminary"]);
+      unblock();
+      await Promise.all([inFlight,hostStop]);
+      assert.equal(hostClosed,true);
+    }finally{await launched.close();}
+    // One trusted host close must revoke the root, not just stop HTTP.
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    await f.close();
+    await rm(folder,{recursive:true,force:true});
+  }
+});
+
+test("persisted manual host refuses wrong checkpoint SHA before operational issuance",async()=>{
+  const f=await fixture();
+  const folder=await mkdtemp(join(tmpdir(),"manual-gemini-invalid-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const proposal=f.proposal();
+    const checkpoint=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal,
+      keyId:"backend-host",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    await writeFile(join(folder,SNAPSHOT.session_id+".json"),
+      JSON.stringify(checkpoint),{mode:0o600});
+    const checkpointStore=new SignedPlanningCheckpointFileStore({
+      directory:folder,trust:{
+        trustedKeys:{"backend-host":{
+          public_key_pem:backend.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,
+        expectedBaseRevision:"b".repeat(40),
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    await assert.rejects(startPersistedReviewedGeminiHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,checkpointStore,
+      manual:{
+        githubEventName:"workflow_dispatch",githubRunAttempt:"1",
+        authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+        geminiApiKey:"fake",modelName:"gemini-3.8-flash",
+        maxModelTurns:8,maxOutputTokens:8000
+      },
+      transports:{} as any,maxModelCallMs:30000,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:30581,frontend:30582,test:30583}
+    }),/not pinned to independently selected session or Gitea SHA/);
+    assert.equal(f.issued.length,1);
+    assert.equal(f.coordinator.phase,"planning");
+    assert.deepEqual(f.revoked,[]);
+  }finally{
+    await f.close();
+    await rm(folder,{recursive:true,force:true});
+  }
+});
+
+
+test("verified signed GitHub OIDC reaches live Planning and requires independent Engineer signature",async()=>{
+  const f=await fixture(true);
+  const checkpointDir=await mkdtemp(join(tmpdir(),"engineer-checkpoint-admission-"));
+  const consentDir=await mkdtemp(join(tmpdir(),"engineer-oidc-admission-"));
+  const replayDir=await mkdtemp(join(tmpdir(),"engineer-oidc-replay-"));
+  let oidcServer:Awaited<ReturnType<typeof startTrustedGithubOidcIntakeServer>>|undefined;
+  try{
+    const signing=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const plan=f.proposal();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal:plan,
+      keyId:"host-backend",
+      privateKeyPem:signing.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    await writeFile(join(checkpointDir,SNAPSHOT.session_id+".json"),
+      JSON.stringify(ticket),{mode:0o600});
+    const checkpointStore=new SignedPlanningCheckpointFileStore({
+      directory:checkpointDir,trust:{
+        trustedKeys:{"host-backend":{
+          public_key_pem:signing.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const admissionStore=new TrustedGithubAdmissionReceiptStore({
+      directory:consentDir,hmacSecret:Buffer.alloc(32,99),
+      expectedSessionId:SNAPSHOT.session_id
+    });
+    const githubRepo="DarkGh0st03/delegation";
+    const githubRef="refs/heads/refactor/post-prof-plan-contracts-20261021";
+    const githubSha="f".repeat(40),runId="39829995555";
+    const githubWorkflow=".github/workflows/trusted-gemini-dispatch-preflight.yml";
+    const dispatch=verifyGithubManualGeminiDispatch({
+      env:{
+        GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
+        GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:githubRepo,
+        GITHUB_REF:githubRef,
+        GITHUB_WORKFLOW_REF:githubRepo+"/"+githubWorkflow+"@"+githubRef,
+        GITHUB_SHA:githubSha,GITHUB_RUN_ID:runId
+      },
+      event:{
+        repository:{full_name:githubRepo},ref:githubRef,
+        inputs:{authorization:"I AUTHORIZE GEMINI API CHARGES",
+          model:"gemini-3.8-flash",max_model_turns:"8",
+          max_output_tokens:"8000",max_model_call_ms:"30000"}
+      },
+      pinned:{repository:githubRepo,ref:githubRef,
+        workflowPath:githubWorkflow,sourceSha:githubSha}
+    });
+    // Mock GitHub issuer signs real RS256 JWTs; the real verifier checks
+    // their signature, immutable subject, source pins and Actions REST run.
+    // Separate push CI verifies the live GitHub issuer; this is offline.
+    const rsa=generateKeyPairSync("rsa",{modulusLength:2048});
+    const publicJwk=rsa.publicKey.export({format:"jwk"}) as any;
+    const ownerId="150908952",repositoryId="1374168963";
+    const audience="urn:delegation:trusted-engineer-offline-e2e";
+    const expectedSubject="repo:DarkGh0st03@"+ownerId+
+      "/delegation@"+repositoryId+":ref:"+githubRef;
+    function jwtFor(id:string,changes:Record<string,unknown>={}){
+      const now=Math.floor(Date.now()/1000);
+      const claims={
+        iss:"https://token.actions.githubusercontent.com",aud:audience,
+        sub:expectedSubject,iat:now-20,nbf:now-10,exp:now+120,
+        jti:"offline-oidc-job-"+id+"-"+randomBytes(8).toString("hex"),
+        repository:githubRepo,repository_id:repositoryId,
+        repository_owner_id:ownerId,
+        ref:githubRef,ref_type:"branch",sha:githubSha,
+        workflow_sha:githubSha,
+        workflow_ref:githubRepo+"/"+githubWorkflow+"@"+githubRef,
+        event_name:"workflow_dispatch",run_id:id,run_attempt:"1",
+        ...changes
+      };
+      const header=Buffer.from(JSON.stringify({
+        alg:"RS256",typ:"JWT",kid:"offline-e2e-issuer-key"
+      })).toString("base64url");
+      const payload=Buffer.from(JSON.stringify(claims)).toString("base64url");
+      const data=header+"."+payload;
+      return data+"."+signJwt("RSA-SHA256",Buffer.from(data),
+        rsa.privateKey).toString("base64url");
+    }
+    let liveRunStatus:"in_progress"|"completed"="in_progress";
+    const githubRunFetch=async(url:RequestInfo|URL)=>{
+      const id=String(url).split("/").at(-1);
+      return new Response(JSON.stringify({
+        id:Number(id),event:"workflow_dispatch",run_attempt:1,
+        status:liveRunStatus,head_sha:githubSha,
+        head_branch:githubRef.slice("refs/heads/".length),
+        path:githubWorkflow,
+        head_repository:{full_name:githubRepo},
+        created_at:new Date().toISOString()
+      }),{status:200});
+    };
+    oidcServer=await startTrustedGithubOidcIntakeServer({
+      pinned:{repository:githubRepo,ref:githubRef,
+        workflowPath:githubWorkflow,sourceSha:githubSha},
+      trust:{
+        expectedAudience:audience,expectedSubject,
+        expectedRepositoryId:repositoryId,expectedOwnerId:ownerId
+      },
+      githubApiToken:"test-only-read-token",
+      replayStore:new GithubOidcReplayFileStore(replayDir),
+      admissionStore,
+      oidcJwksFetchFn:(async()=>new Response(JSON.stringify({keys:[{
+        ...publicJwk,kid:"offline-e2e-issuer-key",use:"sig",alg:"RS256"
+      }]}),{status:200})) as typeof fetch,
+      githubApiFetchFn:githubRunFetch as typeof fetch,port:0
+    });
+    const event={
+      repository:{full_name:githubRepo},ref:githubRef,
+      inputs:{
+        authorization:dispatch.authorization_input,
+        model:dispatch.model_name,
+        max_model_turns:String(dispatch.max_model_turns),
+        max_output_tokens:String(dispatch.max_output_tokens),
+        max_model_call_ms:String(dispatch.max_model_call_ms)
+      }
+    };
+    async function admitRun(id:string,alter:Record<string,unknown>={}){
+      const env={
+        GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
+        GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:githubRepo,
+        GITHUB_REF:githubRef,
+        GITHUB_WORKFLOW_REF:githubRepo+"/"+githubWorkflow+"@"+githubRef,
+        GITHUB_SHA:githubSha,GITHUB_RUN_ID:id
+      };
+      return fetch(oidcServer!.endpoint,{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({env,event,oidcJwt:jwtFor(id,alter)})
+      });
+    }
+    assert.equal((await admitRun(runId,{sub:"repo:attacker/bogus"})).status,403);
+    assert.deepEqual(await readdir(consentDir),[]);
+    assert.deepEqual(await readdir(replayDir),[]);
+    const firstAdmission=await admitRun(runId);
+    assert.equal(firstAdmission.status,200);
+    assert.equal((await firstAdmission.json()).engineer_approval,"not_checked");
+    assert.equal((await readdir(replayDir)).length,1);
+    const transports={
+      backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend-token"},
+      frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend-token"},
+      test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test-token"}
+    };
+    const input={
+      coordinator:f.coordinator,reviewGate:f.gate,checkpointStore,
+      admissionStore,
+      pins:{sessionId:SNAPSHOT.session_id,runId,sourceSha:githubSha,
+        repository:githubRepo,ref:githubRef},
+      geminiApiKey:"dummy-never-billed",
+      githubApiToken:"test-only-read-token",
+      githubApiFetchFn:githubRunFetch as typeof fetch,
+      expectedWorkflowPath:githubWorkflow,
+      transports,operationalRoot:root("urn:operational","102"),
+      ports:{backend:30781,frontend:30782,test:30783}
+    };
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff(input),
+      /Active verified Planning root/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff({
+      ...input,pins:{...input.pins,sessionId:"attacker-session"}
+    }),/independent GitHub admission session differs/);
+    // OIDC identity and bounded cost consent, even signed with a valid host
+    // HMAC, are NOT Engineer approval. The first run must fail before root
+    // issuance and its admission remains irreversibly consumed.
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff(input));
+    assert.equal(f.coordinator.phase,"planning");
+    assert.equal(f.issued.length,1);
+    await assert.rejects(admissionStore.consume({
+      expectedRunId:runId,expectedSourceSha:githubSha,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+    // A fresh, independently signed OIDC assertion for another manual run
+    // succeeds; the failed first admission must remain consumed.
+    const nextRunId="39829995556";
+    assert.equal((await admitRun(nextRunId)).status,200);
+    assert.equal((await readdir(replayDir)).length,2);
+    await f.sign(plan.plan,["permission-1","permission-3"]);
+    // A canceled/completed workflow between intake and handoff cannot
+    // activate the operational root, despite having a valid HMAC receipt.
+    liveRunStatus="completed";
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff({
+      ...input,pins:{...input.pins,runId:nextRunId}
+    }),/GitHub API does not corroborate active manual run identity/);
+    assert.equal(f.coordinator.phase,"planning");
+    assert.equal(f.issued.length,1);
+    await assert.rejects(admissionStore.consume({
+      expectedRunId:nextRunId,expectedSourceSha:githubSha,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+    // A new explicitly dispatched run with a fresh signed OIDC assertion
+    // can continue only while GitHub still reports that run in progress.
+    liveRunStatus="in_progress";
+    const finalRunId="39829995557";
+    assert.equal((await admitRun(finalRunId)).status,200);
+    assert.equal((await readdir(replayDir)).length,3);
+    const running=await startAdmittedGithubReviewedGeminiHandoff({
+      ...input,pins:{...input.pins,runId:finalRunId}
+    });
+    try{
+      assert.equal(running.readiness.plan_digest,plan.digest);
+      assert.equal(running.readiness.max_model_turns,8);
+      assert.equal(running.readiness.max_output_tokens,8000);
+      assert.deepEqual(Object.keys(running.endpoints),
+        ["backend","frontend","test"]);
+      assert.equal(f.coordinator.phase,"execution");
+      assert.equal(f.issued.length,2);
+      assert.equal(running.githubRunWatch.status,"active");
+      await running.githubRunWatch.checkNow();
+      assert.equal(f.coordinator.phase,"execution");
+      // This run terminates AFTER operational activation; a live status
+      // check must automatically stop local A2A and revoke the root.
+      liveRunStatus="completed";
+      await assert.rejects(running.githubRunWatch.checkNow(),
+        /active run identity lost/);
+      assert.equal(running.githubRunWatch.status,"closed");
+      assert.equal(f.coordinator.phase,"closed");
+      assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+      // Once closed, GitHub freshness MUST fail, not succeed as a no-op.
+      await assert.rejects(running.githubRunWatch.checkNow(),
+        /run not active; Execution is forbidden/);
+      // An authenticated plan and minted root from the past cannot be
+      // resurrected by a late private dispatcher invocation.
+      await assert.rejects(
+        running.approvedDag.executeApprovedDag({} as any),
+        /run not active; Execution is forbidden/);
+      assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    }finally{await running.close();}
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(admissionStore.consume({
+      expectedRunId:runId,expectedSourceSha:githubSha,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+  }finally{
+    await f.close();
+    if(oidcServer)await oidcServer.close();
+    await rm(checkpointDir,{recursive:true,force:true});
+    await rm(consentDir,{recursive:true,force:true});
+    await rm(replayDir,{recursive:true,force:true});
+  }
+});
+
+
+test("offline admitted manual bridge loads the SAME authenticated approved DAG without Gemini inference",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:bridge:planning","801"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,proposal.plan.requested_permissions.map(p=>p.id));
+    const active=await f.coordinator.beginExecution(root("urn:bridge:operational","802"));
+    assert.equal(active.plan_digest,proposal.digest);
+    let liveChecks=0,closed=0,orchestratorStarts=0,modelCalls=0;
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      running:{
+        operational_root_id:active.credential_id,
+        readiness:{
+          session_id:SNAPSHOT.session_id,
+          base_revision:SHA,
+          plan_digest:proposal.digest,
+          authenticated_engineer_did:ENGINEER
+        },
+        endpoints:{
+          backend:"http://127.0.0.1:18831",
+          frontend:"http://127.0.0.1:18832",
+          test:"http://127.0.0.1:18833"
+        }
+      } as any,
+      async verifyLiveRun(){liveChecks++;},
+      async close(){
+        closed++;
+        if(f.coordinator.phase==="execution")
+          await f.coordinator.closeExecution();
+      }
+    });
+    await assert.rejects(bridge.executeApprovedDag({
+      a2a:{async sendProtectedTask(){
+        modelCalls++;
+        throw Error("No role inference should start in this offline check");
+      }},
+      adapter:{adapterBaseUrl:"http://127.0.0.1:8090",
+        bearerToken:"offline-adapter-never-called"},
+      async authorityForTask(){
+        throw Error("No child root before Orchestrator branch confirmation");
+      },
+      async invokeOrchestratorTask(taskId,gatewayTaskId){
+        orchestratorStarts++;
+        assert.equal(taskId,"branch");
+        assert.match(gatewayTaskId,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+        // Confirms the signed DAG was loaded and the correct first Task was
+        // reached. Abort before any mock/paid provider or specialized Agent.
+        throw Error("offline signed-DAG bridge reached approved branch Task");
+      }
+    }),/offline signed-DAG bridge reached approved branch Task/);
+    // One check before loading the signed DAG, another immediately before
+    // its first irreversible Orchestrator Task (create_branch).
+    assert.equal(liveChecks,2);
+    assert.equal(orchestratorStarts,1);
+    assert.equal(modelCalls,0);
+    assert.equal(closed,1);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.ok(f.revoked.includes("urn:bridge:operational"));
+  }finally{await f.close();}
+});
+
+
+test("concurrent Engineer/dispatcher shutdown awaits exactly one Gateway close and root revocation",async()=>{
+ const digest="d".repeat(64),events:string[]=[];
+ let resolveGateway:(()=>void)|undefined;
+ const gate=new Promise<void>(resolve=>{resolveGateway=resolve;});
+ const coordinator=new TrustedExecutionCoordinator({
+   authority:{
+     async startPlanning(){return {
+       phase:"planning",credential_id:"urn:planning:single-close",
+       permissions:[]
+     };},
+     async approveAndIssueOperationalRoot(){return {
+       credential_id:"urn:execution:single-close",plan_digest:digest,
+       permissions:[]
+     };}
+   } as any,
+   approvedGatewayPlans:{
+     async activate(){return digest;},
+     async closeSession(){events.push("gateway:start");await gate;
+       events.push("gateway:closed");}
+   } as any,
+   credentials:{async revokeRoot(id){
+     events.push("revoke:"+id);
+   }},
+   sessionId:"close-one-session",baseRevision:"c".repeat(40)
+ });
+ await coordinator.beginPlanning({} as any);
+ await coordinator.beginExecution({credential_id:"urn:execution:single-close"} as any);
+ const first=coordinator.closeExecution();
+ const second=coordinator.closeExecution();
+ assert.equal(first,second);
+ assert.equal(coordinator.phase,"closed");
+ assert.deepEqual(events,[]);
+ await Promise.resolve();
+ assert.deepEqual(events,["gateway:start"]);
+ resolveGateway!();
+ await Promise.all([first,second,coordinator.closeExecution()]);
+ assert.deepEqual(events,[
+   "gateway:start","gateway:closed","revoke:urn:execution:single-close"
+ ]);
+ await coordinator.closeExecution();
+ assert.equal(events.filter(x=>x.startsWith("revoke:")).length,1);
+});
+
+test("failed Gateway shutdown still attempts Rust revocation once; every caller receives same failure",async()=>{
+ const digest="d".repeat(64),events:string[]=[];
+ const coordinator=new TrustedExecutionCoordinator({
+   authority:{
+     async startPlanning(){return {phase:"planning",credential_id:"urn:planning:failed-close",permissions:[]};},
+     async approveAndIssueOperationalRoot(){return {
+       credential_id:"urn:execution:failed-close",plan_digest:digest,permissions:[]
+     };}
+   } as any,
+   approvedGatewayPlans:{
+     async activate(){return digest;},
+     async closeSession(){events.push("gateway:failed");
+       throw Error("Gateway cannot confirm terminal state");}
+   } as any,
+   credentials:{async revokeRoot(id){events.push("revoke:"+id);}},
+   sessionId:"failed-close-session",baseRevision:"c".repeat(40)
+ });
+ await coordinator.beginPlanning({} as any);
+ await coordinator.beginExecution({credential_id:"urn:execution:failed-close"} as any);
+ const first=coordinator.closeExecution(),second=coordinator.closeExecution();
+ await assert.rejects(first,/Gateway cannot confirm terminal state/);
+ await assert.rejects(second,/Gateway cannot confirm terminal state/);
+ await assert.rejects(coordinator.closeExecution(),/Gateway cannot confirm terminal state/);
+ assert.deepEqual(events,["gateway:failed","revoke:urn:execution:failed-close"]);
+});
+
+test("unconfirmed Rust revocation cannot be retried or represented as a clean shutdown",async()=>{
+ const digest="d".repeat(64);let revocations=0;
+ const coordinator=new TrustedExecutionCoordinator({
+   authority:{
+     async startPlanning(){return {phase:"planning",credential_id:"urn:planning:uncertain",permissions:[]};},
+     async approveAndIssueOperationalRoot(){return {
+       credential_id:"urn:execution:uncertain",plan_digest:digest,permissions:[]
+     };}
+   } as any,
+   approvedGatewayPlans:{async activate(){return digest;},async closeSession(){} } as any,
+   credentials:{async revokeRoot(){revocations++;
+     throw Error("native revocation cannot be confirmed");}},
+   sessionId:"uncertain-close-session",baseRevision:"c".repeat(40)
+ });
+ await coordinator.beginPlanning({} as any);
+ await coordinator.beginExecution({credential_id:"urn:execution:uncertain"} as any);
+ await assert.rejects(coordinator.closeExecution(),/native revocation cannot be confirmed/);
+ await assert.rejects(coordinator.closeExecution(),/native revocation cannot be confirmed/);
+ assert.equal(revocations,1);
+ assert.equal(coordinator.phase,"closed");
+});
+
+
+test("recovery-enabled Planning reserves its one-use phase before the first journal await",async()=>{
+ const f=await fixture(true);
+ try{
+   const first=f.coordinator.beginPlanning(root("urn:planning:only-once","810"));
+   // The first call must synchronously fence all new calls, even though
+   // TrustedOperationalRecoveryStore.assertClean() has not resolved yet.
+   assert.equal(f.coordinator.phase,"failed_closed");
+   await assert.rejects(
+     f.coordinator.beginPlanning(root("urn:planning:duplicate","811")),
+     /Trusted Planning is not idle/
+   );
+   assert.equal(f.issued.length,0);
+   const active=await first;
+   assert.equal(active.credential_id,"urn:planning:only-once");
+   assert.equal(f.coordinator.phase,"planning");
+   assert.deepEqual(f.issued.map(x=>x.id),["urn:planning:only-once"]);
+   assert.deepEqual(f.revoked,[]);
+ }finally{await f.close();}
+});
+
+test("trusted checkpoint writer rejects forged backend signature before any disk write",async()=>{
+  const directory=await mkdtemp(join(tmpdir(),"trusted-checkpoint-writer-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const signed=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...compilePlanningProposal(sketch(),CFG),verified_source_reads:1},
+      keyId:"trusted-backend-2",
+      privateKeyPem:backend.privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const store=new SignedPlanningCheckpointFileStore({directory,
+      trust:{
+        trustedKeys:{"trusted-backend-2":{public_key_pem:
+          backend.publicKey.export({format:"pem",type:"spki"}).toString()}},
+        expectedSessionId:SNAPSHOT.session_id,expectedRepository:REPO,
+        expectedBaseRevision:SHA,expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const changed=structuredClone(signed);
+    // Always change a significant signature byte. Mutating the last
+    // base64url characters is non-deterministic because they can already
+    // equal the replacement (and padding bits may be unused).
+    changed.signature=(changed.signature[0]==="A"?"B":"A")+
+      changed.signature.slice(1);
+    await assert.rejects(store.persistVerified(changed),
+      /Signed Planning checkpoint:/);
+    await assert.rejects(store.load(),error=>{
+      assert.equal((error as NodeJS.ErrnoException).code,"ENOENT");
+      return true;
+    });
+    await store.persistVerified(signed);
+    assert.equal((await store.load()).signature,signed.signature);
+    await chmod(directory,0o755);
+    await assert.rejects(store.persistVerified(signed),/owner-only/);
+    await assert.rejects(store.load(),/owner-only/);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test("real Engineer login and signed UI permission choice activates only the staged Planning Coordinator",async()=>{
+  // A fully local, zero-model-inference integration: signed backend
+  // Planning provenance -> protected reviewed plan file -> authenticated
+  // Engineer browser/CSRF/Ed25519 receipt -> original two-root Coordinator
+  // -> independently checked Gateway plan scope -> confirmed root closure.
+  const f=await fixture(true);
+  const uiDir=await mkdtemp(join(tmpdir(),"engineer-ui-live-chain-"));
+  const checkpointDir=await mkdtemp(join(tmpdir(),"backend-checkpoint-live-chain-"));
+  let server:any,started=false;
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const unsigned=f.proposal();
+    const packet=f.gate.stageTrustedProposal(unsigned);
+    assert.equal(packet.plan_digest,unsigned.digest);
+    assert.equal(f.issued.length,1);
+    const backend=generateKeyPairSync("ed25519");
+    const keyId="trusted-backend-live-chain";
+    const store=new SignedPlanningCheckpointFileStore({
+      directory:checkpointDir,
+      trust:{
+        trustedKeys:{[keyId]:{public_key_pem:backend.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()}},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const now=Date.now();
+    await store.persistVerified(signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:unsigned,keyId,
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:new Date(now).toISOString(),
+      expiresAt:new Date(now+300000).toISOString()
+    }));
+    const planFile=join(uiDir,"approved-input-plan.json");
+    const keyFile=join(uiDir,"engineer-private-key.pem");
+    const salt=randomBytes(16);
+    const password="trusted-offline-engineer";
+    await new TrustedReviewedPlanFile({
+      filePath:planFile,checkpointStore:store
+    }).persist(packet);
+    await writeFile(keyFile,f.privateKey,{mode:0o600});
+    server=await createAuthenticatedEngineerServer({
+      host:"127.0.0.1",engineerDid:ENGINEER,keyId:"key1",
+      trustedPlanFile:planFile,privateKeyFile:keyFile,
+      expectedSessionId:SNAPSHOT.session_id,expectedBaseRevision:SHA,
+      repository:REPO,publicKeyPem:f.publicKey,
+      receiptDirectory:f.directory,passwordSaltHex:salt.toString("hex"),
+      passwordScryptHex:scryptSync(password,salt,64).toString("hex"),
+      planningCheckpointStore:store
+    });
+    await new Promise<void>((resolve,reject)=>{
+      server.once("error",reject);
+      server.listen(0,"127.0.0.1",resolve);
+    });
+    started=true;
+    const address=server.address();
+    assert.ok(address&&typeof address!=="string");
+    const origin="http://127.0.0.1:"+address.port;
+    assert.equal((await fetch(origin+"/api/plan")).status,401);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
+    const login=await fetch(origin+"/api/login",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin},
+      body:JSON.stringify({password})
+    });
+    assert.equal(login.status,200);
+    const cookie=login.headers.get("set-cookie")!.split(";")[0];
+    const visible=await (await fetch(origin+"/api/plan",{
+      headers:{cookie}
+    })).json() as any;
+    assert.equal(visible.plan_digest,packet.plan_digest);
+    assert.deepEqual(visible.plan,packet.plan);
+    // The Engineer chooses a strict permission subset; a model/runner
+    // cannot inject a fresh permission into the already staged proposal.
+    const bad=await fetch(origin+"/api/approve",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin,cookie,
+        "x-csrf-token":visible.csrf_token},
+      body:JSON.stringify({
+        plan_digest:packet.plan_digest,
+        approved_permission_ids:["unknown-extra-scope"],
+        confirmation:"APPROVE "+packet.plan_digest
+      })
+    });
+    assert.equal(bad.status,403);
+    assert.equal(f.revoked.length,0);
+    assert.equal(f.issued.length,1);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
+    const ok=await fetch(origin+"/api/approve",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin,cookie,
+        "x-csrf-token":visible.csrf_token},
+      body:JSON.stringify({
+        plan_digest:packet.plan_digest,
+        approved_permission_ids:["permission-1","permission-3"],
+        confirmation:"APPROVE "+packet.plan_digest
+      })
+    });
+    assert.equal(ok.status,201);
+    const response=await ok.json() as any;
+    assert.equal(response.signed,true);
+    assert.equal(response.operational_credential_issued,false);
+    assert.equal(f.issued.length,1); // Human signature != operational issuance
+    const receipt=await f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id);
+    assert.deepEqual(receipt.approval.approved_permission_ids,
+      ["permission-1","permission-3"]);
+    const activated=await f.coordinator.beginExecution(
+      root("urn:operational","102"));
+    assert.equal(activated.plan_digest,packet.plan_digest);
+    assert.equal(f.coordinator.phase,"execution");
+    assert.deepEqual(f.revoked,["urn:preliminary"]);
+    assert.deepEqual(f.issued[1].permissions.map(p=>p.operation),
+      ["create_branch","update_file"]);
+    await f.coordinator.closeExecution();
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    if(started){
+      await new Promise<void>((resolve,reject)=>
+        server.close((err:Error|undefined)=>err?reject(err):resolve()));
+    }
+    await rm(uiDir,{recursive:true,force:true});
+    await rm(checkpointDir,{recursive:true,force:true});
+    await f.close();
+  }
+});
+
+
+test("R5 child statuses derive from signed Task IDs, reserve durably and cannot replay",async()=>{
+  const f=await fixture();
+  const dir=await mkdtemp(join(tmpdir(),"reviewed-child-status-"));
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    const settings={
+      coordinator:f.coordinator,reviewGate:f.gate,
+      sessionId:SNAPSHOT.session_id,engineerDid:ENGINEER,
+      reservationDirectory:dir,
+      statusListCredential:"https://example.test/status/review",
+      excludedIndices:["101","102"],
+      indexByTask:{backend:"8042"},
+      validitySeconds:300
+    };
+    const allocator=await createTrustedApprovedTaskAuthorityAllocator(settings);
+    assert.deepEqual(allocator.approvedTaskIds,["backend"]);
+    await assert.rejects(allocator.authorityForTask("frontend","frontend"),
+      /Task and role do not match/);
+    await assert.rejects(allocator.authorityForTask("backend","test"),
+      /Task and role do not match/);
+    assert.deepEqual(await readdir(dir),[]);
+    const first=await allocator.authorityForTask("backend","backend");
+    assert.equal(first.parent_credential_id,"urn:operational");
+    assert.match(first.credential_id,/^urn:task-child:[a-f0-9]{32}$/u);
+    assert.equal(first.credential_status.statusListIndex,"8042");
+    assert.equal(first.credential_status.statusPurpose,"revocation");
+    assert.equal(first.validity_seconds,300);
+    assert.equal((await readdir(dir)).length,1);
+    await assert.rejects(allocator.authorityForTask("backend","backend"),
+      /already attempted/);
+    // A new allocator cannot steal this same list:index even if the
+    // Engineer Plan and the operational Coordinator are unchanged.
+    const later=await createTrustedApprovedTaskAuthorityAllocator(settings);
+    await assert.rejects(later.authorityForTask("backend","backend"),
+      /already reserved or persistence unconfirmed/);
+    assert.equal((await readdir(dir)).length,1);
+    await f.coordinator.closeExecution();
+    await assert.rejects(allocator.authorityForTask("backend","backend"),
+      /already attempted/);
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    await rm(dir,{recursive:true,force:true});
+    await f.close();
+  }
+});
+
+test("R5 rejects unapproved child indices, parent collision and stale root",async()=>{
+  const f=await fixture();
+  const dir=await mkdtemp(join(tmpdir(),"reviewed-child-negative-"));
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const base={
+      coordinator:f.coordinator,reviewGate:f.gate,
+      sessionId:SNAPSHOT.session_id,engineerDid:ENGINEER,
+      reservationDirectory:dir,statusListCredential:
+        "https://example.test/status/review",
+      excludedIndices:["101","102"],
+      indexByTask:{backend:"8043"}
+    };
+    await assert.rejects(createTrustedApprovedTaskAuthorityAllocator(base),
+      /active reviewed Coordinator/);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    for(const bad of [
+      {indexByTask:{backend:"102"}},
+      {indexByTask:{backend:"8043",attacker:"9000"}},
+      {indexByTask:{}},
+      {statusListCredential:"http://example.test/status/review"},
+      {excludedIndices:[]},
+      {validitySeconds:7200}
+    ]){
+      await assert.rejects(createTrustedApprovedTaskAuthorityAllocator({
+        ...base,...bad
+      }),/status|Status|bounded|Task|validity/i);
+    }
+    assert.deepEqual(await readdir(dir),[]);
+    await f.coordinator.closeExecution();
+    await assert.rejects(createTrustedApprovedTaskAuthorityAllocator(base),
+      /active reviewed Coordinator/);
+  }finally{
+    await rm(dir,{recursive:true,force:true});
+    await f.close();
+  }
+});
+
+test("R5 simultaneous Task-status claims cannot issue duplicate VC indices",async()=>{
+  const f=await fixture();
+  const dir=await mkdtemp(join(tmpdir(),"reviewed-child-race-"));
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    const config={
+      coordinator:f.coordinator,reviewGate:f.gate,
+      sessionId:SNAPSHOT.session_id,engineerDid:ENGINEER,
+      reservationDirectory:dir,statusListCredential:
+        "https://example.test/status/review",
+      excludedIndices:["101","102"],indexByTask:{backend:"8044"}
+    };
+    const left=await createTrustedApprovedTaskAuthorityAllocator(config);
+    const right=await createTrustedApprovedTaskAuthorityAllocator(config);
+    const answers=await Promise.allSettled([
+      left.authorityForTask("backend","backend"),
+      right.authorityForTask("backend","backend")
+    ]);
+    assert.deepEqual(answers.map(x=>x.status).sort(),["fulfilled","rejected"]);
+    assert.equal((await readdir(dir)).length,1);
+    await f.coordinator.closeExecution();
+  }finally{
+    await rm(dir,{recursive:true,force:true});
+    await f.close();
+  }
+});
+
+
+async function signedScriptedFixture(recovery=false){
+  const f=await fixture(recovery);
+  const directory=await mkdtemp(join(tmpdir(),"signed-scripted-r5-"));
+  const backend=generateKeyPairSync("ed25519");
+  const keyId="scripted-backend-key";
+  const store=new SignedPlanningCheckpointFileStore({
+    directory,
+    trust:{
+      trustedKeys:{[keyId]:{
+        public_key_pem:backend.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()
+      }},
+      expectedSessionId:SNAPSHOT.session_id,
+      expectedRepository:REPO,expectedBaseRevision:SHA,
+      expectedWorkBranch:CFG.workBranch
+    }
+  });
+  await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+  const proposal=f.proposal();
+  f.gate.stageTrustedProposal(proposal);
+  const checkpoint=signTrustedPlanningCheckpoint({
+    snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+    proposal,keyId,
+    privateKeyPem:backend.privateKey.export({
+      format:"pem",type:"pkcs8"
+    }).toString(),
+    issuedAt:new Date().toISOString(),
+    expiresAt:new Date(Date.now()+600000).toISOString()
+  });
+  await store.persistVerified(checkpoint);
+  return {
+    ...f,store,proposal,backendDirectory:directory,
+    dispose:async()=>{
+      await f.close();
+      await rm(directory,{recursive:true,force:true});
+    }
+  };
+}
+
+const noModelHandlers:Readonly<Record<"backend"|"frontend"|"test",
+  DeterministicTaskHandler>>={
+  backend:async(context:any)=>{
+    assert.equal(context.role,"backend");
+    return {role:"backend",test_outcome:"not_run",files_modified:[],
+      files_created:[],errors:[],summary:"scripted backend",
+      revision:SHA,commit_sha:SHA,branch:CFG.workBranch};
+  },
+  frontend:async(context:any)=>{
+    assert.equal(context.role,"frontend");
+    return {role:"frontend",test_outcome:"not_run",files_modified:[],
+      files_created:[],errors:[],summary:"scripted frontend",
+      revision:SHA,commit_sha:SHA,branch:CFG.workBranch};
+  },
+  test:async(context:any)=>{
+    assert.equal(context.role,"test");
+    return {role:"test",test_outcome:"pass",files_modified:[],
+      files_created:[],errors:[],summary:"scripted test",
+      revision:SHA,commit_sha:SHA,branch:CFG.workBranch,
+      tested_commit_sha:SHA,runner_profile:"poc-default",
+      project_tests:"pass",researcher_acceptance:"pass"};
+  }
+};
+
+test("R5 scripted_offline verified Engineer handoff starts three genuine A2A servers without Gemini",async()=>{
+  const f=await signedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startPersistedReviewedScriptedHandoff>>|undefined;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    const port=22000+randomInt(0,12000);
+    running=await startPersistedReviewedScriptedHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      checkpointStore:f.store,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:port,frontend:port+1,test:port+2},
+      handlers:noModelHandlers
+    });
+    assert.equal(running.readiness.status,"scripted_offline_no_model_or_charge_consent");
+    assert.equal(running.readiness.plan_digest,f.proposal.digest);
+    assert.equal(running.operational_root_id,"urn:operational");
+    assert.equal(f.coordinator.phase,"execution");
+    assert.deepEqual(running.servers.map(x=>x.role),
+      ["backend","frontend","test"]);
+    for(const role of ["backend","frontend","test"] as const){
+      const response=await fetch(running.endpoints[role]+
+        "/.well-known/agent-card.json");
+      assert.equal(response.status,200);
+      const card=await response.json();
+      assert.ok(card.capabilities.extensions.some((x:any)=>x.required));
+    }
+    assert.deepEqual(running.servers.map(s=>s.executor.executionCount),
+      [0,0,0]);
+    await running.close();
+    await running.close();
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    await running?.close();
+    await f.dispose();
+  }
+});
+
+test("R5 scripted_offline cannot issue operational authority without authentic Ed25519 Engineer approval",async()=>{
+  const f=await signedScriptedFixture();
+  try{
+    const port=22000+randomInt(0,12000);
+    await assert.rejects(startPersistedReviewedScriptedHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      checkpointStore:f.store,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:port,frontend:port+1,test:port+2},
+      handlers:noModelHandlers
+    }),/ENOENT|signed|receipt|approval|No such file/i);
+    assert.equal(f.coordinator.phase,"planning");
+    assert.deepEqual(f.revoked,[]);
+    await f.coordinator.closePlanning();
+  }finally{await f.dispose();}
+});
+
+test("R5 scripted_offline rejects model-like and missing role handlers BEFORE consuming a signed root",async()=>{
+  const f=await signedScriptedFixture();
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    const port=22000+randomInt(0,12000);
+    for(const handlers of [
+      {...noModelHandlers,test:null},
+      {...noModelHandlers,other:async()=>{}}
+    ]){
+      await assert.rejects(startPersistedReviewedScriptedHandoff({
+        coordinator:f.coordinator,reviewGate:f.gate,
+        checkpointStore:f.store,
+        operationalRoot:root("urn:operational","102"),
+        ports:{backend:port,frontend:port+1,test:port+2},
+        handlers:handlers as any
+      }),/three distinct bound scripted role ports and handlers/);
+    }
+    for(const forbidden of [
+      {geminiApiKey:"fake-test-secret"},
+      {modelName:"gemini-irrelevant"},
+      {authorizationInput:"I AUTHORIZE GEMINI API CHARGES"},
+      {githubEventName:"workflow_dispatch"}
+    ]){
+      await assert.rejects(startPersistedReviewedScriptedHandoff({
+        coordinator:f.coordinator,reviewGate:f.gate,
+        checkpointStore:f.store,
+        operationalRoot:root("urn:operational","102"),
+        ports:{backend:port,frontend:port+1,test:port+2},
+        handlers:noModelHandlers,
+        ...forbidden
+      } as any),/unexpected model, billing or workflow configuration/);
+    }
+    assert.equal(f.coordinator.phase,"planning");
+    assert.deepEqual(f.revoked,[]);
+    await f.coordinator.closePlanning();
+  }finally{await f.dispose();}
+});
+
+
+test("R5 scripted_offline role-bind error revokes operational root before returning to owner",async()=>{
+  const f=await signedScriptedFixture();
+  const reserved=createNetServer();
+  await new Promise<void>((resolve,reject)=>{
+    reserved.once("error",reject);
+    reserved.listen(0,"127.0.0.1",resolve);
+  });
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    const endpoint=reserved.address();
+    assert.ok(endpoint&&typeof endpoint!=="string");
+    const port=endpoint.port;
+    await assert.rejects(startPersistedReviewedScriptedHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      checkpointStore:f.store,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:port,frontend:port>63000?20481:port+1,
+        test:port>63000?20482:port+2},
+      handlers:noModelHandlers
+    }),/EADDRINUSE|listen|address already in use/iu);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    assert.equal(f.issued.length,2);
+  }finally{
+    await new Promise<void>(resolve=>reserved.close(()=>resolve()));
+    await f.dispose();
+  }
+});
+
+
+const SCRIPTED_GITHUB_SHA="b".repeat(40);
+const SCRIPTED_GITHUB_RUN="40198765432";
+const SCRIPTED_GITHUB_FLOW=
+  ".github/workflows/trusted-scripted-offline-session-hold.yml";
+const SCRIPTED_GITHUB_REPO="DarkGh0st03/delegation";
+const SCRIPTED_GITHUB_REF=
+  "refs/heads/refactor/post-prof-plan-contracts-20261021";
+async function admittedScriptedFixture(){
+  const f=await signedScriptedFixture(true);
+  const directory=await mkdtemp(join(tmpdir(),"reviewed-scripted-github-"));
+  const secret=Buffer.alloc(32,49);
+  const admissionStore=new TrustedScriptedGithubAdmissionStore({
+    directory,hmacSecret:secret,expectedSessionId:SNAPSHOT.session_id
+  });
+  const pinned={
+    repository:SCRIPTED_GITHUB_REPO,ref:SCRIPTED_GITHUB_REF,
+    workflowPath:SCRIPTED_GITHUB_FLOW,sourceSha:SCRIPTED_GITHUB_SHA
+  };
+  const runId=SCRIPTED_GITHUB_RUN;
+  const dispatch=verifyScriptedGithubManualDispatch({
+    pinned,
+    env:{
+      GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
+      GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:SCRIPTED_GITHUB_REPO,
+      GITHUB_REF:SCRIPTED_GITHUB_REF,
+      GITHUB_WORKFLOW_REF:SCRIPTED_GITHUB_REPO+"/"+
+        SCRIPTED_GITHUB_FLOW+"@"+SCRIPTED_GITHUB_REF,
+      GITHUB_SHA:SCRIPTED_GITHUB_SHA,GITHUB_RUN_ID:runId
+    },
+    event:{repository:{full_name:SCRIPTED_GITHUB_REPO},
+      ref:SCRIPTED_GITHUB_REF,
+      inputs:{execution_profile:"scripted_offline",
+        authorization:"I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY"}}
+  });
+  const signedJob={
+    kind:"github_actions_oidc_verified" as const,
+    run_id:runId,workflow_sha:SCRIPTED_GITHUB_SHA,
+    jti:"offline-signed-run-fixture",
+    repository_id:"101",repository_owner_id:"303",
+    audience:"urn:r5-scripted"
+  };
+  const emitReceipt=()=>admissionStore.record({
+    dispatch,job:signedJob
+  });
+  let live=true;
+  let checks=0;
+  const githubApiFetchFn=async()=>{
+    checks++;
+    return new Response(JSON.stringify({
+      id:Number(runId),event:"workflow_dispatch",run_attempt:1,
+      status:live?"in_progress":"completed",
+      head_sha:SCRIPTED_GITHUB_SHA,
+      head_branch:SCRIPTED_GITHUB_REF.slice("refs/heads/".length),
+      path:SCRIPTED_GITHUB_FLOW,
+      head_repository:{full_name:SCRIPTED_GITHUB_REPO},
+      created_at:new Date().toISOString()
+    }),{status:200});
+  };
+  const input={
+    coordinator:f.coordinator,reviewGate:f.gate,
+    checkpointStore:f.store,
+    admissionStore,
+    pins:{sessionId:SNAPSHOT.session_id,
+      runId,sourceSha:SCRIPTED_GITHUB_SHA,
+      repository:SCRIPTED_GITHUB_REPO,ref:SCRIPTED_GITHUB_REF},
+    operationalRoot:root("urn:operational","102"),
+    ports:{backend:23000+randomInt(0,9000),
+      frontend:0,test:0},
+    handlers:noModelHandlers,
+    githubApiToken:"read-only-offline-github",
+    githubApiFetchFn
+  };
+  input.ports.frontend=input.ports.backend+1;
+  input.ports.test=input.ports.backend+2;
+  return {...f,input,emitReceipt,
+    get checkCount(){return checks;},
+    cancelGithubRun(){live=false;},
+    dispose:async()=>{
+      await f.close();
+      await rm(f.backendDirectory,{recursive:true,force:true});
+      await rm(directory,{recursive:true,force:true});
+    }
+  };
+}
+
+test("R5 admitted scripted OIDC + signed Engineer activates exactly one root and watches live GitHub run",async()=>{
+  const f=await admittedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startAdmittedGithubReviewedScriptedHandoff>>|undefined;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    await f.emitReceipt();
+    running=await startAdmittedGithubReviewedScriptedHandoff(f.input);
+    assert.equal(running.readiness.status,
+      "scripted_offline_no_model_or_charge_consent");
+    assert.ok(running.approvedDag);
+    assert.equal(f.coordinator.phase,"execution");
+    assert.equal(running.githubRunWatch.status,"active");
+    assert.ok(f.checkCount>=2);
+    assert.deepEqual(running.servers.map(x=>x.role),
+      ["backend","frontend","test"]);
+    await assert.rejects(f.input.admissionStore.consume({
+      expectedRunId:SCRIPTED_GITHUB_RUN,
+      expectedSourceSha:SCRIPTED_GITHUB_SHA,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+    await running.githubRunWatch.checkNow();
+    await running.close();
+    assert.equal(running.githubRunWatch.status,"closed");
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await running?.close();await f.dispose();}
+});
+
+test("R5 canceled scripted GitHub run retires real operational root and all three A2A servers",async()=>{
+  const f=await admittedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startAdmittedGithubReviewedScriptedHandoff>>|undefined;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    await f.emitReceipt();
+    running=await startAdmittedGithubReviewedScriptedHandoff(f.input);
+    f.cancelGithubRun();
+    await assert.rejects(running.githubRunWatch.checkNow(),
+      /scripted GitHub job lost/);
+    assert.equal(running.githubRunWatch.status,"closed");
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(running.githubRunWatch.checkNow(),
+      /no longer active/);
+    assert.deepEqual(running.servers.map(x=>x.executor.executionCount),
+      [0,0,0]);
+  }finally{await running?.close();await f.dispose();}
+});
+
+test("R5 missing offline OIDC receipt or canceled job cannot issue the operational root",async()=>{
+  for(const mode of ["missing","cancelled_before_root"]){
+    const f=await admittedScriptedFixture();
+    try{
+      await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+      if(mode==="cancelled_before_root"){
+        await f.emitReceipt();
+        f.cancelGithubRun();
+      }
+      await assert.rejects(
+        startAdmittedGithubReviewedScriptedHandoff(f.input),
+        /ENOENT|GitHub API does not corroborate/i
+      );
+      if(mode==="missing"){
+        // No authenticated receipt consumed, so no authority transition.
+        assert.equal(f.coordinator.phase,"planning");
+        assert.deepEqual(f.revoked,[]);
+        await f.coordinator.closePlanning();
+      }else{
+        // A consumed receipt whose GitHub run was canceled must retire
+        // the preliminary root, not leave it readable behind a 403.
+        assert.equal(f.coordinator.phase,"closed");
+        assert.deepEqual(f.revoked,["urn:preliminary"]);
+      }
+      assert.equal(f.issued.length,1);
+    }finally{await f.dispose();}
+  }
+});
+
+test("R5 consumed offline OIDC denies missing Engineer signature and retires preliminary root",async()=>{
+  const f=await admittedScriptedFixture();
+  try{
+    // Deliberately do not issue an Engineer signature.
+    await f.emitReceipt();
+    await assert.rejects(
+      startAdmittedGithubReviewedScriptedHandoff(f.input),
+      /ENOENT|signed|receipt|approval/i
+    );
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary"]);
+    assert.equal(f.issued.length,1);
+    await assert.rejects(f.input.admissionStore.consume({
+      expectedRunId:SCRIPTED_GITHUB_RUN,
+      expectedSourceSha:SCRIPTED_GITHUB_SHA,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+  }finally{await f.dispose();}
+});
+
+
+test("R5 scripted signed DAG cannot start any Task when GitHub run is canceled after root activation",async()=>{
+  const f=await admittedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startAdmittedGithubReviewedScriptedHandoff>>|undefined;
+  let adapterCalls=0,a2aCalls=0;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    await f.emitReceipt();
+    running=await startAdmittedGithubReviewedScriptedHandoff(f.input);
+    assert.equal(f.coordinator.phase,"execution");
+    f.cancelGithubRun(); // cancellation AFTER issuance but BEFORE first Task
+    await assert.rejects(running.approvedDag.executeApprovedDag({
+      a2a:{
+        async sendProtectedTask(){
+          a2aCalls++;
+          throw Error("A2A must never execute after GitHub cancellation");
+        }
+      },
+      adapter:{
+        adapterBaseUrl:"http://127.0.0.1:8090",
+        bearerToken:"offline-only",
+        fetchFn:async()=>{
+          adapterCalls++;
+          throw Error("Adapter must never sign a canceled Task");
+        }
+      },
+      authorityForTask:async()=>{
+        throw Error("Child root must not be allocated");
+      },
+      invokeOrchestratorTask:async()=>{
+        throw Error("Canceled Orchestrator branch must not be created");
+      }
+    }),/scripted GitHub job lost/);
+    assert.equal(adapterCalls,0);
+    assert.equal(a2aCalls,0);
+    assert.deepEqual(running.servers.map(s=>s.executor.executionCount),
+      [0,0,0]);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.equal(running.githubRunWatch.status,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(running.approvedDag.executeApprovedDag({
+      a2a:{async sendProtectedTask(){throw Error("forbidden");}},
+      adapter:{adapterBaseUrl:"http://127.0.0.1:8090",
+        bearerToken:"offline-only"},
+      authorityForTask:async()=>{throw Error("forbidden");},
+      invokeOrchestratorTask:async()=>{throw Error("forbidden");}
+    }),/one-shot/);
+  }finally{
+    await running?.close();
+    await f.dispose();
+  }
+});

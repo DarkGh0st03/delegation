@@ -1,0 +1,136 @@
+/**
+ * OFFLINE TEST FIXTURE ONLY.
+ *
+ * Constructs an unapproved plan sketch from trusted repository inventory
+ * and an explicit candidate edit intention. No file contents, model output,
+ * approval, DC/VP or authority originate here. Production uses the ADK
+ * planner/compiler and a separately signed Engineer approval.
+ */
+const ROLES=["backend","frontend"];
+function unsafePath(path){
+  if(path.includes("%")||path.includes(String.fromCharCode(92)))return true;
+  for(let i=0;i<path.length;i++){
+    const code=path.charCodeAt(i);
+    if(code<32||code===127)return true;
+  }
+  return false;
+}
+function canonical(path){
+  return typeof path==="string" && path.length>0 && path.length<=240 &&
+    !unsafePath(path) && !path.startsWith("/") && !path.includes("//") &&
+    path.split("/").every(p=>p!==""&&p!=="."&&p!=="..");
+}
+function requirePath(path){
+  if(!canonical(path))throw Error("Offline Planning intent: unsafe path");
+  return path;
+}
+export function makeOfflineReviewableDag({
+  snapshot,edits,newTestFile,taskInstructions={},testRepairFile,
+  generatedBackendTestFile,splitTestTasks=false
+}){
+  if(!snapshot||!Array.isArray(snapshot.files)||
+     !Array.isArray(snapshot.directories)||
+     !edits||Object.keys(edits).sort().join(",")!=="backend,frontend")
+    throw Error("Offline Planning intent: invalid trusted inventory");
+  if(taskInstructions===null||typeof taskInstructions!=="object"||
+     Array.isArray(taskInstructions)||
+     Object.keys(taskInstructions).some(role=>!ROLES.includes(role)||
+       typeof taskInstructions[role]!=="string"||
+       taskInstructions[role].length>1800))
+    throw Error("Offline Planning intent: invalid Task instruction");
+  const discovered=new Set(snapshot.files);
+  const directories=new Set(snapshot.directories);
+  const all=[];
+  for(const role of ROLES){
+    const paths=edits[role];
+    if(!Array.isArray(paths)||paths.length<1||paths.length>8)
+      throw Error("Offline Planning intent: role has invalid files");
+    for(const path of paths){
+      requirePath(path);
+      if(!discovered.has(path))
+        throw Error("Offline Planning intent: file absent from trusted inventory");
+      all.push(path);
+    }
+  }
+  if(new Set(all).size!==all.length)
+    throw Error("Offline Planning intent: overlapping Agent file edits");
+  requirePath(newTestFile);
+  const parent=newTestFile.includes("/")
+    ?newTestFile.slice(0,newTestFile.lastIndexOf("/")):"";
+  if(!directories.has(parent)||discovered.has(newTestFile)||
+     all.includes(newTestFile))
+    throw Error("Offline Planning intent: test file outside scope");
+  if(testRepairFile!==undefined){
+    requirePath(testRepairFile);
+    if(!testRepairFile.startsWith("tests/")||
+       !discovered.has(testRepairFile)||testRepairFile===newTestFile)
+      throw Error("Offline Planning intent: repair target outside trusted test inventory");
+  }
+  if(generatedBackendTestFile!==undefined){
+    requirePath(generatedBackendTestFile);
+    if(!splitTestTasks||
+       !/^tests\/backend\/[A-Za-z0-9._/-]+\.(?:test|spec)\.[jt]sx?$/u.test(generatedBackendTestFile)||
+       !directories.has(generatedBackendTestFile.slice(0,generatedBackendTestFile.lastIndexOf("/")))||
+       discovered.has(generatedBackendTestFile)||
+       generatedBackendTestFile===newTestFile||
+       all.includes(generatedBackendTestFile))
+      throw Error("Offline Planning intent: generated Backend test outside signed test inventory");
+  }
+  if(splitTestTasks&&testRepairFile===undefined&&generatedBackendTestFile===undefined)
+    throw Error("Offline Planning intent: split Test requires signed final repair grant");
+  const tasks=[
+    {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
+      description:"Keep planned changes off the main branch",depends_on:[],
+      permissions:[{operation:"create_branch",path:null,
+        reason:"Create a separate approved workspace"}]},
+    ...ROLES.map(role=>({
+      id:role,agent_id:role,title:"Implement approved "+role+" task",
+      description:taskInstructions[role]??
+        "Update the inspected source files within this Task's scope",
+      depends_on:["branch"],
+      permissions:edits[role].flatMap(path=>[
+        {operation:"read_file",path,reason:"Inspect pinned existing source"},
+        {operation:"update_file",path,reason:"Apply the reviewed change"}
+      ])
+    })),
+    ...(splitTestTasks?[{
+      id:"test-preparation",agent_id:"test",title:"Create scoped E2E",
+      description:"Prepare the reviewed regression before final acceptance",
+      depends_on:["backend","frontend"],
+      permissions:[
+        {operation:"create_file",path:newTestFile,
+         reason:"Create E2E test under an independently signed Test Task"},
+        ...(generatedBackendTestFile?[{operation:"create_file",path:generatedBackendTestFile,
+         reason:"Create a separate project Test under an independently signed Task"}]:[])
+      ]
+    }]:[]),
+    {id:"test",agent_id:"test",title:"Run final Docker acceptance",
+      description:"Repair the reviewed regression and test the final SHA",
+      depends_on:splitTestTasks?["test-preparation"]:["backend","frontend"],
+      permissions:[
+        ...(!splitTestTasks?[{operation:"create_file",path:newTestFile,
+          reason:"Add the reviewed scenario regression"}]:[]),
+        ...(generatedBackendTestFile?[{
+          operation:"read_file",path:generatedBackendTestFile,
+          reason:"Read signed newly-created project Test"
+        },{
+          operation:"update_file",path:generatedBackendTestFile,
+          reason:"Permit bounded Test correction within original Engineer authority"
+        }]:[]),
+        ...(testRepairFile?[{
+          operation:"read_file",path:testRepairFile,
+          reason:"Inspect existing regression under this same signed Task"
+        },{
+          operation:"update_file",path:testRepairFile,
+          reason:"Repair a genuine failure without extending task authority"
+        }]:[]),
+        {operation:"run_tests",path:null,reason:"Run exact-SHA acceptance"}
+      ]},
+    {id:"pr",agent_id:"orchestrator",title:"Open tested feature Pull Request",
+      description:"Request separate human review; never merge automatically",
+      depends_on:["test"],
+      permissions:[{operation:"create_pull_request",path:null,
+        reason:"Request review of approved, tested changes"}]}
+  ];
+  return {tasks,assumptions:[],uncertainties:[]};
+}

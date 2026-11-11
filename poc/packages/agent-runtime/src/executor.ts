@@ -18,10 +18,12 @@ import {
   type AgentTaskContext,
   type DelegationEvidence,
   type DeterministicSubtask,
+  type ApprovedTaskFilePermission,
   type SpecializedAgentRole
 } from "./contracts.ts";
 import { buildDeterministicArtifactPayload } from "./artifact-builder.ts";
 import { InMemoryAgentTaskContextStore } from "./task-context.ts";
+import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -55,14 +57,33 @@ function delegationEvidence(message: Message): DelegationEvidence {
   };
 }
 
+function trustedGatewayTaskId(message:Message):string|undefined{
+  const metadata=object(message.metadata??{},"Message.metadata");
+  const id=metadata.trusted_gateway_task_id;
+  if(id===undefined)return undefined;
+  if(typeof id!=="string"||!/^dispatch_[A-Za-z0-9_-]{22}$/u.test(id)){
+    throw new Error("Invalid private Gateway dispatch binding");
+  }
+  // This ID is only a candidate: the Gateway still requires its separate
+  // approved plan binding, role, verified DC/VP and OPA authorization.
+  return id;
+}
+
 function subtask(message: Message): DeterministicSubtask {
   const dataPart = message.parts.find((part) => part.content?.$case === "data");
   if (dataPart?.content?.$case !== "data") {
     throw new Error("Protected A2A message requires an application/json data part");
   }
   const raw = object(dataPart.content.value, "subtask");
-  if (raw.branch !== "feature/account-suspension") {
-    throw new Error("Phase 7 subtask must target feature/account-suspension");
+  // Backward compatible legacy endpoint. A different branch is allowed
+  // ONLY with a private, preallocated Gateway Task binding. This does not
+  // authenticate the caller; subsequent Gateway Rust/VP/OPA checks do.
+  const privateId=trustedGatewayTaskId(message);
+  const branch=privateId
+    ? validatePrivateApprovedBranch(raw.branch)
+    : raw.branch;
+  if(!privateId && branch!==LEGACY_A2A_BRANCH) {
+    throw new Error("Legacy unbound A2A task must use feature/account-suspension");
   }
   if (
     !Array.isArray(raw.relevant_paths) ||
@@ -71,11 +92,53 @@ function subtask(message: Message): DeterministicSubtask {
     throw new Error("subtask.relevant_paths must be an array of strings");
   }
 
+  // This metadata is NOT a source of delegated authority. Gateway
+  // independently checks the actual Engineer-approved Task and signed VP.
+  // Reject malformed/forged additions before allocating any model runtime.
+  let approvedFilePermissions:ApprovedTaskFilePermission[]|undefined;
+  if(raw.approved_file_permissions!==undefined){
+    if(!privateId || !Array.isArray(raw.approved_file_permissions) ||
+       raw.approved_file_permissions.length>32){
+      throw new Error("File permission hints require trusted Gateway Task binding");
+    }
+    const keys=new Set<string>();
+    approvedFilePermissions=raw.approved_file_permissions.map(value=>{
+      const row=object(value,"approved_file_permissions entry");
+      if(Object.keys(row).sort().join(",")!=="operation,path" ||
+         !["read_file","update_file","create_file"].includes(String(row.operation))||
+         typeof row.path!=="string"||
+         !(raw.relevant_paths as string[]).includes(row.path)||
+         row.path.length===0 || row.path.length>240 ||
+         row.path.startsWith("/")||row.path.includes("\\")||
+         row.path.includes("//")||row.path.split("/").some(x=>
+           !x||x==="."||x==="..")){
+        throw new Error("Invalid private Task file permission hint");
+      }
+      const key=row.operation+"\0"+row.path;
+      if(keys.has(key))throw new Error("Duplicate Task file permission hint");
+      keys.add(key);
+      return {operation:row.operation,path:row.path} as ApprovedTaskFilePermission;
+    });
+  }
+  // Preserve the exact signed Test Task Runner hint. False is significant:
+  // a separate Test preparation Task may write authorized tests but MUST
+  // NOT gain a Runner capability from its role or from another Test Task.
+  // This metadata is never itself an authorization; Gateway checks the plan.
+  const approvedRunTests=raw.approved_run_tests;
+  if(approvedRunTests!==undefined&&
+     (!privateId||approvedFilePermissions===undefined||
+      typeof approvedRunTests!=="boolean")){
+    throw new Error("Runner task hint requires trusted signed Task metadata");
+  }
   return {
     subtask_id: string(raw.subtask_id, "subtask.subtask_id"),
     instruction: string(raw.instruction, "subtask.instruction"),
-    branch: "feature/account-suspension",
-    relevant_paths: raw.relevant_paths as string[]
+    branch:branch as string,
+    relevant_paths: raw.relevant_paths as string[],
+    ...(approvedFilePermissions!==undefined
+       ? {approved_file_permissions:approvedFilePermissions}:{}),
+    ...(approvedRunTests!==undefined
+       ?{approved_run_tests:approvedRunTests as boolean}:{})
   };
 }
 
@@ -135,6 +198,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
     const message = requestContext.userMessage;
     const evidence = delegationEvidence(message);
     const taskInput = subtask(message);
+    const trustedGatewayId=trustedGatewayTaskId(message);
 
     requestContext.context.addActivatedExtension(
       DELEGATED_AUTHORIZATION_EXTENSION_URI
@@ -142,6 +206,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
 
     const taskContext: AgentTaskContext = {
       task_id: requestContext.taskId,
+      ...(trustedGatewayId?{trusted_gateway_task_id:trustedGatewayId}:{}),
       context_id: requestContext.contextId,
       role: this.#role,
       subtask: taskInput,

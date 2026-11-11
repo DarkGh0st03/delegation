@@ -18,7 +18,7 @@ const MAX_PAGES=20;
 export type MergeReadinessReason=
   |"invalid_input"|"provider_unavailable"|"malformed_provider_data"
   |"pr_not_open"|"pr_revision_mismatch"|"pr_branch_mismatch"
-  |"pr_not_mergeable"|"branch_protection_insufficient"
+  |"pr_not_mergeable"|"pr_is_draft"|"branch_protection_insufficient"
   |"human_approval_missing"|"security_pipeline_missing";
 
 export class MergeReadinessDenied extends Error{
@@ -172,6 +172,10 @@ export class GiteaMergeReadinessVerifier{
       deny("pr_branch_mismatch");
     }
     if(prHead.sha!==head)deny("pr_revision_mismatch");
+    // Native workflow creates a Draft PR. A passing status and an approval
+    // cannot authorize merge readiness while the PR is still Draft.
+    // Missing provider draft state is also a fail-closed refusal.
+    if(pr.draft!==false)deny("pr_is_draft");
     if(pr.mergeable!==true)deny("pr_not_mergeable");
     const [feature,main,protection]=await Promise.all([
       this.#get("/branches/"+encodeURIComponent(BRANCH)),
@@ -225,6 +229,7 @@ export class GiteaMergeReadinessVerifier{
     const latestPr=obj(await this.#get("/pulls/"+prNumber));
     const latestHead=obj(latestPr?.head),latestBase=obj(latestPr?.base);
     if(latestPr?.state!=="open"||latestPr.merged!==false||
+       latestPr.draft!==false||
        latestHead?.sha!==head||latestBase?.sha!==mainSha||
        latestPr.mergeable!==true){
       deny("pr_revision_mismatch");

@@ -6,6 +6,7 @@ import {
   DeterministicA2AOrchestrator,
   IncompatibleAgentError,
   createSpecializedAgentCard,
+  agentDid,
   startSpecializedAgentServer
 } from "../src/index.ts";
 
@@ -25,6 +26,46 @@ test("specialized Agent Cards expose the frozen A2A 1.0 contract", () => {
     assert.ok(extension);
     assert.equal(extension.required, true);
   }
+});
+
+
+test("approved-plan Agent Cards advertise reusable skills, never Task permissions", () => {
+  for (const role of ["backend","frontend","test"] as const) {
+    const card=createSpecializedAgentCard(role,"http://127.0.0.1:9000",{
+      capabilityProfile:"approved-plan"
+    });
+    assert.equal(card.supportedInterfaces[0]?.protocolVersion,"1.0");
+    assert.deepEqual(card.defaultInputModes,["application/json"]);
+    assert.equal(card.skills.length,1);
+    assert.ok(card.skills[0]?.tags?.includes("delegated-authorization"));
+    assert.ok(card.skills[0]?.tags?.includes(role));
+    assert.ok(!JSON.stringify(card).includes("Account Suspension"));
+    assert.ok(!JSON.stringify(card).includes("account-suspension"));
+    assert.ok(!JSON.stringify(card).includes("user.service.ts"));
+    const extension=card.capabilities.extensions?.find(x=>
+      x.uri===DELEGATED_AUTHORIZATION_EXTENSION_URI);
+    assert.ok(extension);
+    assert.equal(extension.required,true);
+    assert.equal(extension.params?.agentDid,agentDid(role));
+    // Changing advertised capabilities must not change registered identity.
+    assert.equal(agentDid(role),createSpecializedAgentCard(role,
+      "http://127.0.0.1:9000").capabilities.extensions?.[0]?.params?.agentDid);
+  }
+});
+
+test("R199 default A2A Agent Cards advertise generic roles; legacy requires opt-in",()=>{
+  const generic=createSpecializedAgentCard("backend","http://127.0.0.1:9000");
+  assert.equal(generic.skills[0]?.id,"backend-software-engineering");
+  assert.ok(!JSON.stringify(generic).includes("Account Suspension"));
+  assert.ok(!JSON.stringify(generic).includes("account-suspension"));
+  const legacy=createSpecializedAgentCard("backend","http://127.0.0.1:9000",{
+    capabilityProfile:"legacy"
+  });
+  assert.equal(legacy.skills[0]?.id,"backend-account-lifecycle");
+  assert.ok(legacy.skills[0]?.tags?.includes("account-suspension"));
+  assert.ok(legacy.description?.includes("Account Suspension"));
+  assert.equal(generic.capabilities.extensions?.[0]?.params?.agentDid,
+    legacy.capabilities.extensions?.[0]?.params?.agentDid);
 });
 
 test("deterministic A2A flow performs discovery -> Message -> Task -> Artifact without leaking authority", async () => {

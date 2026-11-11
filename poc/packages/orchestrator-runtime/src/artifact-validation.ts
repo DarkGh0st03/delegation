@@ -16,6 +16,10 @@ const VALID_TEST_OUTCOMES = new Set(["not_run", "pass", "fail"]);
 
 export interface WorkflowArtifactValidationOptions {
   requireTestPass?: boolean;
+  /** Signed Test preparation explicitly lacks run_tests authority. */
+  requireTestNotRun?: boolean;
+  /** The approved Task branch comes from trusted pre-dispatch input. */
+  expectedBranch?: string;
 }
 
 export interface ValidatedWorkflowArtifact extends AgentArtifactPayload {
@@ -64,7 +68,10 @@ export function validateWorkflowArtifact(
 ): ValidatedWorkflowArtifact {
   const raw = object(value, "Agent Artifact payload");
   const role = nonEmptyString(raw.role, "Artifact role");
-  if (!VALID_ROLES.has(role as SpecializedAgentRole)) {
+  // The canonical A2A owner has already pinned any additional role to
+  // a registered Coordinator Task, native Child, Gateway and verified Card.
+  // Reject untrusted role substitution rather than requiring a fixed enum.
+  if (!VALID_ROLES.has(role as SpecializedAgentRole) && role!==expectedRole) {
     throw new Error(`Artifact contains unsupported role ${role}`);
   }
   if (role !== expectedRole) {
@@ -73,10 +80,9 @@ export function validateWorkflowArtifact(
     );
   }
 
-  if (raw.branch !== ACCOUNT_SUSPENSION_ARTIFACT_BRANCH) {
-    throw new Error(
-      `Artifact branch must be ${ACCOUNT_SUSPENSION_ARTIFACT_BRANCH}`
-    );
+  const expectedBranch=options.expectedBranch??ACCOUNT_SUSPENSION_ARTIFACT_BRANCH;
+  if(raw.branch!==expectedBranch){
+    throw new Error(`Artifact branch must be ${expectedBranch}`);
   }
 
   const revision = commitSha(raw.revision, "Artifact revision");
@@ -96,6 +102,12 @@ export function validateWorkflowArtifact(
   }
 
   const requireTestPass = options.requireTestPass ?? false;
+  const requireTestNotRun = options.requireTestNotRun ?? false;
+  if(requireTestPass&&requireTestNotRun)
+    throw new Error("Conflicting signed Test artifact expectations");
+  if(requireTestNotRun&&
+     (expectedRole!=="test"||testOutcome!=="not_run"))
+    throw new Error("Signed Test preparation Artifact must report not_run");
   if (requireTestPass && testOutcome !== "pass") {
     throw new Error(
       "Test Agent Artifact is not acceptable until test_outcome is pass"
@@ -113,6 +125,8 @@ export function validateWorkflowArtifact(
     raw.project_tests,
     raw.researcher_acceptance
   ];
+  if(requireTestNotRun&&runnerFields.some(value=>value!==undefined))
+    throw new Error("Signed Test preparation Artifact must not claim Runner evidence");
   if (
     expectedRole !== "test" &&
     runnerFields.some((value) => value !== undefined)
@@ -177,7 +191,7 @@ export function validateWorkflowArtifact(
       "Artifact files_modified"
     ),
     files_created: stringArray(raw.files_created, "Artifact files_created"),
-    branch: ACCOUNT_SUSPENSION_ARTIFACT_BRANCH,
+    branch: expectedBranch,
     revision,
     commit_sha: commitShaValue,
     test_outcome: testOutcome as AgentArtifactPayload["test_outcome"],

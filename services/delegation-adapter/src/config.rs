@@ -42,6 +42,9 @@ pub struct EvmAdapterConfig {
     pub identity_private_keys: HashMap<CallerRole, String>,
     pub did_resolver_script: String,
     pub did_publisher_script: String,
+    /// Optional shared public-only artifact directory, mounted read-only
+    /// into independently deployed verifiers. No signing keys are persisted.
+    pub public_artifact_dir: Option<String>,
 }
 
 impl EvmAdapterConfig {
@@ -52,7 +55,7 @@ impl EvmAdapterConfig {
             .ok_or_else(|| format!("Missing EVM identity private key for {role:?}"))
     }
 
-    fn from_env() -> Result<Self, String> {
+    fn from_env(additional: &[CallerRole]) -> Result<Self, String> {
         let chain_id = required("CHAIN_ID")?
             .parse::<u64>()
             .map_err(|err| format!("Invalid CHAIN_ID [{err}]"))?;
@@ -70,6 +73,10 @@ impl EvmAdapterConfig {
         ] {
             identity_private_keys.insert(role, required(name)?);
         }
+        for role in additional {
+            let key = "ADAPTER_EVM_PRIVATE_KEY_".to_owned() + &role.as_str().to_ascii_uppercase();
+            identity_private_keys.insert(*role, required(&key)?);
+        }
 
         Ok(Self {
             rpc_url: required("RPC_URL")?,
@@ -83,6 +90,9 @@ impl EvmAdapterConfig {
                 .unwrap_or_else(|_| String::from("blockchain/did-client/resolve-did-json.mjs")),
             did_publisher_script: env::var("ADAPTER_DID_PUBLISHER_SCRIPT")
                 .unwrap_or_else(|_| String::from("blockchain/did-client/publish-ed25519.mjs")),
+            public_artifact_dir: env::var("ADAPTER_PUBLIC_ARTIFACT_DIR")
+                .ok()
+                .filter(|path| !path.trim().is_empty()),
         })
     }
 }
@@ -97,6 +107,7 @@ pub struct AdapterConfig {
 
 impl AdapterConfig {
     pub fn from_env() -> Result<Self, String> {
+        let additional = additional_specialists_from_env()?;
         let bind_addr =
             env::var("ADAPTER_BIND_ADDR").unwrap_or_else(|_| String::from("0.0.0.0:8090"));
 
@@ -113,7 +124,7 @@ impl AdapterConfig {
         let gateway_id = env::var("ADAPTER_ID_GATEWAY")
             .unwrap_or_else(|_| String::from("urn:thesis:service:gateway"));
 
-        let records = vec![
+        let mut records = vec![
             CallerRecord::new(
                 CallerRole::Engineer,
                 required("ADAPTER_CALLER_ENGINEER")?,
@@ -156,10 +167,25 @@ impl AdapterConfig {
             )?,
         ];
 
+        for role in &additional {
+            let suffix = role.as_str().to_ascii_uppercase();
+            let identity = required(&format!("ADAPTER_ID_{suffix}"))?;
+            if !identity.starts_with("did:") {
+                return Err(String::from(
+                    "Additional specialist needs a provisioned DID",
+                ));
+            }
+            records.push(CallerRecord::new(
+                *role,
+                required(&format!("ADAPTER_CALLER_{suffix}"))?,
+                identity,
+                vec![CallerCapability::CreatePresentation],
+            )?);
+        }
         let trust_profile = AdapterTrustProfile::from_env()?;
         let evm = match trust_profile {
             AdapterTrustProfile::InMemory => None,
-            AdapterTrustProfile::Evm => Some(EvmAdapterConfig::from_env()?),
+            AdapterTrustProfile::Evm => Some(EvmAdapterConfig::from_env(&additional)?),
         };
 
         Ok(Self {
@@ -178,4 +204,28 @@ fn required(name: &str) -> Result<String, String> {
         return Err(format!("Environment variable {name} cannot be empty"));
     }
     Ok(value)
+}
+
+/** Only the deployment Owner's native Rust environment can provision
+ * extra signer identities; Agent Cards, Task hints and A2A never reach here.
+ * Unknown/duplicate/oversized rosters fail closed before native startup. */
+pub fn additional_specialists_from_env() -> Result<Vec<CallerRole>, String> {
+    let raw = env::var("ADAPTER_ADDITIONAL_SPECIALISTS").unwrap_or_default();
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    let names = raw.split(',').collect::<Vec<_>>();
+    if names.len() > 13 {
+        return Err(String::from("Additional specialist role roster too large"));
+    }
+    let mut roles = Vec::new();
+    for name in names {
+        let role = CallerRole::from_name(name)?;
+        if !matches!(role, CallerRole::Additional(_)) || roles.contains(&role) {
+            return Err(String::from("Invalid native additional specialist roster"));
+        }
+        roles.push(role);
+    }
+    roles.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    Ok(roles)
 }

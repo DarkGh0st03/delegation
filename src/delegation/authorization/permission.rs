@@ -26,6 +26,11 @@ impl Permission {
         &self.operation
     }
 
+    /// Scope attenuation never changes the delegated operation.
+    pub fn covers(&self, child: &Self) -> bool {
+        self.operation == child.operation && self.resource.contains_resource(&child.resource)
+    }
+
     pub fn canonical_value(&self) -> String {
         let resource = self.resource.as_str();
         let operation = self.operation.as_str();

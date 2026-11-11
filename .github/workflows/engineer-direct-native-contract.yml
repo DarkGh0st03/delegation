@@ -1,0 +1,51 @@
+# R225: one explicitly requested FREE native Core Rust integration candidate.
+# No Gemini/OpenAI API key, model invocation or paid workflow is available.
+name: Engineer Direct Rust Core - Native Node API (No AI Billing)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: engineer-direct-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  single-owner-core:
+    name: Engineer Node API + same Rust Child/VP owner without HTTP Adapter
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Verify no paid provider input and no old Adapter startup
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+          test -f services/delegation-engineer-node/Cargo.toml
+      - name: Build same Rust CryptoRuntime embedded in Engineer Node addon
+        run: |
+          cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
+          cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
+          mkdir -p poc/packages/orchestrator-runtime/src/native
+          cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
+      - name: Verify native ABI without starting a second issuer
+        run: |
+          node -e '
+            const assert=require("node:assert/strict");
+            const binding=require("./poc/packages/orchestrator-runtime/src/native/delegation-engineer.node");
+            for(const name of ["start_engineer_core","issue_engineer_root","revoke_engineer_root"])
+              assert.equal(typeof binding[name],"function",name);
+          '
+      - name: Direct Engineer Root -> same Rust Child -> signed Agent VP -> revoke
+        run: node poc/packages/orchestrator-runtime/test/direct-engineer-native-e2e.mjs
+      - name: Offline Engineer grant and downgrade rejection contracts
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts

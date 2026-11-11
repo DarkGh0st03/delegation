@@ -60,6 +60,8 @@ export interface ProtectedA2ATaskRequest {
   agent_base_url: string;
   subtask: DeterministicSubtask;
   delegation_evidence: DelegationEvidence;
+  /** Opaque, trusted-prebound ID; never from Gemini or the A2A response. */
+  trusted_gateway_task_id?: string;
 }
 
 export interface ProtectedA2ATaskResult {
@@ -72,6 +74,9 @@ export interface A2APollingOptions {
   deadlineMs?: number;
   initialIntervalMs?: number;
   maxIntervalMs?: number;
+}
+export class ProtectedA2ATaskFailedError extends Error {
+  constructor() { super("Protected A2A task ended without completion"); }
 }
 const FINISHED = new Set<TaskState>([
   TaskState.TASK_STATE_COMPLETED,
@@ -100,7 +105,10 @@ export class DeterministicA2AOrchestrator {
   readonly #initialIntervalMs: number;
   readonly #maxIntervalMs: number;
 
-  constructor(options: A2APollingOptions = {}) {
+  readonly #verifyCard?: (baseUrl:string,card:AgentCard)=>void;
+
+  constructor(options: A2APollingOptions = {}, verifyCard?: (baseUrl:string,card:AgentCard)=>void) {
+    this.#verifyCard=verifyCard;
     this.#deadlineMs = positiveSafe(options.deadlineMs ?? 12 * 60_000, "A2A deadline");
     this.#initialIntervalMs = positiveSafe(options.initialIntervalMs ?? 500, "A2A poll interval");
     this.#maxIntervalMs = positiveSafe(options.maxIntervalMs ?? 3000, "A2A max poll interval");
@@ -120,7 +128,12 @@ export class DeterministicA2AOrchestrator {
     const client = await this.#factory.createFromUrl(request.agent_base_url);
     const card = await client.getAgentCard();
     assertDelegatedAuthorizationSupport(card);
+    this.#verifyCard?.(request.agent_base_url,card);
 
+    if(request.trusted_gateway_task_id!==undefined&&
+       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(request.trusted_gateway_task_id)){
+      throw new Error("Invalid trusted Gateway dispatch binding");
+    }
     const start = performance.now();
     const result = await client.sendMessage(
       {
@@ -142,7 +155,9 @@ export class DeterministicA2AOrchestrator {
             }
           ],
           metadata: {
-            delegation_evidence: request.delegation_evidence
+            delegation_evidence: request.delegation_evidence,
+            ...(request.trusted_gateway_task_id
+              ? {trusted_gateway_task_id:request.trusted_gateway_task_id}:{})
           },
           extensions: [DELEGATED_AUTHORIZATION_EXTENSION_URI],
           referenceTaskIds: []
@@ -193,6 +208,8 @@ export class DeterministicA2AOrchestrator {
       const state = task.status?.state;
       if (state !== undefined && FINISHED.has(state)) {
         safeA2AMetric("terminal", performance.now() - start, polls, submitMs, pollingHttpMs);
+        if (state === TaskState.TASK_STATE_FAILED && task.id === result.id)
+          throw new ProtectedA2ATaskFailedError();
         if (state !== TaskState.TASK_STATE_COMPLETED) {
           throw new Error("Protected A2A task ended without completion");
         }

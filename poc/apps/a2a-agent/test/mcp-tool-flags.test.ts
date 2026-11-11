@@ -1,43 +1,95 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {resolveMcpToolFlags} from "../src/mcp-tool-flags.ts";
+import {readFileSync} from "node:fs";
+import {requireProductionDirectGatewayTools,requireProductionNativeCrypto,
+ selectOwnerPrivateNativeMcpSigning} from "../src/mcp-tool-flags.ts";
 
-const endpoint="http://127.0.0.1:8131/mcp";
-test("MCP specialized agent tools remain disabled by default",()=>{
-  assert.deepEqual(resolveMcpToolFlags({},"test","adk",endpoint),{});
-  assert.deepEqual(resolveMcpToolFlags({
-    ADK_MCP_UPDATE_FILE:"false",
-    ADK_MCP_CREATE_FILE:"false",
-    ADK_MCP_RUN_TESTS:"false"
-  },"test","adk",endpoint),{});
+test("R187 production has no executable legacy MCP repository/Runner flag selector",()=>{
+ const source=readFileSync(new URL("../src/mcp-tool-flags.ts",import.meta.url),"utf8");
+ assert.doesNotMatch(source,/export (?:function|interface) (?:resolveMcpToolFlags|McpToolFlags)/u);
+ assert.doesNotMatch(source,/Only Test Agent can enable MCP/u);
+ assert.match(source,/requireProductionDirectGatewayTools/u);
 });
-test("Explicit flags are independent while Test Agent can opt into all four tools",()=>{
-  assert.deepEqual(resolveMcpToolFlags({ADK_MCP_UPDATE_FILE:"true"},
-    "backend","adk",endpoint),{mcpUpdateFile:true});
-  assert.deepEqual(resolveMcpToolFlags({
-    ADK_MCP_UPDATE_FILE:"true",ADK_MCP_CREATE_FILE:"true",
-    ADK_MCP_RUN_TESTS:"true"
-  },"test","adk",endpoint),{
-    mcpUpdateFile:true,mcpCreateFile:true,mcpRunTests:true
-  });
+
+test("R187 production disables old repository MCP flags even for a Test Agent",()=>{
+ for(const env of [
+   {ADK_MCP_SHARED_URL:"http://127.0.0.1:8131/mcp"},
+   {ADK_MCP_SHARED_URL:""},
+   {ADK_MCP_UPDATE_FILE:"true"},
+   {ADK_MCP_CREATE_FILE:"true"},
+   {ADK_MCP_RUN_TESTS:"true"}
+ ])
+  assert.throws(()=>requireProductionDirectGatewayTools(env),
+   /production_agent_requires_direct_gateway_tools/);
 });
-test("MCP create/test are forbidden to Backend or Frontend even with valid config",()=>{
-  for(const role of ["backend","frontend"] as const)
-    for(const name of ["ADK_MCP_CREATE_FILE","ADK_MCP_RUN_TESTS"])
-      assert.throws(()=>resolveMcpToolFlags({[name]:"true"},role,"adk",endpoint),
-        /Only Test Agent/);
+
+test("R187 invalid legacy flags cannot silently allow repository MCP tools",()=>{
+ for(const value of ["1","TRUE","yes","on"," false ","0"]){
+  assert.throws(()=>requireProductionDirectGatewayTools({ADK_MCP_RUN_TESTS:value}),
+   /must be exactly true or false/);
+ }
 });
-test("MCP write/test flags fail closed without shared MCP URL and ADK",()=>{
-  for(const key of ["ADK_MCP_UPDATE_FILE","ADK_MCP_CREATE_FILE","ADK_MCP_RUN_TESTS"]){
-    assert.throws(()=>resolveMcpToolFlags({[key]:"true"},"test","adk",undefined),
-      /require ADK_MCP_SHARED_URL/);
-    assert.throws(()=>resolveMcpToolFlags({[key]:"true"},"test","deterministic",endpoint),
-      /require ADK_MCP_SHARED_URL/);
-  }
+
+test("R187 crypto-only MCP and direct Gateway have no legacy flag requirement",()=>{
+ assert.doesNotThrow(()=>requireProductionDirectGatewayTools({
+  ADK_MCP_CRYPTO_URL:"http://127.0.0.1:8097/mcp",
+  ADK_MCP_UPDATE_FILE:"false",
+  ADK_MCP_CREATE_FILE:"false",
+  ADK_MCP_RUN_TESTS:"false"
+ }));
+ assert.doesNotThrow(()=>requireProductionDirectGatewayTools({}));
 });
-test("Invalid flag text cannot silently enable or disable policy",()=>{
-  for(const value of ["1","TRUE","yes","on"," false ","0"]){
-    assert.throws(()=>resolveMcpToolFlags({ADK_MCP_RUN_TESTS:value},
-      "test","adk",endpoint),/must be exactly true or false/);
-  }
+
+test("R220 production ADK requires a native Rust signer and task-local MCP",()=>{
+ const socket="/tmp/delegation-issuer.sock";
+ assert.doesNotThrow(()=>requireProductionNativeCrypto({
+  ADAPTER_ENGINEER_NATIVE_SOCKET:socket,APPROVED_RUNNER_NATIVE_MCP:"1"
+ },"adk"));
+ for(const env of [{},{ADAPTER_ENGINEER_NATIVE_SOCKET:""},
+   {ADAPTER_ENGINEER_NATIVE_SOCKET:"relative.sock"},
+   {ADAPTER_ENGINEER_NATIVE_SOCKET:" /tmp/issuer.sock "},
+   {ADAPTER_ENGINEER_NATIVE_SOCKET:"/"+"x".repeat(101)},
+   {ADAPTER_ENGINEER_NATIVE_SOCKET:socket,APPROVED_RUNNER_NATIVE_MCP:"0"}]){
+  assert.throws(()=>requireProductionNativeCrypto(env,"adk"),
+   /production_adk_requires_native_rust_crypto/u);
+ }
+ for(const engine of ["adk","deterministic"] as const){
+  assert.throws(()=>requireProductionNativeCrypto({
+   ADAPTER_ENGINEER_NATIVE_SOCKET:socket,
+   ADK_MCP_CRYPTO_URL:"http://127.0.0.1:8097/mcp"
+  },engine),/production_adk_requires_task_local_crypto_mcp/u);
+  assert.throws(()=>requireProductionNativeCrypto({
+   ADK_MCP_CRYPTO_URL:""
+  },engine),/production_adk_requires_task_local_crypto_mcp/u);
+ }
+ assert.doesNotThrow(()=>requireProductionNativeCrypto({},"deterministic"));
+});
+
+test("R381.4 native MCP signing is opt-in only in trusted authority-only ADK host",()=>{
+ const socket="/tmp/delegation-private-rust.sock";
+ assert.equal(selectOwnerPrivateNativeMcpSigning({
+  ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+ },"authority-only","adk"),false);
+ assert.equal(selectOwnerPrivateNativeMcpSigning({
+  DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:"1",
+  ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+ },"authority-only","adk"),true);
+ for(const flag of ["", "true", "0", "false", "yes"]){
+  assert.throws(()=>selectOwnerPrivateNativeMcpSigning({
+   DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:flag,
+   ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+  },"authority-only","adk"),/selector must be exactly 1/u);
+ }
+ for(const [architecture,engine] of [
+  ["legacy-signed-dag","adk"],["authority-only","deterministic"],
+  [undefined,"adk"]
+ ] as const){
+  assert.throws(()=>selectOwnerPrivateNativeMcpSigning({
+   DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:"1",
+   ADAPTER_ENGINEER_NATIVE_SOCKET:socket
+  },architecture,engine),/requires authority-only ADK host/u);
+ }
+ assert.throws(()=>selectOwnerPrivateNativeMcpSigning({
+  DELEGATION_PRIVATE_NATIVE_MCP_SIGNING:"1"
+ },"authority-only","adk"),/production_adk_requires_native_rust_crypto/u);
 });

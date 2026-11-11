@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delegation — Engineer authenticated approval</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="top"><div class="brand"><span class="logo">D</span>
+<span><strong>Delegation</strong><small>Authenticated Engineer Approval · local PoC</small></span></div>
+<span class="demo">LOCAL ONLY · APPROVAL FIRMATA</span></header>
+<main class="shell">
+<p class="eyebrow">SOFTWARE ENGINEER · APPROVAZIONE DI AUTORITÀ</p>
+<h1 id="review-heading">Esamina una proposta trusted</h1>
+<p class="lead">L'identità e la proposta sono verificati nel backend locale; il browser non fornisce credenziali delegate. La firma Ed25519 non avvia automaticamente l'esecuzione.</p>
+<section class="panel" id="login">
+<h2>Autenticazione Engineer</h2>
+<label>Password operatore <input id="password" type="password" autocomplete="current-password"></label>
+<button id="login-button" class="primary-button" type="button">Accedi</button>
+</section>
+<section class="panel" id="approval" hidden>
+<div class="title"><h2>Proposta pronta per la revisione</h2><span id="identity" class="tag"></span></div>
+<p id="review-source">La proposta proviene dallo storage trusted del backend.</p>
+<div class="stat"><span>Repository e revisione</span><code id="repository"></code></div>
+<div class="stat"><span id="context-label">Contesto della richiesta</span><strong id="plan"></strong></div>
+<div class="stat"><span>Requisito</span><span id="requirement-view"></span></div>
+<div class="digest"><span id="digest-label">SHA-256 della proposta</span><code id="digest"></code></div>
+<div id="execution-plan-details"><h3>Task proposti e dipendenze</h3><div id="tasks"></div>
+<h3>Assunzioni del Planner</h3><div id="assumptions"></div>
+<h3>Incertezze da risolvere prima di approvare</h3>
+<p>Se un'incertezza cambia il requisito, l'ambito dei file o le permission, rifiuta il piano e richiedi una nuova proposta. La firma non risolve automaticamente ambiguità funzionali.</p>
+<div id="uncertainties" role="status"></div>
+</div><h3>Seleziona le permission consentite</h3>
+<p id="permission-help">Nessuna permission è selezionata in automatico. Il server richiede una selezione esplicita.</p>
+<div id="permissions"></div>
+<label>Conferma digitando APPROVE seguito da spazio e SHA-256 completo
+<input id="confirmation" type="text" autocomplete="off" spellcheck="false">
+</label>
+<button id="approve-button" class="primary-button" type="button">Firma la decisione Ed25519</button>
+<div id="rejection-actions" hidden>
+<label>Per rifiutare e revocare la credenziale preliminare, digita REJECT seguito da spazio e SHA-256 completo
+<input id="reject-confirmation" type="text" autocomplete="off" spellcheck="false">
+</label>
+<button id="reject-button" class="secondary" type="button">Rifiuta proposta e revoca credenziale preliminare</button>
+</div>
+<button id="logout-button" class="secondary" type="button">Esci senza approvare</button>
+</section>
+<p id="status" role="status" aria-live="polite"></p>
+<p class="warning">PoC locale con sessione password: non è un login aziendale/IdP. La firma prova l'uso della chiave pinned e la conferma autenticata da questa sessione, non garantisce sicurezza contro un host compromesso. Nessuna DC viene emessa dalla GUI.</p>
+</main>
+<script src="/authenticated.js"></script>
+</body>
+</html>

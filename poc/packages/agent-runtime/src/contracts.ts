@@ -10,15 +10,26 @@ export interface DelegationEvidence {
   presenter_id: string;
 }
 
+/** Non-authoritative model visibility; derived ONLY from signed Task permission rows. */
+export interface ApprovedTaskFilePermission {
+  path: string;
+  operation: "read_file" | "update_file" | "create_file";
+}
 export interface DeterministicSubtask {
   subtask_id: string;
   instruction: string;
-  branch: "feature/account-suspension";
+  branch: string;
   relevant_paths: string[];
+  /** Present only on trusted approved-plan A2A dispatch. */
+  approved_file_permissions?: ApprovedTaskFilePermission[];
+  /** Trusted signed-plan Task permission hint, never supplied by the model. */
+  approved_run_tests?: boolean;
 }
 
 export interface AgentTaskContext {
   task_id: string;
+  /** Opt-in private Gateway binding preallocated BEFORE A2A dispatch. */
+  trusted_gateway_task_id?: string;
   context_id: string;
   role: SpecializedAgentRole;
   subtask: DeterministicSubtask;
@@ -30,7 +41,7 @@ export interface AgentArtifactPayload {
   summary: string;
   files_modified: string[];
   files_created: string[];
-  branch: "feature/account-suspension";
+  branch: string;
   revision: string | null;
   commit_sha: string | null;
   test_outcome: "not_run" | "pass" | "fail";

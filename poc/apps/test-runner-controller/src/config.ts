@@ -66,6 +66,7 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
         process.env.TEST_RUNNER_TOTAL_TIMEOUT_MS ?? String(MAX_RUN_TOTAL_MS),
         "Runner total timeout"
       ),
+      failure_evidence_dir: process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR || undefined,
       log_dir:
         process.env.TEST_RUNNER_LOG_DIR ?? "/tmp/delegation-runner-logs",
       acceptance_enabled:

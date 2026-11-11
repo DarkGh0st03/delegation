@@ -82,18 +82,18 @@ test("AUD-004: fails closed if the existing Gitea branch rule allows zero approv
   await assert.rejects(provisionProtectedGiteaFixture(h.values),assert.AssertionError);
 });
 
-test("AUD-004: live and scripted full E2E use one shared provisioner, free synthetic fixture remains separate",async()=>{
-  const scriptRoot=new URL("../../packages/agent-runtime/scripts/",import.meta.url);
-  const scripts=["a2a-production-coordinator-mcp-isolated-real-positive.mjs",
-    "a2a-production-coordinator-mcp-gemini-live.mjs"];
-  const [free,live]=await Promise.all(scripts.map(name=>
-    readFile(new URL(name,scriptRoot),"utf8")));
-  for(const source of [free,live]){
-    assert.match(source,/provisionProtectedGiteaFixture\(/);
-    assert.doesNotMatch(source,/create read-scoped rule inspection token/);
-    assert.doesNotMatch(source,/branch_protections",\{method:"POST"/);
-  }
-  assert.match(free,/positiveMergeFixture/);
-  assert.doesNotMatch(live,/positiveMergeFixture|simulatedPositiveMerge/);
-  assert.match(live,/Live Gemini cannot create a synthetic approval or merge/);
+test("R426 protected Gitea bootstrap preserves native EVM isolation after paid launcher retirement",async()=>{
+ const script=await readFile(new URL(
+  "../../packages/agent-runtime/scripts/protected-gitea-bootstrap.mjs",import.meta.url),"utf8");
+ const functional=await readFile(new URL(
+  "../../../.github/workflows/functional-signed-dag-e2e.yml",import.meta.url),"utf8");
+ const root=new URL("../../../",import.meta.url);
+ await assert.rejects(readFile(new URL(
+  ".github/workflows/gemini-paid-shared-mcp-final.yml",root),"utf8"),{code:"ENOENT"});
+ assert.match(script,/export async function provisionProtectedGiteaFixture/u);
+ assert.doesNotMatch(script,/merge-operator-|positiveMergeFixture/u);
+ assert.match(functional,/APPROVED_RUNNER_NATIVE_EVM: "1"/u);
+ assert.match(functional,/security-ci:isolated-positive-smoke/u);
+ assert.match(functional,/ADAPTER_ENGINEER_NATIVE_SOCKET/u);
+ assert.doesNotMatch(functional,/simulatedPositiveMerge|positiveMergeFixture/u);
 });

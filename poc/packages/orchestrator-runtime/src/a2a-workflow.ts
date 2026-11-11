@@ -7,7 +7,7 @@ import type {
 import type {
   ChildIssuanceInput,
   IssuedDelegationCredential
-} from "./authority-client.ts";
+} from "./trusted-credential-contracts.ts";
 import {
   validateWorkflowArtifact,
   type ValidatedWorkflowArtifact
@@ -18,6 +18,8 @@ export interface ChildAuthorityIssuerPort {
     role: SpecializedAgentRole;
     credential: IssuedDelegationCredential;
   }>;
+  /** Present on the approved-plan issuer, not on legacy static issuers. */
+  assertActiveBeforeA2ASend?(): void;
 }
 
 export interface ProtectedA2AClientPort {
@@ -25,6 +27,7 @@ export interface ProtectedA2AClientPort {
     agent_base_url: string;
     subtask: DeterministicSubtask;
     delegation_evidence: DelegationEvidence;
+    trusted_gateway_task_id?: string;
   }): Promise<{
     card: { name: string };
     task: Task;
@@ -40,6 +43,10 @@ export interface DelegatedA2ARoleTaskInput {
   credential_status: ChildIssuanceInput["credential_status"];
   agent_base_url: string;
   subtask: DeterministicSubtask;
+  /** Trusted Coordinator's preallocated Gateway task ID, not A2A SDK ID. */
+  trusted_gateway_task_id?: string;
+  /** Trusted plan Task ID: used only by the scoped child issuer. */
+  approved_task_id?:string;
 }
 
 export interface DelegatedA2ARoleTaskResult {
@@ -100,6 +107,22 @@ export class DelegatedA2ARoleRunner {
     nonEmpty(input.parent_credential_id, "Parent credential id");
     nonEmpty(input.credential_id, "Child credential id");
     nonEmpty(input.agent_base_url, "Agent base URL");
+    // Reject malformed private Task bindings BEFORE issuing a child DC.
+    // Credential issuance is a side effect and cannot be retried blindly.
+    if(input.trusted_gateway_task_id!==undefined&&
+       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(input.trusted_gateway_task_id)){
+      throw new Error("Invalid trusted pre-dispatch Gateway Task ID");
+    }
+    // The generic legacy runner may use a role-template issuer, but once an
+    // immutable approved-plan Task ID is present a missing liveness guard
+    // would silently skip the Engineer operational-root recheck.
+    // Reject BEFORE minting any irreversible child credential.
+    const approvedTask=input.approved_task_id!==undefined;
+    if(approvedTask &&
+       typeof this.#authorityIssuer.assertActiveBeforeA2ASend!=="function"){
+      throw new Error("Approved A2A Task requires operational authority guard");
+    }
+    if(approvedTask)this.#authorityIssuer.assertActiveBeforeA2ASend!();
 
     const issued = await this.#authorityIssuer.issueSpecializedChild({
       parent_credential_id: input.parent_credential_id,
@@ -107,7 +130,8 @@ export class DelegatedA2ARoleRunner {
       valid_from: input.valid_from,
       validity_seconds: input.validity_seconds,
       credential_status: input.credential_status,
-      selection: { role: input.role }
+      selection: { role: input.role },
+      ...(input.approved_task_id?{approved_task_id:input.approved_task_id}:{})
     });
 
     if (issued.role !== input.role) {
@@ -127,17 +151,31 @@ export class DelegatedA2ARoleRunner {
       presenter_id: issued.credential.credentialSubject.sub
     };
 
+    // Recheck AFTER the async credential issuance and directly BEFORE A2A.
+    // A revoked operational root must never create another protected Task.
+    // The legacy no-approved-task path retains its historical optional guard.
+    if(approvedTask)this.#authorityIssuer.assertActiveBeforeA2ASend!();
+    else this.#authorityIssuer.assertActiveBeforeA2ASend?.();
     const result = await this.#a2a.sendProtectedTask({
       agent_base_url: input.agent_base_url,
       subtask: structuredClone(input.subtask),
-      delegation_evidence: delegationEvidence
+      delegation_evidence: delegationEvidence,
+      ...(input.trusted_gateway_task_id
+        ? {trusted_gateway_task_id:input.trusted_gateway_task_id}:{})
     });
 
     const artifact = validateWorkflowArtifact(
       artifactPayload(result.task),
       input.role,
       {
-        requireTestPass: input.role === "test"
+        // A signed Test preparation Task with no run_tests grant must not
+        // need a PASS, nor may it CLAIM any Docker/Runner verdict. The
+        // legacy one-Test workflow still requires PASS by default.
+        requireTestPass: input.role==="test"&&
+          !(approvedTask&&input.subtask.approved_run_tests===false),
+        requireTestNotRun: input.role==="test"&&
+          approvedTask&&input.subtask.approved_run_tests===false,
+        expectedBranch:input.subtask.branch
       }
     );
 

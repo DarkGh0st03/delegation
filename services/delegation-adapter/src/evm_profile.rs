@@ -9,6 +9,7 @@ use delegation::delegation::accumulator::accumulator_public_data::AccumulatorPub
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::local::InMemoryStatusListStore;
+use delegation::delegation::local::file_public_artifact_store::FilePublicArtifactStore;
 use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
@@ -54,14 +55,6 @@ use tokio::runtime::Runtime;
 type Curve = Bn254;
 
 const STATUS_LIST_BYTES: usize = 16 * 1024;
-const MANAGED_ROLES: [CallerRole; 5] = [
-    CallerRole::Engineer,
-    CallerRole::Orchestrator,
-    CallerRole::Backend,
-    CallerRole::Frontend,
-    CallerRole::Test,
-];
-
 sol! {
     #[sol(rpc)]
     interface EnterpriseTrustRegistryWriterContract {
@@ -112,6 +105,7 @@ pub struct EvmAdapterProfile {
     runtime: Runtime,
     chain_reader: Rc<EvmRegistryReader>,
     status_source: Rc<InMemoryStatusListStore>,
+    public_artifacts: Option<Rc<FilePublicArtifactStore<Curve>>>,
 }
 
 impl EvmAdapterProfile {
@@ -124,7 +118,7 @@ impl EvmAdapterProfile {
         let runtime =
             Runtime::new().map_err(|err| format!("Could not create EVM writer runtime [{err}]"))?;
 
-        let profile = Self {
+        let mut profile = Self {
             config: config.clone(),
             runtime,
             chain_reader: Rc::new(EvmRegistryReader::connect(
@@ -135,14 +129,32 @@ impl EvmAdapterProfile {
                 config.chain_id,
             )?),
             status_source: Rc::new(InMemoryStatusListStore::new()),
+            public_artifacts: None,
         };
 
         profile.bootstrap_identities(callers, issuance_store.clone(), issuers)?;
 
+        // Only public accumulator bytes are exported, and ONLY after their
+        // EVM commitments were confirmed by bootstrap_identities. A separate
+        // reader can use this same directory without issuer or signing keys.
+        if let Some(root) = &config.public_artifact_dir {
+            let shared = Rc::new(FilePublicArtifactStore::<Curve>::new(root)?);
+            for role in callers.managed_identity_roles()? {
+                let issuer_id = callers.identity_for_role(role)?;
+                let material = issuance_store.get_accumulator_data_at_version(issuer_id, 1)?;
+                shared.publish_accumulator(issuer_id, 1, &material)?;
+            }
+            profile.public_artifacts = Some(shared);
+        }
+
         let accumulator_provider: AccumulatorMaterialProviderRef<Curve> =
-            Rc::new(IssuanceAccumulatorProvider {
-                store: issuance_store,
-            });
+            if let Some(shared) = &profile.public_artifacts {
+                shared.clone()
+            } else {
+                Rc::new(IssuanceAccumulatorProvider {
+                    store: issuance_store,
+                })
+            };
         let did_keys = Rc::new(DidEthrVerificationKeyProvider::new(
             &config.did_resolver_script,
             &config.rpc_url,
@@ -151,7 +163,7 @@ impl EvmAdapterProfile {
         ));
         let verification_keys: VerificationKeyProviderRef = did_keys.clone();
 
-        for role in MANAGED_ROLES {
+        for role in callers.managed_identity_roles()? {
             verification_keys.get_verification_key(callers.identity_for_role(role)?)?;
         }
 
@@ -162,7 +174,12 @@ impl EvmAdapterProfile {
             verification_keys.clone(),
         ));
 
-        let raw_status_provider: StatusListCredentialProviderRef = profile.status_source.clone();
+        let raw_status_provider: StatusListCredentialProviderRef =
+            if let Some(shared) = &profile.public_artifacts {
+                shared.clone()
+            } else {
+                profile.status_source.clone()
+            };
         let status_provider: StatusListCredentialProviderRef =
             Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(
                 raw_status_provider,
@@ -262,9 +279,48 @@ impl EvmAdapterProfile {
         self.status_source.insert(
             issuer_id.to_string(),
             entry.status_list_credential().to_string(),
-            signed_status,
+            signed_status.clone(),
         );
+        if let Some(shared) = &self.public_artifacts {
+            shared.publish_status_jwt(issuer_id, entry.status_list_credential(), &signed_status)?;
+        }
         Ok(())
+    }
+
+    /// Non-mutating observation of an EVM-anchored signed JWT status bit.
+    /// Fail closed on stale JWT, mismatched chain hash/purpose, invalid
+    /// Ed25519 verification or missing anchor. The public Status List
+    /// remains independently verifiable by a separate Rust verifier;
+    /// this endpoint alone is not that independent process.
+    pub fn observe_anchored_status(
+        &self,
+        issuer_id: &str,
+        entry: &BitstringStatusListEntry,
+        verification_jwk: &Jwk,
+    ) -> Result<(bool, u64), String> {
+        let (purpose_code, _) = status_purpose(entry.status_purpose())?;
+        let anchor = self
+            .chain_reader
+            .status_list_anchor(issuer_id, entry.status_list_credential())?;
+        if !anchor.exists || anchor.purpose != purpose_code || anchor.current_version == 0 {
+            return Err(String::from(
+                "Current EVM status anchor missing or mismatched",
+            ));
+        }
+        let artifact = self
+            .status_source
+            .get_status_list_credential(issuer_id, entry.status_list_credential())?;
+        if EvmAnchoredStatusListResolver::artifact_commitment(&artifact.document)
+            != anchor.current_artifact_hash
+        {
+            return Err(String::from(
+                "EVM status artifact no longer matches chain commitment",
+            ));
+        }
+        let document =
+            verify_status_list_credential_jwt(&artifact.document, verification_jwk, issuer_id)?;
+        let status_set = BitstringStatusListParser::read_status(entry, &document)?;
+        Ok((status_set, anchor.current_version))
     }
 
     pub fn update_status(
@@ -352,8 +408,15 @@ impl EvmAdapterProfile {
         self.status_source.insert(
             issuer_id.to_string(),
             entry.status_list_credential().to_string(),
-            updated_artifact,
+            updated_artifact.clone(),
         );
+        if let Some(shared) = &self.public_artifacts {
+            shared.publish_status_jwt(
+                issuer_id,
+                entry.status_list_credential(),
+                &updated_artifact,
+            )?;
+        }
 
         Ok(expected_version)
     }
@@ -364,7 +427,7 @@ impl EvmAdapterProfile {
         issuance_store: Rc<InMemoryTrustStore<Curve>>,
         issuers: &HashMap<CallerRole, DelegationIssuer<Curve>>,
     ) -> Result<(), String> {
-        let identities = MANAGED_ROLES
+        let identities = callers.managed_identity_roles()?
             .iter()
             .map(|role| {
                 let identity = callers.identity_for_role(*role)?.to_string();

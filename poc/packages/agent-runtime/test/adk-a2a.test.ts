@@ -7,7 +7,7 @@ import {
   type LlmResponse
 } from "@google/adk";
 import { TaskState } from "@a2a-js/sdk";
-import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
+import {safeAdkRequestShape,safeAdkFunctionHistoryShape} from "../src/adk-request-shape.ts";
 import {
   DELEGATED_AUTHORIZATION_EXTENSION_URI,
   DeterministicA2AOrchestrator,
@@ -50,7 +50,8 @@ class OneToolModel extends BaseLlm {
   }
 }
 
-function fakeBoundary(role: SpecializedAgentRole, deny = false) {
+function fakeBoundary(role: SpecializedAgentRole, deny = false,
+  readOnly = false, failedFirstTest = false) {
   const requests: Array<{url:string;body:Record<string,unknown>}> = [];
   let prepareCalls = 0;
   let executeCalls = 0;
@@ -82,9 +83,23 @@ function fakeBoundary(role: SpecializedAgentRole, deny = false) {
       executeCalls++;
       assert.equal(typeof body.signed_vp,"string");
       if (deny) return response(403,{error:"Policy rejected this operation"});
-      return response(200,{execution:role==="test"
-        ? {tested_commit_sha:SHA,runner_profile:"poc-default",project_tests:{status:"pass"},researcher_acceptance:{status:"pass"}}
-        : {provider:"gitea",commit_sha:SHA}});
+      return response(200,{execution:readOnly
+        ? {provider:"gitea",performed:true,tool:"read_file",
+           branch:BRANCH,path:PATHS[role],revision:SHA,
+           content:"authenticated file contents",blob_sha:"b",
+           last_commit_sha:SHA,size:27,encoding:"utf-8"}
+        :role==="test"
+          ? {tested_commit_sha:SHA,runner_profile:"poc-default",
+            ...(failedFirstTest&&executeCalls===1?{
+              status:"fail",
+              phases:[{phase:"backend_tests",status:"fail",
+                private_log:"SECRET_FAILING_TEST_LOG"}],
+              project_tests:{status:"fail"},researcher_acceptance:{status:"skipped"}
+            }:{
+              status:"pass",
+              project_tests:{status:"pass"},researcher_acceptance:{status:"pass"}
+            })}
+          : {provider:"gitea",commit_sha:SHA}});
     }
     throw new Error("Unexpected HTTP endpoint " + text);
   };
@@ -161,6 +176,259 @@ for (const role of ["backend","frontend","test"] as const) {
   });
 }
 
+
+test("ADK read-only specialist completes from a Gateway-pinned revision",async()=>{
+  const boundary=fakeBoundary("backend",false,true);
+  const model=new OneToolModel("read_file",{branch:BRANCH,path:PATHS.backend});
+  const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,43378);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});
+
+
+
+
+test("R79 provider MAX_TOKENS with functionCall cannot execute any controlled tool",async()=>{
+  class TruncatedToolModel extends BaseLlm {
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-truncated-tool-no-provider"});}
+    override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      yield {content:{role:"model",parts:[{
+        functionCall:{id:"truncated-untrusted-edit",name:"update_file",
+          args:{branch:BRANCH,path:PATHS.frontend,content:"INCOMPLETE_EDIT"}}
+      }]},finishReason:"MAX_TOKENS"};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("Live generation prohibited in R79 regression"));
+    }
+  }
+  const boundary=fakeBoundary("frontend");
+  const model=new TruncatedToolModel();
+  let completed=false;
+  try{
+    const {response}=await send("frontend",model,
+      boundary.fetchFn as typeof fetch,43414);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{/* Fail-closed A2A may surface model failure as a transport error. */}
+  assert.equal(completed,false);
+  assert.equal(model.requests.length,1);
+  assert.deepEqual(boundary.counts(),{prepareCalls:0,executeCalls:0},
+    "Truncated functionCall must not reach the controlled Gateway");
+});
+
+/**
+ * R78: Paid R77 Frontend showed MAX_TOKENS followed by an approved-plan
+ * denial. This local model reproduces a terminal truncated response after
+ * one genuine Gateway read; no provider API or private source is used.
+ * A read-only specialist can still finish on STOP (separate regression).
+ */
+test("R78 Frontend terminal MAX_TOKENS cannot attest a completed A2A Task",async()=>{
+  class TruncatedFrontendModel extends BaseLlm {
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-truncated-frontend-no-provider"});}
+    override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1){
+        yield {content:{role:"model",parts:[{
+          functionCall:{id:"read-before-truncation",name:"read_file",
+            args:{branch:BRANCH,path:PATHS.frontend}}
+        }]}};
+      }else{
+        yield {content:{role:"model",parts:[{text:"UNFINISHED_RESPONSE"}]},
+          finishReason:"MAX_TOKENS"};
+      }
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("No provider calls in R78 regression"));
+    }
+  }
+  const boundary=fakeBoundary("frontend",false,true);
+  const model=new TruncatedFrontendModel();
+  let completed=false;
+  try{
+    const {response}=await send("frontend",model,
+      boundary.fetchFn as typeof fetch,43413);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{/* A2A may propagate a protected model failure as a transport error. */}
+  assert.equal(completed,false,
+    "Truncated final model output cannot be accepted from read evidence alone");
+  assert.equal(model.requests.length,2);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});
+
+
+/**
+ * Offline regression for the actual protected A2A -> BoundedModel -> ADK
+ * function-response path. Gemini 3 requires the model's original signature
+ * when the next request includes its prior functionCall. This fixture makes
+ * no provider calls and carries no real signature or credential.
+ */
+test("Protected A2A preserves synthetic model thought signature through Gateway read",async()=>{
+  const signature="SYNTHETIC_SIGNATURE_NOT_FROM_ANY_PROVIDER";
+  class SignedReadModel extends BaseLlm {
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"local-signed-read-no-provider"});}
+    override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1)yield {content:{role:"model",parts:[{
+        functionCall:{id:"offline-signed-read",name:"read_file",
+          args:{branch:BRANCH,path:PATHS.backend}},
+        thoughtSignature:signature
+      }]}};
+      else yield {content:{role:"model",parts:[{text:"Gateway read complete"}]}};
+    }
+    override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+      return Promise.reject(Error("External Gemini calls forbidden in offline signature regression"));
+    }
+  }
+  const boundary=fakeBoundary("backend",false,true);
+  const model=new SignedReadModel();
+  const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,43401);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+  assert.equal(model.requests.length,2);
+  const second=model.requests[1]!;
+  const history=second.contents;
+  const callIndex=history.findIndex(content=>content.role==="model" &&
+    content.parts?.some(part=>part.functionCall?.name==="read_file"));
+  assert.ok(callIndex>=0,"Prior signed model functionCall must remain in ADK history");
+  const toolIndex=history.findIndex((content,index)=>index>callIndex &&
+    content.parts?.some(part=>part.functionResponse?.name==="read_file"));
+  assert.ok(toolIndex>callIndex,"Function response must follow its signed model call");
+  const signedPart=history[callIndex]?.parts?.find(part=>
+    part.functionCall?.name==="read_file");
+  assert.equal(signedPart?.thoughtSignature,signature);
+  assert.deepEqual(safeAdkFunctionHistoryShape(second),{
+    function_call_messages:1,function_call_messages_missing_signature:0
+  });
+  assert.equal(JSON.stringify(safeAdkFunctionHistoryShape(second)).includes(signature),false);
+});
+
+class TwoRunsModel extends BaseLlm {
+  readonly requests:LlmRequest[]=[];
+  constructor(){super({model:"phase3-offline-recoverable-tests"});}
+  override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+    this.requests.push(request);
+    if(this.requests.length<=2){
+      yield {content:{role:"model",parts:[{
+        functionCall:{id:"run_"+this.requests.length,name:"run_tests",
+          args:{branch:BRANCH,profile:"poc-default"}}
+      }]}};
+    }else yield {content:{role:"model",parts:[{text:"Done"}]}};
+  }
+  override connect():Promise<BaseLlmConnection>{
+    return Promise.reject(Error("Live model prohibited"));
+  }
+}
+
+test("R120 Test A2A FAIL cannot be turned into same-task PASS",async()=>{
+  const boundary=fakeBoundary("test",false,false,true);
+  const model=new TwoRunsModel();
+  let completed=false,artifacts="";
+  try{
+    const {response}=await send("test",model,boundary.fetchFn as typeof fetch,43379);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+    artifacts=JSON.stringify(response.task.artifacts);
+  }catch{/* A2A may surface terminal failure through the transport. */}
+  assert.equal(completed,false);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+  assert.equal(model.requests.length,3);
+  assert.equal(artifacts.includes("SECRET_FAILING_TEST_LOG"),false);
+});
+
+test("Protected A2A Test Agent cannot complete with only failed Docker evidence",async()=>{
+  const boundary=fakeBoundary("test",false,false,true);
+  const model=new OneToolModel("run_tests",{branch:BRANCH,profile:"poc-default"});
+  let completed=false;
+  try{
+    const {response}=await send("test",model,boundary.fetchFn as typeof fetch,43380);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{}
+  assert.equal(completed,false);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});
+
+
+class RepairWorkflowModel extends BaseLlm{
+  readonly requests:LlmRequest[]=[];
+  constructor(){super({model:"offline-adk-realistic-repair"});}
+  override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+    this.requests.push(request);
+    const calls=[
+      {name:"run_tests",args:{branch:BRANCH,profile:"poc-default"}},
+      {name:"read_file",args:{branch:BRANCH,path:PATHS.test}},
+      {name:"update_file",args:{branch:BRANCH,path:PATHS.test,
+        content:"approved test repair"}},
+      {name:"run_tests",args:{branch:BRANCH,profile:"poc-default"}}
+    ];
+    const next=calls[this.requests.length-1];
+    yield {content:{role:"model",parts:next?[{
+      functionCall:{id:"repair_"+this.requests.length,...next}
+    }]:[{text:"Completed verified repair"}]}};
+  }
+  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+    return Promise.reject(Error("No provider API in offline repair test"));
+  }
+}
+test("R120 same-task source edit after failed Runner cannot authorize a second PASS",async()=>{
+  const calls:string[]=[];
+  const initialSha="a".repeat(40),fixedSha="b".repeat(40);
+  let pending="",revision=initialSha;
+  const respond=(status:number,value:object)=>new Response(JSON.stringify(value),{
+    status,headers:{"content-type":"application/json"}
+  });
+  const fetchFn=async(url:URL|RequestInfo,init?:RequestInit):Promise<Response>=>{
+    const target=String(url);
+    const payload=JSON.parse(String(init?.body??"{}"));
+    if(target.endsWith("/v1/authorization/prepare")){
+      pending=payload.tool;
+      return respond(201,{request_id:"repair-"+calls.length,
+        audience:"cloud-access-gateway",challenge:"challenge",
+        required_permission:{operation:pending,resource:"approved-task"},
+        expires_at:"2026-12-01T00:00:00Z"});
+    }
+    if(target.endsWith("/v1/presentations"))
+      return respond(200,{signed_vp:"fixture-only-signed-vp"});
+    if(!target.endsWith("/v1/authorization/execute"))
+      throw Error("Unexpected trusted endpoint");
+    calls.push(pending);
+    switch(pending){
+      case "read_file":return respond(200,{execution:{
+        provider:"gitea",performed:true,tool:"read_file",branch:BRANCH,
+        path:PATHS.test,revision,content:"pre-repair source"
+      }});
+      case "update_file":
+        revision=fixedSha;
+        return respond(200,{execution:{provider:"gitea",performed:true,
+          tool:"update_file",branch:BRANCH,path:PATHS.test,commit_sha:revision}});
+      case "run_tests":{
+        const passed=revision===fixedSha;
+        return respond(200,{execution:{provider:"runner",performed:true,
+          tool:"run_tests",branch:BRANCH,revision,
+          status:passed?"pass":"fail",tested_commit_sha:revision,
+          runner_profile:"poc-default",
+          phases:[{phase:"backend_tests",status:passed?"pass":"fail"}],
+          project_tests:{status:passed?"pass":"fail"},
+          researcher_acceptance:{status:passed?"pass":"skipped"}
+        }});
+      }
+    }
+    throw Error("Unapproved tool");
+  };
+  const model=new RepairWorkflowModel();
+  let completed=false;
+  try{
+    const {response}=await send("test",model,fetchFn as typeof fetch,43381);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{/* A failed Test must not be accepted as completed. */}
+  assert.equal(completed,false);
+  assert.deepEqual(calls,["run_tests","read_file","update_file"],
+    "Second same-task run_tests cannot reach Gateway or Docker");
+  assert.equal(revision,fixedSha,
+    "Source edit alone is not a new verified Test acceptance");
+});
+
 test("Phase 3 Gateway denial never becomes a completed authorized A2A Artifact",async()=>{
   const role="backend";
   const boundary=fakeBoundary(role,true);
@@ -216,5 +484,42 @@ test("Phase 3 explicit backend generation cap survives the real protected A2A/AD
     assert.equal(diagnostic.temperature,0);
     assert.equal(diagnostic.function_declarations,2);
   }
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});
+
+test("Protected non-streaming ADK preserves Gemini tool thought signature across turns",async()=>{
+  const signature="OFFLINE_SYNTHETIC_GEMINI_SIGNATURE_DO_NOT_LOG";
+  class SignatureModel extends BaseLlm{
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"signed-nonstream-gemini-simulator"});}
+    override async *generateContentAsync(request:LlmRequest):
+      AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1){
+        yield {content:{role:"model",parts:[{
+          functionCall:{id:"signed-file-edit",name:"update_file",args:{
+            branch:BRANCH,path:PATHS.backend,content:"authorized edit"
+          }},
+          thoughtSignature:signature
+        }]}};
+      }else{
+        yield {content:{role:"model",parts:[{text:"Done."}]}};
+      }
+    }
+    override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+      return Promise.reject(new Error("No provider connection"));
+    }
+  }
+  const boundary=fakeBoundary("backend");
+  const model=new SignatureModel();
+  const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,
+    43377);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.equal(model.requests.length,2);
+  const signedHistory=model.requests[1].contents.filter(c=>c.role==="model")
+    .flatMap(c=>c.parts??[]).filter(p=>p.functionCall);
+  assert.equal(signedHistory.length,1);
+  assert.equal(signedHistory[0].thoughtSignature,signature,
+    "ADK must not drop original provider signature in subsequent tool turn");
   assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
 });

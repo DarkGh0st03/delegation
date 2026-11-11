@@ -1,0 +1,315 @@
+# R235 FREE staged release gate: one direct Software Engineer Rust owner; no legacy Adapter HTTP.
+# F0 isolated test: signed Engineer TEST fixture, real Gitea/Docker,
+# native Rust + real A2A, scripted ADK; NO API key, Gemini charge, or R5 GO.
+name: Engineer Embedded Rust - Signed Gitea Docker DAG (No AI Billing)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: engineer-embedded-signed-dag-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  one-embedded-owner:
+    name: Engineer direct Rust owner + signed Gitea/Docker A2A and OPA
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TEST_RUNNER_FAILURE_EVIDENCE_DIR: /tmp/functional-private-evidence
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_DID_PUBLISHER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/publish-ed25519.mjs
+      ADAPTER_DID_RESOLVER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/resolve-did-json.mjs
+      ENGINEER_CORE_NATIVE_MODE: "1"
+      APPROVED_RUNNER_VERIFY_EMBEDDED_DAG_ONLY: "1"
+      APPROVED_RUNNER_NATIVE_EVM: "1"
+      APPROVED_RUNNER_NATIVE_MCP: "1"
+      APPROVED_RUNNER_THREE_AGENT_DAG: "1"
+      APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
+      APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
+      APPROVED_RUNNER_SCENARIO: account-suspension
+      DELEGATION_SIGNED_GEMINI_PILOT: "0"
+      ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
+      ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
+      ADAPTER_CALLER_ORCHESTRATOR: local-native-orchestrator-ci
+      ADAPTER_CALLER_BACKEND: local-native-backend-ci
+      ADAPTER_CALLER_FRONTEND: local-native-frontend-ci
+      ADAPTER_CALLER_TEST: local-native-test-ci
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_VERIFIER_MODE: core-rust
+      GATEWAY_PROVIDER_MODE: mock
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: "31337"
+      ADAPTER_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_RPC_URL: http://127.0.0.1:8545
+      CORE_RUST_CHAIN_ID: "31337"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+      - name: Install pinned local Node and DID dependencies
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+          node poc/scripts/init-local-env.mjs --force
+      - name: Start only disposable Anvil and OPA
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
+          for i in {1..90}; do
+            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+          exit 1
+      - name: Generate disposable public test identities
+        run: |
+          local_key() { printf '0x%064x' "$1"; }
+          deployer_key="$(local_key 1)"
+          deployer_address="$(cast wallet address --private-key "$deployer_key")"
+          cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$deployer_address" 0x56BC75E2D63100000 >/dev/null
+          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          echo "GOVERNANCE_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6; do
+            role="${entry%%:*}"
+            n="${entry##*:}"
+            key="$(local_key "$n")"
+            address="$(cast wallet address --private-key "$key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_EVM_PRIVATE_KEY_${role}=$key" >> "$GITHUB_ENV"
+            echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
+          done
+      - name: Deploy public DID and EVM trust registries
+        run: |
+          bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for key in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+          echo "CORE_RUST_DID_REGISTRY_ADDRESS=$DID_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      - name: Ensure one native Engineer owner pass (no second EVM issuer, no LLM)
+        run: |
+          node --test poc/apps/test-runner-controller/test/direct-engineer-owner-pass-selector.test.mjs
+          node --test poc/scripts/test/signed-gemini-pilot-consent.test.mjs
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+      - name: Build direct Engineer Rust owner and independent Gateway Core verifier
+        run: |
+          cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
+          cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
+          cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+          mkdir -p poc/packages/orchestrator-runtime/src/native poc/apps/gateway/src/native
+          # Rust Core's read-only Gateway verifier rejects missing public
+          # accumulators/ and status-lists/; this is operator provisioning,
+          # never synthetic trust material or a second signing authority.
+          install -d -m 0700 "$ADAPTER_PUBLIC_ARTIFACT_DIR" "$ADAPTER_PUBLIC_ARTIFACT_DIR/accumulators" "$ADAPTER_PUBLIC_ARTIFACT_DIR/status-lists"
+          cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
+          cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/r235-one-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
+      - name: Ensure no Adapter HTTP process is running before native owner starts
+        run: |
+          test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
+          test ! -e /tmp/native-evm-adapter.pid
+          if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then
+            echo "Retired Adapter HTTP endpoint is unexpectedly live" >&2
+            exit 1
+          fi
+      - name: Start Gateway with only direct Core Rust verifier and OPA
+        run: |
+          # Exercise the actual public-only Rust preflight before HTTP startup.
+          # Both this verifier and the later Gateway independently reject
+          # missing public sources; no HTTP Adapter fallback is available.
+          node -e 'require("./poc/apps/gateway/src/native/delegation-core.node").assert_verification_ready()'
+          npm --prefix poc run gateway:start >/tmp/r235-direct-gateway.log 2>&1 &
+          echo $! > /tmp/r235-direct-gateway.pid
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          echo "Native public Gateway did not start" >&2
+          exit 1
+      - name: Preload fixed disposable Gitea, OPA and Docker acceptance images
+        run: |
+          docker pull docker.gitea.com/gitea:28.0.0
+          docker pull node:22.15.0-bookworm
+          docker pull openpolicyagent/opa:1.21.1
+      - name: Signed three-agent Account Suspension DAG — one Rust owner, real Gitea/Docker
+        env:
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-native-engineer-dag-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          OPA_IMAGE: openpolicyagent/opa:1.21.1
+        run: |
+          set -euo pipefail
+          test "$ENGINEER_CORE_NATIVE_MODE" = 1
+          test "$APPROVED_RUNNER_NATIVE_MCP" = 1
+          test "$APPROVED_RUNNER_NATIVE_EVM" = 1
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          if ! npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller >/tmp/r235-signed-dag-private.log 2>&1; then
+            node --input-type=module <<'NODE'
+          import {readFileSync} from "node:fs";
+          const log=readFileSync("/tmp/r235-signed-dag-private.log","utf8");
+          const line=log.split(/\r?\n/u).findLast(x=>x.startsWith("[trusted-positive-ci] native_dag_failure "));
+          let diagnostic={event:"r235_embedded_engineer_signed_dag",status:"FAIL",category:"unknown"};
+          const outer=log.split(/\r?\n/u).map(x=>
+            /^\[trusted-positive-ci\] outer_failure (assertion|exception) (\d{1,5})$/u.exec(x)
+          ).filter(Boolean).at(-1);
+          if(outer){
+            diagnostic.category="outer_smoke_failure";
+            diagnostic.outer_kind=outer[1];
+            diagnostic.outer_module="isolated-trusted-security-ci-positive-smoke.mjs";
+            diagnostic.outer_line=Number(outer[2]);
+          }
+          if(line){
+            try{
+              const v=JSON.parse(line.slice("[trusted-positive-ci] native_dag_failure ".length));
+              if(["signed_dag_disposable_docker_acceptance"].includes(v.stage)){
+                diagnostic={event:"r235_embedded_engineer_signed_dag",status:"FAIL",
+                 category:"signed_dag_disposable_docker_acceptance",
+                 first_failed_phase:typeof v.first_failed_phase==="string"&&
+                   ["dependency_install","typecheck","backend_tests","frontend_tests",
+                    "build","playwright_e2e","researcher_acceptance"].includes(v.first_failed_phase)
+                   ?v.first_failed_phase:"unknown",
+                 native_stage:["entrypoint_bootstrap","configuration_validation",
+                  "disposable_gitea_bootstrap","native_issuer_initialization",
+                  "gateway_crypto_bootstrap","root_issuance","planning_scope",
+                  "engineer_review_and_root",
+                  "agent_model_binding","signed_a2a_dispatch","positive_dag_assertions",
+                  "root_revocation"].includes(v.native_phase_failure?.stage)
+                  ?v.native_phase_failure.stage:"unknown",
+                 native_cause:["a2a_dispatch_failed","orchestrator_task_failed",
+                  "root_revocation_unconfirmed","dependency_denied","adk_model_failure",
+                  "controlled_tool_failure","no_confirmed_revision","a2a_task_not_completed",
+                  "a2a_artifact_invalid","a2a_result_mismatch","attestation_effect_race",
+                  "approved_plan_denied","test_assertion","unclassified"]
+                  .includes(v.native_phase_failure?.category)
+                  ?v.native_phase_failure.category:"unknown",
+                 native_kind:["Error","AssertionError","TypeError","RangeError",
+                  "SyntaxError","AbortError","TimeoutError","AggregateError","unknown"]
+                  .includes(v.native_phase_failure?.kind)
+                  ?v.native_phase_failure.kind:"unknown",
+                 native_code:["ERR_ASSERTION","approved_plan_denied","ERR_INVALID_ARG_TYPE",
+                  "ERR_HTTP_HEADERS_SENT","ECONNRESET","ETIMEDOUT","ECONNREFUSED",
+                  "ABORT_ERR","ERR_INVALID_STATE","unknown"]
+                  .includes(v.native_phase_failure?.code)
+                  ?v.native_phase_failure.code:"unknown",
+                 native_module:["native-planning-read-core-evm-e2e.mjs",
+                  "native-approved-planner-dag-positive.mjs",
+                  "trusted-approved-a2a-dispatcher.ts","a2a-workflow.ts",
+                  "orchestrator.ts","executor.ts","adk-a2a-handler.ts",
+                  "artifact-validation.ts","private-request-handler.ts",
+                  "gateway-tool-client.ts","adk-tool-progress.ts",
+                  "approved-execution-plans.ts","runtime.ts","execute.ts",
+                  "runner-client.ts","isolated-executor.ts",
+                  "native-approved-dag-failure-category.mjs"].includes(
+                    v.native_phase_failure?.assertion_location?.module)
+                  ?v.native_phase_failure.assertion_location.module:"unknown",
+                 native_line:Number.isSafeInteger(v.native_phase_failure?.assertion_location?.line)&&
+                    v.native_phase_failure.assertion_location.line>0&&
+                    v.native_phase_failure.assertion_location.line<=2500
+                    ?v.native_phase_failure.assertion_location.line:0};
+              }
+            }catch{}
+          }
+          const knownStages=new Set([
+            "create_org","create_empty_repo","grant_",
+            "create_reader_pat","create_publisher_pat","validate_publisher_identity",
+            "clone_immutable_public_baseline","inspect_repo_after_push","wait_post_receive_repository_state",
+            "inspect_post_receive_state","verify_isolated_main","verify_isolated_feature",
+            "protect_disposable_main","r150_gateway_opa_authorized_real_gitea_update","r150_gateway_new_test_real_docker_pass",
+            "r150_real_docker_typecheck_original_fail","r139_no_pr_after_fail","isolated_gitea_ready",
+            "isolated_opa_ready","disposable_accounts","commit_reference_implementation",
+            "f1_same_bootstrap_planning_only","f1_verify_unchanged_main","f1_verify_unchanged_reference",
+            "f1_verify_no_pr","r45_gitea_retired_branch_diff_audit","r45_check_unchanged_main",
+            "r45_check_unchanged_feature","source_derived_adk_real_gitea_no_golden","f1_gitea_pinned_unsolved_main",
+            "f1_gitea_full_readonly_research_snapshot","f1_real_gitea_gemini_probe_dry_run","f1_actual_adk_planner_scripted_on_real_gitea",
+            "native_preliminary_planning_real_disposable_gitea","activate_signed_gateway_test_task","real_docker_project_and_researcher_acceptance",
+            "verify_immutable_main","verify_exact_feature","read_real_security_statuses",
+            "verify_signed_dag_pull_request","verify_native_pr_exact_head","r139_disposable_two_sha_real_docker",
+            "complete_positive_security_ci_smoke"
+          ]);
+          const active=[];
+          let lastCompleted;
+          for(const entry of log.split(/\r?\n/u)){
+            const mark=/^\[trusted-positive-ci\] (start|ok) ([a-z0-9_]+)$/u.exec(entry);
+            if(!mark || !knownStages.has(mark[2]))continue;
+            if(mark[1]==="start")active.push(mark[2]);
+            else{
+              const index=active.lastIndexOf(mark[2]);
+              if(index>=0){active.splice(index,1);lastCompleted=mark[2];}
+            }
+          }
+          diagnostic.outer_stage=active.at(-1)??"unknown";
+          diagnostic.last_completed_stage=lastCompleted??"unknown";
+          process.stderr.write(JSON.stringify(diagnostic)+"\n");
+          NODE
+            exit 1
+          fi
+          node --input-type=module <<'NODE'
+          import {readFileSync} from "node:fs";
+          import {strict as assert} from "node:assert";
+          const text=readFileSync("/tmp/r235-signed-dag-private.log","utf8");
+          const prefix="[trusted-positive-ci] native_disposable_planning ";
+          const marker=text.split(/\r?\n/u).findLast(line=>line.startsWith(prefix));
+          assert.ok(marker,"Full signed DAG receipt missing");
+          const report=JSON.parse(marker.slice(prefix.length));
+          assert.equal(report.status,"PASS");
+          assert.equal(report.signed_dag_positive,true);
+          assert.equal(report.same_signed_dag_docker_acceptance,true);
+          assert.equal(report.signed_dag_pr_unmerged,true);
+          assert.equal(report.main_mutations,0);
+          assert.equal(report.signed_generic_adk_agents,3);
+          assert.equal(report.native_rust_child_credentials,3);
+          process.stdout.write(JSON.stringify({
+           event:"r235_embedded_engineer_signed_dag",status:"PASS",
+           native_rust_owner:"single_in_process_engineer",
+           gateway_opa:true,real_gitea_and_docker:true,
+           three_signed_specialist_agents:true,
+           unmerged_pr:true,main_mutations:0,paid_model_calls:0
+          })+"\n");
+          NODE
+      - name: Assert old Adapter HTTP service stayed stopped
+        run: |
+          test ! -e /tmp/native-evm-adapter.pid
+          if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then
+            echo "Forbidden Adapter HTTP active after signed DAG" >&2
+            exit 1
+          fi
+      - name: Dispose only this workflow's temporary services
+        if: always()
+        run: |
+          if [[ -f /tmp/r235-direct-gateway.pid ]]; then
+            kill "$(cat /tmp/r235-direct-gateway.pid)" 2>/dev/null || true
+          fi
+          rm -f "${ADAPTER_ENGINEER_NATIVE_SOCKET:-}" 2>/dev/null || true
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
+          fi

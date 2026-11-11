@@ -10,7 +10,8 @@ import {
   agentCardHandler,
   restHandler
 } from "@a2a-js/sdk/server/express";
-import { createSpecializedAgentCard } from "./cards.ts";
+import { createSpecializedAgentCard,createOwnerAdditionalSpecialistCard,
+ type OwnerAdditionalCardPin} from "./cards.ts";
 import { PrivateEvidenceTaskStore } from "./private-task-store.ts";
 import { PrivateEvidenceRequestHandler } from "./private-request-handler.ts";
 import {
@@ -18,29 +19,46 @@ import {
   type DeterministicArtifactPayloadBuilder,
   type DeterministicTaskHandler
 } from "./executor.ts";
-import type { SpecializedAgentRole } from "./contracts.ts";
+import {SPECIALIZED_AGENT_ROLES,type SpecializedAgentRole} from "./contracts.ts";
 import { createAdkA2ATaskHandler, type AdkA2ATaskHandlerConfig } from "./adk-a2a-handler.ts";
 import { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
-import { attachPrivateMcpWorker } from "./private-mcp-worker-http.ts";
+
+import {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host.ts";
+
+type DiscoveryHostConfig=Parameters<typeof startTrustedBackendDiscoveryHost>[0];
 
 export interface SpecializedAgentServerOptions {
-  role: SpecializedAgentRole;
+  role: string;
+  /** Owner-only non-native extra-role Card; never A2A/Task/LLM input. */
+  ownerAdditionalCardPin?:OwnerAdditionalCardPin;
   port: number;
   host?: string;
   delegatedAuthorization?: boolean;
+  /** Advertise generic role skills for a trusted approved-plan workflow. */
+  capabilityProfile?: "legacy" | "approved-plan";
   artifactBuilder?: DeterministicArtifactPayloadBuilder;
   taskHandler?: DeterministicTaskHandler;
   adk?: AdkA2ATaskHandlerConfig;
+  /** Trusted Backend host configuration, never A2A task data. */
+  backendDiscovery?:Omit<DiscoveryHostConfig,
+    "adapterBaseUrl"|"backendToken"|"fetchFn"|"timeoutMs">;
   /** Opt-in only; the default A2A baseline stays unchanged. */
   mcpTaskSigning?: { signingPrivateKeyPem: string; signingPublicKeyPem: string };
+  /** Original host role DID; MUST equal the configured native Rust signer. */
+  nativeSignerDid?: string;
 }
 
 export interface SpecializedAgentServer {
-  role: SpecializedAgentRole;
+  role: string;
   baseUrl: string;
   card: AgentCard;
   executor: DeterministicSpecializedAgentExecutor;
   server: Server;
+  /** Host-only evidence counter, never a public A2A or ADK capability. */
+  cryptoProofCount?:()=>number;
+  /** Owner/Gateway bootstrap selectors; never included in the Agent Card. */
+  privateDiscoveryPorts?:Pick<Awaited<ReturnType<typeof startTrustedBackendDiscoveryHost>>,
+    "ownerBinding"|"gatewaySigner">;
   close(): Promise<void>;
 }
 
@@ -49,24 +67,91 @@ export async function startSpecializedAgentServer(
 ): Promise<SpecializedAgentServer> {
   const host = options.host ?? "127.0.0.1";
   const baseUrl = `http://${host}:${options.port}`;
-  const card = createSpecializedAgentCard(options.role, baseUrl, {
-    delegatedAuthorization: options.delegatedAuthorization
-  });
+  // Native identity cannot be substituted on a deterministic or unbound
+  // A2A worker. All native role keys remain exclusively with the Rust owner.
+  if(options.nativeSignerDid!==undefined&&(!options.adk||!options.mcpTaskSigning))
+    throw Error("Trusted native A2A signer DID requires an original ADK Task host");
+  const extra=!SPECIALIZED_AGENT_ROLES.includes(options.role as SpecializedAgentRole);
+  // Extra roles are NEVER authorized by the Card itself. The only native
+  // opt-in is a previously provisioned signer DID and read-only profile,
+  // with a separate private one-shot MCP key and an exact Owner Task binder.
+  // The original synthetic offline test mode remains strictly non-native.
+  const pinned=options.ownerAdditionalCardPin;
+  const nativeExtra=extra&&!!options.adk;
+  if(extra&&(!pinned||options.capabilityProfile==="legacy"||
+     options.delegatedAuthorization===false))
+    throw Error("Additional A2A specialist requires exact Owner Card pins");
+  if(extra&&nativeExtra&&(
+     !options.mcpTaskSigning||!options.nativeSignerDid||
+     options.nativeSignerDid!==pinned!.did||
+     process.env["ADAPTER_ID_"+options.role.toUpperCase()]!==pinned!.did||
+     process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+     process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"||
+     options.adk?.nativePresentationTransport!=="mcp-stdio"||
+     !Array.isArray(pinned!.capabilities)||
+     pinned!.capabilities.length!==1||pinned!.capabilities[0]!=="read_file"))
+    throw Error("Additional native A2A worker requires original Owner-signed read-only identity");
+  if(extra&&!nativeExtra&&(!options.taskHandler||
+     options.nativeSignerDid||options.mcpTaskSigning))
+    throw Error("Additional A2A specialist requires owner-pinned non-native test handler");
+  if(!extra&&options.ownerAdditionalCardPin)
+    throw Error("Original specialist cannot replace its trusted Agent Card");
+  const card=extra
+    ?createOwnerAdditionalSpecialistCard(
+       options.role,baseUrl,options.ownerAdditionalCardPin!)
+    :createSpecializedAgentCard(options.role as SpecializedAgentRole,baseUrl,{
+       delegatedAuthorization:options.delegatedAuthorization,
+       capabilityProfile:options.capabilityProfile,
+       ...(options.nativeSignerDid===undefined?{}:{nativeSignerDid:options.nativeSignerDid})
+     });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
-  if (options.adk?.mcpCreateFile && options.role!=="test") {
-    throw new Error("Only Test Agent may enable shared MCP create_file");
-  }
-  if (options.adk?.mcpRunTests && options.role!=="test") {
-    throw new Error("Only Test Agent may enable shared MCP run_tests");
-  }
+  // R381.6: a private Rust MCP subprocess is an owner-bound signing
+  // transport, never a free-standing A2A capability. Refuse it BEFORE any
+  // listener, discovery host or Task is created without the original
+  // authority-only host and its private one-shot Task registry.
+  if(options.adk?.nativePresentationTransport==="mcp-stdio"&&(
+       process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
+       !options.mcpTaskSigning))
+    throw Error("private_native_mcp_requires_owner_bound_task");
+  if(options.adk?.nativePresentationTransport==="mcp-stdio"&&
+     !options.nativeSignerDid)
+    throw Error("private_native_mcp_requires_signer_did");
+
+  // R194 reject retired repository/Runner MCP options for EVERY profile,
+  // including direct JS library callers rather than only production launchers.
+  if(options.adk&&["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
+       .some(key=>Object.prototype.hasOwnProperty.call(options.adk,key)))
+    throw Error("legacy_repository_mcp_retired");
+  if(options.adk&&Object.prototype.hasOwnProperty.call(options.adk,"mcpCryptoUrl"))
+    throw Error("legacy_crypto_http_mcp_retired");
   if (options.mcpTaskSigning && !options.adk) {
     throw new Error("Private MCP task worker requires a configured ADK runtime");
   }
+  if(options.backendDiscovery&&(options.role!=="backend"||!options.adk||
+     options.adk.trustedBackendDiscovery||options.adk.trustedBackendDiscoverySlot))
+    throw Error("Private discovery host requires one Backend ADK signing source");
+  // Historical discovery host still uses legacy Adapter HTTP. Never
+  // silently reintroduce it for the canonical socket-only ADK launcher.
+  if(options.backendDiscovery&&!options.adk?.adapterBaseUrl?.trim())
+    throw Error("Legacy Backend discovery host requires explicit historical Adapter URL");
+  const discovery=options.backendDiscovery?await startTrustedBackendDiscoveryHost({
+    ...options.backendDiscovery,adapterBaseUrl:options.adk!.adapterBaseUrl!,
+    backendToken:options.adk!.adapterToken,
+    ...(options.adk!.fetchFn?{fetchFn:((url,init)=>
+      options.adk!.fetchFn!(String(url),init)) as typeof fetch}:{})
+  }):undefined;
+  try{
   const mcpTaskRegistry = options.mcpTaskSigning
-    ? new PrivateMcpTaskRegistry({role:options.role, ...options.mcpTaskSigning})
+    ? new PrivateMcpTaskRegistry({role:options.role as SpecializedAgentRole,
+       ...options.mcpTaskSigning})
     : undefined;
   const adkHandler = options.adk
-    ? createAdkA2ATaskHandler({...options.adk, ...(mcpTaskRegistry ? {mcpTaskRegistry} : {})})
+    ? createAdkA2ATaskHandler({...options.adk,
+      ...(discovery?{trustedBackendDiscoverySlot:discovery.slot}:{}),
+      ...(mcpTaskRegistry ? {mcpTaskRegistry} : {}),
+      ...(nativeExtra?{trustedAdditionalReadOnlyRole:{
+       role:options.role,capabilities:[...pinned!.capabilities]
+      }}:{})})
     : undefined;
   const taskHandler: DeterministicTaskHandler | undefined = adkHandler
     ? async (context,signal) => {
@@ -75,7 +160,7 @@ export async function startSpecializedAgentServer(
       }
     : options.taskHandler;
   const executor = new DeterministicSpecializedAgentExecutor(
-    options.role,
+    options.role as SpecializedAgentRole,
     undefined,
     options.artifactBuilder,
     taskHandler
@@ -86,8 +171,9 @@ export async function startSpecializedAgentServer(
     executor
   );
 
+  // Only the A2A service listener remains. Crypto presentations are
+  // one-use task-local MCP SDK calls; no /internal/mcp-crypto-call route.
   const app = express();
-  if (mcpTaskRegistry) attachPrivateMcpWorker(app,mcpTaskRegistry);
   app.use(
     `/${AGENT_CARD_PATH}`,
     agentCardHandler({ agentCardProvider: requestHandler })
@@ -101,22 +187,55 @@ export async function startSpecializedAgentServer(
   );
 
   const server = await new Promise<Server>((resolve, reject) => {
-    const listening = app.listen(options.port, host, () => resolve(listening));
-    listening.once("error", reject);
+    // Express 5 invokes app.listen's callback with an Error when bind
+    // fails (e.g. EADDRINUSE). Older Express versions instead report an
+    // "error" event. The callback MUST inspect its argument: otherwise
+    // a failed bind resolves as a ready A2A server and strands the
+    // privileged operational root and CI runner.
+    let settled = false;
+    const onError = (error:Error) => {
+      if (settled) return;
+      settled = true;
+      listening.removeListener("error", onError);
+      reject(error);
+    };
+    const listening = app.listen(options.port, host, (error?:Error) => {
+      if (error) {
+        onError(error);
+        return;
+      }
+      if (settled) return;
+      settled = true;
+      listening.removeListener("error", onError);
+      resolve(listening);
+    });
+    listening.once("error", onError);
   });
 
+  let closing:Promise<void>|undefined;
   return {
+    ...(discovery?{privateDiscoveryPorts:Object.freeze({
+      ownerBinding:discovery.ownerBinding,gatewaySigner:discovery.gatewaySigner
+    })}:{}),
     role: options.role,
     baseUrl,
     card,
     executor,
     server,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      })
+    ...(mcpTaskRegistry?{cryptoProofCount:()=>mcpTaskRegistry.completedCryptoProofs}:{}),
+    close: () => closing??=(async()=>{
+      // close() fences private Task effects BEFORE awaiting HTTP shutdown.
+      options.adk?.trustedEffectTaskRegistry?.retireAll();
+      const results=await Promise.allSettled([discovery?.close(),
+        new Promise<void>((resolve,reject)=>server.close(error=>
+          error?reject(error):resolve()))]);
+      const failed=results.find(r=>r.status==="rejected");
+      if(failed?.status==="rejected")throw failed.reason;
+    })()
   };
+  }catch(error){
+    options.adk?.trustedEffectTaskRegistry?.retireAll();
+    await discovery?.close();
+    throw error;
+  }
 }

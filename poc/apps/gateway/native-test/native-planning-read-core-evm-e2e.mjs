@@ -1,0 +1,2196 @@
+import {injectProjectTestFault,injectFrontendTestFault,injectGeneratedTestAssertionFault,GENERATED_TEST_CORRECT_ASSERTION,FRONTEND_TEST_ORIGINAL} from "./offline-project-test-repair-fixture.mjs";
+import {injectAcceptanceFault,ACCEPTANCE_ORIGINAL} from "./offline-acceptance-repair-fixture.mjs";
+/**
+ * Native, offline pre-approval Planning integration. This runs only after
+ * Anvil, EVM trust, the actual Rust Adapter and native Core addon are online.
+ *
+ * REAL: Rust-issued EVM-root DC, signed JWT VP, independent Core Rust verifier,
+ * live OPA policy, Planning revision registry, Google ADK/A2A-independent
+ * read-only Planner, and on-chain root revocation.
+ * FIXTURE mode: pinned Gitea read snapshot.
+ * DISPOSABLE mode: real read-only Gitea from existing isolated Docker test.
+ * Both use a controlled ADK model and embedded Gateway HTTP transport.
+ * No external LLM, user approval, writes to main or persistent Gitea.
+ */
+import assert from "node:assert/strict";
+import {randomBytes,randomInt,generateKeyPairSync} from "node:crypto";
+import {mkdtemp,writeFile,rm,mkdir} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {makeApproval,assertApprovedPlanScope}
+  from "../../../packages/plan-contracts/src/plan.mjs";
+import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
+import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
+import {canonicalFileUri} from "../src/canonical.ts";
+import {SignedEngineerApprovalFileStore} from
+  "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
+import {TrustedPlanningReviewGate} from
+  "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
+import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
+import {TrustedOperationalSessionStore} from "../src/trusted-operational-session-store.ts";
+import {TrustedGatewaySignedEpochInspector} from "../src/trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayNativeRootStatusReader} from "../src/trusted-gateway-native-root-status.ts";
+import {TrustedGatewayRootVpVerifier} from "../src/trusted-root-vp-verification.ts";
+import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
+import {armTrustedOwnerOperationalRecovery} from
+  "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
+import {selectTrustedD1RepairScope,trustedD1ScopeStopCategory} from "./trusted-d1-repair-scope-choice.mjs";
+import {assertSignedD1ScheduledTask} from "./trusted-d1-signed-task-schedule.mjs";
+import {createBoundedD1GeminiInvestigationChoice} from "./trusted-d1-gemini-investigation-choice.mjs";
+import {TrustedAdkOperationalRepairProposer} from
+  "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
+import {selectSignedNativeD1Tasks,selectSignedNativeMultiD1Tasks} from
+  "./native-owner-d1-task-selection.mjs";
+import {executeTrustedAdmittedRepairDag} from
+  "../../../packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts";
+import {TrustedChildIssuanceJournal} from
+  "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
+import {TrustedRetiredRepairAcceptanceWitness} from
+  "../../../packages/orchestrator-runtime/src/trusted-retired-repair-acceptance.ts";
+import {TrustedApprovedA2ADispatcher} from
+  "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
+import {GatewayCorroboratedTaskAttestor} from
+  "../src/trusted-task-observation.ts";
+import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
+import {safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
+import {PREFIX as NATIVE_DAG_FAILURE_PREFIX,safeNativePhaseFailure}
+ from "./native-signed-dag-phase-diagnostic.mjs";
+import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
+import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {SourceWitnessedOfflineAdkModel}
+  from "./source-witnessed-offline-adk-model.mjs";
+import {SourceDerivedRouteOfflineAdkModel}
+  from "./source-derived-route-offline-adk-model.mjs";
+import {selectSourceDerivedTargetsFromApprovedPlan}
+  from "./approved-plan-source-target-selection.mjs";
+import {buildOfflineAdkScriptsFromApprovedPlan}
+  from "./approved-plan-offline-adk-call-scripts.mjs";
+import {getApprovedOfflineScenario} from
+  "../../test-runner-controller/fixtures/approved-scenarios.mjs";
+import {makeOfflineReviewableDag} from
+  "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
+import {BaseLlm} from "@google/adk";
+import {injectTs2724BackendImportFault}
+  from "./ts2724-backend-fault-fixture.mjs";
+import {accountSuspensionPlanningConfig} from "../../../scripts/account-suspension-planning-config.mjs";
+import {verifyRealGiteaPlanningMode}
+  from "../../../scripts/real-gitea-planning-mode.mjs";
+import {realPlanningParityManifest} from "../../../scripts/f1-real-planning-parity-manifest.mjs";
+import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
+  from "../../../scripts/signed-gemini-pilot-consent.mjs";
+import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
+import {invokeNativeCrypto} from "../../../packages/agent-runtime/src/native-crypto-ipc.ts";
+import {GatewayRuntime} from "../src/runtime.ts";
+import {VerificationRejectedError,VerificationUnavailableError}
+  from "../src/errors.ts";
+import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
+import {GiteaReadOnlyExecutor} from "../src/gitea-read-executor.ts";
+import {GiteaClient} from "../src/gitea-client.ts";
+import {OpaPolicyClient} from "../src/policy-client.ts";
+import {TrustedPlanningRevisions} from "../src/planning-revisions.ts";
+import {InMemoryAuditSink} from "../src/prepare.ts";
+import {createTrustedEngineerCredentialPort} from
+  "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
+import {TrustedEngineerAuthoritySession} from
+  "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
+import {TrustedExecutionCoordinator} from
+  "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
+import {TrustedPlanningGatewayReadPort} from
+  "../../../packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts";
+import {TrustedAdkReadOnlyPlanner} from
+  "../../../packages/orchestrator-runtime/src/trusted-adk-planner.ts";
+
+globalThis.__nativeDagBootstrapStage="configuration_validation";
+if(process.env.ADAPTER_TRUST_PROFILE!=="evm" ||
+   process.env.GATEWAY_VERIFIER_MODE!=="core-rust")
+  throw Error("This test requires live EVM trust and native Core Rust verification");
+const token=process.env.ADAPTER_CALLER_ORCHESTRATOR;
+const engineerToken=process.env.ADAPTER_CALLER_ENGINEER;
+const engineerDid=process.env.ADAPTER_ID_ENGINEER;
+for(const v of [token,engineerToken,engineerDid]){
+  if(typeof v!=="string"||!v)throw Error("Missing trusted EVM fixture setting");
+}
+// Strict opt-in: normal signed-DAG CI stays zero-billing and byte-identical.
+const geminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
+// F1: run the very same native host on real disposable Gitea, but
+// stop after trusted Planning; never stage or sign Engineer approval.
+const realPlanningOnly=process.env.PLANNING_REAL_GITEA_ONLY==="1";
+const f1PlanningMode=verifyRealGiteaPlanningMode(process.env);
+const paidPlanningOnly=f1PlanningMode==="gemini";
+const PLANNING_ONLY_COMPLETED=Symbol("completed preliminary Planning");
+const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1"&&
+  process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
+const signedOfflineTypecheckProbe=
+  process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
+const signedOfflineTs2724Probe=
+  process.env.APPROVED_RUNNER_SIGNED_DAG_TS2724_PROBE==="1";
+const expectedOfflineTypecheckCode=signedOfflineTs2724Probe?"TS2724":"TS2820";
+const signedOfflineAcceptanceProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
+const signedOfflineBackendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE==="1";
+const signedOfflineFrontendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE==="1";
+const signedOfflineGeneratedTestProbe=
+  process.env.APPROVED_RUNNER_SIGNED_DAG_GENERATED_TEST_PROBE==="1";
+if([signedOfflineAcceptanceProbe,signedOfflineBackendTestProbe,
+    signedOfflineFrontendTestProbe,signedOfflineGeneratedTestProbe].filter(Boolean).length>1)
+  throw Error("Separate semantic fixture flags required");
+const signedOfflineProjectTestProbe=signedOfflineBackendTestProbe||
+  signedOfflineFrontendTestProbe||signedOfflineGeneratedTestProbe;
+const fixtureEditorRole=signedOfflineFrontendTestProbe?"frontend":"backend";
+const fixtureSemanticMarker=signedOfflineFrontendTestProbe?FRONTEND_TEST_ORIGINAL:ACCEPTANCE_ORIGINAL;
+const signedOfflineSemanticProbe=signedOfflineAcceptanceProbe||signedOfflineProjectTestProbe;
+const semanticFailurePhase=signedOfflineFrontendTestProbe?"frontend_tests":
+  signedOfflineProjectTestProbe?"backend_tests":"researcher_acceptance";
+if(signedOfflineRecovery&&geminiPilot)
+  throw Error("Offline scripted recovery must never use a paid Gemini model");
+if(geminiPilot){
+  verifySignedGeminiPilotConsent(process.env,{requireApiKey:true});
+  if(process.env.APPROVED_RUNNER_SCENARIO!=="account-suspension"||
+     process.env.PLANNING_NATIVE_SIGNED_HANDOFF!=="1"||
+     process.env.PLANNING_NATIVE_POSITIVE_DAG!=="1")
+    throw Error("One-use signed Account Suspension Gemini pilot not authorized");
+}
+const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const scenario=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
+const referenceFiles=scenario.files;
+const file="apps/backend/src/users/user.service.ts";
+const frontendFile="apps/frontend/src/pages/UserDetailPage.tsx";
+const disposableBase=process.env.PLANNING_DISPOSABLE_GITEA_URL;
+const disposableToken=process.env.PLANNING_DISPOSABLE_GITEA_READ_TOKEN;
+const disposableSha=process.env.PLANNING_DISPOSABLE_GITEA_MAIN_SHA;
+const realGitea=[disposableBase,disposableToken,disposableSha]
+  .some(v=>v!==undefined);
+const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
+const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
+// R380.3 is a ZERO-BILLING extension of the genuine preliminary Planning
+// host. It has NO effect on the legacy/full Gemini Signed-DAG launchers.
+const r3803NativeDiscovery=process.env.R3803_NATIVE_DISCOVERY==="1";
+if(r3803NativeDiscovery&&(!realPlanningOnly||!realGitea||
+   geminiPilot||!positiveDag||!signedHandoff||
+   process.env.GEMINI_API_KEY))
+  throw Error("R380.3 requires exclusively free isolated real-Gitea Planning");
+const ownerD1Probe=process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1";
+// R151.12: independently opted-in paid repair uses the original runtime
+// root, never the TS2820 offline injection or deterministic repair model.
+// Existing signed Gemini consent is REQUIRED separately above.
+const paidGeminiRecovery=geminiPilot&&
+  process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1";
+if(process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"&&
+   (!geminiPilot||ownerD1Probe||
+    process.env.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION!==
+      "I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH"))
+  throw Error("R151.12 paid repair epoch requires separate explicit billing consent");
+// The isolated Gitea harness launches preliminary native subprocesses
+// before its explicit owner-D1 child. The fixture flag is inherited, but
+// only the signed positive DAG invokes D1. Do not require D1 in every child.
+// The original owner-only repair gate remains independently enforced.
+if(signedOfflineTs2724Probe&&
+   (!signedOfflineTypecheckProbe||geminiPilot||
+    signedOfflineSemanticProbe||
+    process.env.APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE==="1"))
+  throw Error("TS2724 fixture requires zero-billing single Backend scope");
+const ownerRecoveryEnabled=ownerD1Probe||paidGeminiRecovery;
+// The isolated Docker smoke script executes several independent native
+// subprocesses. Its opt-in flag is inherited by ALL of them, while only
+// the explicit owner-D1 subprocess can run the R151 proposal path.
+const ownerD1AdkProposal=ownerD1Probe&&
+  process.env.APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL==="1";
+// The multi-error fixture is opt-in and NEVER shares a paid Gemini run.
+const multiTypecheckProbe=
+  process.env.APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE==="1";
+if(multiTypecheckProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
+   !signedOfflineTypecheckProbe||geminiPilot))
+  throw Error("Mixed TypeScript repair needs a separately armed zero-billing owner");
+if(ownerD1AdkProposal&&geminiPilot)
+  throw Error("R151 offline owner ADK repair fixture is never a paid Gemini path");
+const signedOfflineMultiTest=positiveDag&&
+  (process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1"||
+   signedOfflineGeneratedTestProbe);
+if(realPlanningOnly&&(!["gemini","scripted"].includes(f1PlanningMode)||
+   !realGitea||!positiveDag||!signedHandoff||
+   scenario.id!=="account-suspension"||ownerRecoveryEnabled||
+   signedOfflineRecovery||signedOfflineTypecheckProbe||
+   signedOfflineSemanticProbe||signedOfflineMultiTest))
+  throw Error("F1 Planning-only must be unbilled, signed-preliminary and real Gitea");
+if(signedOfflineSemanticProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
+   signedOfflineTypecheckProbe||signedOfflineRecovery||
+   (signedOfflineMultiTest&&!signedOfflineGeneratedTestProbe)||
+   geminiPilot||!positiveDag||!signedHandoff||!realGitea||
+   process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"||
+   scenario.id!=="account-suspension"))
+  throw Error("Acceptance semantic fault requires a separate zero-billing signed owner");
+if(ownerD1Probe&&(!(signedOfflineTypecheckProbe||signedOfflineSemanticProbe)||geminiPilot||
+   !positiveDag||!signedHandoff||!realGitea))
+  throw Error("Native owner D1 admission requires a zero-billing verified compiler or acceptance FAIL");
+if(signedOfflineTypecheckProbe&&
+   (geminiPilot||signedOfflineRecovery||signedOfflineMultiTest||
+    !positiveDag||!signedHandoff||!realGitea||
+    process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"||
+    scenario.id!=="account-suspension"))
+  throw Error("Typecheck fault injection requires a nonbillable signed fixture");
+if(signedOfflineMultiTest&&
+   (!(signedOfflineRecovery||signedOfflineGeneratedTestProbe)||geminiPilot||
+    process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"))
+  throw Error("Multi-Test A2A is a nonbillable, signed recovery fixture only");
+const writerToken=process.env.PLANNING_DISPOSABLE_GITEA_WRITE_TOKEN;
+if(positiveDag&&(!signedHandoff||!realGitea||!writerToken||
+   !process.env.ADAPTER_CALLER_BACKEND))
+  throw Error("Native positive DAG requires signed handoff and disposable writer");
+if(signedHandoff&&!realGitea)
+  throw Error("Native signed handoff requires verified disposable Gitea");
+if(realGitea&&[disposableBase,disposableToken,disposableSha]
+  .some(v=>typeof v!=="string"||!v))
+  throw Error("Disposable Planning Gitea requires URL, read token and immutable SHA");
+if(realGitea&&!/^http:\/\/127\.0\.0\.1:\d+$/u.test(disposableBase))
+  throw Error("Disposable Planning Gitea must use temporary localhost port");
+if(realGitea&&!/^[a-f0-9]{40}$/u.test(disposableSha))
+  throw Error("Disposable Planning Gitea needs a full trusted SHA");
+const liveClient=realGitea?new GiteaClient({
+  baseUrl:disposableBase,token:disposableToken,owner:"thesis",
+  repository:"iam-console-poc",timeoutMs:10000
+}):undefined;
+globalThis.__nativeDagBootstrapStage="disposable_gitea_bootstrap";
+const originalMain=liveClient?await liveClient.readRepository():undefined;
+if(liveClient&&(originalMain?.default_branch!=="main"||
+    originalMain?.revision!==disposableSha||
+    originalMain?.full_name!=="thesis/iam-console-poc"))
+  throw Error("Actual disposable Gitea main SHA/identity does not match fixture bootstrap");
+const baseSha=originalMain?.revision??"a".repeat(40);
+const originalFeature=liveClient?
+  (await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha:undefined;
+const session="native-read-plan-"+randomBytes(5).toString("hex");
+const rootId="urn:native:planning-only-"+randomBytes(7).toString("hex");
+// The 11-file deterministic reference fixture is NEVER a source of
+// authority; the signed plan and the snapshot explicitly enumerate every
+// permitted path. One E2E spec is absent on main and must be created by the
+// separately scoped Test role, not by Backend/Frontend.
+const roleFiles=scenario.planning_intent.edits;
+const newTestFile=scenario.planning_intent.newTestFile;
+// Fixture-only recovery target: derive from existing discovered test files.
+const testRepairFile=signedOfflineRecovery
+  ?roleFiles.backend.find(path=>path.startsWith("tests/")):undefined;
+const generatedBackendTestFile=signedOfflineGeneratedTestProbe
+  ?"tests/backend/generated-status.test.ts":undefined;
+if(signedOfflineRecovery&&(!positiveDag||!signedHandoff||
+   scenario.id!=="account-suspension"||!testRepairFile))
+  throw Error("Signed offline recovery requires isolated Account Suspension DAG");
+const existingFiles=[...roleFiles.backend,...roleFiles.frontend];
+assert.deepEqual([...existingFiles,newTestFile].sort(),
+  Object.keys(referenceFiles).sort());
+const approvedDirectories=new Set([""]);
+for(const path of [...existingFiles,newTestFile]){
+  const parts=path.split("/");
+  for(let i=1;i<parts.length;i++)
+    approvedDirectories.add(parts.slice(0,i).join("/"));
+}
+const snapshot={
+  session_id:session,repository:repo,base_revision:baseSha,
+  directories:positiveDag?[...approvedDirectories]:[
+    "","apps","apps/backend","apps/backend/src","apps/backend/src/users",
+    "apps/frontend","apps/frontend/src","apps/frontend/src/pages"
+  ],
+  // Deliberately OMIT the actual existing Frontend source on the R380.3
+  // path: a model can only read it AFTER native, pinned Gitea discovery.
+  files:positiveDag?(r3803NativeDiscovery
+    ?existingFiles.filter(path=>path!==frontendFile):existingFiles)
+    :[file,frontendFile],
+  ...(r3803NativeDiscovery?{
+    hierarchical_preliminary_read:true,
+    dynamic_discovery_roots:["apps/frontend/src/pages"]
+  }:{})
+};
+const agentDids={
+  backend:process.env.ADAPTER_ID_BACKEND,
+  frontend:process.env.ADAPTER_ID_FRONTEND,
+  test:process.env.ADAPTER_ID_TEST
+};
+for(const did of Object.values(agentDids)){
+  if(typeof did!=="string"||!did.startsWith("did:"))throw Error("Missing Agent DID");
+}
+const agents=Object.fromEntries(Object.entries(agentDids).map(([role,did])=>
+  [role,{did,card_ref:"trusted:"+role}]));
+const workBranch=positiveDag?scenario.workBranch:"feature/native-planning-read";
+const legacyPlanSketch={
+  tasks:[
+    {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
+      description:"Keep all changes out of main",depends_on:[],
+      permissions:[{operation:"create_branch",path:null,reason:"Separate workflow"}]},
+    {id:"backend",agent_id:"backend",title:"Update approved service",
+      description:"Implement the bounded requirement",depends_on:["branch"],
+      permissions:[
+        {operation:"read_file",path:file,reason:"Inspect existing code"},
+        {operation:"update_file",path:file,reason:"Apply the approved edit"}
+      ]},
+    {id:"frontend",agent_id:"frontend",title:"Update approved page",
+      description:"Implement approved Frontend behavior",depends_on:["backend"],
+      permissions:[
+        {operation:"read_file",path:frontendFile,reason:"Inspect existing page"},
+        {operation:"update_file",path:frontendFile,reason:"Apply approved page edit"}
+      ]},
+    ...(positiveDag?[{id:"test",agent_id:"test",title:"Run pinned Docker acceptance",
+      description:"Verify final Frontend SHA through the real controlled Runner",
+      depends_on:["frontend"],
+      permissions:[{operation:"run_tests",path:null,
+        reason:"Execute tests and independent acceptance on approved branch"}]}]:[])
+  ],assumptions:[],uncertainties:[]
+};
+const planSketch=positiveDag?
+  makeOfflineReviewableDag({
+    // Fixture construction knows the complete trusted synthetic reference
+    // inventory, even when the ACTUAL signed Planning snapshot deliberately
+    // withholds one file until a real Gitea observation. This offline sketch
+    // does not sign permissions or bypass the runtime proposal compiler.
+    snapshot:r3803NativeDiscovery?{...snapshot,files:existingFiles}:snapshot,
+    edits:roleFiles,newTestFile,
+    taskInstructions:scenario.planning_intent.taskInstructions,
+    ...(testRepairFile?{testRepairFile}:{}),
+    ...(generatedBackendTestFile?{generatedBackendTestFile}:{}),
+    ...(signedOfflineMultiTest?{splitTestTasks:true}:{})
+  }):legacyPlanSketch;
+class ScriptedReadPlanner extends BaseLlm{
+  turns=0; requests=[];
+  constructor(){super({model:"native-planning-offline-script"});}
+  async *generateContentAsync(req){
+    this.requests.push(req);this.turns++;
+    // Exercise the same bounded, read-only repository discovery tools that
+    // a real Planner may use. No scripted source write or approval occurs.
+    // The original negative/handoff fixture keeps its single pinned read.
+    const exploration=r3803NativeDiscovery?[
+      // The Frontend path is absent from the initial snapshot. This call
+      // can only add it after independent Rust/EVM/OPA/Gitea checks.
+      {name:"list_directory",args:{branch:"main",path:"apps/frontend/src/pages"}},
+      // One native signed multipermission VP for EXISTING + newly discovered
+      // source, with no single-read fallback or provider writes.
+      {name:"read_files",args:{branch:"main",paths:[file,frontendFile]}}
+    ]:positiveDag?[
+      // Gemini requires the repository selector in its tool declaration.
+      // Runtime still authorizes an argument-free, pinned read_repository.
+      {name:"read_repository",args:{repository:repo.repository}},
+      {name:"list_directory",args:{branch:"main",path:""}},
+      {name:"read_file",args:{branch:"main",path:file}},
+      {name:"read_file",args:{branch:"main",path:frontendFile}}
+    ]:[{name:"read_file",args:{branch:"main",path:file}}];
+    if(this.turns<=exploration.length){
+      const call=exploration[this.turns-1];
+      yield {content:{role:"model",parts:[{functionCall:{
+        id:"planning-discovery-"+this.turns,
+        name:call.name,args:call.args
+      }}]}};
+      return;
+    }
+    yield {content:{role:"model",parts:[{text:JSON.stringify(planSketch)}]}};
+  }
+  connect(){return Promise.reject(Error("Live LLM forbidden in offline test"));}
+}
+const adapterUrl="http://127.0.0.1:8090";
+async function signTrustedOrchestratorVp(body){
+  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  if(socketPath){
+    // Root authority and presentation must use the SAME Rust CryptoRuntime
+    // as the canonical signed child/Agent route, without HTTP fallback.
+    const result=await invokeNativeCrypto({
+      socketPath,token,timeoutMs:30000
+    },"create_presentation",body);
+    const signed=result&&typeof result==="object"&&!Array.isArray(result)
+      ?result.signed_vp:undefined;
+    if(typeof signed!=="string"||signed.length<16)
+      throw Error("Native Rust Orchestrator root presentation unavailable");
+    return signed;
+  }
+  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+    throw Error("Canonical signed DAG requires native Rust root VP signing");
+  // Only non-canonical, historical offline fixtures may use Adapter HTTP.
+  const response=await fetch(adapterUrl+"/v1/presentations",{
+    method:"POST",headers:{
+      authorization:"Bearer "+token,"content-type":"application/json"
+    },body:JSON.stringify(body)
+  });
+  if(!response.ok)throw Error("Historical root VP signing rejected");
+  const parsed=await response.json();
+  if(typeof parsed.signed_vp!=="string"||parsed.signed_vp.length<16)
+    throw Error("Historical root VP signing malformed");
+  return parsed.signed_vp;
+}
+const opaUrl=process.env.OPA_URL??"http://127.0.0.1:8181";
+const log={giteaReads:0,prepares:0,executions:0};
+const fixtureGitea={
+  async readRepository(pinned){
+    log.giteaReads++;
+    return {full_name:"thesis/iam-console-poc",default_branch:"main",
+      revision:pinned??baseSha};
+  },
+  async readTextFile(branch,path,revision){
+    log.giteaReads++;
+    assert.equal(branch,"main");
+    assert.ok([file,frontendFile].includes(path));
+    assert.equal(revision,baseSha);
+    return {path,branch,revision,blob_sha:"b".repeat(40),
+      last_commit_sha:baseSha,size:32,encoding:"utf-8",
+      content:"export const authorizedSource = true;\n"};
+  },
+  async listDirectory(branch,path,revision){
+    log.giteaReads++;
+    assert.equal(branch,"main");assert.equal(revision,baseSha);
+    return {branch,path,revision,entries:[]};
+  }
+};
+const gitea=liveClient?{
+  async readRepository(pinned){
+    log.giteaReads++;
+    return liveClient.readRepository(pinned);
+  },
+  async readTextFile(branch,path,revision){
+    log.giteaReads++;
+    return liveClient.readTextFile(branch,path,revision);
+  },
+  async listDirectory(branch,path,revision){
+    log.giteaReads++;
+    return liveClient.listDirectory(branch,path,revision);
+  }
+}:fixtureGitea;
+const revisions=new TrustedPlanningRevisions(gitea);
+const audit=new InMemoryAuditSink();
+// This offline-only fixture provisions an ephemeral Engineer signing key.
+// Production code must use a separately authenticated Engineer with a
+// protected signer; the Planner never receives or invokes the private key.
+const receiptDir=signedHandoff?
+  await mkdtemp(join(tmpdir(),"native-planning-engineer-review-")):undefined;
+const signer=signedHandoff?generateKeyPairSync("ed25519"):undefined;
+const keyId="isolated-native-review-key";
+const signerPublic=signer?.publicKey.export({
+  format:"pem",type:"spki"
+}).toString();
+const signerPrivate=signer?.privateKey.export({
+  format:"pem",type:"pkcs8"
+}).toString();
+const signedStore=receiptDir?new SignedEngineerApprovalFileStore({
+  directory:receiptDir,engineerDid,trustedKeys:{
+    [keyId]:{engineer_did:engineerDid,public_key_pem:signerPublic}
+  }
+}):undefined;
+/* R150.5: the SAME Gateway receiving protected A2A tool operations
+ * independently verifies the original EVM-issued Rust root, its fresh
+ * multi-permission VP and the owner's durable signed-epoch journal.
+ * This is opt-in ZERO-BILLING integration, not a model/agent permission. */
+// R235: the trusted Software Engineer process MUST own and initialize
+// its sole Rust CryptoRuntime BEFORE the Gateway creates its independent
+// public-only verifier. This publishes native DID/EVM public material
+// without launching a competing HTTP Adapter or another process.
+// Later Engineer root/revocation operations reuse this exact addon state.
+globalThis.__nativeDagBootstrapStage="native_issuer_initialization";
+if(process.env.ENGINEER_CORE_NATIVE_MODE==="1"){
+  const {loadDirectRustEngineerCore}=await import(
+    "../../../packages/orchestrator-runtime/src/trusted-engineer-direct-core-port.ts");
+  loadDirectRustEngineerCore();
+}
+const ownerDir=ownerRecoveryEnabled?
+  await mkdtemp(join(tmpdir(),"delegation-native-owner-d1-")):undefined;
+const ownerEpochDir=ownerDir?join(ownerDir,"epochs"):undefined;
+const ownerOpsDir=ownerDir?join(ownerDir,"operational"):undefined;
+if(ownerDir){
+  await mkdir(ownerEpochDir,{mode:0o700});
+  await mkdir(ownerOpsDir,{mode:0o700});
+}
+const ownerGatewayInspector=ownerDir?new TrustedGatewaySignedEpochInspector({
+  directory:ownerEpochDir,approvals:signedStore,
+  trustedOrchestratorDid:process.env.ADAPTER_ID_ORCHESTRATOR,
+  nativeRootStatus:new TrustedGatewayNativeRootStatusReader({
+    baseUrl:adapterUrl,gatewayToken:process.env.ADAPTER_CALLER_GATEWAY
+  }),
+  rootVpVerifier:new TrustedGatewayRootVpVerifier({
+    audience:"urn:thesis:gateway:r133",
+    verifier:loadDirectCoreRustVerifier(),
+    signer:{async present(input){
+      return signTrustedOrchestratorVp({
+        credential_id:input.credential_id,
+        disclosed_permissions:input.disclosed_permissions,
+        audience:input.audience,challenge:input.challenge
+      });
+    }}
+  })
+}):undefined;
+
+let coordinator;
+const reviewGate=signedStore?new TrustedPlanningReviewGate({
+  snapshot,expectedWorkBranch:workBranch,
+  authenticatedEngineerDid:engineerDid,signedApprovals:signedStore,
+  planningIsActive:()=>coordinator?.phase==="planning"
+}):undefined;
+const approvedPlans=reviewGate?new TrustedApprovedExecutionPlans({
+  repository:repo,engineerDid,approvals:reviewGate,
+  ...(ownerRecoveryEnabled?{
+    remoteEpochInspector:ownerGatewayInspector,
+    operationalSessionStore:new TrustedOperationalSessionStore(ownerOpsDir),
+    operationalLeaseMs:120000
+  }:{}),
+  completionAttestor:positiveDag?new GatewayCorroboratedTaskAttestor():{
+    async confirmCompleted(){
+      // Negative suite never accepts a remote completion claim.
+      return false;
+    }
+  }
+}):undefined;
+globalThis.__nativeDagBootstrapStage="gateway_crypto_bootstrap";
+const config={bind_host:"127.0.0.1",bind_port:0,
+  prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  opa_url:opaUrl,opa_timeout_ms:15000,
+  provider_mode:"mock",gitea_timeout_ms:15000};
+// Test-only non-source verifier phase observer. The original native binding
+// still performs all signatures/trust/status; errors stay private.
+const r3803VerifierStatus={single:"not_called",multi:"not_called"};
+const nativePlanningVerifier=loadDirectCoreRustVerifier({
+  allowGiteaScopeCoverage:r3803NativeDiscovery
+});
+if(r3803NativeDiscovery){
+  for(const [method,field] of [["verify","single"],["verifyMultiple","multi"]]){
+    const original=nativePlanningVerifier[method].bind(nativePlanningVerifier);
+    nativePlanningVerifier[method]=async(...args)=>{
+      try{
+        const result=await original(...args);
+        r3803VerifierStatus[field]="verified";
+        return result;
+      }catch(error){
+        r3803VerifierStatus[field]=
+          error instanceof VerificationUnavailableError?"native_result_invalid":
+          error instanceof VerificationRejectedError?"native_verification_rejected":
+          "other";
+        throw error;
+      }
+    };
+  }
+}
+const runtime=new GatewayRuntime(config,{
+  planningRevisions:revisions,audit,
+  ...(approvedPlans?{approvedPlans}:{}),
+  // Only the opt-in original preliminary READ hierarchy; signed-DAG
+  // operational rights and the default Rust verifier remain exact-match.
+  verifier:nativePlanningVerifier,
+  policy:new OpaPolicyClient({baseUrl:opaUrl,timeoutMs:15000}),
+  // This read-only Gitea provider remains intentionally INCAPABLE of writes
+  // even after genuine operational authority is issued by Rust.
+  executor:new GiteaReadOnlyExecutor(gitea)
+});
+const authorityClient=createTrustedEngineerCredentialPort({
+  ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+    ? {}:{adapterBaseUrl:adapterUrl}),
+  bearerToken:engineerToken,timeoutMs:60000
+});
+const authority=new TrustedEngineerAuthoritySession({
+  snapshot,credentials:authorityClient,
+  approvals:reviewGate??{async loadAuthenticatedApproval(){
+    throw Error("An unapproved Planning proposal must never activate Execution");
+  }},
+  authenticatedEngineerDid:engineerDid,
+  planningRevisions:revisions
+});
+coordinator=new TrustedExecutionCoordinator({
+  authority,credentials:authorityClient,
+  sessionId:session,baseRevision:baseSha,
+  approvedGatewayPlans:approvedPlans??{
+    async activate(){throw Error("Execution prohibited before Engineer approval");},
+    bindTask(){throw Error("Execution prohibited");},
+    async confirmTaskCompletion(){throw Error("Execution prohibited");},
+    closeSession(){throw Error("Execution prohibited");}
+  }
+});
+const json=(object,status=200)=>new Response(JSON.stringify(object),{
+  status,headers:{"content-type":"application/json"}
+});
+const transport=async(url,options)=>{
+  const endpoint=String(url);
+  if(endpoint.startsWith(adapterUrl+"/")){
+    if(process.env.ENGINEER_CORE_NATIVE_MODE==="1")
+      throw Error("Direct Engineer signed DAG forbids Adapter HTTP requests");
+    return fetch(url,options);
+  }
+  const body=JSON.parse(String(options.body));
+  try{
+    if(endpoint==="http://native-planning-gateway/v1/authorization/prepare"){
+      log.prepares++;
+      return json(runtime.prepare(body),201);
+    }
+    if(endpoint==="http://native-planning-gateway/v1/authorization/execute"){
+      log.executions++;
+      return json(await runtime.execute(body));
+    }
+    if(r3803NativeDiscovery&&
+       endpoint==="http://native-planning-gateway/v1/authorization/prepare-read-composite"){
+      log.prepares++;
+      return json(await runtime.prepareReadComposite(body),201);
+    }
+    if(r3803NativeDiscovery&&
+       endpoint==="http://native-planning-gateway/v1/authorization/execute-read-composite"){
+      log.executions++;
+      return json(await runtime.executeReadComposite(body));
+    }
+  }catch{
+    return json({error:"protected_operation_denied"},403);
+  }
+  throw Error("Unexpected Planning transport destination");
+};
+const root={
+  credential_id:rootId,valid_from:new Date(Date.now()-1000).toISOString(),
+  validity_seconds:600,
+  credential_status:{type:"BitstringStatusListEntry",
+    statusPurpose:"revocation",statusListIndex:String(randomInt(51000,61000)),
+    statusListCredential:"https://status.example/lists/native-planning-read"}
+};
+let issued=false,revoked=false;
+let nativeDagStage="root_issuance";
+let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
+let nativeOwnerIpcServer,ownerD1ReviewEvidence;
+let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
+let pilotPlanningRejection=null,pilotTaskCounts=null;
+// Static, bounded rejection categories for all three draft attempts.
+let pilotPlanningRejectionHistory=[];
+// R380.3 failed CI diagnostics expose only fixed-vocabulary tool phase and
+// integer counters. Neither Gitea paths, model text, VP nor keys can escape.
+const r3803Probe={model_turns:0,verified_lists:0,verified_files:0,
+  denied_reads:0,first_denial:"none",last_denial:"none",
+  rejected_proposals:0,gateway_prepares:0,gateway_executions:0,
+  gitea_reads:0,gateway_last_reason:"none",
+  single_verifier:"not_called",composite_verifier:"not_called"};
+globalThis.__nativeDagBootstrapStage="root_issuance";
+try{
+  const started=await coordinator.beginPlanning(root);
+  issued=true;
+  assert.equal(started.phase,"planning");
+  assert.equal(started.credential_id,rootId);
+  assert.equal(coordinator.trustedPlanningAuthority().permissions.length,
+    r3803NativeDiscovery?3:1+snapshot.directories.length+snapshot.files.length);
+  if(r3803NativeDiscovery)
+    assert.deepEqual(coordinator.trustedPlanningAuthority()
+      .permissions.map(p=>p.operation),
+      ["read_repository","list_directory","read_file"]);
+  const port=new TrustedPlanningGatewayReadPort({
+    coordinator,snapshot,
+    gatewayBaseUrl:"http://native-planning-gateway",
+    ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+      ? {}:{adapterBaseUrl:adapterUrl}),
+    adapterToken:token,fetchFn:transport,timeoutMs:60000
+  });
+  const noWrite=log.executions;
+  await assert.rejects(port.invoke("update_file",{
+    branch:"main",path:file,content:"malicious"
+  }));
+  await assert.rejects(port.invoke("read_file",{
+    branch:"main",path:"private/credentials.env"
+  }));
+  if(r3803NativeDiscovery){
+    await assert.rejects(port.invoke("read_file",{
+      branch:"main",path:frontendFile
+    }),"file not in initial trusted discovery catalog must be denied");
+    await assert.rejects(port.invoke("list_directory",{
+      branch:"feature/other",path:"apps/frontend/src/pages"
+    }));
+  }
+  assert.equal(log.executions,noWrite);
+  // Gemini receives the SAME trusted Gitea-backed read-only Gateway tools.
+  // No offline planSketch is passed to the model in the consented pilot.
+  nativeDagStage="planning_scope";
+  const model=geminiPilot
+    ?createGeminiAdkModel({
+      apiKey:process.env.GEMINI_API_KEY,
+      model:process.env.DELEGATION_GEMINI_MODEL
+    })
+    :new ScriptedReadPlanner();
+  if(geminiPilot)pilotStage="gemini_planning";
+  // Both paths hash the same trusted model-facing requirement, repository
+  // snapshot, work branch, plan identity, compiler, preflight and budget.
+  // Source content is committed by the immutable pinned Git revision.
+  const parityManifest=(geminiPilot||realPlanningOnly)
+    ?realPlanningParityManifest({snapshot,
+      requirement:scenario.requirement,workBranch,
+      planId:"native-planning-proposal"}):null;
+  if(parityManifest)process.stdout.write(JSON.stringify({
+    event:"f1_real_planning_input_manifest",...parityManifest
+  })+"\n");
+  const proposed=await new TrustedAdkReadOnlyPlanner({
+    model,snapshot,workBranch,
+    requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
+    planId:"native-planning-proposal",agents,readPort:port,
+    ...((geminiPilot||realPlanningOnly)?{
+      ...accountSuspensionPlanningConfig(realPlanningOnly?"real-planning-only":"pilot"),
+      pilotFullDag:true,
+      validateProposedPlan:proposal=>{
+        // These proposed rows are NOT signed grants or execution authority.
+        preflightApprovedPilotDag({
+          plan:proposal.plan,
+          grants:proposal.plan.requested_permissions,
+          repo,branch:workBranch
+        });
+      },
+      onObservation:observation=>{
+        if(r3803NativeDiscovery){
+          if(observation?.kind==="model_turn"&&
+             observation.status==="started")r3803Probe.model_turns++;
+          if(observation?.kind==="read"&&
+             observation.status==="verified"){
+            if(observation.tool==="list_directory")r3803Probe.verified_lists++;
+            if(observation.tool==="read_file")r3803Probe.verified_files++;
+          }
+          if(observation?.kind==="read"&&
+             observation.status==="denied"){
+            const allowedReason=[
+              "trusted_planning_read_failed","outside_planning_scope",
+              "read_budget","planning_deadline","composite_unavailable"
+            ].includes(observation.reason)?observation.reason:"other";
+            r3803Probe.denied_reads++;
+            if(r3803Probe.first_denial==="none")
+              r3803Probe.first_denial=allowedReason;
+            r3803Probe.last_denial=allowedReason;
+          }
+          if(observation?.kind==="plan_rejection")
+            r3803Probe.rejected_proposals++;
+        }
+        if(observation?.kind==="plan_rejection"){
+          pilotPlanningRejection={stage:observation.stage,
+            reason:observation.reason};
+          // Never retain the LLM draft, prompts, requested grants or paths.
+          // Keep only the most recent 3 host-validated reason codes.
+          if(pilotPlanningRejectionHistory.length===3)
+            pilotPlanningRejectionHistory.shift();
+          pilotPlanningRejectionHistory.push(pilotPlanningRejection);
+        }
+        if(observation?.kind==="model_turn"&&
+           observation.status==="started"){
+          pilotModelTurns++;
+          process.stdout.write("[signed-gemini-pilot] "+JSON.stringify({
+            event:"gemini_pilot_planner_turn",turn:observation.turn
+          })+"\n");
+        }
+        if(observation?.kind==="model_usage")
+          process.stdout.write("[signed-gemini-pilot] "+JSON.stringify({
+            event:"gemini_pilot_planner_usage",turn:observation.turn,
+            input_tokens:observation.input_tokens??null,
+            output_tokens:observation.output_tokens??null,
+            thinking_tokens:observation.thought_tokens??null
+          })+"\n");
+        if(observation?.kind==="model_failure"&&
+           ["authentication","permission_or_billing","quota_or_rate_limit",
+             "model_or_endpoint_not_found","invalid_request_or_tool_schema",
+             "provider_server_error","transport_or_timeout","unknown"]
+            .includes(observation.category))
+          pilotModelFailure=observation.category;
+      }
+    }:{})
+  }).propose();
+  if(geminiPilot){
+    // Earlier proposal rejections are recovery history, not the reason a
+    // later accepted DAG failed in A2A/Docker. Report them only when
+    // Planning itself is unsuccessful.
+    pilotPlanningRejection=null;
+    pilotStage="gemini_plan_proposed";
+  }
+  assert.equal(proposed.status,"unapproved_proposal");
+  if(geminiPilot){
+    // Aggregated role counts only; no Task text, file paths, approval IDs
+    // or model content may escape the private child on a failed pilot.
+    pilotTaskCounts=Object.fromEntries(
+      ["orchestrator","backend","frontend","test"].map(role=>[
+        role,proposed.plan.tasks.filter(t=>t.agent_id===role).length
+      ])
+    );
+  }
+  // The Planner already enforces trusted read-only exploration. A fixed
+  // number of reads is not an architecture invariant and would reject an
+  // otherwise valid model-generated plan for choosing a different path.
+  if(!geminiPilot)
+    assert.equal(proposed.verified_source_reads,
+      r3803NativeDiscovery?2:positiveDag?2:1);
+  assert.equal(proposed.plan.base_revision,baseSha);
+  assert.equal(proposed.plan.repository.repository,"iam-console-poc");
+  // Exact permission cardinalities belong to deterministic offline fixtures.
+  // The live model proposes its own valid, Engineer-reviewed permission set.
+  if(!geminiPilot)
+    assert.equal(proposed.plan.requested_permissions.length,
+      positiveDag?(2*existingFiles.length+4+
+        (signedOfflineRecovery?2:0)+
+        (signedOfflineGeneratedTestProbe?3:0)):5); // signed fixture grants only
+  if(geminiPilot){
+    // Every actual preliminary read must pass the trusted Gateway and native
+    // verifier. The count is whatever the model legitimately needed.
+    assert.equal(log.prepares,log.executions);
+  }else{
+    assert.equal(log.prepares,r3803NativeDiscovery?2:positiveDag?4:1);
+    assert.equal(log.executions,r3803NativeDiscovery?2:positiveDag?4:1);
+    assert.equal(log.giteaReads,r3803NativeDiscovery?4:positiveDag?5:2);
+  }
+  // Trusted SHA bootstrap plus bounded real read-only model discovery.
+  if(liveClient){
+    // Read-only PAT and the provider are backed by the disposable Gitea,
+    // never the public baseline or an in-memory repository emulator.
+    const fileAtSha=await liveClient.readTextFile("main",file,baseSha);
+    assert.ok(fileAtSha.content.includes("listUsers"));
+    assert.equal(fileAtSha.revision,baseSha);
+  }
+  const executed=audit.events.filter(e=>e.event==="authorization_executed");
+  assert.equal(executed.length,geminiPilot
+    ?log.executions:(r3803NativeDiscovery?1:positiveDag?4:1));
+  if(r3803NativeDiscovery){
+    assert.deepEqual(executed.map(x=>x.tool),["list_directory"]);
+    const batches=audit.events.filter(x=>x.event==="composite_read_executed");
+    assert.equal(batches.length,1,"one signed two-file read batch required");
+    assert.equal(batches[0].provider_result,"success");
+    assert.equal(batches[0].pinned_revision,baseSha);
+    assert.equal(batches[0].decision,"allow");
+    assert.equal(proposed.plan.tasks.find(x=>x.id==="frontend")?.agent_id,"frontend");
+    assert.ok(proposed.plan.requested_permissions.some(p=>
+      p.resource.includes("/files/"+frontendFile)&&p.operation==="update_file"));
+    // Even though the signed preliminary Root covers the branch subtree,
+    // an invented path NEVER becomes a model Tool capability.
+    const beforeDenied=log.prepares;
+    await assert.rejects(port.invoke("read_file",{
+      branch:"main",path:"apps/frontend/src/pages/not-discovered.ts"
+    }));
+    assert.equal(log.prepares,beforeDenied);
+  }
+  for(const effect of executed){
+    assert.equal(effect.decision,"allow");
+    assert.equal(effect.policy_decision,"allow");
+    assert.equal(effect.pinned_revision,baseSha);
+    assert.equal(effect.provider_result,"success");
+  }
+  if(positiveDag&&!geminiPilot){
+    if(!r3803NativeDiscovery)assert.deepEqual(executed.map(e=>e.tool),[
+      "read_repository","list_directory","read_file","read_file"
+    ]);
+    assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="frontend")?.depends_on,
+      ["branch"]);
+    assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="test")?.depends_on,
+      signedOfflineMultiTest?["test-preparation"]:["backend","frontend"]);
+    if(signedOfflineMultiTest){
+      assert.deepEqual(proposed.plan.tasks.find(t=>
+        t.id==="test-preparation")?.depends_on,["backend","frontend"]);
+      assert.equal(proposed.plan.tasks.filter(t=>
+        t.agent_id==="test").length,2);
+    }
+  }
+  if(!geminiPilot){
+    const visible=JSON.stringify(model.requests);
+    for(const secret of [rootId,token,engineerToken,
+      "signed_vp","delegation_evidence","credential_status"]){
+      assert.ok(!visible.includes(secret),"Planner leaked private authority");
+    }
+  }
+  if(realPlanningOnly){
+    // All proposal compilation and the exact pilot preflight already ran.
+    // No operational root, signed approval or Agent task has been created.
+    assert.equal(coordinator.phase,"planning");
+    assert.equal(log.prepares,log.executions);
+    assert.equal((await liveClient.getBranchMetadata("main")).commit_sha,baseSha);
+    assert.equal((await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha,
+      originalFeature);
+    await authorityClient.revokeRoot(rootId);
+    revoked=true;
+    revisions.end(session);
+    const beforeDenied=log.giteaReads;
+    await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
+    if(r3803NativeDiscovery)await assert.rejects(port.invoke("read_file",{
+      branch:"main",path:frontendFile
+    }));
+    assert.equal(log.giteaReads,beforeDenied);
+    if(r3803NativeDiscovery)process.stdout.write(JSON.stringify({
+      event:"r3803_native_planning_dynamic_discovery",status:"pass",
+      verified_new_source_from_real_gitea:true,
+      real_native_rust_evm_root_and_vp:true,opa_all_checks_before_reads:true,
+      signed_multi_permission_vp_count:1,
+      new_source_absent_from_initial_snapshot:true,
+      independently_verified_read_count:2,
+      verified_root_revoked:true,
+      approved_engineer_execution:false,provider_writes:0,
+      paid_model_calls:0
+    })+"\n");
+    process.stdout.write(JSON.stringify({
+      event:"f1_real_gitea_pilot_parity",status:"pass",
+      source_revision:baseSha,
+      input_manifest_digest:parityManifest.manifest_digest,
+      verified_source_reads:proposed.verified_source_reads,
+      approved_task_count:proposed.plan.tasks.length,
+      approved_permission_count:proposed.plan.requested_permissions.length,
+      real_gateway_core_opa_gitea_reads:true,
+      approval_created:false,operational_root_issued:false,
+      child_dc_issued:0,a2a_tasks_dispatched:0,
+      provider_writes:0,preliminary_root_revoked:true,
+      main_unchanged:true,gemini_calls:geminiPilot?pilotModelTurns:0,
+      model_source:geminiPilot?"real_gemini":"offline_scripted",
+      planning_profile:"real-planning-only"
+    })+"\n");
+    // Top-level ESM has no return; a unique sentinel guarantees that the
+    // module finally block still disposes owner-private temporary files.
+    throw PLANNING_ONLY_COMPLETED;
+  }
+  // Obtain a second bounded challenge and JWT BEFORE revocation, so the
+  // post-revocation failure exercises the native Rust verifier directly,
+  // not merely the Adapter refusing to issue another JWT.
+  const waiting=runtime.prepare({task_id:session,agent_role:"orchestrator",
+    tool:"read_file",arguments:{branch:"main",path:file}});
+  const signedBeforeRevoke=await signTrustedOrchestratorVp({
+    credential_id:rootId,
+    disclosed_permissions:[waiting.required_permission],
+    audience:waiting.audience,challenge:waiting.challenge
+  });
+  assert.ok(typeof signedBeforeRevoke==="string"&&signedBeforeRevoke.length>100);
+  let operationalRootId,revocationChecked=false;
+  if(signedHandoff){
+    nativeDagStage="engineer_review_and_root";
+    if(geminiPilot)pilotStage="signed_test_review";
+    const packet=reviewGate.stageTrustedProposal(proposed);
+    assert.equal(packet.status,"awaiting_engineer_signature");
+    assert.equal(packet.plan_digest,proposed.digest);
+    assert.equal(packet.base_revision,baseSha);
+    assert.equal(packet.work_branch,workBranch);
+    // The isolated Engineer fixture explicitly signs only a SUBSET:
+    // create_branch and update_file, but NOT read_file. A model-proposed
+    // permission without Engineer consent must never appear in the new root.
+    const selected=positiveDag
+      ?proposed.plan.requested_permissions.map(p=>p.id)
+      :["permission-1","permission-3","permission-5"];
+    const now=new Date(),approvedAt=now.toISOString();
+    const approval=makeApproval(packet.plan,{
+      allowedOperations:new Set(RUST_OPERATIONS),
+      decision_id:"isolated-human-review-fixture",
+      approved_by:engineerDid,approved_at:approvedAt,
+      approved_permission_ids:selected
+    });
+    const receipt=signEngineerApproval({
+      plan:packet.plan,approval,engineerDid,keyId,
+      privateKeyPem:signerPrivate,issuedAt:approvedAt,
+      expiresAt:new Date(now.getTime()+600_000).toISOString()
+    });
+    await writeFile(join(receiptDir,session+".json"),
+      JSON.stringify(receipt),{mode:0o600});
+    const trustedReceipt=await reviewGate.loadAuthenticatedApproval(session);
+    assert.deepEqual(trustedReceipt.approval.approved_permission_ids,selected);
+    assert.equal(trustedReceipt.authenticated_engineer_did,engineerDid);
+    const opId="urn:native:operational-"+randomBytes(7).toString("hex");
+    if(geminiPilot)pilotStage="activation_dc_vp";
+    const active=await coordinator.beginExecution({
+      credential_id:opId,
+      valid_from:new Date(Date.now()-1000).toISOString(),
+      validity_seconds:geminiPilot
+        ?SIGNED_GEMINI_PILOT.operationalRootValiditySeconds:600,
+      credential_status:{
+        type:"BitstringStatusListEntry",
+        statusPurpose:"revocation",
+        statusListIndex:String(randomInt(61001,65000)),
+        statusListCredential:"https://status.example/lists/native-planning-read"
+      }
+    });
+    revoked=true; // Coordinator confirmed EVM revocation before activation
+    // Test the PRE-revocation signed VP immediately while its challenge
+    // is still live. Docker can exceed the short Prepare TTL; checking after
+    // the full E2E would only prove request expiry (410), not EVM revocation.
+    const revocationReadCount=log.giteaReads;
+    await assert.rejects(
+      runtime.execute({request_id:waiting.request_id,
+        signed_vp:signedBeforeRevoke}),
+      e=>e?.code==="verification_rejected"
+    );
+    assert.equal(log.giteaReads,revocationReadCount);
+    revocationChecked=true;
+    operationalRootId=active.credential_id;
+    assert.equal(active.plan_digest,packet.plan_digest);
+    assert.equal(coordinator.phase,"execution");
+    const operational=coordinator.trustedOperationalAuthority();
+    assert.equal(operational.credential_id,opId);
+    // One operational root holds an authorization SET, not a per-task
+    // multiset: independent approved Tasks may legitimately require the
+    // same (resource,operation). Compare EXACT canonical grants, while
+    // rejecting unexpected, missing or duplicate operational permissions.
+    const reviewedRows=assertApprovedPlanScope(
+      trustedReceipt.plan,trustedReceipt.approval,{
+        allowedOperations:new Set(RUST_OPERATIONS),
+        expectedEngineerDid:engineerDid
+      });
+    const grantKey=p=>JSON.stringify([p.resource,p.operation]);
+    const expectedGrants=[...new Set(reviewedRows.map(grantKey))].sort();
+    const actualGrants=operational.permissions.map(grantKey).sort();
+    assert.equal(new Set(actualGrants).size,actualGrants.length,
+      "Operational root contains duplicate permission grants");
+    assert.deepEqual(actualGrants,expectedGrants,
+      "Operational root must match the exact approved resource/operation set");
+    if(positiveDag){
+      let trustedOwnerRecovery;
+      let ownerD1ChildEvidence,ownerD1Gateway,ownerD1Witness;
+      if(ownerRecoveryEnabled){
+        // The *existing* approvedPlans instance is shared by this Gateway,
+        // the issued Rust root's Coordinator and owner-private HMAC IPC.
+        // No replacement plan, parallel test-root or model-controlled token.
+        const secretFile=join(ownerDir,"owner-hmac-secret.hex");
+        const socketPath=join(ownerDir,"gateway-owner.sock");
+        await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+          {mode:0o600});
+        nativeOwnerIpcServer=await createTrustedPlanIpcServer({
+          socketPath,secretFile,plans:approvedPlans,
+          signedEpochInspector:ownerGatewayInspector
+        });
+        await nativeOwnerIpcServer.start();
+        const gatewayOwner=await TrustedPlanIpcClient.connect({
+          socketPath,secretFile
+        });
+        ownerD1Gateway=gatewayOwner;
+        assert.equal(gatewayOwner.operationalLeaseConfigured(),true);
+        assert.equal(gatewayOwner.operationalSessionDurableConfigured(),true);
+        const currentPlan=trustedReceipt.plan;
+        const grants=assertApprovedPlanScope(
+          currentPlan,trustedReceipt.approval,{
+            allowedOperations:new Set(RUST_OPERATIONS),
+            expectedEngineerDid:engineerDid
+          });
+        // Match the same signed, non-derived Backend source that the
+        // zero-billing TypeScript fault probe actually modifies.
+        const sourceDerived=process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1"||
+          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
+        const derivedPaths=sourceDerived?
+          selectSourceDerivedTargetsFromApprovedPlan({
+            plan:currentPlan,approvedRows:grants,repo,branch:workBranch
+          }):[];
+        // R151.18: eligibility for paid repair must NOT inherit the
+        // synthetic fault injector's "!derivedPaths" exclusion. An existing
+        // source-derived Backend file remains an eligible signed D1 target.
+        // Only the offline TS2820 fixture needs a separate non-derived file.
+        const signedRepairTargets=roleFiles[fixtureEditorRole].filter(path=>
+          path.startsWith("apps/"+fixtureEditorRole+"/src/")&&/\.tsx?$/u.test(path)&&
+          grants.some(g=>g.agent_id===fixtureEditorRole&&g.operation==="read_file"&&
+            g.resource===canonicalFileUri(repo,workBranch,path))&&
+          grants.some(g=>g.agent_id===fixtureEditorRole&&g.operation==="update_file"&&
+            g.resource===canonicalFileUri(repo,workBranch,path)));
+        const target=signedRepairTargets.find(path=>
+          !derivedPaths.includes(path)&&(!signedOfflineSemanticProbe||
+            referenceFiles[path]?.includes(fixtureSemanticMarker)));
+        if(signedRepairTargets.length===0)
+          throw Error("R151.18 NO-GO: no signed editor read_file/update_file source for D1");
+        if(!paidGeminiRecovery&&!target)
+          throw Error("R151.18 NO-GO: no non-derived signed fixture source target");
+        // The trusted proposer still selects its own bounded D1 file; Rust
+        // and Gateway independently validate the proposed grants afterwards.
+        // For a real Gemini repair the new signed D1 epoch, NOT this fixture
+        // selector, decides which previously authorized source is editable.
+        const fileResource=target?
+          canonicalFileUri(repo,workBranch,target):null;
+        const branchResource="gitea://"+repo.authority+"/"+repo.owner+"/"+
+          repo.repository+"/branches/"+encodeURIComponent(workBranch);
+        const operationalId=coordinator.trustedOperationalAuthority().credential_id;
+        // These IDs deliberately differ in R151 offline ADK mode. All
+        // dispatch IDs below are subsequently read from the signed epoch,
+        // never from these proposal constants or untrusted model text.
+        const candidateBackendId=signedOfflineFrontendTestProbe?"r151-frontend-semantic-editor":ownerD1AdkProposal
+          ?"r151-dynamic-backend-source":"r150-owner-backend-repair";
+        const candidateTestId=ownerD1AdkProposal
+          ?"r151-dynamic-docker-validation":"r150-owner-test-fresh";
+        const candidateFrontendId="r151-multi-frontend-repair";
+        const nativeOwnerRepairDraft=async input=>{
+              if(signedOfflineGeneratedTestProbe){
+                assert.equal(input.feedback.failed_phase,"backend_tests");
+                assert.equal(input.diagnostic_candidates?.status,
+                  "verified_original_generated_test_edit_scope");
+                assert.equal(input.diagnostic_candidates?.tested_commit_sha,
+                  input.feedback.tested_commit_sha);
+                const resource=canonicalFileUri(repo,workBranch,
+                  generatedBackendTestFile);
+                if(process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR){
+                  assert.ok(input.diagnostic_assertions?.assertions.some(a=>
+                    a.role==="test"&&a.resource===resource),
+                    "Real generated-Test FAIL must reach the scripted D1 model through original read grants");
+                }
+                assert.deepEqual(input.diagnostic_candidates.candidates,
+                  [{role:"test",resource}]);
+                const editorId="r151-signed-generated-test-editor";
+                return {tasks:[
+                  {id:editorId,agent_id:"test",
+                   title:"Investigate incorrect generated Test assertion",
+                   description:"Read the originally approved generated Test and correct the invalid assertion without changing application behavior",
+                   depends_on:[],permissions:[
+                    {resource,operation:"read_file",reason:"Inspect verified original Test"},
+                    {resource,operation:"update_file",reason:"Correct bounded signed Test"}
+                   ]},
+                  {id:candidateTestId,agent_id:"test",
+                   title:"Independently rerun Docker after signed Test correction",
+                   description:"Verify the corrected SHA and independent researcher acceptance",
+                   depends_on:[editorId],permissions:[
+                    {resource:branchResource,operation:"run_tests",
+                     reason:"Test exact repaired Git revision"}
+                   ]}
+                ]};
+              }
+              // The zero-billing test selects existing grants, not a new
+              // capability. A future model may propose a different bounded
+              // plan, which still faces the same Rust + Gateway admission.
+              assert.equal(input.feedback.failed_phase,signedOfflineSemanticProbe
+                ?semanticFailurePhase:"typecheck");
+              if(signedOfflineSemanticProbe){
+                if(signedOfflineProjectTestProbe){
+                  assert.equal(input.feedback.project_test_failure?.phase,semanticFailurePhase);
+                  assert.ok(input.feedback.project_test_failure.failed_test_file_count>0);
+                }else assert.deepEqual(input.feedback.acceptance_failure,{
+                  failed_checks:["service_persistence"],timed_out:false,unclassified_failure:false});
+                assert.equal(input.diagnostic_candidates?.status,
+                  signedOfflineProjectTestProbe?"verified_original_project_test_repair_scope":"verified_original_acceptance_repair_scope");
+                assert.equal(input.diagnostic_target,undefined);
+                assert.ok(input.diagnostic_candidates.candidates.some(candidate=>
+                  candidate.role===fixtureEditorRole&&candidate.resource===fileResource));
+              }else assert.ok(input.feedback.typecheck_error_codes.includes(expectedOfflineTypecheckCode));
+              assert.equal(input.feedback.remaining_repair_epochs,2);
+              if(multiTypecheckProbe){
+                const proven=input.diagnostic_targets;
+                if(proven?.status!=="verified_runner_multi_file_repair_targets"||
+                   proven.tested_commit_sha!==input.feedback.tested_commit_sha||
+                   !Array.isArray(proven.targets)||proven.targets.length!==2||
+                   new Set(proven.targets.map(t=>t.role)).size!==2)
+                  throw Error("Two independently verified compiler targets required");
+                const chosen=Object.fromEntries(proven.targets.map(t=>
+                  [t.role,t.resource]));
+                return {tasks:[
+                  {id:candidateBackendId,agent_id:"backend",
+                   title:"Repair signed Backend TypeScript fault",
+                   description:"Read and correct the actual failed Backend source",
+                   depends_on:[],permissions:[
+                    {resource:chosen.backend,operation:"read_file",reason:"Inspect original"},
+                    {resource:chosen.backend,operation:"update_file",reason:"Fix backend"}]},
+                  {id:candidateFrontendId,agent_id:"frontend",
+                   title:"Repair signed Frontend TypeScript fault",
+                   description:"Read and correct the actual failed Frontend source",
+                   depends_on:[candidateBackendId],permissions:[
+                    {resource:chosen.frontend,operation:"read_file",reason:"Inspect original"},
+                    {resource:chosen.frontend,operation:"update_file",reason:"Fix frontend"}]},
+                  {id:candidateTestId,agent_id:"test",
+                   title:"Run independent new Docker TypeScript Test",
+                   description:"Verify both corrected files together",
+                   depends_on:[candidateBackendId,candidateFrontendId],
+                   permissions:[{resource:branchResource,operation:"run_tests",
+                    reason:"Test newest Gitea SHA"}]}
+                ]};
+              }
+              return {tasks:[
+                {id:candidateBackendId,agent_id:fixtureEditorRole,
+                 title:signedOfflineSemanticProbe
+                   ?(signedOfflineProjectTestProbe?"Repair original "+fixtureEditorRole+" lifecycle behavior": "Preserve email during account lifecycle transitions")
+                   :"Fix real observed Backend typecheck regression",
+                 description:signedOfflineSemanticProbe
+                   ?"Read the failed revision and correct the semantic defect in the original signed "+fixtureEditorRole+" source"
+                   :"Correct the signed Backend source only",
+                 depends_on:[],permissions:signedOfflineSemanticProbe
+                   ?input.diagnostic_candidates.candidates.filter(candidate=>candidate.role===fixtureEditorRole)
+                     .flatMap(candidate=>["read_file","update_file"].map(operation=>({
+                       resource:candidate.resource,operation,reason:"Investigate within original signed editor scope"})))
+                   :[
+                    {resource:fileResource,operation:"read_file",reason:"Inspect already approved source"},
+                    {resource:fileResource,operation:"update_file",reason:"Repair only the original approved file"}]},
+                {id:candidateTestId,agent_id:"test",
+                 title:"Run new independent Test task",
+                 description:"Verify the repaired exact Gitea SHA in Docker",
+                 depends_on:[candidateBackendId],
+                 permissions:[{resource:branchResource,
+                   operation:"run_tests",
+                   reason:"Independent new-epoch Docker validation"}]}
+              ]};
+
+        };
+        let readVerifiedRepairTarget;
+        let readVerifiedRunnerAssertions;
+        let readVerifiedRunnerTypecheck;
+        let readVerifiedGeneratedTestEditScope;
+        const readAssertions=async roles=>readVerifiedRunnerAssertions
+          ?readVerifiedRunnerAssertions(roles):null;
+        const trustedOwnerRepairAdk=ownerD1AdkProposal
+          ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedAssertionContext:readAssertions,
+            model:new class extends BaseLlm{
+              constructor(){super({model:"r151-native-owner-offline-proposal"});}
+              async *generateContentAsync(request){
+                // Exercise the REAL ADK proposal turn without provider billing.
+                // The fixed source-derived candidate belongs only to this
+                // zero-billing regression fixture, never the Gemini pathway.
+                const raw=request?.contents?.at(-1)?.parts?.find(
+                  part=>typeof part.text==="string")?.text;
+                if(typeof raw!=="string"||raw.length>16000)
+                  throw Error("R151 offline owner model request unavailable");
+                const candidate=await nativeOwnerRepairDraft(JSON.parse(raw));
+                yield {content:{role:"model",parts:[{
+                  text:JSON.stringify(candidate)
+                }]}};
+              }
+              connect(){return Promise.reject(Error("No streaming or billing"));}
+            },
+            // R151.16: exactly mirror the billed recovery model budget,
+            // output constraints and supported Backend->Test DAG shape.
+            // The model above is still a no-network offline fixture.
+            maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
+            maxSessionMs:240000,
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
+            ...(signedOfflineGeneratedTestProbe?{
+              taskShape:"bounded_generated_test_edit",
+              readVerifiedRepairTarget:async input=>{
+                if(!readVerifiedGeneratedTestEditScope)
+                  throw Error("Offline signed Test D1 needs original Runner scope");
+                const target=await readVerifiedGeneratedTestEditScope();
+                if(target?.tested_commit_sha!==input.feedback.tested_commit_sha)
+                  throw Error("Signed generated Test scope has stale SHA");
+                return target;
+              }
+            }:(multiTypecheckProbe||signedOfflineSemanticProbe)?{
+              taskShape:"bounded_auto_edit_test",
+              readVerifiedRepairTarget:async input=>{
+                if(!readVerifiedRepairTarget)
+                  throw Error("Missing authenticated original Docker Runner targets");
+                const target=readVerifiedRepairTarget();
+                if(target?.tested_commit_sha!==input.feedback.tested_commit_sha)
+                  throw Error("Runner target set changed since failed SHA");
+                return target;
+              }
+            }:{taskShape:"backend_test"})
+          })
+          :undefined;
+        const ownerRepairProposer=paidGeminiRecovery
+          ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedAssertionContext:readAssertions,
+            readVerifiedRepairTarget:async input=>{
+              if(!readVerifiedRepairTarget)
+                throw Error("No trusted Runner attribution after Test FAIL");
+              if(geminiPilot)pilotDelegatedPhase="d1_scope_selection";
+              const target=readVerifiedRepairTarget();
+              if(!target||target.tested_commit_sha!==
+                 input.feedback.tested_commit_sha)
+                throw Error("Repair scope not bound to failed Gateway SHA");
+              if(geminiPilot)pilotDelegatedPhase="d1_model_proposal";
+              return target;
+            },
+            model:createGeminiAdkModel({
+              apiKey:process.env.GEMINI_API_KEY,
+              model:process.env.DELEGATION_GEMINI_MODEL
+            }),
+            maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
+            maxSessionMs:240000,
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
+            taskShape:"bounded_auto_edit_test"
+          })
+          :trustedOwnerRepairAdk;
+        // This second proposer is inactive unless the independently verified
+        // original source-correction scope is unavailable. It does not infer
+        // Test causality, issue authority or perform an extra model call.
+        const generatedTestOwnerProposer=paidGeminiRecovery
+          ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedAssertionContext:readAssertions,
+            readVerifiedRepairTarget:async input=>{
+              if(!readVerifiedGeneratedTestEditScope)
+                throw Error("No owner-private generated Test scope");
+              const target=await readVerifiedGeneratedTestEditScope();
+              if(target?.tested_commit_sha!==input.feedback.tested_commit_sha)
+                throw Error("Generated Test scope differs from failed SHA");
+              return target;
+            },
+            model:createGeminiAdkModel({
+              apiKey:process.env.GEMINI_API_KEY,
+              model:process.env.DELEGATION_GEMINI_MODEL
+            }),
+            maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
+            maxSessionMs:240000,
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
+            taskShape:"bounded_generated_test_edit"
+          })
+          :undefined;
+        const armed=await armTrustedOwnerOperationalRecovery({
+          onRepairPhase:phase=>{if(geminiPilot)pilotDelegatedPhase=phase;},
+          gateway:gatewayOwner,coordinator,signedApprovals:signedStore,
+          epochDirectory:ownerEpochDir,
+          running:{readiness:{
+            session_id:session,base_revision:baseSha,
+            plan_digest:packet.plan_digest,
+            authenticated_engineer_did:engineerDid
+          },operational_root_id:operationalId},
+          verifyLiveRun:async()=>{
+            assert.equal(coordinator.phase,"execution");
+            await gatewayOwner.renewLease(session,packet.plan_digest);
+          },
+          planRepairEpoch:{
+            giteaClient:liveClient,
+            ...(ownerRepairProposer&&generatedTestOwnerProposer
+              ?{proposeRepairPlan:async input=>{
+                if(!readVerifiedRepairTarget||
+                   !readVerifiedGeneratedTestEditScope)
+                  throw Error("D1 owner has no bound verified Runner scopes");
+                const original=readVerifiedRepairTarget();
+                // Project-test FAIL may have BOTH originally authorized
+                // source and generated-Test candidates. Give Gemini a
+                // bounded investigation choice, never inferred authority.
+                // If source evidence is stale, the selector denies it even
+                // when a generated Test candidate is available.
+                const projectFailure=["backend_tests","frontend_tests"]
+                  .includes(input.feedback.failed_phase);
+                const generated=projectFailure
+                  ?await readVerifiedGeneratedTestEditScope():null;
+                if(geminiPilot)pilotDelegatedPhase="d1_scope_selection";
+                const selected=await selectTrustedD1RepairScope({
+                  testedSha:input.feedback.tested_commit_sha,
+                  sourceTarget:original,generatedTestTarget:generated,
+                  chooseInvestigation:async observation=>{
+                    // One extra bounded model choice ONLY if both
+                    // options exist. Never paid without explicit D1 consent.
+                    const decision=createBoundedD1GeminiInvestigationChoice({
+                      model:createGeminiAdkModel({
+                        apiKey:process.env.GEMINI_API_KEY,
+                        model:process.env.DELEGATION_GEMINI_MODEL
+                      }),
+                      requirement:input.requirement,
+                      branch:input.feedback.work_branch,
+                      assertionContext:await readAssertions([...new Set([
+                        ...(original?.candidates??[]).map(c=>c.role),
+                        ...(generated?.candidates??[]).map(c=>c.role)
+                      ])]),
+                      maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs
+                    });
+                    return decision(observation);
+                  }
+                });
+                return selected.mode==="original_source"
+                  ?ownerRepairProposer.propose(input)
+                  :generatedTestOwnerProposer.propose(input);
+              }}
+              :ownerRepairProposer
+              ?{trustedAdkProposer:ownerRepairProposer}
+              :{proposeRepairPlan:nativeOwnerRepairDraft}),
+            admitReservedEpoch:true
+          }
+        });
+        let originalA2APorts;
+        trustedOwnerRecovery={
+          ...armed,
+          // Owner-private bridge to the live Agent Card endpoints already
+          // created by the ORIGINAL native A2A executor. No agent/model
+          // supplies a URL, signer, Task ID, permission or credential.
+          async bindOriginalA2APorts(ports){
+            if(originalA2APorts||coordinator.phase!=="execution"||
+               !ports?.a2a||
+               typeof ports.a2a.sendProtectedTask!=="function"||
+               !ports.agentBaseUrls||
+               typeof ports.armVerifiedD1BackendRepair!=="function"||
+               ((paidGeminiRecovery||multiTypecheckProbe)&&
+                typeof ports.armVerifiedD1FrontendRepair!=="function")||
+               typeof ports.armVerifiedD1TestRun!=="function"||
+               typeof ports.verifyD1EditorRevision!=="function"||
+               !["backend","test"].every(role=>
+                 /^http:\/\/127\.0\.0\.1:\d+$/u.test(
+                   ports.agentBaseUrls[role]??"")))
+              throw Error("R150.7 owner A2A original ports missing or stale");
+            if((paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)&&
+               typeof ports.getVerifiedRepairTarget!=="function")
+              throw Error("Paid repair requires original Runner attribution");
+            if(paidGeminiRecovery&&
+               typeof ports.getVerifiedGeneratedTestEditScope!=="function")
+              throw Error("Paid recovery requires private signed generated-Test scope");
+            if(paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)
+              readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
+            readVerifiedRunnerAssertions=ports.getVerifiedRunnerAssertionContext;
+            readVerifiedRunnerTypecheck=ports.getVerifiedRunnerTypecheckContext;
+            if(paidGeminiRecovery||signedOfflineGeneratedTestProbe)
+              readVerifiedGeneratedTestEditScope=ports.getVerifiedGeneratedTestEditScope;
+            originalA2APorts=Object.freeze({
+              agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
+              a2a:ports.a2a,
+              verifyD1EditorRevision:ports.verifyD1EditorRevision,
+              selectTestEditD1:ports.selectTestEditD1,
+              armVerifiedD1TestEdit:ports.armVerifiedD1TestEdit,
+              armVerifiedD1BackendRepair:ports.armVerifiedD1BackendRepair,
+              ...(ports.armVerifiedD1FrontendRepair?{
+                armVerifiedD1FrontendRepair:ports.armVerifiedD1FrontendRepair
+              }:{}),
+              armVerifiedD1TestRun:ports.armVerifiedD1TestRun
+            });
+          },
+          async continueWithinActiveRoot(signal){
+            // A real admitted D1 must reuse live, owner-pinned A2A ports.
+            // R150.7.0 only makes them available: dispatch still requires
+            // a separate real Child DC and Gateway predecessor attestation.
+            if(!originalA2APorts)
+              throw Error("R150.7 original protected A2A ports not bound");
+            if(geminiPilot)pilotDelegatedPhase="d1_repair_planning";
+            await armed.continueWithinActiveRoot(signal);
+            const epochs=await armed.intake.verifiedEpochHistory();
+            assert.deepEqual(epochs.map(e=>e.epoch),[1,2]);
+            assert.equal(epochs[0].root_credential_id,operationalId);
+            assert.equal(epochs[1].root_credential_id,operationalId);
+            if(geminiPilot)pilotDelegatedPhase="d1_epoch_admitted";
+            // Derive the actual repair target from the *admitted* D1 grants.
+            // Never let Gemini select a path, Task ID or operation outside
+            // the original Engineer-approved, Rust-issued root.
+            const testEditMode=epochs[1].plan.tasks.length===2&&epochs[1].plan.tasks.every(t=>t.agent_id==="test");
+            let testEditSelection;
+            if(testEditMode){
+              if(!["backend_tests","frontend_tests"].includes(signal.first_failed_phase)||
+                 typeof originalA2APorts.selectTestEditD1!=="function"||
+                 typeof originalA2APorts.armVerifiedD1TestEdit!=="function")
+                throw Error("D1 Test editing requires verified project failure and trusted original ports");
+              testEditSelection=originalA2APorts.selectTestEditD1(epochs[1]);
+            }
+            const repairTasks=testEditMode
+              ?epochs[1].plan.tasks.filter(t=>t.id===testEditSelection.testEditTaskId)
+              :epochs[1].plan.tasks.filter(t=>
+              t.agent_id==="backend"||t.agent_id==="frontend");
+            if(repairTasks.length<1||repairTasks.length>8||
+               (!paidGeminiRecovery&&!multiTypecheckProbe&&repairTasks.length!==1))
+              throw Error("Signed D1 repair Task count outside pilot scope");
+            const filesByTask=new Map();
+            for(const task of repairTasks){
+              const found=testEditMode?[...testEditSelection.paths]:roleFiles[task.agent_id].filter(path=>
+                ["read_file","update_file"].every(operation=>
+                  epochs[1].plan.requested_permissions.some(g=>
+                    g.task_id===task.id&&g.agent_id===task.agent_id&&
+                    g.operation===operation&&
+                    g.resource===canonicalFileUri(repo,workBranch,path))));
+              // Acceptance editors may investigate several originally signed
+              // sources together. The compiler probe keeps its proven shape.
+              if(found.length<1||found.length>8||
+                 (!["researcher_acceptance","backend_tests","frontend_tests"].includes(signal.first_failed_phase)&&found.length!==1))
+                throw Error("D1 editor source files outside supported signed scope");
+              filesByTask.set(task.id,{role:task.agent_id,path:found[0],paths:found});
+            }
+            const multi=!testEditMode&&(repairTasks.length>1||[...filesByTask.values()].some(x=>x.paths.length>1));
+            const selected=testEditMode?{testTaskId:testEditSelection.testRunTaskId}:multi
+              ?selectSignedNativeMultiD1Tasks({
+                epoch:epochs[1],planDigest:epochs[1].plan_digest,
+                branchUri:branchResource,
+                requireBothRoles:!["researcher_acceptance","backend_tests","frontend_tests"].includes(signal.first_failed_phase),
+                originalFilesByRole:Object.fromEntries(
+                  ["backend","frontend"].map(role=>[role,
+                    roleFiles[role].map(path=>
+                      canonicalFileUri(repo,workBranch,path))]))
+               })
+              :selectSignedNativeD1Tasks({
+                epoch:epochs[1],planDigest:epochs[1].plan_digest,
+                fileUri:canonicalFileUri(repo,workBranch,
+                  filesByTask.get(repairTasks[0].id).path),
+                branchUri:branchResource,repairRole:repairTasks[0].agent_id
+               });
+            if(multi&&selected.editingTasks.some(t=>{
+              const own=filesByTask.get(t.taskId);
+              return !own||own.role!==t.role||t.fileUris.length!==own.paths.length||
+                t.fileUris.some(uri=>!own.paths.some(path=>
+                  uri===canonicalFileUri(repo,workBranch,path)));
+            }))throw Error("Signed D1 resources differ from original writers");
+            const signedTaskOrder=multi?selected.orderedTaskIds:
+              [repairTasks[0].id,selected.testTaskId];
+            if(!testEditMode&&!paidGeminiRecovery&&!multiTypecheckProbe){
+              assert.equal(multi?selected.editingTasks[0].taskId:selected.backendTaskId,candidateBackendId);
+              assert.equal(selected.testTaskId,candidateTestId);
+              assert.ok(filesByTask.get(repairTasks[0].id).paths.some(path=>
+                canonicalFileUri(repo,workBranch,path)===fileResource));
+            }
+            // R150.6: ask the ORIGINAL Rust issuer for a genuinely
+            // attenuated first repair Child DC, after the SAME Gateway's
+            // independent epoch admission. No A2A dispatch or Gitea write
+            // is attributed to this credential issuance.
+            const journalDir=join(ownerDir,"repair-child-issuance");
+            await mkdir(journalDir,{mode:0o700});
+            const journal=new TrustedChildIssuanceJournal({
+              directory:journalDir,sessionId:session,
+              baseRevision:baseSha,planDigest:packet.plan_digest,
+              parentCredentialId:operationalId
+            });
+            // R151.10: follow the signed repair DAG, not an owner-authored
+            // Backend/Test dispatch sequence. Each predecessor must be
+            // independently Gateway-confirmed before the next Task.
+            let verifiedRepairedSha;
+            const report=await executeTrustedAdmittedRepairDag({
+              sessionId:session,epoch:2,planDigest:epochs[1].plan_digest,
+              coordinator,intake:armed.intake,gateway:gatewayOwner,
+              journal,engineerDid,
+              ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+                ? {}:{adapterBaseUrl:adapterUrl}),
+              orchestratorToken:token,
+              agentBaseUrls:originalA2APorts.agentBaseUrls,
+              a2a:originalA2APorts.a2a,
+              failureContext:{testedSha:signal.tested_commit_sha,
+                loadForRole:role=>readAssertions([role]),
+                loadTypecheckForRole:role=>readVerifiedRunnerTypecheck?readVerifiedRunnerTypecheck([role]):Promise.resolve(null)},
+              verifyLiveRun:async()=>{
+                assert.equal(coordinator.phase,"execution");
+                await gatewayOwner.renewLease(session,packet.plan_digest);
+              },
+              credentialForTask:({id,role,ordinal})=>{
+                assertSignedD1ScheduledTask({
+                  id,role,ordinal,orderedTaskIds:signedTaskOrder,
+                  validatorTaskId:selected.testTaskId,editors:filesByTask
+                });
+                return {
+                  credential_id:"urn:native:r151-d1-"+role+"-"+
+                    randomBytes(7).toString("hex"),
+                  valid_from:new Date(Date.now()-1000).toISOString(),
+                  validity_seconds:300,
+                  credential_status:{
+                    type:"BitstringStatusListEntry",
+                    statusPurpose:"revocation",
+                    statusListIndex:String(randomInt(
+                      role==="test"?74001:70001,
+                      role==="test"?78000:74000)),
+                    statusListCredential:
+                      "https://status.example/lists/native-owner-d1"
+                  }
+                };
+              },
+              beforeProtectedSend:async issued=>{
+                assert.equal(issued.epoch,2);
+                const editing=filesByTask.get(issued.task_id);
+                if(editing&&issued.role===editing.role){
+                  const armRepair=editing.role==="test"?originalA2APorts.armVerifiedD1TestEdit:editing.role==="frontend"
+                    ?originalA2APorts.armVerifiedD1FrontendRepair
+                    :originalA2APorts.armVerifiedD1BackendRepair;
+                  if(geminiPilot)pilotDelegatedPhase="d1_editor_preparation";
+                  await armRepair({
+                    taskId:issued.task_id,role:issued.role,
+                    runtimeTaskId:issued.runtime_task_id,
+                    credentialId:issued.credential_id,
+                    path:editing.path,paths:editing.paths,
+                    failedSha:verifiedRepairedSha??signal.tested_commit_sha
+                  });
+                }else if(issued.role==="test"&&
+                         issued.task_id===selected.testTaskId&&
+                         /^[a-f0-9]{40}$/u.test(verifiedRepairedSha??"")){
+                  if(geminiPilot)pilotDelegatedPhase="d1_test_preparation";
+                  await originalA2APorts.armVerifiedD1TestRun({
+                    taskId:issued.task_id,role:issued.role,
+                    runtimeTaskId:issued.runtime_task_id,
+                    credentialId:issued.credential_id,
+                    repairedSha:verifiedRepairedSha
+                  });
+                }else{
+                  throw Error("R151.10 task outside owner-confirmed repair");
+                }
+              },
+              afterGatewayConfirmed:async task=>{
+                if(filesByTask.get(task.task_id)?.role===task.role){
+                  verifiedRepairedSha=await originalA2APorts.verifyD1EditorRevision(
+                    task,verifiedRepairedSha??signal.tested_commit_sha);
+                  if(geminiPilot)pilotDelegatedPhase="d1_editor_revision_verified";
+                }else if(task.role==="test"&&
+                         task.task_id===selected.testTaskId){
+                  const head=await liveClient.getBranchMetadata(workBranch);
+                  assert.equal(head.commit_sha,verifiedRepairedSha,
+                    "Fresh Test may not silently mutate repaired SHA");
+                  if(geminiPilot)pilotDelegatedPhase="d1_test_gateway_confirmed";
+                }else{
+                  throw Error("R151.10 unexpected Gateway-confirmed role");
+                }
+              }
+            });
+            assert.equal(report.status,
+              "repair_dag_gateway_confirmed_not_final_runner_verified");
+            assert.deepEqual(report.tasks.map(t=>t.task_id),
+              signedTaskOrder);
+            assert.ok(report.tasks.every(t=>t.gateway_task_completed));
+            assert.ok(report.tasks.every(t=>t.docker_pass_verified===false));
+            assert.equal(new Set(report.tasks.map(t=>t.credential_id)).size,
+              signedTaskOrder.length);
+            assert.match(verifiedRepairedSha??"",/^[a-f0-9]{40}$/u);
+            const observedRepair={commit_sha:verifiedRepairedSha};
+            const observedAfterTest=await liveClient.getBranchMetadata(workBranch);
+            assert.equal(observedAfterTest.commit_sha,verifiedRepairedSha);
+            // R150.10: capture signed D1 Test/root identity BEFORE shutdown.
+            // No model, A2A or PR endpoint gets this witness or Gitea writer.
+            // The witness will later re-check actual Gateway Runner effects,
+            // durable retirement, native Rust revocation and fresh Gitea HEAD.
+            const reviewerGitea=new GiteaClient({
+              baseUrl:disposableBase,token:writerToken,owner:"thesis",
+              repository:"iam-console-poc",timeoutMs:20000
+            });
+            ownerD1Witness=await TrustedRetiredRepairAcceptanceWitness.capture({
+              gateway:gatewayOwner,gitea:reviewerGitea,
+              coordinator,intake:armed.intake
+            });
+            const records=await journal.records();
+            assert.equal(records.length,signedTaskOrder.length);
+            assert.equal(new Set(report.tasks.map(t=>t.credential_id)).size,
+              signedTaskOrder.length);
+            assert.deepEqual(records.map(r=>r.task_id).sort(),
+              [...signedTaskOrder].sort());
+            assert.equal(records[0].observation,"adapter_response_verified");
+            assert.equal(records[0].parent_credential_id,operationalId);
+            ownerD1ChildEvidence={
+              original_rust_parent:operationalId,
+              new_test_child_issued:true,
+              test_gateway_task_completed:true,
+              test_a2a_dispatched:true,
+              test_sha:observedAfterTest.commit_sha,
+              child_issued:true,
+              gateway_task_bound:true,
+              a2a_dispatched:true,
+              provider_executed:true,
+              gateway_task_completed:true,
+              repaired_sha:observedRepair.commit_sha
+            };
+          }
+        };
+      }
+      nativeDagStage="agent_model_binding";
+      let approvedAgentModelFactory,acceptanceFaultPath;
+      if(geminiPilot||
+         process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS==="1"){
+        // The MODEL FACTORY is now separate from the signed native runner.
+        // This CI producer still uses deterministic implementation fixtures,
+        // but only inside this owner test host, NOT as an agent permission
+        // source or as data supplied to the model binding.
+        const reviewed=await reviewGate.loadAuthenticatedApproval(session);
+        const approvedRows=assertApprovedPlanScope(
+          reviewed.plan,reviewed.approval,{
+            allowedOperations:new Set(RUST_OPERATIONS),
+            expectedEngineerDid:engineerDid
+          });
+        // In route mode, no final implementation bytes for user.routes.ts
+        // enter the script compiler OR the Backend model constructor.
+        // In the signed-DAG source-witness CI profile, also require a
+        // real source-derived functional Backend route (not a mere comment).
+        const deriveRoutes=!geminiPilot&&(
+          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
+          process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1");
+        const signedDerivedPaths=deriveRoutes
+          ?selectSourceDerivedTargetsFromApprovedPlan({
+            plan:reviewed.plan,approvedRows,repo,branch:workBranch
+          }):[];
+        // Both mixed-TypeScript and acceptance zero-billing D1 fixtures use
+        // OfflineApprovedAdkModel for Frontend, with complete source fixtures. That scripted
+        // model can consume complete signed-grant file fixtures, but CANNOT
+        // synthesize the content-free API update reserved for the independent
+        // SourceWitnessed model. Keep Backend source-derived route checks,
+        // and do not emit an unfulfillable Frontend update_file call here.
+        // This changes NO grants, Gateway checks or paid Gemini behavior.
+        const derivedPaths=(multiTypecheckProbe||signedOfflineSemanticProbe)
+          ?signedDerivedPaths.filter(path=>roleFiles.backend.includes(path))
+          :signedDerivedPaths;
+        const otherImplementations={...referenceFiles};
+        for(const path of derivedPaths)delete otherImplementations[path];
+        if(signedOfflineGeneratedTestProbe){
+          // A real Vitest assertion is wrong while the independently
+          // verified Backend implementation remains correct. No test file
+          // is inserted into the original Gitea snapshot or approved as a
+          // future write unless the signed DAG explicitly contains grants.
+          const correctGeneratedTest=[
+            'import { describe, expect, it } from "vitest";',
+            'import { InMemoryUserRepository } from "../../apps/backend/src/users/user.repository.js";',
+            'import { UserService } from "../../apps/backend/src/users/user.service.js";',
+            'describe("Generated account lifecycle regression", () => {',
+            '  it("checks the approved suspended state", () => {',
+            '    const service = new UserService(new InMemoryUserRepository());',
+            '    '+GENERATED_TEST_CORRECT_ASSERTION,
+            '  });',
+            '});',
+            ''
+          ].join("\n");
+          otherImplementations[generatedBackendTestFile]=
+            injectGeneratedTestAssertionFault(correctGeneratedTest);
+        }
+        if(signedOfflineSemanticProbe&&!signedOfflineGeneratedTestProbe){
+          const targets=roleFiles[fixtureEditorRole].filter(path=>
+            !derivedPaths.includes(path)&&
+            typeof otherImplementations[path]==="string"&&
+            otherImplementations[path].includes(fixtureSemanticMarker)&&
+            ["read_file","update_file"].every(operation=>approvedRows.some(g=>
+              g.agent_id===fixtureEditorRole&&g.operation===operation&&
+              g.resource===canonicalFileUri(repo,workBranch,path))));
+          assert.equal(targets.length,1,"One originally approved semantic fixture source is required");
+          acceptanceFaultPath=targets[0];
+          otherImplementations[acceptanceFaultPath]=(signedOfflineFrontendTestProbe?injectFrontendTestFault:signedOfflineBackendTestProbe?injectProjectTestFault:injectAcceptanceFault)(
+            otherImplementations[acceptanceFaultPath]);
+        }
+        if(signedOfflineTypecheckProbe){
+          // Test fault location is selected from ACTUAL signed Backend
+          // update grants. It never chooses or widens authorization.
+          const target=roleFiles.backend.find(path=>
+            path.startsWith("apps/backend/src/")&&path.endsWith(".ts")&&
+            !derivedPaths.includes(path)&&
+            approvedRows.some(g=>g.agent_id==="backend"&&
+              g.operation==="update_file"&&
+              g.resource===canonicalFileUri(repo,workBranch,path)));
+          if(!target||typeof otherImplementations[target]!=="string")
+            throw Error("No approved Backend TypeScript target for fault probe");
+          if(signedOfflineTs2724Probe)
+            otherImplementations[target]=injectTs2724BackendImportFault(
+              otherImplementations[target]);
+          else otherImplementations[target]+=
+            '\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+          if(multiTypecheckProbe){
+            const frontendTarget=roleFiles.frontend.find(path=>
+              path.startsWith("apps/frontend/src/")&&path.endsWith(".tsx")&&
+              !derivedPaths.includes(path)&&
+              approvedRows.some(g=>g.agent_id==="frontend"&&
+                g.operation==="update_file"&&
+                g.resource===canonicalFileUri(repo,workBranch,path))&&
+              approvedRows.some(g=>g.agent_id==="frontend"&&
+                g.operation==="read_file"&&
+                g.resource===canonicalFileUri(repo,workBranch,path)));
+            if(!frontendTarget||
+               typeof otherImplementations[frontendTarget]!=="string")
+              throw Error("No originally signed Frontend TypeScript fault target");
+            // Only the disposable fault fixture is whitespace-normalized.
+            // The larger JSX source plus the injected compiler line otherwise
+            // exceeds the original bounded tool-call size in this path.
+            // No production model source or signed grants are modified.
+            otherImplementations[frontendTarget]=
+              otherImplementations[frontendTarget].replace(/^ {2,}/gmu," ")+
+              '\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+          }
+        }
+        // Not even the scripted call compiler is invoked for real Gemini.
+        const offlineCalls=geminiPilot?null:
+          buildOfflineAdkScriptsFromApprovedPlan({
+            plan:reviewed.plan,approvedRows,repo,branch:workBranch,
+            implementationContents:derivedPaths.length||signedOfflineGeneratedTestProbe
+              ?otherImplementations:referenceFiles,
+            ...(derivedPaths.length?{sourceDerivedPaths:derivedPaths}:{}),
+            ...(signedOfflineGeneratedTestProbe?{
+              initialFailedGeneratedTestPaths:[generatedBackendTestFile]
+            }:{}),
+            ...(signedOfflineRecovery?{recoveryFixture:{
+              path:testRepairFile,
+              failedContent:referenceFiles[testRepairFile]+
+                '\nthrow new Error("signed DAG offline recovery regression");\n'
+            }}:{})
+          });
+        approvedAgentModelFactory=context=>{
+          const expected=approvedRows.filter(g=>
+            g.agent_id===context.role).map(g=>({
+              task_id:g.task_id,operation:g.operation,resource:g.resource
+            }));
+          assert.deepEqual(context.approved_permissions,expected);
+          assert.equal(Object.hasOwn(context,"implementationContents"),false);
+          if(geminiPilot)
+            return createGeminiAdkModel({
+              apiKey:process.env.GEMINI_API_KEY,
+              model:process.env.DELEGATION_GEMINI_MODEL
+            });
+          if(context.role==="backend"&&deriveRoutes)
+            return new SourceDerivedRouteOfflineAdkModel({
+              context,calls:offlineCalls[context.role]
+            });
+          if(context.role==="frontend"&&
+             process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1")
+            return new SourceWitnessedOfflineAdkModel({
+              context,calls:offlineCalls[context.role]
+            });
+          return new OfflineApprovedAdkModel(
+            context.role,offlineCalls[context.role]);
+        };
+      }
+      if(geminiPilot)pilotStage="delegated_agents_gitea_docker";
+      nativeDagStage="signed_a2a_dispatch";
+      globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
+        coordinator,reviewGate,approvedPlans,
+        ...(approvedAgentModelFactory?{approvedAgentModelFactory}:{}),
+        sessionId:session,planDigest:packet.plan_digest,baseSha,
+        operationalRootId,branch:workBranch,planningFiles:snapshot.files,
+        referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
+        realGeminiPilot:geminiPilot,
+        ...(trustedOwnerRecovery?{trustedOwnerRecovery}:{}),
+        ...(geminiPilot?{
+          onPilotPhase:phase=>{pilotDelegatedPhase=phase;},
+          onPilotError:category=>{pilotDelegatedFailure=category;}
+        }:{}),
+        offlineRecovery:signedOfflineRecovery,
+        offlineTypecheckProbe:signedOfflineTypecheckProbe,
+        offlineTypecheckExpectedCode:expectedOfflineTypecheckCode,
+        offlineMultiTypecheckProbe:multiTypecheckProbe,
+        offlineAcceptanceProbe:signedOfflineAcceptanceProbe,
+        offlineProjectTestProbe:signedOfflineProjectTestProbe,
+        offlineGeneratedTestProbe:signedOfflineGeneratedTestProbe,
+        offlineMultiTest:signedOfflineMultiTest,
+        scenarioId:scenario.id,repo,
+        giteaBase:disposableBase,readerToken:disposableToken,
+        writerToken,opaUrl,engineerDid,orchestratorToken:token,
+        agentTokens:{
+          backend:process.env.ADAPTER_CALLER_BACKEND,
+          frontend:process.env.ADAPTER_CALLER_FRONTEND,
+          test:process.env.ADAPTER_CALLER_TEST
+        }
+      });
+      nativeDagStage="positive_dag_assertions";
+      if(signedOfflineTypecheckProbe||signedOfflineSemanticProbe||
+         (paidGeminiRecovery&&globalThis.__nativeDagPositive?.status===
+           "trusted_owner_repair_handoff_retired")){
+        const proof=globalThis.__nativeDagPositive;
+        if(ownerRecoveryEnabled&&proof.status==="trusted_owner_repair_handoff_retired"){
+          assert.equal(proof.status,"trusted_owner_repair_handoff_retired");
+          assert.equal(proof.original_dag_completed,false);
+          assert.equal(proof.repair_epoch_handoff,true);
+          assert.equal(proof.final_runner_pass_verified,false);
+          assert.equal(proof.original_root_revoked,true);
+          assert.equal(proof.pull_request_created,false);
+          if(ownerD1Probe)assert.equal(proof.failed_phase,signedOfflineSemanticProbe
+            ?semanticFailurePhase:"typecheck");
+          assert.equal(coordinator.phase,"closed");
+          assert.equal(ownerD1ChildEvidence?.original_rust_parent,
+            operationalRootId);
+          assert.equal(ownerD1ChildEvidence?.child_issued,true);
+          assert.equal(ownerD1ChildEvidence?.gateway_task_bound,true);
+          assert.equal(ownerD1ChildEvidence?.a2a_dispatched,true);
+          assert.equal(ownerD1ChildEvidence?.provider_executed,true);
+          assert.equal(ownerD1ChildEvidence?.gateway_task_completed,true);
+          assert.equal(ownerD1ChildEvidence?.new_test_child_issued,true);
+          assert.equal(ownerD1ChildEvidence?.test_gateway_task_completed,true);
+          assert.equal(ownerD1ChildEvidence?.test_a2a_dispatched,true);
+          assert.equal(ownerD1ChildEvidence?.test_sha,
+            ownerD1ChildEvidence?.repaired_sha);
+          assert.match(ownerD1ChildEvidence?.repaired_sha,/^[a-f0-9]{40}$/u);
+          // R150.10: closeExecution already confirmed Rust revocation.
+          // A plain Gateway close is NOT an independently persisted tombstone:
+          // the authenticated OWNER must now durably retire this same session.
+          if(!ownerD1Gateway||!ownerD1Witness)
+            throw Error("R150.10 original-root signed Test witness missing");
+          await coordinator.assertOperationalClosureConfirmed();
+          await ownerD1Gateway.retireSession(session);
+          const revoked=await ownerD1Witness.verifyRevokedRetiredExactSha();
+          assert.equal(revoked.status,
+            "r142_retired_runner_gitea_native_revoked_no_pr_authority");
+          assert.equal(revoked.tested_commit_sha,ownerD1ChildEvidence.repaired_sha);
+          assert.equal(revoked.root_revoked,true);
+          assert.equal(revoked.pull_request_authorized,false);
+          // Only the original Engineer-approved PR permission, verified
+          // independently by R145, can open a REVIEW-ONLY draft AFTER
+          // revocation and exact-SHA Runner PASS. Never merge.
+          const draft=await ownerD1Witness.openSignedReviewOnlyDraft({
+            title:signedOfflineSemanticProbe
+              ?(signedOfflineProjectTestProbe?"Review repaired "+fixtureEditorRole+" test regression":"Review repaired account-suspension email preservation regression")
+              :"Review repaired account-suspension TypeScript regression",
+            body:"Signed Engineer-approved repair epoch D1.\n"+
+              "Independent Gateway/Runner Docker PASS on exact Gitea SHA: "+
+              revoked.tested_commit_sha+"\n"+
+              "Original Rust root revoked. Human review required. No auto-merge."
+          });
+          assert.equal(draft.status,"r145_signed_review_only_draft_open_unmerged");
+          assert.equal(draft.draft,true);
+          assert.equal(draft.merged,false);
+          assert.equal(draft.merge_authorized,false);
+          assert.equal(draft.tested_commit_sha,revoked.tested_commit_sha);
+          ownerD1ReviewEvidence=Object.freeze({
+            status:"signed_d1_real_docker_pass_retired_draft_review",
+            tested_commit_sha:draft.tested_commit_sha,
+            root_revoked:true,draft:true,merged:false,
+            merge_authorized:false,real_runner_pass_verified:true,
+            draft_pr_number:draft.draft_pr_number
+          });
+          assert.notEqual(ownerD1ChildEvidence?.repaired_sha,proof.original_test_sha);
+        }else{
+        assert.equal(proof.typecheck_probe_verified,true);
+        assert.equal(proof.signed_dag_completed,false);
+        assert.equal(proof.status,"expected_typecheck_failure");
+        assert.equal(proof.project_tests,"fail");
+        assert.equal(proof.first_failed_phase,"typecheck");
+        assert.equal(proof.pr_created,false);
+        assert.equal(proof.operational_root_revoked,true);
+        assert.equal(proof.main_unchanged,true);
+        assert.deepEqual(proof.typecheck_error_codes,[expectedOfflineTypecheckCode]);
+        }
+      }else{
+      assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
+      assert.equal(globalThis.__nativeDagPositive
+        .f5_original_f2_f3_test_handoff_verified,true);
+      assert.equal(globalThis.__nativeDagPositive
+        .f5_f3_review_mode,"offline_deterministic_adk_metadata_only");
+      const sourceWitnessMode=
+        process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
+      const derivedRoutesMode=
+        process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
+        sourceWitnessMode;
+      assert.equal(globalThis.__nativeDagPositive.model_source,
+        geminiPilot?"real_gemini_four_models_signed_test_approval":
+        derivedRoutesMode
+          ? "host_supplied_source_derived_routes_with_remaining_fixtures"
+          : sourceWitnessMode
+            ? "host_supplied_hybrid_source_witness_and_fixture"
+            : approvedAgentModelFactory
+              ? "host_supplied_scripted_tool_calls"
+              : "inline_scripted_tool_calls");
+      if(!geminiPilot)
+        assert.equal(globalThis.__nativeDagPositive
+          .source_derived_functional_route_verified,derivedRoutesMode);
+      if(!geminiPilot)assert.equal(globalThis.__nativeDagPositive
+        .source_derived_functional_file_count,derivedRoutesMode
+          ? (scenario.id==="account-suspension"?4:1):0);
+      if(derivedRoutesMode&&scenario.id==="account-suspension"){
+        assert.equal(globalThis.__nativeDagPositive
+          .source_derived_controller_verified,true);
+        assert.equal(globalThis.__nativeDagPositive
+          .source_derived_status_verified,true);
+        assert.equal(globalThis.__nativeDagPositive
+          .source_derived_frontend_api_verified,true);
+      }
+      assert.equal(globalThis.__nativeDagPositive
+        .source_witnessed_native_dag_verified,sourceWitnessMode);
+      // A host-selected BaseLlm can still encapsulate golden implementation
+      // bytes. Do not let a provider-green E2E claim model independence.
+      assert.equal(globalThis.__nativeDagPositive.scripted_adk_no_paid_model,
+        !geminiPilot);
+      assert.equal(globalThis.__nativeDagPositive
+        .fixture_scripted_payloads_reach_adk_runner,!geminiPilot);
+      assert.equal(globalThis.__nativeDagPositive
+        .independent_model_software_output_verified,geminiPilot);
+      if(geminiPilot){
+        assert.ok(globalThis.__nativeDagPositive.source_writes>=0&&
+          globalThis.__nativeDagPositive.source_writes<=
+            proposed.plan.requested_permissions.filter(p=>
+              p.operation==="update_file").length,
+          "Actual source writes must be a subset of granted operations");
+      }else assert.equal(globalThis.__nativeDagPositive.source_writes,
+        existingFiles.length+(signedOfflineRecovery?1:0));
+      assert.equal(globalThis.__nativeDagPositive.manifest_source,
+        "engineer_signed_approved_plan");
+      if(geminiPilot){
+        assert.ok(globalThis.__nativeDagPositive.created_test_files>=0&&
+          globalThis.__nativeDagPositive.created_test_files<=
+            proposed.plan.requested_permissions.filter(p=>
+              p.operation==="create_file"&&p.agent_id==="test").length,
+          "Actual Test creations must be within signed grant scope");
+      }else assert.equal(globalThis.__nativeDagPositive.created_test_files,1);
+      if(geminiPilot){
+        const runs=globalThis.__nativeDagPositive.test_runner_runs;
+        assert.ok(Number.isSafeInteger(runs)&&runs>=1&&runs<=6,
+          "Live signed Test may repair after a failed Docker run");
+      }else assert.equal(globalThis.__nativeDagPositive.test_runner_runs,
+        signedOfflineRecovery?2:1);
+      if(signedOfflineRecovery){
+        assert.equal(globalThis.__nativeDagPositive.recovery_verified,true);
+        assert.notEqual(globalThis.__nativeDagPositive.failed_test_sha,
+          globalThis.__nativeDagPositive.tested_commit_sha);
+      }
+      if(signedOfflineMultiTest){
+        assert.equal(globalThis.__nativeDagPositive.a2a_tasks_dispatched,4);
+        assert.equal(globalThis.__nativeDagPositive
+          .multi_test_a2a_independent_authority_verified,true);
+      }
+      assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
+        globalThis.__nativeDagPositive.approved_branch_sha);
+      }
+    }else{
+    // Load the ACTUAL production-style approved DAG dispatcher from the
+    // same signed review gate, operational root, and immutable base SHA.
+    // A read-only provider cannot create a branch, so this stage deliberately
+    // proves fail-closed BEFORE any specialized A2A send/child DC issuance.
+    let a2aSends=0,childAllocations=0;
+    const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
+      approvals:reviewGate,coordinator,sessionId:session,
+      expectedPlanDigest:packet.plan_digest,baseRevision:baseSha,
+      expectedEngineerDid:engineerDid,
+      agentBaseUrls:{
+        backend:"http://127.0.0.1:18861",
+        frontend:"http://127.0.0.1:18862",
+        test:"http://127.0.0.1:18863"
+      },
+      a2a:{async sendProtectedTask(){
+        a2aSends++;
+        throw Error("A2A dispatch before verified branch provider effect");
+      }},
+      adapter:{
+        ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+          ? {}:{adapterBaseUrl:adapterUrl}),
+        bearerToken:token,timeoutMs:60000
+      },
+      async authorityForTask(){
+        childAllocations++;
+        throw Error("Cannot allocate a child before verified branch creation");
+      }
+    });
+    assert.equal(dispatcher.approvedBranch,workBranch);
+    await assert.rejects(dispatcher.dispatch("backend"),/dependencies/);
+    assert.equal(a2aSends,0);
+    assert.equal(childAllocations,0);
+    let branchRequestId;
+    const countBefore=log.giteaReads;
+    await assert.rejects(dispatcher.executeApprovedDag({
+      async invokeOrchestratorTask(taskId,gatewayTaskId){
+        assert.equal(taskId,"branch");
+        assert.match(gatewayTaskId,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+        await assert.rejects(async()=>runtime.prepare({
+          task_id:gatewayTaskId,agent_role:"orchestrator",
+          tool:"create_branch",arguments:{
+            base_branch:"main",branch:"feature/not-approved"
+          }
+        }),e=>e?.code==="approved_plan_denied");
+        await assert.rejects(async()=>runtime.prepare({
+          task_id:gatewayTaskId,agent_role:"orchestrator",
+          tool:"update_file",arguments:{
+            branch:"main",path:file,content:"malicious"
+          }
+        }));
+        // Correct signed plan action: real EVM-root JWT and native Rust VP
+        // verification, live OPA, then read-only Gitea provider DENIAL.
+        const prepared=runtime.prepare({
+          task_id:gatewayTaskId,agent_role:"orchestrator",
+          tool:"create_branch",arguments:{
+            base_branch:"main",branch:workBranch
+          }
+        });
+        branchRequestId=prepared.request_id;
+        const jwt=await signTrustedOrchestratorVp({
+          credential_id:opId,
+          disclosed_permissions:[prepared.required_permission],
+          audience:prepared.audience,challenge:prepared.challenge
+        });
+        assert.ok(typeof jwt==="string"&&jwt.length>100);
+        await runtime.execute({request_id:prepared.request_id,signed_vp:jwt});
+      }
+    }),e=>e?.code==="provider_operation_unavailable");
+    assert.equal(dispatcher.completedTaskIds.length,0);
+    assert.equal(coordinator.phase,"closed"); // dispatcher closed and revoked root
+    assert.equal(a2aSends,0);
+    assert.equal(childAllocations,0);
+    assert.equal(log.giteaReads,countBefore);
+    const blocked=audit.events.filter(e=>e.event==="authorization_executed"&&
+      e.request_id===branchRequestId);
+    assert.equal(blocked.length,1);
+    assert.equal(blocked[0].policy_decision,"allow");
+    assert.equal(blocked[0].provider_result,"error");
+    assert.equal(blocked[0].approved_plan_digest,packet.plan_digest);
+    }
+  }else{
+    await authorityClient.revokeRoot(rootId);
+    revoked=true;
+  }
+  const before=log.giteaReads;
+  if(!revocationChecked){
+    // Standalone Planning-only test revokes shortly before this point.
+    await assert.rejects(
+      runtime.execute({request_id:waiting.request_id,
+        signed_vp:signedBeforeRevoke}),
+      e=>e?.code==="verification_rejected"
+    );
+  }
+  assert.equal(log.giteaReads,before);
+  // A stale Planning read port must never
+  // let any caller bypass status revocation or obtain new effective access.
+  await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
+  assert.equal(log.giteaReads,before);
+  if(!signedHandoff)revisions.end(session);
+  await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
+  assert.equal(log.giteaReads,before);
+  if(signedHandoff){
+    assert.equal(coordinator.phase,"closed");
+    // The newly bound dispatcher cannot continue its signed DAG after
+    // provider refusal, and the former operational root is EVM-revoked.
+    await assert.rejects(async()=>runtime.prepare({
+      task_id:"dispatch_expired_native_handoff",agent_role:"orchestrator",
+      tool:"create_branch",arguments:{base_branch:"main",branch:workBranch}
+    }),e=>e?.code==="approved_plan_denied");
+  }
+  if(liveClient){
+    assert.equal((await liveClient.getBranchMetadata("main")).commit_sha,baseSha);
+    assert.equal((await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha,
+      originalFeature);
+  }
+  if(geminiPilot)pilotStage="complete";
+  console.log(JSON.stringify({
+    event:"native_preliminary_adk_planning",
+    status:"pass",
+    rust_evm_root_issued:true,
+    native_rust_vp_verified:true,
+    live_opa:true,
+    model_calls_paid:geminiPilot,
+    model_source:geminiPilot?"real_gemini_four_models":"offline_scripted",
+    engineer_review_type:geminiPilot?"signed_test_fixture_not_human":"signed_test_fixture",
+    pinned_gitea_fixture:!realGitea,
+    real_disposable_gitea_pinned_reads:realGitea,
+    real_gitea_main_unchanged:realGitea,
+    independent_revocation_denial:true,
+    source_reads:proposed.verified_source_reads,
+    approval_created:signedHandoff,
+    trusted_planning_review:signedHandoff,
+    signed_ed25519_fixture:signedHandoff,
+    native_operational_root_and_activation:signedHandoff,
+    operational_root_closed:signedHandoff,
+    dispatcher_bound_signed_dag:signedHandoff,
+    dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff&&!positiveDag,
+    a2a_tasks_dispatched:positiveDag
+      ?globalThis.__nativeDagPositive.a2a_tasks_dispatched:0,
+    child_dc_issued:positiveDag
+      ?globalThis.__nativeDagPositive.native_rust_child_credentials:0,
+    real_provider_mutations:positiveDag?
+      globalThis.__nativeDagPositive.source_writes+
+      globalThis.__nativeDagPositive.created_test_files:0,
+    provider_writes:positiveDag?
+      globalThis.__nativeDagPositive.source_writes+
+      globalThis.__nativeDagPositive.created_test_files:0,
+    ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{}),
+    ...(ownerRecoveryEnabled?{owner_repair_review:ownerD1ReviewEvidence}:{})
+  }));
+}catch(error){
+  if(error!==PLANNING_ONLY_COMPLETED){
+  if(r3803NativeDiscovery){
+    r3803Probe.gateway_prepares=log.prepares;
+    r3803Probe.gateway_executions=log.executions;
+    r3803Probe.gitea_reads=log.giteaReads;
+    r3803Probe.single_verifier=r3803VerifierStatus.single;
+    r3803Probe.composite_verifier=r3803VerifierStatus.multi;
+    const lastDenied=audit.events.filter(e=>
+      (e.event==="authorization_executed"||
+        e.event==="composite_read_executed"||
+        e.event==="composite_authorization_verified")&&
+      e.decision==="deny").at(-1);
+    const reason=lastDenied?.reason;
+    r3803Probe.gateway_last_reason=[
+      "verification_rejected","verifier_unavailable","policy_denied",
+      "provider_unavailable","trusted_binding_denied",
+      "verified_only_no_provider","provider_mismatch","none"
+    ].includes(reason)?reason:lastDenied?"other":"none";
+    process.stderr.write("[r3803-planning-probe] "+JSON.stringify({
+      event:"r3803_planning_failure_probe_v1",...r3803Probe
+    })+"\n");
+  }
+  if(!geminiPilot){
+    globalThis.__nativeDagPhaseReported=true;
+    process.stderr.write(NATIVE_DAG_FAILURE_PREFIX+
+      JSON.stringify(safeNativePhaseFailure(error,nativeDagStage))+"\n");
+  }
+  if(geminiPilot){
+    // A fixed-vocabulary diagnostic only; never forward provider exception
+    // text, model prompts, repository source, tool args, or authorization.
+    const category=trustedD1ScopeStopCategory(error)??(error?.code==="ERR_ASSERTION"?"test_assertion":
+      typeof error?.message==="string"&&
+      error.message.startsWith("Unapproved Planning:")?
+        "planner_contract_rejected":
+        pilotModelFailure!=="none"?"model_provider_failure":
+          "unclassified_failure");
+    // The only stack information permitted outside the private child is a
+    // numeric line of OUR public harness, never the exception message or
+    // stack text (which could contain source or credentials).
+    const location=error?.code==="ERR_ASSERTION"&&
+      typeof error.stack==="string"
+        ?error.stack.match(/(?:native-approved-planner-dag-positive|native-planning-read-core-evm-e2e)\.mjs:(\d+):\d+/u)
+        :null;
+    const at=location?Number(location[1]):null;
+    const assertionLocation=Number.isSafeInteger(at)&&at>0&&at<2000
+      ?Object.freeze({
+        module:location[0].startsWith("native-approved")
+          ?"signed_dag_harness":"planning_harness",
+        line:at
+      }):null;
+    process.stderr.write("[signed-gemini-pilot] "+JSON.stringify({
+      stage:pilotStage,category,
+      ...(pilotStage==="delegated_agents_gitea_docker"?{
+        delegated_phase:pilotDelegatedPhase,
+        delegated_failure:pilotDelegatedFailure
+      }:{}),
+      ...(assertionLocation?{assertion_location:assertionLocation}:{}),
+      model_failure:pilotModelFailure,
+      failure_trace:safeApprovedDagFailureTrace(error).slice(0,3),
+      ...(pilotPlanningRejection
+        ?{planning_rejection:pilotPlanningRejection}:{}),
+      ...(pilotPlanningRejectionHistory.length
+        ?{planning_rejections:pilotPlanningRejectionHistory}:{}),
+      model_turns_started:pilotModelTurns,
+      ...(pilotTaskCounts?{approved_task_counts:pilotTaskCounts}:{}),
+      signature_type:"ed25519_test_fixture_not_human",
+      completed:false
+    })+"\n");
+  }
+  throw error;
+  }
+}finally{
+  try{
+    if(issued&&!revoked)await authorityClient.revokeRoot(rootId);
+  }finally{
+    try{if(nativeOwnerIpcServer)await nativeOwnerIpcServer.close();}
+    finally{
+      if(ownerDir)await rm(ownerDir,{recursive:true,force:true});
+      if(receiptDir)await rm(receiptDir,{recursive:true,force:true});
+    }
+  }
+}

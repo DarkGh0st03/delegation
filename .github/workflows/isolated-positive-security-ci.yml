@@ -1,16 +1,152 @@
 name: Isolated Real Positive Security CI (No AI Billing)
 
+# R461: this no-AI Security CI also verifies source compatibility with the
+# Planner-selected native read-only specialist proof, never a paid pilot.
 # Dedicated disposable integration verification of the trusted Docker Runner
-# and independent researcher acceptance. No Gemini/OpenAI keys are present.
-# Runs only for this feature branch and relevant files, or when explicitly
-# dispatched. Never touches persistent local Gitea.
+# and independent researcher acceptance.
+# R397/R398: the historical positive job also proves on one real disposable
+# Gitea PR/HEAD that Security CI status and protected Human Gate read-only
+# use distinct actors. That PR is a fixture, NOT the native Rust-generated PR.
+# Never perform merge, production GitHub review or paid inference. No Gemini/OpenAI keys are present.
+# R385.17: this positive, disposable, zero-AI Security CI follows the
+# authority-only feature branch (not the retired shared-MCP spike), for
+# relevant runner/acceptance changes or explicit manual dispatch.
+# Never touches persistent local Gitea or invokes a protected merge.
 on:
   push:
-    branches: [feat/shared-mcp-spike]
+    branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/isolated-positive-security-ci.yml'
+      - '.github/workflows/r38513-native-strict-full-recovery.yml'
+      # R426: paid Signed-DAG YAML and its independent negative safety witnesses.
+      - '.github/workflows/gemini-paid-shared-mcp-final.yml'
+      - 'poc/scripts/test/gemini-live-no-synthetic-merge.test.mjs'
+      - 'poc/scripts/test/protected-gitea-bootstrap.test.mjs'
+      - 'poc/scripts/test/safe-delegation-failure-ledger.test.mjs'
+      # R420.1: the protected merge offline regression must not regress to a runnable paid path.
+      - '.github/workflows/merge-protection-offline.yml'
+      # R400: native PR, exact-SHA read-only Gate or its original E2E
+      # must automatically exercise the REAL native Security CI path.
+      - 'poc/packages/orchestrator-runtime/src/merge-readiness.ts'
+      - 'poc/packages/orchestrator-runtime/test/native-gitea-ci-human-gate-fixture.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/apps/test-runner-controller/fixtures/account-suspension-reference.mjs'
+      # R410: source-level Owner/DAG/legacy migration changes must automatically
+      # invoke no-AI native Rust+MCP+OPA+Docker Security CI on the same SHA.
+      - 'poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs'
+      - 'poc/scripts/test/r407-historical-runner-issuer-isolation.test.mjs'
+      - '.github/workflows/d1-private-assertion-e2e.yml'
+      - 'poc/packages/orchestrator-runtime/src/trusted-owner-reviewed-dag-execution.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-planning-core.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-owner-repair-dag-execution.ts'
+      # R411: native EVM fixture must never silently regress onto a legacy shim.
+      - 'poc/apps/gateway/src/trusted-operational-feature-head.ts'
+      - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
+      # R429/R430: migrated EVM regressions use the canonical native Rust issuer.
+      - 'poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs'
+      - 'poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs'
+      - 'poc/scripts/test/r411-legacy-compatibility.test.mjs'
+      - 'poc/scripts/test/r408-reviewed-dag-caller-migration.test.mjs'
+      - 'poc/scripts/r38517-canonical-route-closure.mjs'
+      # R432: the historical HTTP issuer/fixture gate are physically retired.
+      # Preserve native Rust Engineer selection and cold-recovery anti-fallback tests.
+      - 'poc/apps/orchestrator/src/trusted-engineer-host.mjs'
+      - 'poc/apps/orchestrator/src/trusted-engineer-service.mjs'
+      - 'poc/apps/orchestrator/test/trusted-engineer-host.test.mjs'
+      - 'poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs'
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts'
+      - 'poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts'
+      - 'poc/scripts/test/r240-direct-rust-issuer-config.test.mjs'
+      - 'poc/scripts/test/r406-neutral-repair-model-contract.test.mjs'
+      # R437: extra trusted private IPC role pins; no unpinned fallback.
+      - 'poc/packages/agent-runtime/src/trusted-effect-staging-task-registry.ts'
+      - 'poc/packages/agent-runtime/src/trusted-effect-staging-unix-ipc.ts'
+      - 'poc/packages/agent-runtime/test/trusted-effect-staging-task-registry.test.ts'
+      - 'poc/packages/agent-runtime/test/trusted-effect-staging-unix-ipc.test.ts'
+      # R436: owner-pinned additional Agent Card read-only verification (no new dispatcher).
+      - 'poc/packages/orchestrator-runtime/src/trusted-a2a-startup-probe.ts'
+      - 'poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts'
+      # R435: SDK endpoint, per-role IPC, and verified Agent Card roster guards.
+      - 'poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs'
+      - 'poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs'
+      # R461: exact Planner-chosen Task flows through native Rust/EVM/OPA/Gitea.
+      - 'poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs'
+      - '.github/workflows/r457-fourth-role-native-gitea-e2e.yml'
+      # R459: one scripted Planner-to-additional-role private A2A chain.
+      # This is offline fixture-backed; the R458 native provider proof remains separate.
+      - 'poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs'
+      - 'poc/apps/orchestrator/src/trusted-authority-only-gemini-owner-binding.mjs'
+      - 'poc/apps/orchestrator/test/r460-gemini-three-agent-binding.test.mjs'
+      # Phase C: new isolated scripted/Ed25519 experimental pilot must not bypass the native E2E.
+      - '.github/workflows/gemini-authority-only-ci-pilot.yml'
+      - 'poc/apps/orchestrator/src/run-disposable-gemini-ci-pilot.mjs'
+      - 'poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs'
+      - 'poc/apps/orchestrator/src/disposable-gemini-adk-model-boundary.mjs'
+      - 'poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs'
+      # R434: trusted registry-derived specialist Task and read/no-change guards.
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r401-trusted-test-profile-wiring.test.mjs'
+      - 'poc/packages/orchestrator-runtime/test/trusted-authority-only-adaptive-work-loop.test.mjs'
+      # R432.2: retired HTTP issuer is absent; all Child/A2A credential types
+      # resolve through neutral contracts. Include each trust-boundary consumer
+      # so type-only security regressions also trigger real native Security CI.
+      - 'poc/packages/orchestrator-runtime/src/trusted-credential-contracts.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-authority.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-native-port.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-engineer-direct-core-port.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-child-crypto-port.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts'
+      - 'poc/packages/orchestrator-runtime/src/trusted-remote-discovery-a2a-handoff.ts'
+      - 'poc/packages/orchestrator-runtime/src/a2a-workflow.ts'
+      - 'poc/packages/orchestrator-runtime/test/trusted-authority-only-engineer-session.test.ts'
+      - 'poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts'
+      - 'poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts'
+      - 'poc/scripts/test/check-local-imports.test.mjs'
+      - 'poc/scripts/test/r38517-canonical-route-closure.test.mjs'
+      - 'poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs'
+      # One-shot checkpoint JSON retired; original manual EVM/Gitea proofs remain.
+      - '.github/workflows/r292-authority-only-native-evm-e2e.yml'
+      - '.github/workflows/r302-gitea-atomic-cas-e2e.yml'
+      - '.github/workflows/r338-native-runner-fail-e2e.yml'
+      - '.github/workflows/r376-native-source-diagnostic-recovery-e2e.yml'
+      - 'poc/scripts/r6-legacy-references.mjs'
+      # R424: retired trigger payloads; retain no-AI manual native E2E and static wiring safeguards.
+      - '.github/workflows/r3818-canonical-private-native-mcp-e2e.yml'
+      - '.github/workflows/r384-native-create-cas-e2e.yml'
+      # R444: source proof kept; superseded manual R384.2 launcher retired.
+      - 'poc/packages/orchestrator-runtime/test/r3842-native-a2a-adk-create-e2e.mjs'
+      - '.github/workflows/r3843-native-adaptive-d1-create-retest-fail-e2e.yml'
+      - '.github/workflows/r3844-functional-create-d1-pass-native-e2e.yml'
+      - '.github/workflows/r38512-native-test-agent-postfail-probe.yml'
+      - '.github/workflows/r38513-native-strict-full-recovery.yml'
+      - '.github/workflows/r3858-native-strict-postfail-diagnostic-probe.yml'
+      - '.github/workflows/r3859-native-second-postfail-diagnostic-probe.yml'
+      # R439: standalone R387/R388 and R139 launchers retired; retain native-source CI triggers.
+      - 'poc/packages/orchestrator-runtime/test/r387-native-test-agent-create-e2e.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r388-native-test-create-docker-e2e.mjs'
+      - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.mjs'
+      - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.test.mjs'
+      - 'poc/scripts/test/r3858-native-strict-postfail-wiring.test.mjs'
+      - 'poc/scripts/test/r3859-native-second-postfail-wiring.test.mjs'
+      # R441: R394 standalone wrapper is gone; retain proof source and R395 full A2A runner coverage.
+      - 'poc/packages/orchestrator-runtime/test/r394-native-test-runner-pass-e2e.mjs'
+      - 'poc/packages/orchestrator-runtime/test/r395-native-a2a-runner-e2e.mjs'
+      # R422.1: old one-shot CI triggers are retired; source proofs stay native/manual.
+      - 'poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs'
+      - 'poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs'
+      - 'poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs'
+      - '.github/workflows/d1-private-assertion-e2e.yml'
+      - '.github/workflows/engineer-direct-native-contract.yml'
+      - '.github/workflows/engineer-direct-native-evm-e2e.yml'
+      - '.github/workflows/engineer-embedded-signed-d1-e2e.yml'
+      - '.github/workflows/engineer-embedded-signed-dag-e2e.yml'
+      - 'poc/scripts/r3854-legacy-dag-closure-audit.mjs'
+      - 'poc/scripts/test/r409-owner-repair-core-migration.test.mjs'
       - 'poc/apps/test-runner-controller/src/**'
       - 'poc/runner/acceptance/**'
   workflow_dispatch:
@@ -23,8 +159,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # R385.18: the historical HTTP Runner positive smoke is still preserved
+  # below, but can no longer be mistaken for native Rust/Child/VP coverage.
+  # This reusable workflow runs the full original Engineer/OPA/Gitea/
+  # task-local MCP/A2A/Docker FAIL->PASS/independent Draft PR regression
+  # on the SAME calling workflow SHA. It has no billable AI or merge path.
+  authority-only-native-rust-positive:
+    name: Canonical native Rust + private MCP + Docker FAIL to PASS (No AI)
+    uses: ./.github/workflows/r38513-native-strict-full-recovery.yml
+    permissions:
+      contents: read
+
   real-positive-exact-sha:
-    name: Disposable Gitea + Real Docker Runner + Researcher Acceptance
+    name: Disposable Gitea + Real Docker + CI/Human Gate same-PR readiness
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -43,9 +190,41 @@ jobs:
       - name: Install local PoC dependencies
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
+      - name: Verify exact Rust/Child/VP reusable route and historical caller fence (no AI)
+        # Read-only parsed import and workflow inspection; never starts
+        # an Adapter, source editor, Gemini, merge executor or Runner.
+        run: |
+          node --experimental-vm-modules poc/scripts/r38517-canonical-route-closure.mjs
+          node --experimental-vm-modules --test poc/scripts/test/r38517-canonical-route-closure.test.mjs
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/check-local-imports.test.mjs
+          node --test poc/scripts/test/r3850-engineer-issuer-boundary.test.mjs
+          node --experimental-vm-modules --test poc/scripts/test/r407-historical-runner-issuer-isolation.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-authority-only-legacy-retirement.test.mjs
+          node --test poc/scripts/test/r235-embedded-engineer-signed-dag-workflow.test.mjs poc/scripts/test/r237-embedded-engineer-signed-d1-workflow.test.mjs poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
+          node --test poc/scripts/test/protected-gitea-bootstrap.test.mjs poc/scripts/test/gemini-live-no-synthetic-merge.test.mjs poc/scripts/test/safe-delegation-failure-ledger.test.mjs
+          node --check poc/apps/orchestrator/src/trusted-engineer-host.mjs
+
+      - name: R410 Owner recovery audit and R459 scripted A2A regression gates
+        run: |
+          # Source-only Owner audits plus a separate local A2A fixture.
+          # No native Root signing, real Gitea provider, Gemini or merge here.
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/r459-scripted-planner-fourth-role-a2a.test.mjs
+          node --test poc/apps/orchestrator/test/r460-gemini-three-agent-binding.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-ci-pilot.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/disposable-gemini-adk-model-boundary.test.mjs
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r409-owner-repair-core-migration.test.mjs
+          node --test poc/scripts/test/r3853-owner-recovery-lazy-controller.test.mjs
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r411-legacy-compatibility.test.mjs
+          node --check poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs
+          node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
+          node --check poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs
+          node --check poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/r406-neutral-repair-model-contract.test.mjs
+
       - name: Preload disposable service and Runner Docker images
         run: |
           docker pull docker.gitea.com/gitea:28.0.0
+          docker pull openpolicyagent/opa:1.21.1
           docker pull node:22.15.0-bookworm
 
       - name: Run real positive acceptance with no external model
@@ -54,6 +233,10 @@ jobs:
           GITEA_ADMIN_PASSWORD: local-ci-fixture-only-${{ github.run_id }}-${{ github.run_attempt }}
           GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
           TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          # R397: same disposable REAL Gitea feature PR / original CI status,
+          # distinct fixture reviewer and read-only merge-readiness gate.
+          # This performs NO merge or paid inference.
+          APPROVED_RUNNER_REAL_GITEA_HUMAN_GATE: "1"
         run: npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
 
       - name: Report any temporary containers after failure

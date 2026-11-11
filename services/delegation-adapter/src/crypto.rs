@@ -3,9 +3,11 @@ use crate::config::{AdapterConfig, AdapterTrustProfile, EvmAdapterConfig};
 use crate::evm_profile::EvmAdapterProfile;
 use ark_bn254::Bn254;
 use delegation::delegation::authorization::authorization_context::AuthorizationContext;
+use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::authorization::verified_delegation::VerifiedDelegation;
 use delegation::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
@@ -25,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 type Curve = Bn254;
 
@@ -73,11 +75,54 @@ pub struct VerifyPresentationRequest {
     pub signed_vp: String,
 }
 
+/// Separate multipermission verification API; the existing request JSON
+/// with `required_permission` remains fully backward compatible.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerifyMultiplePresentationRequest {
+    pub presenter: CallerRole,
+    pub audience: String,
+    pub challenge: String,
+    pub required_permissions: Vec<Permission>,
+    pub signed_vp: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateCredentialStatusRequest {
     pub credential_id: String,
     pub status_set: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReadCredentialStatusRequest {
+    pub credential_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CredentialStatusReadResponse {
+    pub credential_id: String,
+    pub status_purpose: String,
+    pub status_set: bool,
+    pub source: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_version: Option<u64>,
+}
+
+/// R128: exact root claims from the CURRENT Rust Adapter-issued record,
+/// never a model claim or a raw DC/VP. This is issuer-local observation,
+/// not independent signed-presentation verification or an execution grant.
+#[derive(Clone, Debug, Serialize)]
+pub struct IssuedRootInspectionResponse {
+    pub credential_id: String,
+    pub issuer_id: String,
+    pub delegatee_id: String,
+    pub iat_ns: String,
+    pub exp_ns: String,
+    pub permissions: Vec<Permission>,
+    pub status: CredentialStatusReadResponse,
+    pub source: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -200,13 +245,7 @@ impl CryptoRuntime {
     ) -> Result<HashMap<CallerRole, DelegationIssuer<Curve>>, String> {
         let mut issuers = HashMap::new();
 
-        for role in [
-            CallerRole::Engineer,
-            CallerRole::Orchestrator,
-            CallerRole::Backend,
-            CallerRole::Frontend,
-            CallerRole::Test,
-        ] {
+        for role in callers.managed_identity_roles()? {
             let identity = callers.identity_for_role(role)?.to_string();
             let mut issuer = DelegationIssuer::<Curve>::new(identity.clone())?;
 
@@ -353,10 +392,21 @@ impl CryptoRuntime {
         }
         if !matches!(
             request.delegatee,
-            CallerRole::Backend | CallerRole::Frontend | CallerRole::Test
+            CallerRole::Backend
+                | CallerRole::Frontend
+                | CallerRole::Test
+                | CallerRole::Additional(_)
         ) {
             return Err(String::from(
-                "Child credentials may target only Backend, Frontend, or Test roles",
+                "Child credentials may target only provisioned specialist roles",
+            ));
+        }
+        if matches!(request.delegatee, CallerRole::Additional(_))
+            && (request.permissions.len() != 1
+                || request.permissions[0].operation() != &Operation::ReadFile)
+        {
+            return Err(String::from(
+                "Additional native Child must contain exactly one signed read_file grant",
             ));
         }
         validate_common_issue_fields(
@@ -479,6 +529,143 @@ impl CryptoRuntime {
         })
     }
 
+    /// Restricted observation for post-Execution audits.
+    ///
+    /// This is NOT a credential mutation, authorization success,
+    /// independent verifier or physical runner attestation. In EVM mode
+    /// it checks the CURRENT chain anchor and signature on the original
+    /// compact Status List JWT before inspecting its revocation bit.
+    pub fn read_credential_status(
+        &self,
+        caller: &CallerRecord,
+        callers: &CallerRegistry,
+        request: ReadCredentialStatusRequest,
+    ) -> Result<CredentialStatusReadResponse, String> {
+        require_capability(caller, CallerCapability::VerifyPresentation)?;
+        if caller.role() != CallerRole::Gateway {
+            return Err(String::from(
+                "Only the authenticated Gateway can inspect credential status",
+            ));
+        }
+        if request.credential_id.trim().is_empty() || request.credential_id.len() > 256 {
+            return Err(String::from(
+                "Credential status inspection requires a bounded ID",
+            ));
+        }
+        let credential = self
+            .credentials
+            .get(&request.credential_id)
+            .ok_or_else(|| String::from("Credential is not present in this Adapter runtime"))?;
+        let entry = credential
+            .credential_status()
+            .ok_or_else(|| String::from("Credential has no status entry"))?;
+        if *entry.status_purpose() != StatusPurpose::Revocation {
+            return Err(String::from("R5 inspection accepts revocation status only"));
+        }
+        let issuer_id = credential.issuer();
+        let (set, source, version) = if let Some(profile) = &self.evm_profile {
+            let role = [CallerRole::Engineer, CallerRole::Orchestrator]
+                .into_iter()
+                .find(|role| callers.identity_for_role(*role).ok() == Some(issuer_id))
+                .ok_or_else(|| String::from("Unrecognized root/child issuer"))?;
+            let verification_jwk = self
+                .issuers
+                .get(&role)
+                .ok_or_else(|| String::from("Missing issuer verification material"))?
+                .public_verification_key();
+            let (set, version) =
+                profile.observe_anchored_status(issuer_id, entry, verification_jwk)?;
+            (set, "evm_anchored_signed_jwt", Some(version))
+        } else {
+            let set = self
+                .status_resolver
+                .as_ref()
+                .ok_or_else(|| String::from("Missing in-memory status resolver"))?
+                .is_status_set(issuer_id, entry)?;
+            (set, "adapter_memory_only", None)
+        };
+        Ok(CredentialStatusReadResponse {
+            credential_id: request.credential_id,
+            status_purpose: entry.status_purpose().as_str().to_string(),
+            status_set: set,
+            source,
+            anchor_version: version,
+        })
+    }
+
+    /// R128 private Gateway-only issued-root registry inspection. The
+    /// adapter itself must possess a root actually issued by its Engineer
+    /// identity. No raw credential, accumulator witness, VP or private
+    /// signing material is returned. Rust's anchored Status List check
+    /// still runs, but separate proof verification remains mandatory.
+    pub fn read_issued_root(
+        &self,
+        caller: &CallerRecord,
+        callers: &CallerRegistry,
+        request: ReadCredentialStatusRequest,
+    ) -> Result<IssuedRootInspectionResponse, String> {
+        require_capability(caller, CallerCapability::VerifyPresentation)?;
+        if caller.role() != CallerRole::Gateway {
+            return Err(String::from("Only the Gateway can inspect an issued root"));
+        }
+        if request.credential_id.is_empty() || request.credential_id.len() > 256 {
+            return Err(String::from("Bounded root credential ID required"));
+        }
+        let root = self
+            .credentials
+            .get(&request.credential_id)
+            .ok_or_else(|| String::from("Root was not issued by this Adapter instance"))?;
+        if root.id() != &request.credential_id
+            || root.issuer() != callers.identity_for_role(CallerRole::Engineer)?
+            || root.credential().delegatee_id()
+                != callers.identity_for_role(CallerRole::Orchestrator)?
+            || !root.credential().hierarchy().is_empty()
+        {
+            return Err(String::from(
+                "Issued credential is not the Engineer-to-Orchestrator root",
+            ));
+        }
+        let iat = root
+            .credential()
+            .iat()
+            .parse::<u128>()
+            .map_err(|_| String::from("Invalid issued root start time"))?;
+        let exp = root
+            .credential()
+            .exp()
+            .parse::<u128>()
+            .map_err(|_| String::from("Invalid issued root expiration"))?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| String::from("System clock before epoch"))?
+            .as_nanos();
+        if iat > now || exp <= now || exp <= iat {
+            return Err(String::from("Issued root is outside its validity interval"));
+        }
+        let grants = root.credential().permissions();
+        if grants.is_empty() || grants.len() > 128 {
+            return Err(String::from("Invalid issued root grant count"));
+        }
+        let mut unique = std::collections::HashSet::new();
+        if grants.iter().any(|g| !unique.insert(g.canonical_value())) {
+            return Err(String::from("Duplicate issued root grant"));
+        }
+        let status = self.read_credential_status(caller, callers, request)?;
+        if status.status_set {
+            return Err(String::from("Issued root has been revoked"));
+        }
+        Ok(IssuedRootInspectionResponse {
+            credential_id: root.id().clone(),
+            issuer_id: root.issuer().clone(),
+            delegatee_id: root.credential().delegatee_id().clone(),
+            iat_ns: iat.to_string(),
+            exp_ns: exp.to_string(),
+            permissions: grants.clone(),
+            status,
+            source: "adapter_local_issued_root",
+        })
+    }
+
     pub fn create_presentation(
         &self,
         caller: &CallerRecord,
@@ -525,6 +712,7 @@ impl CryptoRuntime {
                 | CallerRole::Backend
                 | CallerRole::Frontend
                 | CallerRole::Test
+                | CallerRole::Additional(_)
         ) {
             return Err(String::from(
                 "Presenter must be an Orchestrator or specialized Agent role",
@@ -537,6 +725,45 @@ impl CryptoRuntime {
             request.audience,
             request.challenge,
             request.required_permission,
+        )?;
+
+        self.verifier
+            .verify_verifiable_presentation(context, request.signed_vp)
+    }
+
+    /// Verify the entire requested permission set with one signed VP.
+    /// Nothing is authorized unless every requirement passes Rust Core checks.
+    pub fn verify_multiple_presentation(
+        &self,
+        caller: &CallerRecord,
+        callers: &CallerRegistry,
+        request: VerifyMultiplePresentationRequest,
+    ) -> Result<VerifiedDelegation, String> {
+        require_capability(caller, CallerCapability::VerifyPresentation)?;
+        if caller.role() != CallerRole::Gateway {
+            return Err(String::from(
+                "Only the Gateway caller may invoke presentation verification",
+            ));
+        }
+        if !matches!(
+            request.presenter,
+            CallerRole::Orchestrator
+                | CallerRole::Backend
+                | CallerRole::Frontend
+                | CallerRole::Test
+                | CallerRole::Additional(_)
+        ) {
+            return Err(String::from(
+                "Presenter must be an Orchestrator or specialized Agent role",
+            ));
+        }
+
+        let presenter_id = callers.identity_for_role(request.presenter)?.to_string();
+        let context = AuthorizationContext::new_multiple(
+            presenter_id,
+            request.audience,
+            request.challenge,
+            request.required_permissions,
         )?;
 
         self.verifier
@@ -642,6 +869,65 @@ mod tests {
         .unwrap()
     }
 
+    fn reviewer_callers() -> CallerRegistry {
+        CallerRegistry::new(vec![
+            CallerRecord::new(
+                CallerRole::Engineer,
+                String::from("engineer-token"),
+                String::from("did:thesis:engineer"),
+                vec![CallerCapability::IssueRoot, CallerCapability::ManageStatus],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Orchestrator,
+                String::from("orchestrator-token"),
+                String::from("did:thesis:orchestrator"),
+                vec![
+                    CallerCapability::IssueChild,
+                    CallerCapability::ManageStatus,
+                    CallerCapability::CreatePresentation,
+                ],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Backend,
+                String::from("backend-token"),
+                String::from("did:thesis:backend"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Frontend,
+                String::from("frontend-token"),
+                String::from("did:thesis:frontend"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Test,
+                String::from("test-token"),
+                String::from("did:thesis:test"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::from_name("reviewer").unwrap(),
+                String::from("reviewer-token"),
+                String::from("did:thesis:reviewer"),
+                vec![CallerCapability::CreatePresentation],
+            )
+            .unwrap(),
+            CallerRecord::new(
+                CallerRole::Gateway,
+                String::from("gateway-token"),
+                String::from("urn:thesis:gateway"),
+                vec![CallerCapability::VerifyPresentation],
+            )
+            .unwrap(),
+        ])
+        .unwrap()
+    }
+
     fn permission(operation: Operation) -> Permission {
         Permission::new(
             String::from("gitea://gitea.local/thesis/iam-console-poc"),
@@ -681,6 +967,239 @@ mod tests {
                 },
             )
             .unwrap()
+    }
+
+    #[test]
+    fn r128_gateway_reads_exact_issued_root_scope_and_current_status() {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry).unwrap();
+        let issued = issue_root(&mut runtime, &registry);
+        let gateway = registry.record_for_role(CallerRole::Gateway).unwrap();
+        let read = |rt: &CryptoRuntime, id: &str| {
+            rt.read_issued_root(
+                gateway,
+                &registry,
+                ReadCredentialStatusRequest {
+                    credential_id: id.to_string(),
+                },
+            )
+        };
+        let observed = read(&runtime, issued.id()).unwrap();
+        assert_eq!(observed.credential_id, *issued.id());
+        assert_eq!(observed.issuer_id, "did:thesis:engineer");
+        assert_eq!(observed.delegatee_id, "did:thesis:orchestrator");
+        assert_eq!(observed.permissions, *issued.credential().permissions());
+        assert_eq!(observed.status.source, "adapter_memory_only");
+        assert_eq!(observed.source, "adapter_local_issued_root");
+        let start = observed.iat_ns.parse::<u128>().unwrap();
+        let end = observed.exp_ns.parse::<u128>().unwrap();
+        assert!(end > start);
+        assert!(read(&runtime, "urn:unissued:root").is_err());
+        assert!(
+            runtime
+                .read_issued_root(
+                    registry.record_for_role(CallerRole::Engineer).unwrap(),
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: issued.id().clone(),
+                    },
+                )
+                .is_err()
+        );
+
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
+        let child = runtime
+            .issue_child(
+                orchestrator,
+                &registry,
+                IssueChildRequest {
+                    parent_credential_id: issued.id().clone(),
+                    credential_id: String::from("urn:credential:r128-child"),
+                    delegatee: CallerRole::Backend,
+                    valid_from: String::from("2026-10-30T00:00:00Z"),
+                    validity_seconds: 600,
+                    credential_status: status(303),
+                    permissions: vec![permission(Operation::ReadFile)],
+                },
+            )
+            .unwrap();
+        assert!(read(&runtime, child.id()).is_err());
+        runtime
+            .update_credential_status(
+                registry.record_for_role(CallerRole::Engineer).unwrap(),
+                UpdateCredentialStatusRequest {
+                    credential_id: issued.id().clone(),
+                    status_set: true,
+                },
+            )
+            .unwrap();
+        assert!(read(&runtime, issued.id()).is_err());
+    }
+
+    #[test]
+    fn authenticated_gateway_can_inspect_root_and_child_revocation_without_mutating() {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry).unwrap();
+        issue_root(&mut runtime, &registry);
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
+        runtime
+            .issue_child(
+                orchestrator,
+                &registry,
+                IssueChildRequest {
+                    parent_credential_id: String::from("urn:credential:root"),
+                    credential_id: String::from("urn:credential:audited-child"),
+                    delegatee: CallerRole::Backend,
+                    valid_from: String::from("2026-10-05T00:00:00Z"),
+                    validity_seconds: 1800,
+                    credential_status: status(101),
+                    permissions: vec![permission(Operation::ReadFile)],
+                },
+            )
+            .unwrap();
+
+        let gateway = registry.record_for_role(CallerRole::Gateway).unwrap();
+        let engineer = registry.record_for_role(CallerRole::Engineer).unwrap();
+        let read = |runtime: &CryptoRuntime, id: &str| {
+            runtime
+                .read_credential_status(
+                    gateway,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: id.to_string(),
+                    },
+                )
+                .unwrap()
+        };
+        for id in ["urn:credential:root", "urn:credential:audited-child"] {
+            let observed = read(&runtime, id);
+            assert!(!observed.status_set);
+            assert_eq!(observed.status_purpose, "revocation");
+            assert_eq!(observed.source, "adapter_memory_only");
+            assert_eq!(observed.anchor_version, None);
+        }
+        // The *owner* caller performs the already-authorized irreversible
+        // revocation; the new Gateway observation does not perform writes.
+        runtime
+            .update_credential_status(
+                engineer,
+                UpdateCredentialStatusRequest {
+                    credential_id: String::from("urn:credential:root"),
+                    status_set: true,
+                },
+            )
+            .unwrap();
+        runtime
+            .update_credential_status(
+                orchestrator,
+                UpdateCredentialStatusRequest {
+                    credential_id: String::from("urn:credential:audited-child"),
+                    status_set: true,
+                },
+            )
+            .unwrap();
+        assert!(read(&runtime, "urn:credential:root").status_set);
+        assert!(read(&runtime, "urn:credential:audited-child").status_set);
+
+        assert!(
+            runtime
+                .read_credential_status(
+                    engineer,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: String::from("urn:credential:root")
+                    }
+                )
+                .is_err()
+        );
+        assert!(
+            runtime
+                .read_credential_status(
+                    gateway,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: String::from("urn:credential:missing")
+                    }
+                )
+                .is_err()
+        );
+        assert!(
+            runtime
+                .read_credential_status(
+                    gateway,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: " ".repeat(3)
+                    }
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn r129_engineer_root_requires_real_orchestrator_signed_fresh_multipermission_vp() {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry).unwrap();
+        let original = issue_root(&mut runtime, &registry);
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
+        let gateway = registry.record_for_role(CallerRole::Gateway).unwrap();
+        let perms = original.credential().permissions().clone();
+        let vp = runtime
+            .create_presentation(
+                orchestrator,
+                CreatePresentationRequest {
+                    credential_id: original.id().clone(),
+                    disclosed_permissions: perms.clone(),
+                    audience: String::from("urn:thesis:gateway:root-repair"),
+                    challenge: String::from("r129-independent-gateway-random-challenge"),
+                },
+            )
+            .unwrap();
+        let verify = |challenge: &str, required: Vec<Permission>| {
+            runtime.verify_multiple_presentation(
+                gateway,
+                &registry,
+                VerifyMultiplePresentationRequest {
+                    presenter: CallerRole::Orchestrator,
+                    audience: String::from("urn:thesis:gateway:root-repair"),
+                    challenge: challenge.to_string(),
+                    required_permissions: required,
+                    signed_vp: vp.signed_vp.clone(),
+                },
+            )
+        };
+        let verified = verify("r129-independent-gateway-random-challenge", perms.clone()).unwrap();
+        assert_eq!(verified.credential_id(), original.id());
+        assert_eq!(verified.presenter_id(), "did:thesis:orchestrator");
+        assert_eq!(verified.issuer_id(), "did:thesis:engineer");
+        assert_eq!(verified.hierarchy_depth(), 0);
+        assert_eq!(verified.permissions(), &perms);
+        assert!(verify("r129-replayed-other-challenge", perms.clone()).is_err());
+        assert!(
+            verify(
+                "r129-independent-gateway-random-challenge",
+                vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::CreatePullRequest),
+                ],
+            )
+            .is_err()
+        );
+        assert!(
+            runtime
+                .verify_multiple_presentation(
+                    gateway,
+                    &registry,
+                    VerifyMultiplePresentationRequest {
+                        presenter: CallerRole::Backend,
+                        audience: String::from("urn:thesis:gateway:root-repair"),
+                        challenge: String::from("r129-independent-gateway-random-challenge"),
+                        required_permissions: perms,
+                        signed_vp: vp.signed_vp,
+                    },
+                )
+                .is_err()
+        );
     }
 
     #[test]
@@ -742,6 +1261,243 @@ mod tests {
             verified.permissions(),
             &vec![permission(Operation::ReadFile)]
         );
+    }
+
+    /// R456 native cryptographic positive: a dynamically provisioned
+    /// specialist is a distinct Rust issuer/presenter, not Backend's key.
+    /// This uses real in-memory Rust Core signatures/status, NOT EVM/OPA.
+    #[test]
+    fn additional_reviewer_signed_child_and_vp_verify_with_own_role_only() -> Result<(), String> {
+        let registry = reviewer_callers();
+        let mut runtime = CryptoRuntime::new(&registry)?;
+        issue_root(&mut runtime, &registry);
+        let role = CallerRole::from_name("reviewer")?;
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator)?;
+        let child = runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:reviewer"),
+                delegatee: role,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(157),
+                permissions: vec![permission(Operation::ReadFile)],
+            },
+        )?;
+        assert_eq!(child.credential().delegatee_id(), "did:thesis:reviewer");
+
+        let rejected_write = runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:reviewer-write"),
+                delegatee: role,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(158),
+                permissions: vec![permission(Operation::UpdateFile)],
+            },
+        );
+        assert!(rejected_write.is_err());
+
+        let signer = registry.record_for_role(role)?;
+        assert!(!signer.has_capability(CallerCapability::IssueChild));
+        assert!(!signer.has_capability(CallerCapability::IssueRoot));
+        let presenter = runtime.create_presentation(
+            signer,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:reviewer"),
+                disclosed_permissions: vec![permission(Operation::ReadFile)],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("r456-unique-gateway-challenge"),
+            },
+        )?;
+        let gateway = registry.record_for_role(CallerRole::Gateway)?;
+        let verified = runtime.verify_presentation(
+            gateway,
+            &registry,
+            VerifyPresentationRequest {
+                presenter: role,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("r456-unique-gateway-challenge"),
+                required_permission: permission(Operation::ReadFile),
+                signed_vp: presenter.signed_vp.clone(),
+            },
+        )?;
+        assert_eq!(verified.presenter_id(), "did:thesis:reviewer");
+        assert_eq!(verified.hierarchy_depth(), 1);
+        assert_eq!(
+            verified.permissions(),
+            &vec![permission(Operation::ReadFile)]
+        );
+
+        for (presenter_role, challenge, operation) in [
+            (
+                CallerRole::Backend,
+                "r456-unique-gateway-challenge",
+                Operation::ReadFile,
+            ),
+            (
+                CallerRole::Frontend,
+                "r456-unique-gateway-challenge",
+                Operation::ReadFile,
+            ),
+            (role, "r456-forged-challenge", Operation::ReadFile),
+            (role, "r456-unique-gateway-challenge", Operation::UpdateFile),
+        ] {
+            let invalid = runtime.verify_presentation(
+                gateway,
+                &registry,
+                VerifyPresentationRequest {
+                    presenter: presenter_role,
+                    audience: String::from("cloud-access-gateway"),
+                    challenge: String::from(challenge),
+                    required_permission: permission(operation),
+                    signed_vp: presenter.signed_vp.clone(),
+                },
+            );
+            assert!(
+                invalid.is_err(),
+                "wrong role, nonce or operation must be rejected"
+            );
+        }
+
+        let other = registry.record_for_role(CallerRole::Backend)?;
+        assert!(
+            runtime
+                .create_presentation(
+                    other,
+                    CreatePresentationRequest {
+                        credential_id: String::from("urn:credential:reviewer"),
+                        disclosed_permissions: vec![permission(Operation::ReadFile)],
+                        audience: String::from("cloud-access-gateway"),
+                        challenge: String::from("r456-stolen-role-token"),
+                    },
+                )
+                .is_err()
+        );
+
+        // Revocation of an already issued fourth-specialist Child invalidates
+        // the SAME previously verified signed VP. Only the Orchestrator
+        // issuer manages this Child status, not the specialist or Backend.
+        assert!(
+            runtime
+                .update_credential_status(
+                    signer,
+                    UpdateCredentialStatusRequest {
+                        credential_id: String::from("urn:credential:reviewer"),
+                        status_set: true,
+                    },
+                )
+                .is_err()
+        );
+        let revoked = runtime.update_credential_status(
+            orchestrator,
+            UpdateCredentialStatusRequest {
+                credential_id: String::from("urn:credential:reviewer"),
+                status_set: true,
+            },
+        )?;
+        assert!(revoked.status_set);
+        assert!(
+            runtime
+                .verify_presentation(
+                    gateway,
+                    &registry,
+                    VerifyPresentationRequest {
+                        presenter: role,
+                        audience: String::from("cloud-access-gateway"),
+                        challenge: String::from("r456-unique-gateway-challenge"),
+                        required_permission: permission(Operation::ReadFile),
+                        signed_vp: presenter.signed_vp,
+                    },
+                )
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn adapter_verifies_multiple_permissions_atomically() -> Result<(), String> {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry)?;
+        issue_root(&mut runtime, &registry);
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator)?;
+        runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:multi-backend"),
+                delegatee: CallerRole::Backend,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(30),
+                permissions: vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::UpdateFile),
+                ],
+            },
+        )?;
+        let backend = registry.record_for_role(CallerRole::Backend)?;
+        let gateway = registry.record_for_role(CallerRole::Gateway)?;
+        let presentation = runtime.create_presentation(
+            backend,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:multi-backend"),
+                disclosed_permissions: vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::UpdateFile),
+                ],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-adapter-multi"),
+            },
+        )?;
+        let request = VerifyMultiplePresentationRequest {
+            presenter: CallerRole::Backend,
+            audience: String::from("cloud-access-gateway"),
+            challenge: String::from("challenge-adapter-multi"),
+            required_permissions: vec![
+                permission(Operation::ReadFile),
+                permission(Operation::UpdateFile),
+            ],
+            signed_vp: presentation.signed_vp.clone(),
+        };
+        let verified = runtime.verify_multiple_presentation(gateway, &registry, request)?;
+        assert_eq!(verified.permissions().len(), 2);
+
+        let missing = runtime.verify_multiple_presentation(
+            gateway,
+            &registry,
+            VerifyMultiplePresentationRequest {
+                presenter: CallerRole::Backend,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-adapter-multi"),
+                required_permissions: vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::CreateFile),
+                ],
+                signed_vp: presentation.signed_vp.clone(),
+            },
+        );
+        assert!(missing.is_err());
+
+        let empty = runtime.verify_multiple_presentation(
+            gateway,
+            &registry,
+            VerifyMultiplePresentationRequest {
+                presenter: CallerRole::Backend,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-adapter-multi"),
+                required_permissions: vec![],
+                signed_vp: presentation.signed_vp,
+            },
+        );
+        assert!(empty.is_err());
+        Ok(())
     }
 
     #[test]

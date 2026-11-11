@@ -1,4 +1,6 @@
 import type {AdkControlledToolOutcome} from "./adk-specialized-agents.ts";
+import {safeRunnerFailedPhaseHint,type TypecheckScopeSummary}
+  from "./safe-runner-failure.ts";
 
 /**
  * Per-task, non-sensitive aggregate. Raw repository paths stay only in memory;
@@ -11,8 +13,32 @@ export class AdkToolProgress {
   #duplicateReads = 0;
   #successfulWrites = 0;
   #failedWrites = 0;
+  #requiresFreshEngineerApproval = false;
+  #typecheckScopeSummary:TypecheckScopeSummary|null = null;
+
+  /** Sticky trusted control-plane referral. This never creates a permission. */
+  get requiresFreshEngineerApproval(): boolean {
+    return this.#requiresFreshEngineerApproval;
+  }
+
+  get typecheckScopeSummary():TypecheckScopeSummary|null {
+    return this.#typecheckScopeSummary;
+  }
 
   observe(event: AdkControlledToolOutcome): void {
+    if(event.name === "run_tests" && !event.payload.ok &&
+       event.payload.error.kind==="tests_failed"){
+      const details=event.payload.error.details;
+      // The trusted referral flag is sticky even when an older runner has
+      // not supplied a recognized failed phase; never silently clear it.
+      if(details!==null&&typeof details==="object"&&!Array.isArray(details)&&
+         (details as {repair_requires_new_approval?:unknown})
+           .repair_requires_new_approval===true){
+        this.#requiresFreshEngineerApproval=true;
+        this.#typecheckScopeSummary=
+          safeRunnerFailedPhaseHint(details)?.typecheck_scope_summary??null;
+      }
+    }
     if (event.name === "read_file") {
       if (!event.payload.ok) {
         this.#failedReads++;

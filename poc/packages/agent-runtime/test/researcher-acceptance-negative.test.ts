@@ -51,6 +51,9 @@ function fixture({mutateResult=()=>{},log=acceptanceLog,candidatePresent=false}=
           phases:[...structuredClone(phases),structuredClone(acceptance)],
           project_tests:{status:"pass",phases:structuredClone(phases)},
           researcher_acceptance:structuredClone(acceptance),
+          acceptance_failure:{failed_checks:["admin_reactivate","admin_suspend",
+            "duplicate_transitions","ui_pending_actions","ui_state_actions"],
+            timed_out:false,unclassified_failure:false},
           log_reference:"runner-log://00000000-0000-4000-8000-000000000000"};
         mutateResult(result,branches);
         return result;
@@ -157,4 +160,16 @@ test("negative control cannot target a remote server or a different baseline",as
     giteaBaseUrl:"https://github.com"}),/requires disposable loopback/u);
   await assert.rejects(runResearcherAcceptanceNegative({...config,
     baselineSha:"b".repeat(40)}),/immutable pre-suspension baseline/u);
+});
+
+test("acceptance negative control requires bounded requirement IDs and rejects timeouts",async()=>{
+ for(const diagnostic of [undefined,
+  {failed_checks:["admin_suspend"],timed_out:false,unclassified_failure:false},
+  {failed_checks:["admin_reactivate","admin_suspend","duplicate_transitions",
+    "ui_pending_actions","ui_state_actions"],timed_out:true,unclassified_failure:false}
+ ]){
+  const f=fixture({mutateResult:result=>{result.acceptance_failure=diagnostic;}});
+  await assert.rejects(runResearcherAcceptanceNegative(config,f.dependencies),/fixed researcher check IDs/u);
+  assert.deepEqual([...f.branches.keys()],["main"]);
+ }
 });

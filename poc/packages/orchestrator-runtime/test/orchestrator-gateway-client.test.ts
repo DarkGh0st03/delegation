@@ -1,242 +1,194 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  OrchestratorGatewayClientError,
-  OrchestratorProtectedGatewayClient
-} from "../src/index.ts";
+import {createServer} from "node:net";
+import {mkdtempSync,rmSync} from "node:fs";
+import {join} from "node:path";
+import {tmpdir} from "node:os";
+import {OrchestratorGatewayTransport}
+ from "../src/orchestrator-gateway-transport.ts";
+import * as canonicalApi from "../src/index.ts";
+import {OrchestratorPlanningGatewayReadClient}
+ from "../src/orchestrator-gateway-client.ts";
 
-const baseline = "a".repeat(40);
-const feature = "b".repeat(40);
+test("R173 canonical Orchestrator excludes fixed Account Suspension branch/PR writer",()=>{
+ const planning=OrchestratorPlanningGatewayReadClient.prototype;
+ assert.equal(typeof canonicalApi.OrchestratorPlanningGatewayReadClient,"function");
+ assert.equal(Object.hasOwn(planning,"readPlanningResource"),true);
+ assert.equal(Object.hasOwn(planning,"createFeatureBranch"),false);
+ assert.equal(Object.hasOwn(planning,"createAccountSuspensionPullRequest"),false);
+ assert.equal(Object.hasOwn(canonicalApi,"OrchestratorProtectedGatewayClient"),false);
+});
 
-function createFetch() {
-  const calls: Array<{
-    url: string;
-    headers: Record<string, string>;
-    body: Record<string, unknown>;
-  }> = [];
-
-  const fetchFn: typeof fetch = async (input, init) => {
-    const url = String(input);
-    const headers = Object.fromEntries(
-      new Headers(init?.headers).entries()
-    );
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    calls.push({ url, headers, body });
-
-    if (url.endsWith("/v1/authorization/prepare")) {
-      const tool = body.tool;
-      return new Response(
-        JSON.stringify({
-          request_id:
-            tool === "create_branch" ? "request-branch" : "request-pr",
-          audience: "cloud-access-gateway",
-          challenge:
-            tool === "create_branch" ? "challenge-1" : "challenge-2",
-          required_permission: {
-            resource: "gitea://gitea.local/thesis/iam-console-poc",
-            operation: tool
-          },
-          expires_at: "2026-10-05T18:00:00Z"
-        }),
-        { status: 201 }
-      );
-    }
-
-    if (url.endsWith("/v1/presentations")) {
-      return new Response(
-        JSON.stringify({
-          signed_vp: `signed-vp-${body.challenge}`
-        }),
-        { status: 201 }
-      );
-    }
-
-    if (url.endsWith("/v1/authorization/execute")) {
-      if (body.request_id === "request-branch") {
-        return new Response(
-          JSON.stringify({
-            decision: "allow",
-            execution: {
-              provider: "gitea",
-              performed: true,
-              tool: "create_branch",
-              branch: "feature/account-suspension",
-              base_branch: "main",
-              revision: baseline,
-              commit_sha: baseline
-            }
-          }),
-          { status: 200 }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          decision: "allow",
-          execution: {
-            provider: "gitea",
-            performed: true,
-            tool: "create_pull_request",
-            pull_request_id: 7,
-            pull_request_number: 3,
-            url: "http://gitea.local/thesis/iam-console-poc/pulls/3",
-            head_branch: "feature/account-suspension",
-            base_branch: "main",
-            revision: feature
-          }
-        }),
-        { status: 200 }
-      );
-    }
-
-    throw new Error(`Unexpected request ${url}`);
+test("R5 session cancellation between prepare and VP prevents Adapter and execute",async()=>{
+  const controller=new AbortController();
+  const calls:string[]=[];
+  const fetchFn:typeof fetch=async(url,init)=>{
+    calls.push(String(url));
+    assert.equal(init?.signal?.aborted,false);
+    // A simulated slow/uncooperative Gateway can still return a response
+    // after the controller cancels. No VP may be signed afterward.
+    controller.abort();
+    return new Response(JSON.stringify({
+      request_id:"once",audience:"gateway",challenge:"nonce",
+      required_permission:{operation:"read_repository",
+        resource:"gitea://gitea.local/thesis/invoices"}
+    }),{status:201});
   };
+  const client=new OrchestratorPlanningGatewayReadClient({
+    gatewayBaseUrl:"http://gateway",adapterBaseUrl:"http://adapter",
+    adapterToken:"private",rootCredentialId:"planning-root",fetchFn
+  });
+  await assert.rejects(()=>client.readPlanningResource(
+    "planning-session","read_repository",{},
+    {authority:"gitea.local",owner:"thesis",repository:"invoices"},
+    controller.signal
+  ),/cancelled/);
+  assert.equal(calls.length,1);
+  assert.ok(calls[0].endsWith("/prepare"));
+});
 
-  return { calls, fetchFn };
+test("R5 pre-cancelled Planning call cannot contact Gateway",async()=>{
+  let calls=0;
+  const controller=new AbortController();controller.abort();
+  const client=new OrchestratorPlanningGatewayReadClient({
+    gatewayBaseUrl:"http://gateway",adapterBaseUrl:"http://adapter",
+    adapterToken:"private",rootCredentialId:"planning-root",
+    fetchFn:async()=>{calls++;throw Error("must not run");}
+  });
+  await assert.rejects(()=>client.readPlanningResource(
+    "planning-session","read_repository",{},
+    {authority:"gitea.local",owner:"thesis",repository:"invoices"},
+    controller.signal
+  ),/cancelled/);
+  assert.equal(calls,0);
+});
+
+async function nativeIssuerFixture(t:import("node:test").TestContext,
+ onRequest:(request:Record<string,unknown>)=>unknown){
+ const directory=mkdtempSync(join(tmpdir(),"delegation-r218-native-"));
+ const socketPath=join(directory,"issuer.sock");
+ const calls:Record<string,unknown>[]=[];
+ const server=createServer({allowHalfOpen:true},socket=>{
+  let input="";
+  socket.on("data",chunk=>input+=chunk.toString("utf8"));
+  socket.on("end",()=>{
+   try{
+    const request=JSON.parse(input) as Record<string,unknown>;
+    calls.push(request);
+    socket.end(JSON.stringify(onRequest(request)));
+   }catch{socket.destroy();}
+  });
+ });
+ await new Promise<void>((resolve,reject)=>{
+  server.once("error",reject);
+  server.listen(socketPath,resolve);
+ });
+ t.after(async()=>{
+  await new Promise<void>(resolve=>server.close(()=>resolve()));
+  rmSync(directory,{recursive:true,force:true});
+ });
+ return {socketPath,calls};
 }
 
-test("Orchestrator client creates only the frozen feature branch through prepare -> VP -> execute", async () => {
-  const { calls, fetchFn } = createFetch();
-  const client = new OrchestratorProtectedGatewayClient({
-    gatewayBaseUrl: "http://gateway.local",
-    adapterBaseUrl: "http://adapter.local",
-    adapterToken: "orchestrator-secret",
-    rootCredentialId: "urn:thesis:dc:orchestrator-root",
-    fetchFn
-  });
-
-  const result = await client.createFeatureBranch(
-    "phase9b-create-branch"
-  );
-
-  assert.equal(result.branch, "feature/account-suspension");
-  assert.equal(result.base_branch, "main");
-  assert.equal(result.revision, baseline);
-  assert.equal(calls.length, 3);
-
-  assert.deepEqual(calls[0]!.body, {
-    task_id: "phase9b-create-branch",
-    agent_role: "orchestrator",
-    tool: "create_branch",
-    arguments: {
-      base_branch: "main",
-      branch: "feature/account-suspension"
-    }
-  });
-  assert.equal(calls[0]!.headers.authorization, undefined);
-
-  assert.deepEqual(calls[1]!.body, {
-    credential_id: "urn:thesis:dc:orchestrator-root",
-    disclosed_permissions: [
-      {
-        resource: "gitea://gitea.local/thesis/iam-console-poc",
-        operation: "create_branch"
-      }
-    ],
-    audience: "cloud-access-gateway",
-    challenge: "challenge-1"
-  });
-  assert.equal(
-    calls[1]!.headers.authorization,
-    "Bearer orchestrator-secret"
-  );
-
-  assert.deepEqual(calls[2]!.body, {
-    request_id: "request-branch",
-    signed_vp: "signed-vp-challenge-1"
-  });
-  assert.equal("signed_vp" in result, false);
-});
-
-test("Orchestrator client creates only feature -> main Pull Requests", async () => {
-  const { calls, fetchFn } = createFetch();
-  const client = new OrchestratorProtectedGatewayClient({
-    gatewayBaseUrl: "http://gateway.local/",
-    adapterBaseUrl: "http://adapter.local/",
-    adapterToken: "orchestrator-secret",
-    rootCredentialId: "urn:thesis:dc:orchestrator-root",
-    fetchFn
-  });
-
-  const result =
-    await client.createAccountSuspensionPullRequest(
-      "phase9b-create-pr"
-    );
-
-  assert.equal(result.head_branch, "feature/account-suspension");
-  assert.equal(result.base_branch, "main");
-  assert.equal(result.pull_request_number, 3);
-  assert.deepEqual(calls[0]!.body, {
-    task_id: "phase9b-create-pr",
-    agent_role: "orchestrator",
-    tool: "create_pull_request",
-    arguments: {
-      head_branch: "feature/account-suspension",
-      base_branch: "main",
-      title: "Account Suspension Feature",
-      body:
-        "PoC changes produced under delegated authorization. Final merge requires Software Engineer review."
-    }
-  });
-});
-
-test("Orchestrator client fails closed on malformed provider results", async () => {
-  const fetchFn: typeof fetch = async (input, init) => {
-    const url = String(input);
-    const body = JSON.parse(String(init?.body)) as Record<
-      string,
-      unknown
-    >;
-
-    if (url.endsWith("/v1/authorization/prepare")) {
-      return new Response(
-        JSON.stringify({
-          request_id: "request-branch",
-          audience: "cloud-access-gateway",
-          challenge: "challenge",
-          required_permission: {
-            resource: "gitea://gitea.local/thesis/iam-console-poc",
-            operation: "create_branch"
-          }
-        }),
-        { status: 201 }
-      );
-    }
-    if (url.endsWith("/v1/presentations")) {
-      return new Response(
-        JSON.stringify({ signed_vp: "vp" }),
-        { status: 201 }
-      );
-    }
-    if (body.request_id === "request-branch") {
-      return new Response(
-        JSON.stringify({
-          execution: {
-            provider: "gitea",
-            performed: true,
-            tool: "create_branch",
-            branch: "feature/not-allowed",
-            base_branch: "main",
-            revision: baseline,
-            commit_sha: baseline
-          }
-        }),
-        { status: 200 }
-      );
-    }
-    throw new Error("Unexpected request");
+test("R218 Orchestrator Gateway uses native Rust VP and never downgrades on native denial",async t=>{
+ let denied=false;
+ const native=await nativeIssuerFixture(t,()=>denied
+  ?{ok:false,error:"PRIVATE_RUST_SIGNER_KEY"}
+  :{ok:true,result:{signed_vp:"native.signed.vp"}});
+ const oldSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const oldFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=native.socketPath;
+ process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+ let prepareCalls=0,executeCalls=0,adapterCalls=0;
+ try{
+  const fetchFn:typeof fetch=async(url,init)=>{
+   const target=String(url);
+   if(target==="http://trusted-gateway.invalid/v1/authorization/prepare"){
+    prepareCalls++;
+    return new Response(JSON.stringify({
+     request_id:"gateway-challenge-1",audience:"cloud-access-gateway",
+     challenge:"gateway-nonce",
+     required_permission:{resource:"gitea://gitea.local/thesis/invoices",
+      operation:"read_repository"}
+    }),{status:201});
+   }
+   if(target==="http://trusted-gateway.invalid/v1/authorization/execute"){
+    executeCalls++;
+    assert.equal(JSON.parse(String(init?.body)).signed_vp,"native.signed.vp");
+    return new Response(JSON.stringify({execution:{provider:"gitea",performed:true}}));
+   }
+   adapterCalls++;
+   throw Error("Legacy Adapter HTTP must not be contacted");
   };
-
-  const client = new OrchestratorProtectedGatewayClient({
-    gatewayBaseUrl: "http://gateway.local",
-    adapterBaseUrl: "http://adapter.local",
-    adapterToken: "orchestrator-secret",
-    rootCredentialId: "urn:thesis:dc:orchestrator-root",
-    fetchFn
+  const client=new OrchestratorGatewayTransport({
+   gatewayBaseUrl:"http://trusted-gateway.invalid",
+   adapterToken:"PRIVATE_ORCHESTRATOR_BEARER",
+   rootCredentialId:"urn:root:orchestrator",
+   fetchFn
   });
+  const first=await client.invoke("planning-1","read_repository",{});
+  assert.deepEqual(first,{provider:"gitea",performed:true});
+  assert.deepEqual(native.calls[0],{
+   token:"PRIVATE_ORCHESTRATOR_BEARER",operation:"create_presentation",
+   body:{credential_id:"urn:root:orchestrator",
+    disclosed_permissions:[{resource:"gitea://gitea.local/thesis/invoices",
+      operation:"read_repository"}],
+    audience:"cloud-access-gateway",challenge:"gateway-nonce"}
+  });
+  denied=true;
+  await assert.rejects(()=>client.invoke("planning-1","read_repository",{}),
+   error=>{
+    assert.match(String(error),/Native Rust Orchestrator presentation denied/u);
+    assert.doesNotMatch(String(error),/PRIVATE_RUST_SIGNER_KEY/u);
+    return true;
+   });
+  assert.equal(prepareCalls,2);
+  assert.equal(executeCalls,1);
+  assert.equal(native.calls.length,2);
+  assert.equal(adapterCalls,0);
+ }finally{
+  if(oldSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=oldSocket;
+  if(oldFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=oldFlag;
+ }
+});
 
-  await assert.rejects(
-    () => client.createFeatureBranch("phase9b-malformed"),
-    OrchestratorGatewayClientError
-  );
+test("R218 canonical Orchestrator refuses a missing native socket before Gateway prepare",()=>{
+ const oldSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const oldFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+ delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ try{
+  assert.throws(()=>new OrchestratorGatewayTransport({
+   gatewayBaseUrl:"http://trusted-gateway.invalid",
+   adapterToken:"PRIVATE_ORCHESTRATOR_BEARER",
+   rootCredentialId:"urn:root:orchestrator",
+   fetchFn:async()=>{throw Error("Forbidden Gateway request");}
+  }),/Canonical signed DAG requires native Rust Orchestrator signer socket/u);
+ }finally{
+  if(oldSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=oldSocket;
+  if(oldFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=oldFlag;
+ }
+});
+
+test("R240 historical Orchestrator HTTP signer requires explicit Adapter URL when native socket absent",()=>{
+ const priorSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const priorFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ try{
+  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  assert.throws(()=>new OrchestratorGatewayTransport({
+   gatewayBaseUrl:"http://trusted-gateway.invalid",
+   adapterToken:"PRIVATE_ORCHESTRATOR_BEARER",
+   rootCredentialId:"urn:r240:root"
+  }),/Historical Orchestrator HTTP signing requires explicit Adapter URL/u);
+ }finally{
+  if(priorSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=priorSocket;
+  if(priorFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=priorFlag;
+ }
 });

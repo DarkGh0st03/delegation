@@ -8,9 +8,20 @@ ark-bn254 = "0.4.0"
 delegation = { path = "../.." }
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
-tiny_http = "0.12.0"
+tiny_http = { version = "0.12.0", optional = true }
 alloy = "2.5.0"
 flate2 = "1.1.8"
 multibase = "0.9.1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 josekit = "0.10.3"
+
+# The reusable Rust CryptoRuntime is always compiled. The obsolete HTTP
+# executable must be opted into explicitly by historical compatibility CI.
+[features]
+default = []
+legacy-http = ["dep:tiny_http"]
+
+[[bin]]
+name = "delegation-adapter"
+path = "src/main.rs"
+required-features = ["legacy-http"]

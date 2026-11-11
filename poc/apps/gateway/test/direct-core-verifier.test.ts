@@ -1,0 +1,315 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {DirectCoreRustVerifier,type CoreRustBinding} from "../src/direct-core-verifier.ts";
+import {trustedCoreRustIdentitiesFromEnvironment}
+ from "../src/direct-core-loader.ts";
+import {GatewayRuntime} from "../src/runtime.ts";
+import {parseGatewayVerifierMode,gatewayConfigFromEnv} from "../src/config.ts";
+import {
+  VerificationRejectedError,VerificationUnavailableError
+} from "../src/errors.ts";
+import {InMemoryAuditSink,InMemoryRequestStore} from "../src/prepare.ts";
+import type {
+  Permission,VerificationRequest,MultipleVerificationRequest,VerifiedDelegation,
+  VerifierPort
+} from "../src/types.ts";
+
+const ids={
+  orchestrator:"did:thesis:orchestrator",
+  backend:"did:thesis:backend",
+  frontend:"did:thesis:frontend",
+  test:"did:thesis:test"
+} as const;
+const read:Permission={
+  resource:"gitea://gitea.local/thesis/repository/branches/main/files/app.ts",
+  operation:"read_file"
+};
+const write:Permission={...read,operation:"update_file"};
+const legacy:VerificationRequest={
+  presenter:"backend",audience:"cloud-access-gateway",challenge:"nonce",
+  required_permission:read,signed_vp:"signed.jwt.payload"
+};
+const multi:MultipleVerificationRequest={
+  presenter:"backend",audience:"cloud-access-gateway",challenge:"nonce",
+  required_permissions:[read,write],signed_vp:"signed.jwt.payload"
+};
+function result(permissions:Permission[],presenter_id:string=ids.backend){
+  return JSON.stringify({
+    presenter_id,credential_id:"urn:delegation:backend",
+    issuer_id:ids.orchestrator,permissions,
+    hierarchy_depth:1,expiration:"999999999999999999"
+  });
+}
+function fakeBinding(handler:(context:Record<string,unknown>,jwt:string)=>string):CoreRustBinding {
+  return {
+    verify_verifiable_presentation(ctx,jwt){
+      return handler(JSON.parse(ctx) as Record<string,unknown>,jwt);
+    }
+  };
+}
+
+test("direct Core wrapper builds Rust-compatible AuthorizationContext for single and multi",async()=>{
+  const contexts:Record<string,unknown>[]=[];
+  const core=new DirectCoreRustVerifier(fakeBinding((ctx,jwt)=>{
+    contexts.push(ctx);
+    assert.equal(jwt,"signed.jwt.payload");
+    return result(ctx.required_permission ?
+      [ctx.required_permission as Permission] :
+      ctx.required_permissions as Permission[]);
+  }),ids);
+  const a=await core.verify(legacy);
+  const b=await core.verifyMultiple(multi);
+  assert.equal(a.permissions.length,1);
+  assert.equal(b.permissions.length,2);
+  assert.deepEqual(contexts[0],{
+    presenter_id:ids.backend,audience:"cloud-access-gateway",
+    challenge:"nonce",required_permission:read
+  });
+  assert.deepEqual(contexts[1],{
+    presenter_id:ids.backend,audience:"cloud-access-gateway",
+    challenge:"nonce",required_permissions:[read,write]
+  });
+  assert.ok(!Object.hasOwn(contexts[1],"required_permission"));
+});
+
+
+
+test("R289 trusted Rust root ancestry is forwarded and malformed provenance fails closed",async()=>{
+  const rootId="urn:authority:operational";
+  const valid=new DirectCoreRustVerifier(fakeBinding(()=>
+    JSON.stringify({...JSON.parse(result([read])),root_credential_id:rootId})
+  ),ids);
+  const verified=await valid.verify(legacy);
+  assert.equal(verified.root_credential_id,rootId);
+  for(const invalid of [null,42,""," urn:authority:operational"]) {
+    const core=new DirectCoreRustVerifier(fakeBinding(()=>
+      JSON.stringify({...JSON.parse(result([read])),root_credential_id:invalid})
+    ),ids);
+    await assert.rejects(core.verify(legacy),VerificationUnavailableError);
+  }
+  // Historical fixtures without this field remain readable, but R289
+  // authority-only admission rejects them rather than inferring a root.
+  const old=new DirectCoreRustVerifier(fakeBinding(()=>result([read])),ids);
+  assert.equal((await old.verify(legacy)).root_credential_id,undefined);
+});
+
+test("invalid, duplicate and empty authorization requirements reject before native binding",async()=>{
+  let count=0;
+  const core=new DirectCoreRustVerifier(fakeBinding(()=>{
+    count++; return result([read]);
+  }),ids);
+  for(const request of [
+    {...multi,required_permissions:[]},
+    {...multi,required_permissions:[read,read]},
+    {...multi,required_permissions:[read,{resource:"",operation:"read_file"}]},
+    {...multi,signed_vp:""},
+    {...multi,audience:""},
+    {...multi,challenge:""},
+    {...multi,required_permissions:new Array(129).fill(read)}
+  ]){
+    await assert.rejects(core.verifyMultiple(request),VerificationRejectedError);
+  }
+  assert.equal(count,0);
+});
+
+test("native binding failure denies; inconsistent result never permits execution",async()=>{
+  const rejects=new DirectCoreRustVerifier({
+    verify_verifiable_presentation(){throw Error("internal trust resolver unavailable");}
+  },ids);
+  await assert.rejects(rejects.verify(legacy),VerificationRejectedError);
+  for(const malformed of [
+    result([read],ids.frontend),
+    result([read]),
+    JSON.stringify({}),
+    "not-json"
+  ]){
+    const core=new DirectCoreRustVerifier(fakeBinding(()=>malformed),ids);
+    await assert.rejects(core.verifyMultiple(multi),VerificationUnavailableError);
+  }
+  const missing=new DirectCoreRustVerifier(fakeBinding(()=>result([read])),ids);
+  await assert.rejects(missing.verifyMultiple(multi),VerificationUnavailableError);
+});
+
+test("gateway direct-mode startup has no Adapter fallback or fake cryptographic verifier",()=>{
+  assert.equal(parseGatewayVerifierMode("adapter"),"adapter");
+  assert.equal(parseGatewayVerifierMode("core-rust"),"core-rust");
+  assert.throws(()=>parseGatewayVerifierMode("auto"),/must be adapter or core-rust/);
+  const cfg={
+    bind_host:"127.0.0.1",bind_port:0,
+    prepare:{
+      audience:"cloud-access-gateway",request_ttl_ms:120_000,
+      repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"}
+    },
+    verifier_mode:"core-rust" as const,
+    opa_url:"http://unused",opa_timeout_ms:2000,
+    provider_mode:"mock" as const,gitea_timeout_ms:3000
+  };
+  assert.throws(
+    ()=>new GatewayRuntime(cfg),
+    /native addon not built|does not expose the required verifier ABI|sources are not ready/
+  );
+  // No accidental fallback to Adapter if verifier_mode is explicitly native.
+});
+
+test("gateway-level integration still requires OPA after direct-mode verifier output",async()=>{
+  const events:string[]=[];
+  const fake=new DirectCoreRustVerifier(fakeBinding(ctx=>{
+    events.push("rust_core");
+    return result([ctx.required_permission as Permission]);
+  }),ids);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const config={
+    bind_host:"127.0.0.1",bind_port:0,
+    prepare:{
+      audience:"cloud-access-gateway",request_ttl_ms:120_000,
+      repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"}
+    },
+    verifier_mode:"core-rust" as const,
+    opa_url:"http://unused",opa_timeout_ms:2000,
+    provider_mode:"mock" as const,gitea_timeout_ms:3000
+  };
+  const runtime=new GatewayRuntime(config,{
+    verifier:fake,store,audit,
+    policy:{
+      async evaluate(){events.push("opa");return {allow:false,policy_version:"policy-test"};}
+    },
+    executor:{
+      provider:"mock",
+      async execute(){events.push("provider");throw Error("must not execute");}
+    }
+  });
+  const prepared=runtime.prepare({
+    task_id:"backend-task",agent_role:"backend",
+    tool:"read_file",arguments:{branch:"main",path:"app.ts"}
+  });
+  await assert.rejects(runtime.execute({
+    request_id:prepared.request_id,signed_vp:"signed.jwt.payload"
+  }));
+  assert.deepEqual(events,["rust_core","opa"]);
+  assert.ok(!events.includes("provider"));
+});
+
+test("R159 standalone Gateway defaults to native Rust, not issuing Adapter verification",()=>{
+ const keys=["GATEWAY_VERIFIER_MODE","DELEGATION_ADAPTER_URL",
+  "ADAPTER_CALLER_GATEWAY","OPA_URL"] as const;
+ const snapshot=new Map(keys.map(k=>[k,process.env[k]]));
+ try{
+  delete process.env.GATEWAY_VERIFIER_MODE;
+  delete process.env.DELEGATION_ADAPTER_URL;
+  delete process.env.ADAPTER_CALLER_GATEWAY;
+  process.env.OPA_URL="http://127.0.0.1:8181";
+  const native=gatewayConfigFromEnv();
+  assert.equal(native.verifier_mode,"core-rust");
+  assert.equal(native.adapter_url,undefined);
+  assert.equal(native.adapter_gateway_token,undefined);
+  // Compatibility is explicit, not an accidental fallback.
+  process.env.GATEWAY_VERIFIER_MODE="adapter";
+  assert.throws(()=>gatewayConfigFromEnv(),/DELEGATION_ADAPTER_URL/);
+ }finally{
+  for(const k of keys){
+   const old=snapshot.get(k);
+   if(old===undefined)delete process.env[k];
+   else process.env[k]=old;
+  }
+ }
+});
+
+test("R299 native scope-result corroboration requires explicit trusted opt-in",async()=>{
+ const parent:Permission={
+  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fwork/directories/apps/backend",
+  operation:"read_file"
+ };
+ const file:Permission={
+  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fwork/files/apps/backend/src/user.ts",
+  operation:"read_file"
+ };
+ const req:VerificationRequest={...legacy,required_permission:file};
+ const binding=fakeBinding(()=>result([parent]));
+ const historical=new DirectCoreRustVerifier(binding,ids);
+ assert.equal(historical.allowsGiteaScopeCoverage,false);
+ await assert.rejects(historical.verify(req),VerificationUnavailableError);
+ const scoped=new DirectCoreRustVerifier(binding,ids,{allowGiteaScopeCoverage:true});
+ assert.equal(scoped.allowsGiteaScopeCoverage,true);
+ const accepted=await scoped.verify(req);
+ assert.deepEqual(accepted.permissions,[parent]);
+ for(const wrong of [
+  {...file,resource:file.resource.replace("/apps/backend/","/apps/backend-extra/")},
+  {...file,resource:file.resource.replace("feature%2Fwork","feature%2Fother")},
+  {...file,operation:"update_file" as const},
+  {...file,resource:file.resource.replace("/src/user.ts","/../secret.ts")}
+ ]){
+  await assert.rejects(scoped.verify({...req,required_permission:wrong}),
+   VerificationUnavailableError);
+ }
+});
+
+test("R455 native Core accepts extra specialist only with explicit matching DID and Rust VP response",async()=>{
+ const reviewer="did:thesis:reviewer-agent";
+ const identities={...ids,reviewer};
+ const traces:Record<string,unknown>[]=[];
+ const core=new DirectCoreRustVerifier(fakeBinding((context,proof)=>{
+  traces.push(context);
+  assert.equal(proof,"REVIEWER_NATIVE_PROOF_FIXTURE");
+  return result([read],reviewer);
+ }),identities);
+ const req={...legacy,presenter:"reviewer" as never,
+  signed_vp:"REVIEWER_NATIVE_PROOF_FIXTURE"};
+ const verified=await core.verify(req);
+ assert.equal(verified.presenter_id,reviewer);
+ assert.equal(traces[0]?.presenter_id,reviewer);
+ assert.deepEqual(traces[0]?.required_permission,read);
+ await assert.rejects(core.verify({...req,presenter:"unregistered" as never}),
+  VerificationRejectedError);
+ assert.equal(traces.length,1,"unprovisioned role cannot invoke native binding");
+ const wrongRole=new DirectCoreRustVerifier(fakeBinding(()=>
+  result([read],ids.backend)
+ ),identities);
+ await assert.rejects(wrongRole.verify(req),VerificationUnavailableError);
+ for(const invalid of [
+  {...identities,reviewer:ids.backend},
+  {...identities,reviewer:"did:"},
+  {...identities,engineer:"did:thesis:engineer"},
+  {...identities,"reviewer/../backend":"did:thesis:forged"}
+ ]){
+  assert.throws(()=>new DirectCoreRustVerifier(fakeBinding(()=>
+   result([read],reviewer)),invalid));
+ }
+ const inherited=Object.create({reviewer}) as Record<string,string>;
+ Object.assign(inherited,ids);
+ const legacyCore=new DirectCoreRustVerifier(fakeBinding(()=>
+   result([read],reviewer)),inherited);
+ await assert.rejects(legacyCore.verify(req),VerificationRejectedError);
+});
+test("R455 Gateway Rust signer roster mirrors bounded Engineer deployment variables",()=>{
+ const environment={
+  ADAPTER_ID_ORCHESTRATOR:ids.orchestrator,
+  ADAPTER_ID_BACKEND:ids.backend,
+  ADAPTER_ID_FRONTEND:ids.frontend,
+  ADAPTER_ID_TEST:ids.test,
+  ADAPTER_ID_REVIEWER:"did:thesis:reviewer-agent",
+  ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer"
+ };
+ const trusted=trustedCoreRustIdentitiesFromEnvironment(environment);
+ assert.deepEqual(Object.keys(trusted).sort(),
+  ["orchestrator","backend","frontend","test","reviewer"].sort());
+ assert.equal(trusted.reviewer,environment.ADAPTER_ID_REVIEWER);
+ assert.equal(Object.isFrozen(trusted),true);
+ for(const changes of [
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer,reviewer"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"backend"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"engineer"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"__proto__"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer/../test"},
+  {ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer,"},
+  {ADAPTER_ID_REVIEWER:ids.backend},
+  {ADAPTER_ID_REVIEWER:undefined},
+  {ADAPTER_ID_REVIEWER:" did:thesis:reviewer-agent "}
+ ]){
+  assert.throws(()=>trustedCoreRustIdentitiesFromEnvironment(
+   {...environment,...changes}),/Rust Core|trusted Rust Core|DIDs must be distinct/u);
+ }
+ const absent=trustedCoreRustIdentitiesFromEnvironment({
+  ...environment,ADAPTER_ADDITIONAL_SPECIALISTS:""
+ });
+ assert.equal(Object.hasOwn(absent,"reviewer"),false);
+});

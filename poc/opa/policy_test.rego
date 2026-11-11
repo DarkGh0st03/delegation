@@ -212,5 +212,204 @@ test_decision_exposes_policy_version if {
 		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	result.allow == true
-	result.policy_version == "phase4a-v1"
+	result.policy_version == "phase6-approved-branch-v2"
+}
+
+# Planning has read-only access to main only when the Orchestrator presents
+# the explicitly scoped Rust Operation and canonical Gitea resource.
+test_allow_orchestrator_repository_discovery if {
+	base := make_input("read_repository", repo_uri, {})
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_deny_backend_repository_discovery if {
+	not allow with input as make_input("read_repository", repo_uri, {})
+}
+
+test_deny_repository_discovery_on_wrong_resource if {
+	base := make_input("read_repository", feature_uri, {})
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	not allow with input as planning
+}
+
+test_allow_orchestrator_main_directory_root if {
+	base := make_input(
+		"list_directory",
+		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories",
+		{"branch": "main", "path": ""},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_allow_orchestrator_main_nested_directory if {
+	base := make_input(
+		"list_directory",
+		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories/apps/backend",
+		{"branch": "main", "path": "apps/backend"},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_deny_backend_main_directory if {
+	not allow with input as make_input(
+		"list_directory",
+		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories",
+		{"branch": "main", "path": ""},
+	)
+}
+
+test_allow_orchestrator_read_file_main if {
+	base := make_input(
+		"read_file",
+		main_file,
+		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_deny_backend_read_file_main if {
+	not allow with input as make_input(
+		"read_file",
+		main_file,
+		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
+	)
+}
+
+test_allow_feature_branch_directory if {
+	allow with input as make_input(
+		"list_directory",
+		sprintf("%s/directories/apps/backend", [feature_uri]),
+		{"branch": "feature/account-suspension", "path": "apps/backend"},
+	)
+}
+
+test_deny_directory_resource_on_unrelated_branch if {
+	base := make_input(
+		"list_directory",
+		sprintf("%s/directories", [feature_uri]),
+		{"branch": "main", "path": ""},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	not allow with input as planning
+}
+
+test_deny_orchestrator_write_on_main_even_with_valid_delegation if {
+	base := make_input(
+		"update_file",
+		main_file,
+		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	not allow with input as planning
+}
+
+
+approved_feature_branch := "feature/engineer-approved-42"
+approved_file := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fengineer-approved-42/files/apps/backend/src/users/user.service.ts"
+approved_test_uri := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fengineer-approved-42"
+trusted_approval := {"approved_plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approved_work_branch": approved_feature_branch}
+
+test_allow_signed_dynamic_branch_file_update if {
+  base := make_input("update_file",approved_file,
+    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
+  allow with input as object.union(base,trusted_approval)
+}
+test_allow_signed_dynamic_branch_creation if {
+  base := make_input("create_branch",repo_uri,
+    {"base_branch":"main","branch":approved_feature_branch})
+  allow with input as object.union(base,trusted_approval)
+}
+test_allow_signed_dynamic_branch_runner if {
+  base := make_input("run_tests",approved_test_uri,
+    {"branch":approved_feature_branch,"profile":"poc-default"})
+  allow with input as object.union(base,trusted_approval)
+}
+test_deny_unapproved_dynamic_branch_without_gateway_binding if {
+  base := make_input("update_file",approved_file,
+    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
+  not allow with input as base
+}
+test_deny_spoofed_dynamic_branch_digest if {
+  base := make_input("update_file",approved_file,
+    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
+  bad := object.union(base,{
+    "approved_plan_digest":"forged","approved_work_branch":approved_feature_branch
+  })
+  not allow with input as bad
+}
+test_deny_approved_branch_mismatch_on_main_and_other_feature if {
+  base := make_input("create_branch",repo_uri,
+    {"base_branch":"main","branch":"feature/attacker"})
+  not allow with input as object.union(base,trusted_approval)
+  from_main := make_input("update_file",main_file,{
+    "branch":"main","path":"apps/backend/src/users/user.service.ts"
+  })
+  not allow with input as object.union(from_main,trusted_approval)
+}
+test_deny_approved_branch_traversal_and_invalid_profile if {
+  base := make_input("create_branch",repo_uri,
+    {"base_branch":"main","branch":"feature/a..b"})
+  bad := object.union(base,{
+    "approved_plan_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "approved_work_branch":"feature/a..b"
+  })
+  not allow with input as bad
+  tests := make_input("run_tests",approved_test_uri,
+    {"branch":approved_feature_branch,"profile":"uncontrolled-shell"})
+  not allow with input as object.union(tests,trusted_approval)
+}
+
+# R454: OPA may evaluate a new signed specialist read (the native Gateway
+# separately authenticates the role/Child and exact read-only Task). A model
+# or A2A Card cannot use that role name to gain writes, Runner or PR power.
+test_additional_specialist_signed_source_read_allowed if {
+ base := make_input("read_file",backend_file,
+  {"branch":"feature/account-suspension","path":"apps/backend/src/users/user.service.ts"})
+ reviewer := object.union(base,{
+  "agent_role":"reviewer",
+  "verified_delegation":object.union(base.verified_delegation,{
+   "presenter_id":"did:thesis:reviewer-agent"
+  })
+ })
+ allow with input as reviewer
+}
+
+test_additional_specialist_cannot_use_nonread_provider_ops if {
+ every action in ["update_file","create_file","run_tests","create_branch","create_pull_request"] {
+  args := {"branch":"feature/account-suspension","path":"apps/backend/src/users/user.service.ts","content":"forbidden"}
+  base := make_input(action,backend_file,args)
+  reviewer := object.union(base,{"agent_role":"reviewer"})
+  not allow with input as reviewer
+ }
+}
+
+# R457: an additional Child is permitted to sign only a single read_file
+# grant. OPA must not independently admit a feature-branch directory walk,
+# even if a forged VP payload appears well formed to the policy engine.
+test_additional_specialist_cannot_list_directory if {
+ base := make_input(
+  "list_directory",
+  sprintf("%s/directories/apps/backend", [feature_uri]),
+  {"branch":"feature/account-suspension","path":"apps/backend"}
+ )
+ reviewer := object.union(base,{
+  "agent_role":"reviewer",
+  "verified_delegation":object.union(base.verified_delegation,{
+   "presenter_id":"did:thesis:reviewer-agent"
+  })
+ })
+ not allow with input as reviewer
+}
+
+test_original_specialist_can_still_list_approved_directory if {
+ allow with input as make_input(
+  "list_directory",
+  sprintf("%s/directories/apps/backend", [feature_uri]),
+  {"branch":"feature/account-suspension","path":"apps/backend"}
+ )
 }

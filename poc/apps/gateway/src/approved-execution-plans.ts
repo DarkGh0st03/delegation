@@ -1,0 +1,1563 @@
+import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
+import {sanitizeVitestFailureFiles} from "../../test-runner-controller/src/vitest-failure-files.ts";
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
+import {isActionableRepairFailure, type AcceptanceFailureSummary, type ProjectTestFailureSummary}
+  from "../../test-runner-controller/src/repair-failure-eligibility.ts";
+/**
+ * Opt-in, in-process Gateway enforcement for an immutable Engineer-approved
+ * execution plan. NO HTTP method is exposed to activate, bind, complete or
+ * terminate a plan. Those operations belong to a separately authenticated
+ * trusted coordinator, not to Gemini, MCP or an A2A request.
+ *
+ * Approval authenticity is supplied by the TrustedApprovalStore implementation.
+ * A matching SHA-256 digest alone NEVER proves human consent.
+ *
+ * This is an additional gate, NOT a replacement for Rust DC/VP verification,
+ * OPA policy, tool validation or repository provider restrictions.
+ */
+import {createHash} from "node:crypto";
+import { assertApprovedExecution, assertApprovedPlanScope, planDigest } from
+  "../../../packages/plan-contracts/src/plan.mjs";
+import { RUST_OPERATIONS } from "./operation-catalog.ts";
+import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
+import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord,
+  type NormalizedToolRequest } from "./types.ts";
+import { GatewayError } from "./errors.ts";
+import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
+import {TrustedOperationalEpochIntake} from "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
+import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayDiscoveryChildVpVerifier} from "./trusted-discovery-child-vp-verification.ts";
+import {TrustedChildIssuanceJournal} from "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
+import type {ExecutionResult,GiteaReadFileExecutionResult,RunnerExecutionResult} from "./types.ts";
+import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
+import type { GatewayRepositoryConfig } from "./types.ts";
+
+const CATALOG = new Set<string>(RUST_OPERATIONS);
+const SUPPORTED = new Set<string>(TOOL_NAMES);
+const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
+const SHA = /^[a-f0-9]{40}$/u;
+const TASK_AGENT = new Set<string>(["orchestrator","backend","frontend","test"]);
+const MAX_TASKS = 128;
+
+export interface AuthenticatedPlanRecord {
+  /** Retrieved from the trusted Engineer approval backend, never caller JSON. */
+  plan: unknown;
+  approval: unknown;
+  authenticated_engineer_did: string;
+}
+
+export interface AuthenticatedPlanStore {
+  loadAuthenticatedApproval(sessionId: string): Promise<AuthenticatedPlanRecord>;
+}
+
+/**
+ * Attestation comes from the trusted A2A task-result/CI observer.
+ * No model-supplied "completed":true, A2A history or arbitrary caller
+ * text is accepted as proof of a finished task.
+ */
+export interface TrustedProviderEffect {
+  readonly request_id:string;
+  readonly tool:string;
+  readonly resource:string;
+  /** SHA-256 of the ACTUAL Gateway/Gitea read bytes, never model data. */
+  readonly source_sha256?:string;
+  readonly source_bytes?:number;
+  // A successful read is attested by metadata only. Never retain private
+  // Gitea source content in the in-memory Gateway completion registry.
+  readonly execution:ExecutionResult | Omit<GiteaReadFileExecutionResult,"content">;
+}
+export interface TrustedCompletionEvidence {
+  readonly session_id:string;
+  readonly plan_digest:string;
+  readonly plan_task_id:string;
+  readonly runtime_task_id:string;
+  readonly role:AgentRole;
+  readonly successful_gateway_request_ids:readonly string[];
+  readonly provider_effects:readonly TrustedProviderEffect[];
+  readonly observation?:TrustedCompletionObservation;
+}
+export interface TrustedTaskCompletionAttestor {
+  confirmCompleted(evidence:Readonly<TrustedCompletionEvidence>):Promise<boolean>;
+}
+/** F2: Gateway-owned, owner-private projection. It is neither an A2A
+ * assertion nor a new permission; no source bytes or bearer material. */
+export interface VerifiedImplementationSummary {
+  readonly status:"gateway_verified_implementation";
+  readonly session_id:string;
+  readonly plan_digest:string;
+  readonly plan_task_id:string;
+  readonly runtime_task_id:string;
+  readonly role:"backend"|"frontend";
+  readonly branch:string;
+  readonly revision:string;
+  readonly changed_files:readonly Readonly<{
+    path:string;operation:"update_file"|"create_file";commit_sha:string;
+  }>[];
+  readonly gateway_provider_effect_count:number;
+}
+
+interface RuntimeTaskBinding {
+  readonly runtimeTaskId: string;
+  readonly planTaskId: string;
+  readonly agent: AgentRole;
+  readonly sessionId: string;
+  readonly epochVersion:number;
+  readonly successfulRequests: Map<string,TrustedProviderEffect>;
+  completed: boolean;
+  completing: boolean;
+  /** Terminal validation FAILED, not a successful Test completion. */
+  failedFinalized:boolean;
+  inFlightEffects:number;
+  failedRunner?:Readonly<TrustedRunnerFailure>;
+}
+
+export interface TrustedRunnerFailure {
+  readonly status:"validation_failed";
+  readonly session_id:string;
+  readonly root_plan_digest:string;
+  readonly request_id:string;
+  readonly plan_task_id:string;
+  readonly runtime_task_id:string;
+  readonly epoch_version:number;
+  readonly branch:string;
+  readonly tested_commit_sha:string;
+  readonly first_failed_phase:string;
+  readonly typecheck_error_codes:readonly string[];
+  readonly acceptance_failure?:AcceptanceFailureSummary;
+  readonly project_test_failure?:ProjectTestFailureSummary;
+}
+const RUNNER_PHASES=[
+  "dependency_install","typecheck","backend_tests","frontend_tests",
+  "build","playwright_e2e","researcher_acceptance"
+] as const;
+
+interface ActivePlan {
+  readonly sessionId: string;
+  readonly digest: string;
+  readonly plan: any;
+  readonly approval: any;
+  readonly approvedAt: string;
+  readonly workBranch:string;
+  currentEpoch:number;
+  readonly admittedEpochTasks:Map<string,{plan:any;digest:string;epoch:number}>;
+  /** One-use owner-registered repair discovery Task, never model-created. */
+  readonly discoveryTasks:Map<string,{epoch:number;role:AgentRole;
+    resource:string;credentialId:string;plan:any;testedSha:string}>;
+  active: boolean;
+  /** Only trusted explicit close/retire, never mere lease expiry. */
+  closedByTrustedOwner:boolean;
+  readonly completedPlanTasks: Set<string>;
+  /** Only a trusted, attested exact-SHA Runner success may populate this. */
+  testedFeatureSha?:string;
+  /** Gateway-owned TTL: never accepted from an agent or public HTTP. */
+  leaseExpiresAtMs?:number;
+}
+
+function denied(message: string, code = "approved_plan_denied", reason?:string): never {
+  throw Object.assign(new GatewayError(403, code, message),reason?{prepare_reason:reason}:{});
+}
+function ensureId(value:unknown, label:string):string {
+  if(typeof value!=="string" || !ID.test(value)) {
+    throw new GatewayError(400,"invalid_trusted_plan_binding","Invalid trusted "+label);
+  }
+  return value;
+}
+
+/**
+ * Store and attestor MUST be injected by a trusted in-process coordinator.
+ * The Gateway's public prepare/execute routes have no approval or completion
+ * input fields and cannot mutate this registry.
+ */
+export class TrustedApprovedExecutionPlans {
+  readonly #repository:GatewayRepositoryConfig;
+  readonly #engineerDid:string;
+  readonly #store:AuthenticatedPlanStore;
+  readonly #attestor:TrustedTaskCompletionAttestor;
+  readonly #sessions=new Map<string,ActivePlan>();
+  readonly #bindings=new Map<string,RuntimeTaskBinding>();
+  readonly #verifiedImplementations=new Map<string,VerifiedImplementationSummary>();
+  readonly #closedSessionIds=new Set<string>();
+  // A trusted retirement fences an in-flight activation even if the
+  // signed approval load is still pending.
+  readonly #retiredIds=new Set<string>();
+  readonly #sessionStore?:TrustedOperationalSessionStore;
+  readonly #operationalLeaseMs?:number;
+  readonly #nowMs:()=>number;
+  readonly #epochIntake?:TrustedOperationalEpochIntake;
+  #remoteEpochInspector?:TrustedGatewaySignedEpochInspector;
+  readonly #epochAdmissionInFlight=new Set<string>();
+  readonly #discoveryAdmissionsInFlight=new Set<string>();
+
+  constructor(config:{
+    repository:GatewayRepositoryConfig;
+    engineerDid:string;
+    approvals:AuthenticatedPlanStore;
+    completionAttestor:TrustedTaskCompletionAttestor;
+    /** Opt-in crash fence; mandatory for admitted paid GitHub handoffs. */
+    operationalLeaseMs?:number;
+    /** Production: mandatory one-shot durable Gateway activation ledger. */
+    operationalSessionStore?:TrustedOperationalSessionStore;
+    /** Only the owner-private Engineer-root-bound intake, not an A2A model payload. */
+    operationalEpochIntake?:TrustedOperationalEpochIntake;
+    /** R133: Gateway-local authenticated journal + live native VP. */
+    remoteEpochInspector?:TrustedGatewaySignedEpochInspector;
+    nowMs?:()=>number;
+  }){
+    if(!config.engineerDid?.startsWith("did:") || !config.approvals ||
+       typeof config.approvals.loadAuthenticatedApproval!=="function" ||
+       !config.completionAttestor ||
+       typeof config.completionAttestor.confirmCompleted!=="function") {
+      throw new Error("Trusted Engineer approval store and task completion attestor are required");
+    }
+    this.#repository=structuredClone(config.repository);
+    this.#engineerDid=config.engineerDid;
+    this.#store=config.approvals;
+    this.#attestor=config.completionAttestor;
+    if(config.operationalSessionStore!==undefined&&
+       !(config.operationalSessionStore instanceof TrustedOperationalSessionStore))
+      throw Error("Invalid trusted operational session journal");
+    this.#sessionStore=config.operationalSessionStore;
+    if(config.operationalEpochIntake!==undefined &&
+       !(config.operationalEpochIntake instanceof TrustedOperationalEpochIntake))
+      throw Error("Trusted operational epoch intake instance required");
+    this.#epochIntake=config.operationalEpochIntake;
+    if(config.remoteEpochInspector!==undefined&&
+       (!(config.remoteEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+        !config.remoteEpochInspector.nativeRootVpConfigured()||
+        config.operationalEpochIntake!==undefined||
+        !(config.operationalSessionStore instanceof TrustedOperationalSessionStore)||
+        config.operationalLeaseMs===undefined))
+      throw Error("R133 remote epoch requires durable Gateway and a fresh native Rust root VP");
+    this.#remoteEpochInspector=config.remoteEpochInspector;
+    if(config.operationalLeaseMs!==undefined&&
+       (!Number.isSafeInteger(config.operationalLeaseMs)||
+        config.operationalLeaseMs<10_000||
+        config.operationalLeaseMs>120_000))
+      throw new Error("Trusted Gateway operational lease must be 10-120 seconds");
+    if(config.nowMs!==undefined&&typeof config.nowMs!=="function")
+      throw new Error("Trusted Gateway clock must be a trusted function");
+    this.#operationalLeaseMs=config.operationalLeaseMs;
+    this.#nowMs=config.nowMs??Date.now;
+  }
+
+  /** In-process trusted Coordinator can inspect this, NOT a public route. */
+  operationalLeaseConfigured():boolean{
+    return this.#operationalLeaseMs!==undefined;
+  }
+  /** Authenticated IPC capability: the deployed Gateway needs both fences. */
+  operationalSessionDurableConfigured():boolean{
+    return this.#sessionStore instanceof TrustedOperationalSessionStore;
+  }
+
+  /** Install the host's final signed-root inspector during Gateway bootstrap,
+   * before any session is activated. Runtime callers cannot replace trust
+   * roots after an operational session begins. */
+  installRemoteEpochInspectorAtBootstrap(
+    inspector:TrustedGatewaySignedEpochInspector
+  ):void{
+    if(!(inspector instanceof TrustedGatewaySignedEpochInspector)||
+       !inspector.nativeRootVpConfigured()||
+       !(this.#sessionStore instanceof TrustedOperationalSessionStore)||
+       !this.#operationalLeaseMs||this.#epochIntake||this.#sessions.size!==0)
+      denied("Remote epoch inspector can only be installed before durable Gateway activation");
+    this.#remoteEpochInspector=inspector;
+  }
+
+  #clock():number{
+    const now=this.#nowMs();
+    if(!Number.isSafeInteger(now)||now<0)
+      denied("Trusted Gateway lease clock invalid");
+    return now;
+  }
+
+  #ensureUnexpired(session:ActivePlan):void{
+    if(!session.active)denied("No active trusted plan session");
+    if(this.#operationalLeaseMs!==undefined){
+      const now=this.#clock();
+      if(session.leaseExpiresAtMs===undefined||
+         now>=session.leaseExpiresAtMs){
+        // Expiration is terminal; a clock rollback or late Engineer cannot
+        // resurrect this session. Root revocation is separately reconciled.
+        session.active=false;
+        denied("Trusted Gateway operational lease expired; plan permanently denied","approved_plan_denied","task_inactive_or_expired");
+      }
+    }
+  }
+
+  /** Called ONLY from trusted Coordinator after re-verifying GitHub Actions.
+   * The agent, A2A, MCP and public Gateway HTTP have NO renewal endpoint.
+   */
+  renewLease(sessionId:string,expectedDigest:string):void{
+    ensureId(sessionId,"session ID");
+    if(this.#operationalLeaseMs===undefined)
+      denied("Trusted Gateway operational lease is not configured");
+    const session=this.#sessions.get(sessionId);
+    if(!session || session.digest!==expectedDigest)
+      denied("Trusted Gateway lease session or signed digest mismatch");
+    this.#ensureUnexpired(session);
+    session.leaseExpiresAtMs=this.#clock()+this.#operationalLeaseMs;
+  }
+
+  /**
+   * Trusted activation is tied to the externally verified Gitea base SHA.
+   * This does NOT issue the operational root; the Engineer's independent
+   * root issuance/confirmed provisional revocation is a separate prerequisite.
+   */
+  async activate(sessionId:string, expectedBaseRevision:string):Promise<string> {
+    ensureId(sessionId,"session ID");
+    if(!SHA.test(expectedBaseRevision)) {
+      throw new GatewayError(400,"invalid_trusted_plan_binding","Trusted Gitea SHA required");
+    }
+    if(this.#sessions.has(sessionId) || this.#closedSessionIds.has(sessionId)) {
+      throw new GatewayError(409,"approved_plan_conflict","Plan session is already installed or closed");
+    }
+    // Reserve in RAM before any await and durably on the Gateway disk
+    // BEFORE using a persisted human approval. If Gateway dies afterwards,
+    // its replacement cannot re-activate this session or reissue authority.
+    this.#closedSessionIds.add(sessionId);
+    try {
+      await this.#sessionStore?.reserveActivation(sessionId);
+      if(this.#retiredIds.has(sessionId))
+        denied("Operational session retired during activation");
+      const fetched=await this.#store.loadAuthenticatedApproval(sessionId);
+      if(fetched?.authenticated_engineer_did!==this.#engineerDid) {
+        denied("Approval is not authenticated for the expected Engineer");
+      }
+      const plan=fetched.plan as any, approval=fetched.approval as any;
+      const approved=assertApprovedPlanScope(plan,approval,{
+        allowedOperations:CATALOG,expectedEngineerDid:this.#engineerDid
+      }) as Array<{operation:string}>;
+      if(plan.session_id!==sessionId ||
+         plan.base_revision!==expectedBaseRevision ||
+         JSON.stringify(plan.repository)!==JSON.stringify(this.#repository) ||
+         !Array.isArray(plan.tasks) || plan.tasks.length>MAX_TASKS ||
+         approved.some(p=>!SUPPORTED.has(p.operation)) ||
+         plan.tasks.some((t:any)=>!TASK_AGENT.has(t.agent_id))) {
+        denied("Approved plan does not match trusted Gitea snapshot or provider capability");
+      }
+      const workBranch=approvedWorkBranch(plan);
+      const snapshot=structuredClone(plan), receipt=structuredClone(approval);
+      const digest=planDigest(snapshot);
+      if(this.#retiredIds.has(sessionId))
+        denied("Operational session retired while verifying signed approval");
+      this.#sessions.set(sessionId,{
+        sessionId,digest,plan:snapshot,approval:receipt,approvedAt:receipt.approved_at,
+        workBranch,currentEpoch:1,admittedEpochTasks:new Map(),
+        discoveryTasks:new Map(),
+        active:true,closedByTrustedOwner:false,completedPlanTasks:new Set(),
+        ...(this.#operationalLeaseMs===undefined?{}:
+          {leaseExpiresAtMs:this.#clock()+this.#operationalLeaseMs})
+      });
+      return digest;
+    } catch(error) {
+      // Never reuse a failed session ID: the approval may have changed during
+      // the failed external call, so a new authenticated session is required.
+      throw error;
+    }
+  }
+
+  /**
+   * R103: Owner-private opt-in admission of the NEXT durably reserved plan.
+   * Engineer consent and the already-issued Rust root are independently
+   * verified by TrustedOperationalEpochIntake; this is a Gateway Task
+   * registry only. It does NOT issue a DC, verify a VP or call the provider.
+   *
+   * A failed Runner Task remains incomplete in the current API; entering a
+   * repair epoch requires a separate trusted failure quiescence mechanism.
+   * Until that is integrated, unresolved tasks MUST block this transition.
+   */
+  async admitNextOperationalEpoch(sessionId:string,epochVersion:number,
+    expected?:Readonly<{root_plan_digest:string;plan_digest:string}>):
+    Promise<Readonly<{status:"gateway_epoch_admitted";epoch:number;plan_digest:string;
+      blocked_descendant_task_ids:ReadonlyArray<string>}>>{
+    ensureId(sessionId,"session ID");
+    const session=this.#sessions.get(sessionId);
+    if((!this.#epochIntake&&!this.#remoteEpochInspector)||!session||
+       (this.#remoteEpochInspector!==undefined&&expected===undefined)||
+       // R125 authenticated cross-process requests are SOURCE-FREE pins.
+       // The real Gateway must have its OWN original-root-bound Intake:
+       // an Engineer assertion or uploaded DAG cannot substitute for it.
+       (expected!==undefined&&(
+        session.digest!==expected.root_plan_digest||
+        !/^[a-f0-9]{64}$/u.test(expected.plan_digest)))||
+       !Number.isSafeInteger(epochVersion)||epochVersion<2||
+       this.#epochAdmissionInFlight.has(sessionId)||
+       this.#discoveryAdmissionsInFlight.has(sessionId))
+      denied("Missing trusted epoch intake, active session or unique transition");
+    this.#ensureUnexpired(session);
+    if(epochVersion!==session.currentEpoch+1)
+      denied("Operational epoch version must advance exactly once");
+    // An in-flight original/previous Task may have an authorized Prepare.
+    // Never retire its grants before independently confirming quiescence.
+    const initialBlocked=this.#assertEpochQuiescent(session);
+    this.#epochAdmissionInFlight.add(sessionId);
+    try{
+      const history=this.#remoteEpochInspector?
+        await this.#remoteEpochInspector.verifiedEpochHistoryForAdmission({
+         session_id:sessionId,root_plan_digest:session.digest,
+         plan_digest:expected!.plan_digest,epoch:epochVersion
+        }):await this.#epochIntake!.verifiedEpochHistory();
+      // Close/expiry may happen while the private store is performing IO.
+      this.#ensureUnexpired(session);
+      if(this.#sessions.get(sessionId)!==session||
+         epochVersion!==session.currentEpoch+1||history.length!==epochVersion||
+         history[0]?.plan_digest!==session.digest)
+        denied("Operational epoch changed or differs from original signed root");
+      const epoch=history.at(-1);
+      const plan=epoch?.plan;
+      if(!epoch||!plan||epoch.epoch!==epochVersion||
+         (expected!==undefined&&epoch.plan_digest!==expected.plan_digest)||
+         plan.session_id!==sessionId||
+         plan.base_revision!==session.plan.base_revision||
+         JSON.stringify(plan.repository)!==JSON.stringify(this.#repository)||
+         approvedWorkBranch(plan)!==session.workBranch||
+         planDigest(plan)!==epoch.plan_digest||
+         plan.tasks.length>MAX_TASKS||
+         plan.tasks.some((t:any)=>!TASK_AGENT.has(t.agent_id)))
+        denied("Operational epoch plan is outside pinned root session");
+      const finalBlocked=this.#assertEpochQuiescent(session);
+      if(JSON.stringify(finalBlocked)!==JSON.stringify(initialBlocked))
+        denied("Previous epoch changed during admission");
+      // Do not cache the earlier VP while async work occurs. The Gateway
+      // must observe a fresh root, signed plan and SAME failed Task
+      // quiescence immediately before installing the new Task registry.
+      if(this.#remoteEpochInspector){
+        const again=await this.#remoteEpochInspector.verifiedEpochHistoryForAdmission({
+         session_id:sessionId,root_plan_digest:session.digest,
+         plan_digest:expected!.plan_digest,epoch:epochVersion
+        });
+        this.#ensureUnexpired(session);
+        if(this.#sessions.get(sessionId)!==session||
+           epochVersion!==session.currentEpoch+1||
+           again.length!==history.length||
+           again.some((row:any,n:number)=>
+            row.plan_digest!==history[n].plan_digest||
+            row.root_credential_id!==history[n].root_credential_id)||
+           JSON.stringify(this.#assertEpochQuiescent(session))!==
+             JSON.stringify(initialBlocked))
+          denied("Root, signed repair epoch or previous Task changed during remote admission");
+      }
+      for(const task of plan.tasks){
+        if(session.plan.tasks.some((t:any)=>t.id===task.id)||
+           session.admittedEpochTasks.has(task.id)||
+           [...this.#bindings.values()].some(b=>b.sessionId===sessionId&&
+             b.planTaskId===task.id))
+          denied("Replayed operational Task ID");
+      }
+      // Synchronous commit of the entire admitted plan after full checking.
+      const approvedPlan=structuredClone(plan);
+      for(const t of approvedPlan.tasks)
+        session.admittedEpochTasks.set(t.id,{
+          plan:approvedPlan,digest:epoch.plan_digest,epoch:epochVersion
+        });
+      session.currentEpoch=epochVersion;
+      // An old passing Test may never authorize a PR after replanning.
+      session.testedFeatureSha=undefined;
+      return Object.freeze({status:"gateway_epoch_admitted" as const,
+        epoch:epochVersion,plan_digest:epoch.plan_digest,
+        blocked_descendant_task_ids:finalBlocked});
+    }finally{
+      this.#epochAdmissionInFlight.delete(sessionId);
+    }
+  }
+
+  /**
+   * R109: trusted HOST-ONLY admission of one extra, exact-granted discovery
+   * READ Task after a corroborated Runner FAIL, before the repair DAG exists.
+   * An Adapter-acknowledged, durably journalled Rust child issuance MUST
+   * precede registration. Execution remains conditional on the actual
+   * child's VP, native Rust verifier, OPA, role and exact Gitea read scope.
+   * No public HTTP/MCP/A2A operation may invoke this owner-private method.
+   */
+  async admitRepairDiscoveryTask(input:{
+    sessionId:string;failedRuntimeTestTaskId:string;
+    taskId:string;agentRole:"backend"|"frontend"|"test";
+    resource:string;credentialId:string;
+    childIssuanceJournal:TrustedChildIssuanceJournal;
+  }):Promise<Readonly<{status:"discovery_read_admitted_not_executed";
+    task_id:string;epoch:number;resource:string;credential_id:string}>>{
+    const session=this.#sessions.get(ensureId(input?.sessionId,"session ID"));
+    ensureId(input.taskId,"discovery Task ID");
+    ensureId(input.credentialId,"discovery credential ID");
+    if(!this.#epochIntake||!session?.active||
+       !(input.childIssuanceJournal instanceof TrustedChildIssuanceJournal)||
+       !["backend","frontend","test"].includes(input.agentRole)||
+       this.#epochAdmissionInFlight.has(input.sessionId)||
+       this.#discoveryAdmissionsInFlight.has(input.sessionId))
+      denied("Trusted parent, issued child journal and active repair session required");
+    this.#ensureUnexpired(session);
+    if(session.discoveryTasks.size>=4||
+       session.discoveryTasks.has(input.taskId)||
+       session.plan.tasks.some((t:any)=>t.id===input.taskId)||
+       session.admittedEpochTasks.has(input.taskId)||
+       [...this.#bindings.values()].some(b=>b.sessionId===input.sessionId&&
+         b.planTaskId===input.taskId))
+      denied("Discovery Task replay or per-failure read cap exceeded");
+    const failure=this.readVerifiedTestFailure(input.failedRuntimeTestTaskId);
+    if(failure.session_id!==session.sessionId||
+       failure.root_plan_digest!==session.digest||
+       failure.epoch_version!==session.currentEpoch||
+       failure.branch!==session.workBranch||
+       failure.first_failed_phase==="dependency_install"||
+       session.currentEpoch>=3)
+      denied("No repair-eligible verified Runner failure in this epoch");
+    this.#discoveryAdmissionsInFlight.add(session.sessionId);
+    try{
+      const proof=await this.#epochIntake.preflightRepairDiscovery({
+        sessionId:session.sessionId,taskId:input.taskId,
+        agentId:input.agentRole,resource:input.resource
+      });
+      if(proof.epoch!==session.currentEpoch||
+         proof.root_plan_digest!==session.digest||
+         proof.work_branch!==session.workBranch)
+        denied("Discovery root and Gateway failed Test epoch mismatch");
+      const history=await this.#epochIntake.verifiedEpochHistory();
+      input.childIssuanceJournal.assertBound({
+        sessionId:session.sessionId,
+        baseRevision:history[0].plan.base_revision,
+        planDigest:session.digest,
+        parentCredentialId:proof.root_credential_id
+      });
+      const journal=await input.childIssuanceJournal.records();
+      const issuance=journal.filter(x=>
+        x.task_id===input.taskId&&x.role===input.agentRole&&
+        x.credential_id===input.credentialId&&
+        x.observation==="adapter_response_verified");
+      if(issuance.length!==1||
+         journal.some(x=>x.credential_id===input.credentialId&&
+           x.task_id!==input.taskId))
+        denied("No matching one-use Adapter-issued and journalled child DC");
+      // Recheck the authenticated Engineer root and failure after IO, so
+      // neither a revoked parent nor an advancing epoch can admit a child.
+      const after=await this.#epochIntake.preflightRepairDiscovery({
+        sessionId:session.sessionId,taskId:input.taskId,
+        agentId:input.agentRole,resource:input.resource
+      });
+      const lastFailure=this.readVerifiedTestFailure(input.failedRuntimeTestTaskId);
+      this.#ensureUnexpired(session);
+      if(this.#sessions.get(session.sessionId)!==session||
+         lastFailure.request_id!==failure.request_id||
+         after.root_credential_id!==proof.root_credential_id||
+         session.currentEpoch!==proof.epoch||
+         session.discoveryTasks.has(input.taskId))
+        denied("Discovery parent, Test failure or session changed during admission");
+      const candidate=Object.freeze({
+        candidate_agents:Object.freeze([Object.freeze({
+          agent_id:input.agentRole,did:proof.agent_did
+        })]),
+        tasks:Object.freeze([Object.freeze({
+          id:input.taskId,agent_id:input.agentRole,depends_on:[]
+        })]),
+        requested_permissions:Object.freeze([Object.freeze({
+          task_id:input.taskId,agent_id:input.agentRole,
+          resource:input.resource,operation:"read_file"
+        })])
+      });
+      session.discoveryTasks.set(input.taskId,Object.freeze({
+        epoch:session.currentEpoch,role:input.agentRole,
+        resource:input.resource,credentialId:input.credentialId,
+        testedSha:failure.tested_commit_sha,plan:candidate
+      }));
+      return Object.freeze({status:"discovery_read_admitted_not_executed" as const,
+        task_id:input.taskId,epoch:session.currentEpoch,
+        resource:input.resource,credential_id:input.credentialId});
+    }finally{
+      this.#discoveryAdmissionsInFlight.delete(session.sessionId);
+    }
+  }
+
+  /**
+   * R151.32: authenticated private remote admission of one *read-only* Backend
+   * discovery Task after a finalized, real Docker TYPECHECK failure.
+   *
+   * Child ID/role/permissions come ONLY from the independent Rust-verified,
+   * journal-pinned Gateway Child VP; NEVER from a caller-supplied credential.
+   * This registers a Task, not an A2A binding, provider read or signed VP
+   * reuse. Each later Prepare/Execute still requires fresh Rust VP + OPA.
+   */
+  async admitRemoteRepairDiscoveryTask(input:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;resource:string;runtime_test_task_id:string;
+  }>,proofPort:TrustedGatewayDiscoveryChildVpVerifier):Promise<Readonly<{
+    status:"discovery_read_admitted_not_executed";task_id:string;
+    epoch:number;resource:string;credential_id:string;
+    gateway_task_admitted:true;execution_authorized:false;source_read:false;
+  }>>{
+    const session=this.#sessions.get(ensureId(input?.session_id,"session ID"));
+    ensureId(input?.task_id,"discovery Task ID");
+    ensureId(input?.runtime_test_task_id,"failed Test runtime ID");
+    if(!session?.active||
+       (!this.#remoteEpochInspector&&!this.#epochIntake)||
+       !(proofPort instanceof TrustedGatewayDiscoveryChildVpVerifier)||
+       (this.#remoteEpochInspector!==undefined&&
+        !proofPort.usesInspector(this.#remoteEpochInspector))||
+       !this.#sessionStore||!this.#operationalLeaseMs||
+       this.#epochAdmissionInFlight.has(input.session_id)||
+       this.#discoveryAdmissionsInFlight.has(input.session_id)||
+       input.root_plan_digest!==session.digest||
+       !/^[a-f0-9]{64}$/u.test(input.plan_digest)||
+       !Number.isSafeInteger(input.epoch)||input.epoch<1||
+       input.epoch!==session.currentEpoch||session.currentEpoch>=3)
+      denied("Durable, current trusted root and independent discovery proof required");
+    this.#ensureUnexpired(session);
+    if(session.discoveryTasks.size>=4||
+       session.discoveryTasks.has(input.task_id)||
+       session.plan.tasks.some((t:any)=>t.id===input.task_id)||
+       session.admittedEpochTasks.has(input.task_id)||
+       [...this.#bindings.values()].some(b=>
+        b.sessionId===session.sessionId&&b.planTaskId===input.task_id))
+      denied("Discovery Task replay or read budget exhausted");
+    const failure=this.readVerifiedTestFailure(input.runtime_test_task_id);
+    if(failure.status!=="validation_failed"||
+       failure.session_id!==session.sessionId||
+       failure.root_plan_digest!==session.digest||
+       failure.epoch_version!==input.epoch||
+       failure.branch!==session.workBranch||
+       !isActionableRepairFailure(failure.first_failed_phase,
+         failure.typecheck_error_codes,failure.acceptance_failure,failure.project_test_failure))
+      denied("A finalized, current actionable Runner FAIL is required");
+    const blocked=this.#assertEpochQuiescent(session);
+    this.#discoveryAdmissionsInFlight.add(session.sessionId);
+    try{
+      const proof=await proofPort.verifyChild({
+        session_id:input.session_id,root_plan_digest:input.root_plan_digest,
+        plan_digest:input.plan_digest,epoch:input.epoch,
+        task_id:input.task_id,resource:input.resource
+      });
+      if(proof.status!=="discovery_child_vp_verified_not_admitted"||
+         proof.cryptographic_presentation_verified!==true||
+         proof.gateway_task_admitted!==false||
+         proof.execution_authorized!==false||proof.source_read!==false||
+         proof.session_id!==session.sessionId||
+         proof.root_plan_digest!==session.digest||
+         proof.plan_digest!==input.plan_digest||proof.epoch!==input.epoch||
+         proof.task_id!==input.task_id||proof.resource!==input.resource||
+         proof.operation!=="read_file"||
+         !ID.test(proof.credential_id)||!proof.agent_did.startsWith("did:"))
+        denied("Rust-verified journal child differs from exact signed Backend read");
+      this.#ensureUnexpired(session);
+      const again=this.readVerifiedTestFailure(input.runtime_test_task_id);
+      if(this.#sessions.get(session.sessionId)!==session||
+         session.currentEpoch!==input.epoch||
+         again.request_id!==failure.request_id||
+         again.tested_commit_sha!==failure.tested_commit_sha||
+         JSON.stringify(this.#assertEpochQuiescent(session))!==
+          JSON.stringify(blocked)||
+         session.discoveryTasks.has(input.task_id))
+        denied("Original Gateway Test FAIL or epoch changed during Child proof");
+      // No model-selected credential, DID, grant or file can enter registry.
+      const candidate=Object.freeze({
+        candidate_agents:Object.freeze([Object.freeze({
+          agent_id:"backend",did:proof.agent_did
+        })]),
+        tasks:Object.freeze([Object.freeze({
+          id:input.task_id,agent_id:"backend",depends_on:[]
+        })]),
+        requested_permissions:Object.freeze([Object.freeze({
+          task_id:input.task_id,agent_id:"backend",
+          resource:proof.resource,operation:"read_file"
+        })])
+      });
+      session.discoveryTasks.set(input.task_id,Object.freeze({
+        epoch:input.epoch,role:"backend" as const,
+        resource:proof.resource,credentialId:proof.credential_id,
+        testedSha:failure.tested_commit_sha,plan:candidate
+      }));
+      return Object.freeze({
+        status:"discovery_read_admitted_not_executed" as const,
+        task_id:input.task_id,epoch:input.epoch,
+        resource:proof.resource,credential_id:proof.credential_id,
+        gateway_task_admitted:true as const,
+        execution_authorized:false as const,source_read:false as const
+      });
+    }finally{
+      this.#discoveryAdmissionsInFlight.delete(session.sessionId);
+    }
+  }
+
+  /** Owner-private identity check: no mixing Task gates across root sessions. */
+  isBoundToOperationalEpochIntake(intake:TrustedOperationalEpochIntake):boolean{
+    return this.#epochIntake===intake;
+  }
+
+  /**
+   * R135: private source-free Gateway pre-dispatch dependency gate.  This
+   * does NOT bind a Task, grant a permission or complete any work. The
+   * caller cannot use a valid root VP to bypass signed DAG dependencies.
+   */
+  assertRepairTaskReady(input:Readonly<{
+    session_id:string;plan_digest:string;epoch:number;
+    plan_task_id:string;role:AgentRole;
+  }>):void{
+    const session=this.#sessions.get(ensureId(input.session_id,"session ID"));
+    ensureId(input.plan_task_id,"plan task ID");
+    if(!session?.active||!this.#remoteEpochInspector)
+      denied("Only active, independently admitted remote repair can dispatch");
+    this.#ensureUnexpired(session);
+    if(session.currentEpoch!==input.epoch||input.epoch<2||
+       [...this.#bindings.values()].some(b=>
+         b.sessionId===input.session_id&&b.planTaskId===input.plan_task_id))
+      denied("Repair epoch stale or Task previously bound");
+    const row=session.admittedEpochTasks.get(input.plan_task_id);
+    if(!row||row.epoch!==input.epoch||
+       row.digest!==input.plan_digest)
+      denied("Repair Task not admitted from current signed epoch");
+    const task=row.plan.tasks.find((x:any)=>x.id===input.plan_task_id);
+    if(!task||task.agent_id!==input.role||
+       !["backend","frontend","test"].includes(input.role))
+      denied("Repair Agent role not in trusted Gateway epoch");
+    if(task.depends_on.some((id:string)=>
+      !session.completedPlanTasks.has(id)))
+      denied("Repair Task dependencies not Gateway-attested");
+  }
+
+  /** Bind the opaque A2A runtime task to ONE exact plan task and role. */
+  bindTask(sessionId:string, planTaskId:string, runtimeTaskId:string, role:AgentRole):void {
+    ensureId(sessionId,"session ID");
+    ensureId(planTaskId,"plan task ID");
+    ensureId(runtimeTaskId,"A2A runtime task ID");
+    const session=this.#sessions.get(sessionId);
+    if(!session?.active || this.#bindings.has(runtimeTaskId)) {
+      denied("Unknown, inactive or duplicate approved runtime task");
+    }
+    this.#ensureUnexpired(session);
+    const plan=session.discoveryTasks.get(planTaskId)?.plan??
+      (session.currentEpoch===1?session.plan:
+        session.admittedEpochTasks.get(planTaskId)?.plan);
+    const task=plan?.tasks.find((t:any)=>t.id===planTaskId);
+    if(!task || task.agent_id!==role ||
+       [...this.#bindings.values()].some(b=>
+         b.sessionId===sessionId && b.planTaskId===planTaskId)) {
+      denied("A2A runtime task is not assigned to the current admitted epoch");
+    }
+    this.#bindings.set(runtimeTaskId,{
+      runtimeTaskId,planTaskId,agent:role,sessionId,
+      epochVersion:session.currentEpoch,
+      successfulRequests:new Map(),completed:false,completing:false,
+      failedFinalized:false,inFlightEffects:0
+    });
+  }
+
+  /** Read-only preflight of the exact hints about to enter the private MCP registry. */
+  assertRuntimeFileGrants(runtimeTaskId:string,role:AgentRole,branch:string,
+    permissions:readonly {operation:string;path:string}[]):void {
+    const {session,binding}=this.#activeBinding(runtimeTaskId);
+    if(binding.agent!==role||binding.completed||binding.completing||binding.failedRunner)
+      denied("Runtime grant preflight binding mismatch","approved_plan_denied","task_binding_rejected");
+    const plan=this.#taskPlan(session,binding);
+    const prefix="gitea://"+plan.repository.authority+"/"+plan.repository.owner+"/"+
+      plan.repository.repository+"/branches/"+encodeURIComponent(branch)+"/files/";
+    if(branch!==session.workBranch||permissions.length>32||permissions.some(p=>
+      typeof p.path!=="string"||!p.path||p.path.split("/").some(x=>!x||x==="."||x==="..")||
+      !["read_file","update_file","create_file"].includes(p.operation)||
+      !plan.requested_permissions.some((g:any)=>g.task_id===binding.planTaskId&&
+        g.agent_id===role&&g.operation===p.operation&&
+        g.resource===prefix+p.path.split("/").map(encodeURIComponent).join("/"))))
+      denied("Runtime hints exceed exact signed file grants","approved_plan_denied","signed_permission_rejected");
+  }
+
+  /** Called during Gateway Prepare, before a one-shot challenge is created. */
+  authorizePrepare(runtimeTaskId:string, role:AgentRole, required:Permission,
+    request?:NormalizedToolRequest):
+    { plan_digest:string; plan_task_id:string; work_branch:string;
+      tested_head_sha?:string } {
+    const {session,binding}=this.#activeBinding(runtimeTaskId);
+    if(binding.agent!==role || binding.completed || binding.completing ||
+       binding.failedRunner!==undefined || binding.failedFinalized) {
+      denied("Runtime role or completing/completed task is outside approved plan","approved_plan_denied","task_inactive_or_expired");
+    }
+    try{this.#checkAction(session,binding,required,request);}
+    catch(error){
+      const plan=this.#taskPlan(session,binding);
+      const task=plan.tasks.find((t:any)=>t.id===binding.planTaskId);
+      const reason=task?.depends_on.some((id:string)=>!session.completedPlanTasks.has(id))
+        ?"dependency_rejected":!plan.requested_permissions.some((p:any)=>
+          p.task_id===binding.planTaskId&&p.agent_id===role&&
+          p.resource===required.resource&&p.operation===required.operation)
+          ?"signed_permission_rejected":"gateway_prepare_unclassified";
+      if(error instanceof GatewayError)Object.assign(error,{prepare_reason:reason});
+      throw error;
+    }
+    const approvedTestedSha=request?.tool==="create_pull_request"
+      ?session.testedFeatureSha:undefined;
+    if(request?.tool==="create_pull_request"&&!approvedTestedSha)
+      denied("PR requires a trusted, completed exact-SHA Runner acceptance");
+    return {plan_digest:session.digest,plan_task_id:binding.planTaskId,
+      work_branch:session.workBranch,
+      ...(approvedTestedSha?{tested_head_sha:approvedTestedSha}:{})};
+  }
+
+  /** Re-evaluate AFTER VP and OPA, immediately BEFORE provider I/O. */
+  assertAuthorizedForExecution(
+    record:PreparedRequestRecord, verifiedPresenterId?:string,
+    verifiedCredentialId?:string
+  ):void {
+    if(!record.approved_plan_digest || !record.approved_plan_task_id) {
+      denied("Prepared request has no trusted plan binding");
+    }
+    const {session,binding}=this.#activeBinding(record.task_id);
+    if(binding.agent!==record.agent_role || binding.completed ||
+       binding.failedRunner!==undefined || binding.failedFinalized ||
+       record.approved_plan_task_id!==binding.planTaskId ||
+       record.approved_plan_digest!==session.digest) {
+      denied("Prepared plan digest, task binding or role changed");
+    }
+    // For specialized agents, the DID in the approved immutable agent
+    // registry must match the presenter whose VP the Rust Core verified.
+    // Orchestrator identity is resolved independently by the Rust role map.
+    if(binding.agent!=="orchestrator" && verifiedPresenterId!==undefined) {
+      const effectivePlan=this.#taskPlan(session,binding);
+      const entry=effectivePlan.candidate_agents.find(
+        (a:any)=>a.agent_id===binding.agent
+      );
+      if(!entry || entry.did!==verifiedPresenterId) {
+        denied("Verified presenter DID differs from approved agent identity");
+      }
+    }
+    const discovery=session.discoveryTasks.get(binding.planTaskId);
+    if(discovery&&
+       (discovery.epoch!==binding.epochVersion||
+        discovery.credentialId!==verifiedCredentialId))
+      denied("Verified VP credential differs from journalled discovery child");
+    if(record.approved_work_branch!==session.workBranch){
+      denied("Trusted plan working branch changed after Prepare");
+    }
+    if(record.request.tool==="create_pull_request"&&
+       (!session.testedFeatureSha||
+        record.approved_tested_head_sha!==session.testedFeatureSha)){
+      denied("Prepared PR SHA differs from completed trusted Runner acceptance");
+    }
+    this.#checkAction(session,binding,record.required_permission,record.request);
+  }
+
+  /**
+   * Provider in-flight fence, installed synchronously AFTER the final
+   * VP/Core+OPA authorisation and BEFORE any asynchronous provider I/O.
+   * The returned closure belongs only to the trusted Gateway executor.
+   * Repair epochs cannot replace a Task while any provider effect is live.
+   */
+  beginProviderEffect(record:PreparedRequestRecord):()=>void{
+    const {binding}=this.#activeBinding(record.task_id);
+    // An operation prepared BEFORE async PASS attestation may finish
+    // while the attestor is waiting; the existing attestor detects the
+    // changed effect set and rejects stale completion. The flight fence
+    // protects epoch transition without changing that invariant.
+    if(binding.completed||binding.failedFinalized||
+       binding.failedRunner!==undefined||
+       binding.agent!==record.agent_role||
+       record.approved_plan_task_id!==binding.planTaskId)
+      denied("Provider effect cannot start for a terminal or foreign Task");
+    binding.inFlightEffects++;
+    let ended=false;
+    return ()=>{
+      if(ended)denied("Duplicate completion of protected provider effect");
+      ended=true;
+      binding.inFlightEffects--;
+    };
+  }
+
+  /** Gateway-confirmed provider results are tracked internally, not via A2A. */
+  recordProviderSuccess(
+    record:PreparedRequestRecord,result:ExecutionResult,verifiedPresenterId:string,
+    verifiedCredentialId?:string
+  ):void {
+    if(!result.performed||result.provider==="mock")return;
+    if(!["create_branch","create_pull_request","create_file",
+          "update_file","run_tests","read_file"].includes(record.request.tool))return;
+    this.assertAuthorizedForExecution(record,verifiedPresenterId,verifiedCredentialId);
+    if(result.tool!==record.request.tool)return;
+    if(result.tool==="read_file"){
+      // Read-only signed Tasks are permitted by the Planner contract and
+      // independently attested by GatewayCorroboratedTaskAttestor. Previously
+      // dropping all reads made those legitimate Tasks impossible to complete.
+      // Record only authenticated provider metadata, NEVER source bytes.
+      if(record.request.tool!=="read_file"||result.provider!=="gitea"||
+         !SHA.test(result.revision)||
+         result.branch!==record.request.arguments.branch||
+         result.path!==record.request.arguments.path||
+         typeof result.content!=="string"||
+         result.encoding!=="utf-8")return;
+      // Record ONLY a bounded immutable fingerprint, never source bytes.
+      const sourceBytes=Buffer.byteLength(result.content,"utf8");
+      const sourceHash=createHash("sha256").update(result.content,"utf8").digest("hex");
+      this.#bindings.get(record.task_id)?.successfulRequests.set(record.request_id,
+        Object.freeze({
+          request_id:record.request_id,tool:"read_file",
+          resource:record.required_permission.resource,
+          source_sha256:sourceHash,source_bytes:sourceBytes,
+          execution:{
+            provider:"gitea" as const,performed:true as const,
+            tool:"read_file" as const,branch:result.branch,path:result.path,
+            revision:result.revision,blob_sha:result.blob_sha,
+            last_commit_sha:result.last_commit_sha,size:result.size,
+            encoding:result.encoding
+          }
+        }));
+      return;
+    }
+    // A Runner FAIL is valid validation feedback, but NEVER a completed
+    // Test Task or PR authority. Store it only after VP/Core+OPA permitted
+    // an actual Runner provider execution. No model assertion is trusted.
+    if(result.provider==="runner"&&result.status==="fail"){
+      const {session,binding}=this.#activeBinding(record.task_id);
+      const phases=result.phases;
+      // The failing Runner must be the only outstanding provider effect.
+      // Otherwise an earlier authorized write could complete after the
+      // failure and invalidate the reported tested SHA.
+      if(binding.inFlightEffects!==1)
+        denied("Concurrent provider effect makes Runner failure ambiguous");
+      if(binding.agent!=="test"||record.agent_role!=="test"||
+         binding.failedRunner!==undefined||binding.completed||
+         binding.completing||result.tool!=="run_tests"||
+         result.runner_profile!=="poc-default"||
+         result.branch!==session.workBranch||
+         result.branch!==record.request.arguments.branch||
+         !SHA.test(result.tested_commit_sha)||
+         result.tested_commit_sha!==result.revision||
+         !Array.isArray(phases)||phases.length!==RUNNER_PHASES.length||
+         phases.some((p,i)=>p.phase!==RUNNER_PHASES[i]||
+           !["pass","fail","skipped"].includes(p.status))||
+         !phases.some(p=>p.status==="fail")||
+         result.project_tests?.status==="pass"&&
+           phases.some(p=>p.phase!=="researcher_acceptance"&&p.status==="fail"))
+        denied("Untrustworthy or incomplete failed Runner receipt");
+      const codes=result.typecheck_error_codes;
+      if(codes!==undefined&&(!Array.isArray(codes)||codes.length>16||
+         codes.some(c=>typeof c!=="string"||!/^TS[0-9]{4}$/u.test(c))))
+        denied("Untrusted compiler diagnostic code");
+      // Only bounded, whitelisted metadata crosses the private feedback
+      // boundary: no log references, stderr, source code or raw LLM text.
+      const first=phases.find(p=>p.status==="fail")!.phase;
+      const acceptance = result.acceptance_failure===undefined ? undefined
+        :safeAcceptanceFailureSummary(result.acceptance_failure);
+      if(result.acceptance_failure!==undefined&&(!acceptance||
+         first!=="researcher_acceptance"||(codes?.length??0)!==0||
+         result.project_tests?.status!=="pass"||
+         result.researcher_acceptance?.status!=="fail"||
+         phases.slice(0,-1).some(p=>p.status!=="pass")))
+        denied("Untrusted acceptance failure diagnostic");
+      const projectIndex=RUNNER_PHASES.indexOf(first);
+      const projectPhase=first==="backend_tests"||first==="frontend_tests"?first:null;
+      const project=projectPhase&&(codes?.length??0)===0&&
+        result.project_tests?.status==="fail"&&result.researcher_acceptance?.status==="skipped"&&
+        phases.every((p,i)=>p.status===(i<projectIndex?"pass":i===projectIndex?"fail":"skipped"))
+        ?safeProjectTestFailureDiagnostic({phase:projectPhase,failed_test_file_count:
+          sanitizeVitestFailureFiles(result.failing_test_files,projectPhase).length}):null;
+      binding.failedRunner=Object.freeze({
+        status:"validation_failed",
+        session_id:session.sessionId,root_plan_digest:session.digest,
+        request_id:record.request_id,
+        plan_task_id:binding.planTaskId,runtime_task_id:binding.runtimeTaskId,
+        epoch_version:binding.epochVersion,
+        branch:result.branch,tested_commit_sha:result.tested_commit_sha,
+        first_failed_phase:first,
+        typecheck_error_codes:Object.freeze([...(codes??[])]),
+        ...(project?{project_test_failure:project}:{}),
+        ...(acceptance?{acceptance_failure:acceptance}:{})
+      });
+      session.testedFeatureSha=undefined;
+      return;
+    }
+    if(result.provider==="runner"&&result.status!=="pass")return;
+    // Any successful approved file mutation invalidates the previous test
+    // attestation; tests must be rerun on the new immutable branch head.
+    if(result.tool==="create_file"||result.tool==="update_file"){
+      const bound=this.#bindings.get(record.task_id);
+      const session=bound&&this.#sessions.get(bound.sessionId);
+      if(session)session.testedFeatureSha=undefined;
+    }
+    this.#bindings.get(record.task_id)?.successfulRequests.set(record.request_id,
+      Object.freeze({
+        request_id:record.request_id,tool:record.request.tool,
+        resource:record.required_permission.resource,
+        execution:structuredClone(result)
+      }));
+  }
+
+  /**
+   * R104 private validation-failure acknowledgement: unlike PASS this does
+   * NOT complete a Test Task, attest tests, or enable a PR. Only previously
+   * Gateway-observed Docker failure metadata is eligible. The owner may then
+   * request a distinct, attenuated repair epoch under the same Rust root.
+   */
+  confirmTestValidationFailure(runtimeTaskId:string,expected?:Readonly<{
+    session_id:string;root_plan_digest:string;
+  }>):
+    Readonly<TrustedRunnerFailure>{
+    const {session,binding}=this.#activeBinding(runtimeTaskId);
+    // R114: the remote Engineer's exact session/root-plan pins are checked
+    // BEFORE marking the Test failure final. Never let an authenticated but
+    // mismatched Task ID finalize a different signed session's Runner FAIL.
+    if(expected&&(expected.session_id!==session.sessionId||
+       expected.root_plan_digest!==session.digest||
+       binding.sessionId!==expected.session_id))
+      denied("Verified Test failure belongs to a different signed root");
+    if(binding.agent!=="test"||binding.completed||binding.completing||
+       binding.failedFinalized||!binding.failedRunner)
+      denied("No unique verified failed Runner Test Task");
+    this.#assertDependencies(session,binding);
+    // Dependency-install failures are not reliably attributable to
+    // generated code: never send them into an expensive autonomous loop.
+    if(binding.failedRunner.first_failed_phase==="dependency_install")
+      denied("Dependency install failure requires trusted infrastructure triage");
+    if(binding.inFlightEffects!==0)
+      denied("In-flight provider effect prevents terminal failure attestation");
+    // Do not let earlier successful Runner effects provide an alternate
+    // completed Test for the same failed Task.
+    if([...binding.successfulRequests.values()].some(e=>e.tool==="run_tests"))
+      denied("Conflicting Runner PASS and FAIL in the same Task");
+    binding.failedFinalized=true;
+    session.testedFeatureSha=undefined;
+    return binding.failedRunner;
+  }
+
+  /** Owner-private metadata only. No signed VP, source, logs or credentials. */
+  readVerifiedTestFailure(runtimeTaskId:string):
+    Readonly<TrustedRunnerFailure>{
+    const {binding}=this.#activeBinding(runtimeTaskId);
+    if(binding.agent!=="test"||!binding.failedFinalized||
+       !binding.failedRunner||binding.completed)
+      denied("No terminal Gateway-confirmed validation failure");
+    return binding.failedRunner;
+  }
+
+  /**
+   * Called ONLY by authenticated trusted A2A/CI completion coordinator.
+   * Requires observed Gateway provider effects and external attestation.
+   * No "mark complete" public HTTP route or model-facing MCP tool exists.
+   */
+  async confirmTaskCompletion(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void> {
+    const {session,binding}=this.#activeBinding(runtimeTaskId);
+    if(binding.completed || binding.completing||binding.failedRunner||
+       binding.failedFinalized || !binding.successfulRequests.size) {
+      denied("Cannot complete a task without confirmed provider effects");
+    }
+    this.#assertDependencies(session,binding);
+    // Freeze the exact Gateway effects about to be independently attested.
+    // A previously prepared operation can finish while the asynchronous
+    // attestor is awaiting evidence. Such a late provider effect must never
+    // be silently added to the set of effects used for task completion.
+    const attestedRequests=[...binding.successfulRequests.entries()];
+    binding.completing=true;
+    let confirmed=false;
+    try {
+      confirmed=await this.#attestor.confirmCompleted(Object.freeze({
+        session_id:session.sessionId,plan_digest:session.digest,
+        plan_task_id:binding.planTaskId,runtime_task_id:runtimeTaskId,
+        role:binding.agent,
+        successful_gateway_request_ids:Object.freeze(
+          attestedRequests.map(([id])=>id)),
+        provider_effects:Object.freeze(
+          attestedRequests.map(([,effect])=>structuredClone(effect))),
+        ...(observation?{observation:structuredClone(observation)}:{})
+      }));
+    } catch {
+      denied("Trusted task completion attestor failed closed");
+    } finally {
+      binding.completing=false;
+    }
+    if(!confirmed || !session.active) {
+      denied("No verified A2A task completion attestation");
+    }
+    // Comparing the whole ordered registry matters even for a second Runner
+    // PASS on the *same* SHA: the attestor did not approve that new request.
+    const currentRequests=[...binding.successfulRequests.entries()];
+    if(currentRequests.length!==attestedRequests.length||
+       currentRequests.some(([id,effect],i)=>
+         id!==attestedRequests[i][0]||
+         effect!==attestedRequests[i][1])) {
+      denied("Gateway provider effects changed during Task attestation");
+    }
+    this.#ensureUnexpired(session);
+    this.#assertDependencies(session,binding);
+    // A model-reported "tests passed" cannot supply this SHA. It comes only
+    // from a Gateway-recorded Runner provider effect plus trusted attestation.
+    const successfulEffects=[...binding.successfulRequests.values()];
+    const relevantEffects=successfulEffects.filter(v=>
+      v.tool==="run_tests"||v.tool==="update_file"||
+      v.tool==="create_file");
+    const lastRelevant=relevantEffects.at(-1);
+    // Only the FINAL provider effect capable of changing the tested
+    // revision may establish PR authority. An earlier passing Docker
+    // receipt is stale after any later approved write. After a repair,
+    // a new passing Runner may legitimately attest a different SHA.
+    if(lastRelevant?.tool==="run_tests"){
+      const run=lastRelevant.execution;
+      const lastMutation=relevantEffects.filter(v=>
+        v.tool==="update_file"||v.tool==="create_file").at(-1)?.execution;
+      if(run.provider==="runner"&&run.tool==="run_tests"&&
+         run.branch===session.workBranch&&run.status==="pass"&&
+         run.project_tests?.status==="pass"&&
+         run.researcher_acceptance?.status==="pass"&&
+         SHA.test(run.tested_commit_sha)&&
+         (lastMutation===undefined||(
+           lastMutation.provider==="gitea"&&
+           "commit_sha" in lastMutation&&
+           lastMutation.commit_sha===run.tested_commit_sha)))
+        session.testedFeatureSha=run.tested_commit_sha;
+    }
+    // F2: create a source-free projection ONLY from the frozen effects
+    // already accepted by the independent Gateway completion attestor.
+    // The role-specific artifact is an observation and cannot create
+    // writes or grant scope. No entry exists for unattested completions.
+    let implementation:VerifiedImplementationSummary|undefined;
+    if((binding.agent==="backend"||binding.agent==="frontend")&&
+       observation?.source==="trusted_a2a_poll"){
+      // F2 is a projection, NOT an additional completion attestor. Older
+      // legitimate signed/recovery paths may use a less detailed artifact.
+      // Preserve their existing Gateway decision; such a Task simply has
+      // NO F2 receipt. The opt-in owner/dispatcher F2 reader then denies
+      // downstream Test dispatch until evidence is sufficient.
+      try{
+      const artifact=observation.artifact;
+      if(!artifact||observation.runtime_task_id!==runtimeTaskId||
+         artifact.branch!==session.workBranch||!SHA.test(artifact.revision)||
+         artifact.commit_sha!==artifact.revision)
+        denied("F2 completion lacks pinned trusted implementation artifact");
+      const edits:VerifiedImplementationSummary["changed_files"][number][]=[];
+      for(const [,effect] of attestedRequests){
+        if(effect.tool!=="update_file"&&effect.tool!=="create_file")continue;
+        const e=effect.execution;
+        if(e.provider!=="gitea"||e.performed!==true||
+           !("path" in e)||!("branch" in e)||!("commit_sha" in e)||
+           e.branch!==session.workBranch||!SHA.test(e.commit_sha)||
+           typeof e.path!=="string"||!e.path)
+          denied("F2 mutation lacks exact Gitea provider effect");
+        edits.push(Object.freeze({path:e.path,
+          operation:effect.tool as "update_file"|"create_file",
+          commit_sha:e.commit_sha}));
+      }
+      const claimed=[...artifact.files_modified.map(path=>"update_file\\0"+path),
+                     ...artifact.files_created.map(path=>"create_file\\0"+path)].sort();
+      const effects=[...new Set(edits.map(x=>x.operation+"\\0"+x.path))].sort();
+      if(JSON.stringify(claimed)!==JSON.stringify(effects)||
+         (edits.length>0&&edits.at(-1)?.commit_sha!==artifact.revision)||
+         (edits.length===0&&
+          !attestedRequests.some(([,e])=>e.tool==="read_file"&&
+            e.execution.provider==="gitea"&&
+            "revision" in e.execution&&e.execution.revision===artifact.revision)))
+        denied("F2 implementation summary not corroborated at exact revision");
+      implementation=Object.freeze({
+        status:"gateway_verified_implementation" as const,
+        session_id:session.sessionId,plan_digest:session.digest,
+        plan_task_id:binding.planTaskId,runtime_task_id:runtimeTaskId,
+        role:binding.agent,branch:session.workBranch,
+        revision:artifact.revision,
+        changed_files:Object.freeze(edits),
+        gateway_provider_effect_count:attestedRequests.length
+      });
+      }catch{
+        implementation=undefined;
+      }
+    }
+    binding.completed=true;
+    session.completedPlanTasks.add(binding.planTaskId);
+    if(implementation)this.#verifiedImplementations.set(runtimeTaskId,implementation);
+  }
+
+  /** F2 owner-private read; unavailable to A2A, MCP and public Gateway HTTP.
+   * All caller pins must match an independently completed Gateway Task. */
+  readVerifiedImplementationSummary(pins:Readonly<{
+    session_id:string;plan_digest:string;plan_task_id:string;
+    runtime_task_id:string;role:"backend"|"frontend";
+    branch:string;revision:string;
+  }>):VerifiedImplementationSummary {
+    if(!pins||!ensureId(pins.session_id,"session ID")||
+       !ensureId(pins.plan_task_id,"plan task ID")||
+       !ensureId(pins.runtime_task_id,"runtime task ID")||
+       !/^[a-f0-9]{64}$/u.test(pins.plan_digest)||!SHA.test(pins.revision))
+      denied("F2 invalid verified implementation query");
+    const {session,binding}=this.#activeBinding(pins.runtime_task_id);
+    const verified=this.#verifiedImplementations.get(pins.runtime_task_id);
+    if(!verified||!binding.completed||binding.completing||
+       session.sessionId!==pins.session_id||session.digest!==pins.plan_digest||
+       binding.planTaskId!==pins.plan_task_id||binding.agent!==pins.role||
+       session.workBranch!==pins.branch||verified.revision!==pins.revision||
+       verified.runtime_task_id!==pins.runtime_task_id)
+      denied("F2 no matching completed trusted implementation");
+    return structuredClone(verified);
+  }
+
+  /**
+   * R151.43: owner-only independent POST-completion discovery read receipt.
+   *
+   * The Gateway, not A2A/model text, established this successful Gitea
+   * provider effect AFTER each normal Rust VP, OPA and Task gate. Return
+   * ONLY source-free metadata; never cache or return the file content/VP.
+   * This receipt is NOT permission to create a repair DAG or open a PR.
+   */
+  readConfirmedRemoteDiscoveryEffect(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;runtime_task_id:string;
+    runtime_test_task_id:string;resource:string;tested_commit_sha:string;
+  }>){
+    if(!pins||!ID.test(pins.session_id)||!ID.test(pins.task_id)||
+       !ID.test(pins.runtime_task_id)||!ID.test(pins.runtime_test_task_id)||
+       !/^[a-f0-9]{64}$/u.test(pins.root_plan_digest)||
+       !/^[a-f0-9]{64}$/u.test(pins.plan_digest)||
+       !Number.isSafeInteger(pins.epoch)||pins.epoch<1||pins.epoch>2||
+       !SHA.test(pins.tested_commit_sha)||
+       typeof pins.resource!=="string"||pins.resource.length>2048)
+      denied("Malformed trusted discovery read verification request");
+    const {session,binding}=this.#activeBinding(pins.runtime_task_id);
+    const admitted=session.currentEpoch===1?session.plan:
+       [...session.admittedEpochTasks.values()]
+        .find(x=>x.epoch===session.currentEpoch)?.plan;
+    const discovery=session.discoveryTasks.get(pins.task_id);
+    if(session.sessionId!==pins.session_id||
+       session.digest!==pins.root_plan_digest||
+       !admitted||planDigest(admitted)!==pins.plan_digest||
+       pins.epoch!==session.currentEpoch||
+       binding.epochVersion!==pins.epoch||
+       binding.sessionId!==pins.session_id||
+       binding.planTaskId!==pins.task_id||binding.agent!=="backend"||
+       !binding.completed||binding.completing||binding.inFlightEffects!==0||
+       !session.completedPlanTasks.has(pins.task_id)||
+       !discovery||discovery.epoch!==pins.epoch||
+       discovery.role!=="backend"||discovery.resource!==pins.resource||
+       discovery.testedSha!==pins.tested_commit_sha||
+       !ID.test(discovery.credentialId)||
+       binding.successfulRequests.size!==1)
+      denied("Gateway has no exact completed authenticated Backend discovery read");
+    const failure=this.readVerifiedTestFailure(pins.runtime_test_task_id);
+    if(failure.session_id!==pins.session_id||
+       failure.root_plan_digest!==pins.root_plan_digest||
+       failure.epoch_version!==pins.epoch||
+       failure.branch!==session.workBranch||
+       failure.tested_commit_sha!==pins.tested_commit_sha||
+       !isActionableRepairFailure(failure.first_failed_phase,
+         failure.typecheck_error_codes,failure.acceptance_failure,failure.project_test_failure))
+      denied("Gateway discovery source is not pinned to the original failed Runner SHA");
+    const [effect]=binding.successfulRequests.values();
+    const e=effect?.execution;
+    if(!effect||effect.tool!=="read_file"||
+       effect.resource!==pins.resource||
+       typeof effect.source_sha256!=="string"||
+       !/^[a-f0-9]{64}$/u.test(effect.source_sha256)||
+       !Number.isSafeInteger(effect.source_bytes)||
+       effect.source_bytes!<0||effect.source_bytes!>32768||
+       e?.provider!=="gitea"||e.tool!=="read_file"||
+       e.performed!==true||
+       !("revision" in e)||e.revision!==pins.tested_commit_sha||
+       !("branch" in e)||e.branch!==session.workBranch||
+       !("path" in e)||typeof e.path!=="string"||
+       !e.path||e.path.startsWith("/")||e.path.includes("..")||
+       !("blob_sha" in e)||typeof e.blob_sha!=="string"||
+       !("last_commit_sha" in e)||
+       !("size" in e)||!Number.isSafeInteger(e.size)||
+       e.size!==effect.source_bytes||
+       !("encoding" in e)||e.encoding!=="utf-8")
+      denied("No exact-SHA Gateway-correlated Gitea read-only provider effect");
+    // Check the precise Gateway-generated ResourceURI rather than trusting
+    // a model-selected path, and never send source bytes over owner IPC.
+    const encodedBranch=encodeURIComponent(session.workBranch);
+    const prefix="gitea://"+[
+      this.#repository.authority,this.#repository.owner,this.#repository.repository
+    ].map(x=>encodeURIComponent(x)).join("/")+
+     "/branches/"+encodedBranch+"/files/";
+    if(!pins.resource.startsWith(prefix)||
+       pins.resource.slice(prefix.length)!==e.path.split("/")
+        .map(x=>encodeURIComponent(x)).join("/"))
+      denied("Read provider path not equal to signed Gitea ResourceURI");
+    return Object.freeze({
+      status:"gateway_confirmed_exact_sha_discovery_read_no_repair_authority" as const,
+      session_id:session.sessionId,task_id:pins.task_id,
+      runtime_task_id:pins.runtime_task_id,epoch:pins.epoch,
+      resource:pins.resource,branch:session.workBranch,
+      revision:pins.tested_commit_sha,request_id:effect.request_id,
+      credential_id:discovery.credentialId,
+      source_sha256:effect.source_sha256,source_bytes:effect.source_bytes,
+      gateway_provider_corroborated:true as const,
+      source_disclosed:false as const,
+      repair_dag_authorized:false as const,
+      pr_authorized:false as const
+    });
+  }
+
+  /**
+   * Owner-private, POST-RETIREMENT read of the exact provider-corrobated Test
+   * evidence. This is NOT an authorization, public API, A2A or MCP method.
+   * The caller must separately verify native DC/root retirement. Returning
+   * only fixed pass statuses avoids leaking Runner stderr or source paths.
+   */
+  readVerifiedRunnerEffect(query:Readonly<{
+    session_id:string;task_id:string;branch:string;tested_commit_sha:string;
+  }>):Readonly<Pick<RunnerExecutionResult,
+    "provider"|"performed"|"tool"|"branch"|"tested_commit_sha"|"status"|
+    "project_tests"|"researcher_acceptance"|"phases">>{
+    if(!query||typeof query!=="object"||Array.isArray(query)||
+       !ID.test(query.session_id)||!ID.test(query.task_id)||
+       !SHA.test(query.tested_commit_sha))denied("Invalid trusted Runner query");
+    const session=this.#sessions.get(query.session_id);
+    // Closed, durably retired gateway authority and a finished TEST Task
+    // are prerequisites. An A2A "completed" claim alone is insufficient.
+    if(!session||session.active||!session.closedByTrustedOwner||
+       !this.#closedSessionIds.has(query.session_id)||
+       session.workBranch!==query.branch||
+       session.testedFeatureSha!==query.tested_commit_sha||
+       !session.completedPlanTasks.has(query.task_id))
+      denied("No retired signed Test acceptance for requested exact SHA");
+    const matches=[...this.#bindings.values()].filter(b=>
+      b.sessionId===query.session_id&&b.planTaskId===query.task_id&&
+      b.agent==="test"&&b.completed&&
+      b.epochVersion===session.currentEpoch);
+    if(matches.length!==1)denied("No unique attested Test Task");
+    const b=matches[0];
+    const runnerUri="gitea://"+this.#repository.authority+"/"+
+      this.#repository.owner+"/"+this.#repository.repository+
+      "/branches/"+encodeURIComponent(query.branch);
+    const epochEntry=session.admittedEpochTasks.get(query.task_id);
+    if(epochEntry&&epochEntry.epoch!==session.currentEpoch)
+      denied("Test result comes from a stale operational epoch");
+    const effectivePlan=epochEntry?.plan??session.plan;
+    const signedRows=effectivePlan.requested_permissions.filter((p:any)=>
+      p.task_id===query.task_id&&p.agent_id==="test"&&
+      p.operation==="run_tests"&&p.resource===runnerUri&&
+      (epochEntry!==undefined||session.approval.approved_permission_ids.includes(p.id)));
+    if(signedRows.length!==1)denied("No authenticated Test Runner scope");
+    const relevant=[...b.successfulRequests.values()].filter(e=>
+      e.tool==="run_tests"||e.tool==="update_file"||e.tool==="create_file");
+    const last=relevant.at(-1);
+    const run=last?.execution;
+    const phases=["dependency_install","typecheck","backend_tests",
+      "frontend_tests","build","playwright_e2e","researcher_acceptance"];
+    if(last?.tool!=="run_tests"||!run||run.provider!=="runner"||
+       run.tool!=="run_tests"||run.status!=="pass"||
+       run.runner_profile!=="poc-default"||
+       run.branch!==query.branch||
+       run.tested_commit_sha!==query.tested_commit_sha||
+       run.project_tests?.status!=="pass"||
+       run.researcher_acceptance?.status!=="pass"||
+       !Array.isArray(run.phases)||run.phases.length!==phases.length||
+       run.phases.some((p,i)=>p.phase!==phases[i]||p.status!=="pass"))
+      denied("Incomplete trusted exact-SHA Runner acceptance");
+    return Object.freeze({
+      provider:"runner" as const,performed:true as const,
+      tool:"run_tests" as const,branch:run.branch,
+      tested_commit_sha:run.tested_commit_sha,status:"pass" as const,
+      // Defensive copy. The caller never receives the internal provider
+      // effect or its raw stderr; mutating this array cannot alter the store.
+      phases:run.phases.map(p=>({phase:p.phase,status:"pass" as const})),
+      project_tests:Object.freeze({status:"pass" as const,phases:[]}),
+      researcher_acceptance:Object.freeze({
+        phase:"researcher_acceptance" as const,status:"pass" as const
+      })
+    });
+  }
+
+  /** Existing prepared requests fail after this trusted revocation. */
+  /** Trusted crash recovery: permanently tombstone an orphan session even
+   * if the old host died before the Gateway activation request completed. */
+  async retireSession(sessionId:string):Promise<void> {
+    ensureId(sessionId,"session ID");
+    // Fence synchronously before the first await. A concurrent activation
+    // must never install a new active plan when retirement has started.
+    this.#retiredIds.add(sessionId);
+    this.#closedSessionIds.add(sessionId);
+    const session=this.#sessions.get(sessionId);
+    if(session)session.active=false;
+    // ACK only after owner-private durable fsync. An uncertain write
+    // blocks host recovery and preserves the separate Rust root journal.
+    await this.#sessionStore?.markRetired(sessionId);
+    if(session)session.closedByTrustedOwner=true;
+  }
+
+  closeSession(sessionId:string):void {
+    ensureId(sessionId,"session ID");
+    const session=this.#sessions.get(sessionId);
+    if(!session)denied("Unknown approved plan session");
+    session.active=false;
+    session.closedByTrustedOwner=true;
+    // Terminal state: a changed plan requires a NEW authenticated session,
+    // reapproval and new operational root. Never overwrite this digest.
+  }
+
+  #activeBinding(runtimeTaskId:string):{
+    session:ActivePlan;binding:RuntimeTaskBinding
+  }{
+    const binding=this.#bindings.get(runtimeTaskId);
+    const session=binding && this.#sessions.get(binding.sessionId);
+    if(!binding || !session?.active) {
+      denied("No active trusted plan/task binding","approved_plan_denied","task_binding_rejected");
+    }
+    this.#ensureUnexpired(session);
+    if(binding.epochVersion!==session.currentEpoch)
+      denied("Stale operational epoch task binding","approved_plan_denied","task_inactive_or_expired");
+    return {session,binding};
+  }
+
+  /**
+   * R105: only verified-failed Test Tasks and their strict transitive DAG
+   * descendants can be terminated without successful provider effects.
+   * All independent tasks MUST have completed, including unbound ones.
+   * A descendant cannot be skipped if any provider request reached Gitea
+   * or the Runner; this also protects PR/review Tasks after a failed test.
+   * An already prepared request is rejected by the stale-epoch fence.
+   */
+  #assertEpochQuiescent(session:ActivePlan):ReadonlyArray<string>{
+    const previous=session.currentEpoch===1?session.plan:
+      [...session.admittedEpochTasks.values()]
+        .find(x=>x.epoch===session.currentEpoch)?.plan;
+    if(!previous||!Array.isArray(previous.tasks)||!previous.tasks.length)
+      denied("Current operational epoch is missing its immutable plan");
+    const bindings=new Map<string,RuntimeTaskBinding[]>();
+    for(const b of this.#bindings.values()){
+      if(b.sessionId!==session.sessionId||
+         b.epochVersion!==session.currentEpoch)continue;
+      const group=bindings.get(b.planTaskId)??[];
+      group.push(b);bindings.set(b.planTaskId,group);
+    }
+    const failed=new Set<string>();
+    for(const task of previous.tasks){
+      const group=bindings.get(task.id)??[];
+      if(group.length>1)denied("Duplicate previous epoch Task binding");
+      const b=group[0];
+      if(b?.failedFinalized){
+        if(task.agent_id!=="test"||b.agent!=="test"||
+           b.completed||b.completing||b.inFlightEffects!==0||
+           !b.failedRunner)
+          denied("Only corroborated failed Test Tasks may terminate an epoch");
+        failed.add(task.id);
+      }
+    }
+    // R133.2: the remote pathway is specifically a terminal Test-FAIL
+    // recovery, never an unsolicited second DAG following a passing Test.
+    // A valid Rust root VP proves authority, not that a repair is needed.
+    // Preserve legacy owner-local epoch transitions without a failed Task.
+    if(this.#remoteEpochInspector&&failed.size===0)
+      denied("Remote repair epoch requires an independently finalized failed Test");
+    // Compute the exact transitive dependency closure. No model-supplied
+    // skipped list is accepted, and a sibling cannot be discarded.
+    const blocked=new Set<string>();
+    let changed=true;
+    while(changed){
+      changed=false;
+      for(const task of previous.tasks){
+        if(failed.has(task.id)||blocked.has(task.id))continue;
+        if(task.depends_on.some((dep:string)=>
+            failed.has(dep)||blocked.has(dep))){
+          blocked.add(task.id);changed=true;
+        }
+      }
+    }
+    // Extra discovery Task must complete through ordinary Gateway/VP/OPA
+    // and the attestor before a new repair epoch can replace its grants.
+    for(const [taskId,discovery] of session.discoveryTasks){
+      if(discovery.epoch!==session.currentEpoch)continue;
+      const b=bindings.get(taskId)?.[0];
+      if(!b||!b.completed||b.completing||b.inFlightEffects!==0)
+        denied("Unresolved dynamically delegated discovery read Task");
+    }
+    for(const task of previous.tasks){
+      const b=bindings.get(task.id)?.[0];
+      if(failed.has(task.id)&&b?.failedRunner){
+        // A Test Agent may have made an authorized test-file edit before
+        // executing the Runner. The exact tested SHA must correspond to
+        // the LAST observed file mutation. Read-only provider effects do
+        // not invalidate a failed result.
+        const writes=[...b.successfulRequests.values()].filter(e=>
+          e.tool==="create_file"||e.tool==="update_file");
+        const last=writes.at(-1)?.execution;
+        if(writes.some(w=>w.execution.provider!=="gitea"||
+             !("branch" in w.execution)||
+             w.execution.branch!==session.workBranch)||
+           (last!==undefined&&
+            (!("commit_sha" in last)||
+             last.commit_sha!==b.failedRunner.tested_commit_sha))||
+           [...b.successfulRequests.values()].some(e=>
+             !["read_file","create_file","update_file"].includes(e.tool)))
+          denied("Failed Test revision does not cover verified provider mutations");
+      }
+      if(blocked.has(task.id)){
+        // A planned PR (or its own dependent descendants) is allowed to
+        // be unbound, but never allowed to have an actual provider effect.
+        if(b&&(b.completed||b.completing||b.failedFinalized||
+           b.failedRunner!==undefined||b.inFlightEffects!==0||
+           b.successfulRequests.size!==0))
+          denied("Blocked descendant has a provider effect or terminal state");
+      }else if(!b||b.completing||b.inFlightEffects!==0||
+          !(b.completed||(failed.has(task.id)&&b.failedFinalized)))
+        denied("Previous epoch has unresolved, unbound or in-flight Tasks");
+    }
+    return Object.freeze([...blocked].sort());
+  }
+
+  #taskPlan(session:ActivePlan,binding:RuntimeTaskBinding):any{
+    const discovery=session.discoveryTasks.get(binding.planTaskId);
+    if(discovery){
+      if(discovery.epoch!==binding.epochVersion)
+        denied("Stale discovery Task or replaced operational epoch");
+      return discovery.plan;
+    }
+    if(binding.epochVersion===1)return session.plan;
+    const admitted=session.admittedEpochTasks.get(binding.planTaskId);
+    if(!admitted||admitted.epoch!==binding.epochVersion)
+      denied("No trusted admitted plan for this Task");
+    return admitted.plan;
+  }
+
+  #assertDependencies(session:ActivePlan,binding:RuntimeTaskBinding):void {
+    const task=this.#taskPlan(session,binding).tasks.find(
+      (t:any)=>t.id===binding.planTaskId);
+    if(!task)denied("Plan Task no longer exists");
+    for(const dependency of task.depends_on) {
+      if(!session.completedPlanTasks.has(dependency)) {
+        denied("Approved Task dependency has not been confirmed complete");
+      }
+    }
+  }
+
+  #checkAction(session:ActivePlan,binding:RuntimeTaskBinding,required:Permission,
+    request?:NormalizedToolRequest):void {
+    if(!request)denied("Trusted operation body is required for plan branch enforcement");
+    // The branch comes from the signed plan, never from request metadata.
+    const branch=request.tool==="create_branch"?request.arguments.branch:
+      request.tool==="create_pull_request"?request.arguments.head_branch:
+      "branch" in request.arguments?request.arguments.branch:undefined;
+    if(branch!==undefined&&branch!==session.workBranch){
+      denied("Provider branch differs from immutable approved plan","approved_plan_denied","signed_permission_rejected");
+    }
+    if((request.tool==="create_branch"||request.tool==="create_pull_request")&&
+       request.arguments.base_branch!=="main"){
+      denied("Approved work must originate from main; main cannot be mutated");
+    }
+    const discovery=session.discoveryTasks.get(binding.planTaskId);
+    if(discovery){
+      if(discovery.epoch!==binding.epochVersion||
+         discovery.role!==binding.agent||
+         request.tool!=="read_file"||
+         required.operation!=="read_file"||
+         required.resource!==discovery.resource)
+        denied("Discovery Task can only read its exactly delegated file");
+      return;
+    }
+    if(binding.epochVersion>1){
+      // R101 independently verified this immutable epoch against the
+      // actually issued Rust parent BEFORE trusted Gateway registration.
+      // Require exact Task, role, resource and operation again at Prepare,
+      // AFTER VP/OPA and immediately before every provider operation.
+      const plan=this.#taskPlan(session,binding);
+      const task=plan.tasks.find((t:any)=>t.id===binding.planTaskId);
+      if(!task||task.agent_id!==binding.agent||
+         task.depends_on.some((id:string)=>!session.completedPlanTasks.has(id))||
+         !plan.requested_permissions.some((p:any)=>
+           p.task_id===binding.planTaskId&&p.agent_id===binding.agent&&
+           p.resource===required.resource&&p.operation===required.operation))
+        denied("Operation, role, permission or dependency outside admitted epoch");
+      return;
+    }
+    try {
+      assertApprovedExecution(session.plan,session.approval,{
+        task_id:binding.planTaskId,
+        agent_id:binding.agent,
+        resource:required.resource,
+        operation:required.operation
+      },{
+        allowedOperations:CATALOG,
+        completedTaskIds:[...session.completedPlanTasks]
+      });
+    } catch {
+      denied("Operation, resource, task, role or dependencies not in approved plan");
+    }
+  }
+}

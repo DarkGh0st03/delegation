@@ -1,0 +1,316 @@
+# R233: REAL native Rust issuance + EVM trust + public-only Gateway verifier.
+# No old Adapter HTTP executable, remote MCP or paid model calls.
+# Unsigned initial branch is absent; protected unsolved main is unchanged.
+# R399.2: the original Runner instance (not the ADK decision controller)
+# publishes a fresh independent security status on its OWN native Draft PR.
+# R385.13: native disposable full post-FAIL recovery through ten independently
+# signed source reads + ten same-file CAS, actual second Docker PASS and Draft PR.
+# One genuinely failed initial Test remains incomplete. No generative inference.
+name: R385.13 Native Strict Ten Read/CAS Recovery Docker PASS Draft PR (No AI)
+on:
+  # R385.18: native full E2E may be reused by disposable positive Security
+  # CI on the exact same source SHA; no secrets/paid inference inputs.
+  workflow_call:
+    inputs:
+      original_ci_engineer_after_planning:
+        type: boolean
+        required: false
+        default: false
+  workflow_dispatch:
+    inputs:
+      original_ci_engineer_after_planning:
+        description: "Free original same-session Engineer approval AFTER Planning"
+        type: boolean
+        required: false
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: r38513-native-strict-full-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  direct-rust-live-evm:
+    name: "Original Engineer -> ten signed post-FAIL reads and ten CAS -> new real Docker PASS -> Draft PR"
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      ENGINEER_CORE_NATIVE_MODE: "1"
+      R233_NATIVE_EVM: "1"
+      APPROVED_RUNNER_NATIVE_MCP: "1"
+      R3858_NATIVE_STRICT_POSTFAIL_PROBE: "1"
+      R38512_NATIVE_TEST_AGENT_SOURCE_PROBE: "1"
+      R38513_NATIVE_STRICT_FULL_RECOVERY: "1"
+      R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING: ${{ inputs.original_ci_engineer_after_planning && '1' || '0' }}
+      # The canonical native strict E2E also verifies Security CI's
+      # exact status on its OWN generated Draft PR (no merge/no paid AI).
+      R399_NATIVE_SAME_PR_GATE: "1"
+      R3818_CANONICAL_NATIVE_MCP: "1"
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: r233-engineer-local
+      ADAPTER_CALLER_GATEWAY: r233-gateway-local
+      ADAPTER_CALLER_ORCHESTRATOR: r233-orchestrator-local
+      ADAPTER_CALLER_BACKEND: r233-backend-local
+      ADAPTER_CALLER_FRONTEND: r233-frontend-local
+      ADAPTER_CALLER_TEST: r233-test-local
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      GATEWAY_VERIFIER_MODE: core-rust
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: "31337"
+      ADAPTER_PUBLIC_ARTIFACT_DIR: /tmp/delegation-engineer-r233-public
+      CORE_RUST_PUBLIC_ARTIFACT_DIR: /tmp/delegation-engineer-r233-public
+      CORE_RUST_RPC_URL: http://127.0.0.1:8545
+      CORE_RUST_CHAIN_ID: "31337"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      # R385.13: GitHub's release-asset CDN returned repeated 504 for both
+      # unversioned foundryup and the versioned tarball. Prefer the official
+      # versioned GHCR image; extract only three binaries into RUNNER_TEMP.
+      # Require GitHub's publisher-signed OCI attestation for GHCR; the
+      # fallback remains the official pinned v1.8.4 release with the
+      # SHA-256 recorded in the GitHub release API. No latest or paid AI.
+      - name: Install verified Foundry v1.8.4 (signed GHCR or SHA-256 release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(uname -s)-$(uname -m)" = "Linux-x86_64"
+          bin="$RUNNER_TEMP/r38513-foundry-v1.8.4/bin"
+          mkdir -p "$bin"
+          image='ghcr.io/foundry-rs/foundry:v1.8.4'
+          if docker pull --platform linux/amd64 "$image" &&
+             gh attestation verify "oci://$image" --repo foundry-rs/foundry; then
+            # A matching versioned tag is insufficient: verify the
+            # publisher's signed OCI build attestation before extraction.
+            docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+              "$image" | grep -F 'ghcr.io/foundry-rs/foundry@sha256:'
+            cid="$(docker create --platform linux/amd64 --entrypoint /bin/true "$image")"
+            trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+            for tool in forge cast anvil; do
+              docker cp "$cid:/usr/local/bin/$tool" "$bin/$tool"
+            done
+            docker rm -f "$cid" >/dev/null
+            trap - EXIT
+          else
+            # Fail closed if GHCR is unavailable AND the exact-release
+            # archive cannot be downloaded and verified. No substitutions.
+            archive="$RUNNER_TEMP/foundry_v1.8.4_linux_amd64.tar.gz"
+            curl --proto '=https' --tlsv1.2 --fail --location --show-error \
+              --retry 6 --retry-all-errors --retry-delay 3 \
+              --connect-timeout 20 --max-time 240 \
+              --output "$archive" \
+              'https://github.com/foundry-rs/foundry/releases/download/v1.8.4/foundry_v1.8.4_linux_amd64.tar.gz'
+            printf '%s  %s\n' \
+              '699e2207a6a9b27ca17c48c81e56f1677ed9c58b623b59128b4e15ec9da0625e' \
+              "$archive" | sha256sum --check --status
+            test "$(stat -c '%s' "$archive")" -eq 117721507
+            tar -xzf "$archive" -C "$bin" --no-same-owner
+          fi
+          for tool in forge cast anvil; do
+            test -x "$bin/$tool"
+            "$bin/$tool" --version | grep -F '1.8.4'
+          done
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: Refuse paid model and competing Adapter startup
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+          test ! -e /tmp/native-evm-adapter.pid
+      - name: Install pinned DID/PoC dependencies; create disposable local env
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+          node poc/scripts/init-local-env.mjs --force
+      - name: Preflight free R371 root Branch-before-SDK operational launcher
+        run: |
+          node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
+          node --check poc/apps/orchestrator/src/disposable-ci-original-signed-review.mjs
+          # Reject a mismatched workflow origin BEFORE the costly Rust/Docker
+          # E2E. This tests the same original signed post-Planning review.
+          node --experimental-strip-types --test --test-name-pattern="CI-only signer refuses private hosts" poc/apps/orchestrator/test/disposable-ci-original-signed-review.test.mjs
+          node --check poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-adaptive-work-loop.test.mjs
+          node --test poc/apps/orchestrator/test/trusted-authority-only-operational-launcher.test.mjs
+      - name: Boot only disposable Anvil and OPA (no Adapter or Gateway HTTP service)
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa gitea
+          for i in {1..90}; do
+            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+          exit 1
+      - name: Bootstrap disposable real Gitea
+        run: bash poc/scripts/bootstrap-gitea.sh
+      - name: Fund disposable Engineer, Orchestrator and agent signing keys
+        run: |
+          local_key() { printf '0x%064x' "$1"; }
+          deployer_key="$(local_key 1)"
+          deployer_address="$(cast wallet address --private-key "$deployer_key")"
+          cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$deployer_address" 0x56BC75E2D63100000 >/dev/null
+          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          echo "GOVERNANCE_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6; do
+            role="${entry%%:*}"
+            n="${entry##*:}"
+            key="$(local_key "$n")"
+            address="$(cast wallet address --private-key "$key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_EVM_PRIVATE_KEY_${role}=$key" >> "$GITHUB_ENV"
+            echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
+          done
+      - name: Deploy real public DID/trust/issuer EVM registries
+        run: |
+          bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for key in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+          echo "CORE_RUST_DID_REGISTRY_ADDRESS=$DID_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      # Cache compiled Rust dependencies/builds separately from executable
+      # assertions. A failing E2E must still retain a verified preceding
+      # native build cache; never cache local keys, runtime env or Gitea.
+      - name: Restore verified R364-compatible native Rust build cache
+        id: rust-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
+      - name: Build Engineer direct owner + independent public-only Gateway native addons
+        run: |
+          cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
+          cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
+          cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+          mkdir -p poc/packages/orchestrator-runtime/src/native poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
+          cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/r233-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
+      - name: Save verified native Rust build cache before E2E
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
+      - name: Assert legacy Adapter executable refuses duplicate issuer in direct mode
+        run: |
+          # This command must reject BEFORE EVM signing keys or an HTTP server
+          # are initialized. A build failure is not accepted as a pass.
+          if cargo run --quiet --manifest-path services/delegation-adapter/Cargo.toml --features legacy-http >/tmp/r233-retired-adapter-guard.log 2>&1; then
+            echo "Forbidden: legacy Adapter accepted native Engineer mode" >&2
+            exit 1
+          fi
+          grep -q 'Legacy Adapter HTTP cannot start with direct Engineer Core enabled' /tmp/r233-retired-adapter-guard.log
+      - name: Assert NO old Adapter HTTP listener is running before direct Rust owner starts
+        run: |
+          test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
+          if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then
+            echo "Forbidden: Adapter HTTP service running" >&2
+            exit 1
+          fi
+          test ! -e /tmp/native-evm-adapter.pid
+      - name: Native owner ten distinct signed source investigations and Gitea CAS, then independent Docker PASS and Draft PR
+        # This mode belongs to the original private owner STEP only, never
+        # to the legacy Adapter process checked above. Prevent downgrade.
+        env:
+          DELEGATION_GATEWAY_ARCHITECTURE: authority-only
+        run: |
+          set -euo pipefail
+          test "$R3818_CANONICAL_NATIVE_MCP" = "1"
+          test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/gateway.env
+          source poc/infra/runtime/runner.env
+          test -n "${GITEA_ADMIN_USER:-}"
+          test -n "${GITEA_ADMIN_PASSWORD:-}"
+          set +a
+          test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
+          test "${R3818_CANONICAL_NATIVE_MCP:-}" = "1"
+          test "${R38512_NATIVE_TEST_AGENT_SOURCE_PROBE:-}" = "1"
+          test "${R38513_NATIVE_STRICT_FULL_RECOVERY:-}" = "1"
+          test "${APPROVED_RUNNER_NATIVE_MCP:-}" = "1"
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
+          node --check poc/packages/orchestrator-runtime/test/native-gitea-ci-human-gate-fixture.mjs
+          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs | tee "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"event":"canonical_signed_handoff_native"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"event":"r38513_native_ten_signed_reads_ten_cas_docker_pass_draft_pr"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"status":"pass"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"strict_postfail_diagnostic_read_count":10' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"individually_signed_repair_tasks":10' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"original_owner_adaptive_decisions":25' "$RUNNER_TEMP/r38513-proof.jsonl"
+          # Both scripted model streams must be the ones consumed by the
+          # SAME native Review Host (not two separately green jobs).
+          grep -Fq '"scripted_adk_planning_calls_in_native_host":2' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"scripted_adk_adaptive_calls_in_native_host":25' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"observed_model_source":"scripted-offline"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"model_generated_source_proven":false' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"native_child_count":24' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"first_docker_status":"fail"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"second_docker_status":"pass"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"researcher_acceptance_pass":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"original_root_pr_created":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          # A manual scripted-native run MUST prove its CI Engineer signed
+          # the original post-Planning checkpoint, not a prewritten fixture.
+          if [[ "${R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING:-0}" = "1" ]]; then
+            grep -Fq '"original_engineer_ci_approval_from_actual_planning_checkpoint":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          fi
+          grep -Fq '"independent_pr_get":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"pr_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"pr_merged":false' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"original_main_immutable":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"event":"r399_native_draft_pr_exact_head_security_ci"' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"original_root_pr_unchanged":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"read_only_human_gate_denied_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"source_code_generated_autonomously_by_model":false' "$RUNNER_TEMP/r38513-proof.jsonl"
+          grep -Fq '"paid_model_calls":0' "$RUNNER_TEMP/r38513-proof.jsonl"
+      # R385.13 same-run structured evidence gate: refuse missing/mismatched
+      # signed native, Docker, exact PR and source-origin claims. This gate
+      # explicitly declares SCRIPTED source, NEVER authentic Gemini code.
+      - name: Verify same-run native proof and prohibit fake Gemini provenance (No AI)
+        run: |
+          set -euo pipefail
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          node poc/scripts/verify-disposable-native-e2e-proof.mjs "$RUNNER_TEMP/r38513-proof.jsonl"
+      - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
+        run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
+      - name: Dispose Anvil and private local socket only
+        if: always()
+        run: |
+          rm -f "${ADAPTER_ENGINEER_NATIVE_SOCKET:-}" 2>/dev/null || true
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
+          fi

@@ -7,9 +7,7 @@
     "node": ">=22.15.0"
   },
   "scripts": {
-    "start": "node --experimental-strip-types src/main.ts",
-    "test": "node --experimental-strip-types --test test/*.test.ts",
-    "smoke:real": "node --experimental-strip-types scripts/real-read-smoke.mjs"
+    "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.26.0",

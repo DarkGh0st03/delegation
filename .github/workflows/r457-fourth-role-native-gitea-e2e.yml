@@ -1,0 +1,214 @@
+# R461: scripted Planner selection is now part of the REAL native fourth-role
+# Rust/EVM/OPA/Gitea read and signed Child/VP/A2A evidence chain.
+# No old Adapter HTTP executable, remote MCP or paid model calls.
+# Unsigned initial branch is absent; protected unsolved main is unchanged.
+# Separate signed Child, distinct Rust reviewer DID, real OPA and one Gitea
+# READ. No A2A worker identity is treated as issuer authority; no mutation
+# or merge. Disposable local keys only.
+name: R461 Scripted Planner Native Reviewer A2A Rust OPA Gitea (No AI)
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/workflows/r457-fourth-role-native-gitea-e2e.yml'
+      - 'poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs'
+      - 'poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: r457-fourth-specialist-native-read-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  direct-rust-live-evm:
+    name: "Engineer signed Root -> reviewer signed Child/VP -> independent Rust EVM/OPA -> Gitea read -> completion"
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      ENGINEER_CORE_NATIVE_MODE: "1"
+      R233_NATIVE_EVM: "1"
+      APPROVED_RUNNER_NATIVE_MCP: "1"
+      ADAPTER_ADDITIONAL_SPECIALISTS: reviewer
+      ADAPTER_CALLER_REVIEWER: r457-private-reviewer-local
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: r233-engineer-local
+      ADAPTER_CALLER_GATEWAY: r233-gateway-local
+      ADAPTER_CALLER_ORCHESTRATOR: r233-orchestrator-local
+      ADAPTER_CALLER_BACKEND: r233-backend-local
+      ADAPTER_CALLER_FRONTEND: r233-frontend-local
+      ADAPTER_CALLER_TEST: r233-test-local
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      GATEWAY_VERIFIER_MODE: core-rust
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: "31337"
+      ADAPTER_PUBLIC_ARTIFACT_DIR: /tmp/delegation-engineer-r233-public
+      CORE_RUST_PUBLIC_ARTIFACT_DIR: /tmp/delegation-engineer-r233-public
+      CORE_RUST_RPC_URL: http://127.0.0.1:8545
+      CORE_RUST_CHAIN_ID: "31337"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+      - name: Refuse paid model and competing Adapter startup
+        run: |
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+          test ! -e /tmp/native-evm-adapter.pid
+      - name: Install pinned DID/PoC dependencies; create disposable local env
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+          node poc/scripts/init-local-env.mjs --force
+      - name: Preflight fourth-role native read scenario (no model execution)
+        run: |
+          node --check poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+      - name: Boot only disposable Anvil and OPA (no Adapter or Gateway HTTP service)
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa gitea
+          for i in {1..90}; do
+            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+          exit 1
+      - name: Bootstrap disposable real Gitea
+        run: bash poc/scripts/bootstrap-gitea.sh
+      - name: Fund disposable Engineer, Orchestrator and agent signing keys
+        run: |
+          local_key() { printf '0x%064x' "$1"; }
+          deployer_key="$(local_key 1)"
+          deployer_address="$(cast wallet address --private-key "$deployer_key")"
+          cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$deployer_address" 0x56BC75E2D63100000 >/dev/null
+          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          echo "GOVERNANCE_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6 REVIEWER:7; do
+            role="${entry%%:*}"
+            n="${entry##*:}"
+            key="$(local_key "$n")"
+            address="$(cast wallet address --private-key "$key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_EVM_PRIVATE_KEY_${role}=$key" >> "$GITHUB_ENV"
+            echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
+          done
+      - name: Deploy real public DID/trust/issuer EVM registries
+        run: |
+          bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for key in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+          echo "CORE_RUST_DID_REGISTRY_ADDRESS=$DID_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      # Cache compiled Rust dependencies/builds separately from executable
+      # assertions. A failing E2E must still retain a verified preceding
+      # native build cache; never cache local keys, runtime env or Gitea.
+      - name: Restore verified R364-compatible native Rust build cache
+        id: rust-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
+      - name: Build Engineer direct owner + independent public-only Gateway native addons
+        run: |
+          cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
+          cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
+          cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+          mkdir -p poc/packages/orchestrator-runtime/src/native poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
+          cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/r233-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
+      - name: Save verified native Rust build cache before E2E
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/delegation-engineer-node/target
+            services/delegation-core-node/target
+            services/delegation-adapter/target
+          key: r364-rust99-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'services/delegation-adapter/Cargo.lock', 'services/**/Cargo.toml') }}
+      - name: Assert legacy Adapter executable refuses duplicate issuer in direct mode
+        run: |
+          # This command must reject BEFORE EVM signing keys or an HTTP server
+          # are initialized. A build failure is not accepted as a pass.
+          if cargo run --quiet --manifest-path services/delegation-adapter/Cargo.toml --features legacy-http >/tmp/r233-retired-adapter-guard.log 2>&1; then
+            echo "Forbidden: legacy Adapter accepted native Engineer mode" >&2
+            exit 1
+          fi
+          grep -q 'Legacy Adapter HTTP cannot start with direct Engineer Core enabled' /tmp/r233-retired-adapter-guard.log
+      - name: Assert NO old Adapter HTTP listener is running before direct Rust owner starts
+        run: |
+          test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
+          if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then
+            echo "Forbidden: Adapter HTTP service running" >&2
+            exit 1
+          fi
+          test ! -e /tmp/native-evm-adapter.pid
+      - name: R461 signed Planner-selected reviewer Rust EVM OPA Gitea and A2A read (no AI)
+        run: |
+          set -o pipefail
+          set -a
+          source poc/infra/runtime/gateway.env
+          source poc/infra/runtime/runner.env
+          set +a
+          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r457-fourth-role-native-gitea-e2e.mjs |
+            tee "$RUNNER_TEMP/r457-native-read.jsonl"
+          node -e '
+          const assert=require("node:assert/strict");
+          const fs=require("node:fs");
+          const events=fs.readFileSync(process.argv[1],"utf8").split(/\r?\n/)
+            .filter(Boolean).map(line=>{try{return JSON.parse(line)}catch{return null}});
+          const matches=events.filter(e=>e?.event==="r457_authority_only_native_evm_staged");
+          assert.equal(matches.length,1,"one authentic fourth-role signed native proof");
+          const e=matches[0];
+          for(const field of ["native_engineer_roots","native_child_ipc",
+            "native_signed_vp","independent_rust_evm_status","native_verified_root_provenance",
+            "real_opa_allow","gateway_read_executed","completion_attested",
+            "unbound_child_denied","revoked_root_denied","fourth_role_native_cryptography",
+            "cross_role_vp_denied","reviewer_write_denied_at_gateway_opa_rust",
+            "r458_native_signed_child_a2a_http","r458_private_role_hmac_bind",
+            "r458_independent_gateway_read_attestation","r458_unbound_spoof_denied",
+            "r461_scripted_planner_native_task_selected",
+            "r461_unprovisioned_planner_roles_denied",
+            "r461_signed_scope_escalation_denied",
+            "r461_unverified_planner_dependency_denied",
+            "r461_canonical_gemini_three_roles_unchanged"])
+            assert.equal(e[field],true,field);
+          assert.equal(e.provider_calls,2,"two authentic READs, zero provider writes");
+          assert.equal(e.r461_negative_planner_decisions,3);
+          assert.equal(e.r461_native_selected_role,"reviewer");
+          assert.equal(e.paid_model_calls,0);
+          console.log("R461 scripted Planner -> native Child -> A2A -> Rust/EVM/OPA -> Gitea provider/read and independent Gateway completion PASS");
+          ' "$RUNNER_TEMP/r457-native-read.jsonl"
+      - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
+        run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
+      - name: Dispose Anvil, Gitea and private Rust socket
+        if: always()
+        run: |
+          rm -f "${ADAPTER_ENGINEER_NATIVE_SOCKET:-}" 2>/dev/null || true
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v || true
+          fi

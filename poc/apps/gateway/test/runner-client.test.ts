@@ -139,3 +139,74 @@ test("AUD-010: already aborted Gateway signal prevents a Runner HTTP call",async
   await assert.rejects(client.run(request,aborter.signal),/request failed/);
   assert.equal(calls,0);
 });
+
+test("RunnerClient accepts only bounded Vitest paths in a genuine failure",async()=>{
+  const client=new RunnerClient({
+    baseUrl:"http://runner.internal:8095",
+    gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify({
+      request_id:request.request_id,
+      repository:request.repository,
+      branch:request.branch,
+      tested_commit_sha:request.commit_sha,
+      runner_profile:"poc-default",status:"fail",
+      phases:[{phase:"frontend_tests",status:"fail"}],
+      project_tests:{status:"fail",
+        phases:[{phase:"frontend_tests",status:"fail"}]},
+      researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"},
+      failing_test_files:[
+        "tests/frontend/access.test.tsx",
+        "tests/frontend/../private.test.ts",
+        "tests/backend/internal.test.ts"
+      ],
+      secret:"DO_NOT_DISCLOSE"
+    }),{status:200})
+  });
+  const result=await client.run(request);
+  assert.deepEqual(result.failing_test_files,["tests/frontend/access.test.tsx"]);
+  assert.ok(!JSON.stringify(result).includes("DO_NOT_DISCLOSE"));
+});
+
+test("RunnerClient carries only valid fileless TypeScript codes",async()=>{
+  const secret="PRIVATE_COMPILER_MESSAGE";
+  const fixture={request_id:request.request_id,repository:request.repository,
+    branch:request.branch,tested_commit_sha:request.commit_sha,
+    runner_profile:"poc-default",status:"fail",
+    phases:[{phase:"typecheck",status:"fail"}],
+    typecheck_error_codes:["TS2304","TS2688"],private_message:secret};
+  const run=async data=>new RunnerClient({
+    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify(data),{status:200})
+  }).run(request);
+  const actual=await run(fixture);
+  assert.deepEqual(actual.typecheck_error_codes,["TS2304","TS2688"]);
+  assert.ok(!JSON.stringify(actual).includes(secret));
+  const malformed=await run({...fixture,typecheck_error_codes:["TS2688","TS2304"]});
+  assert.deepEqual(malformed.typecheck_error_codes,[]);
+  const nonCompiler=await run({...fixture,phases:[{phase:"frontend_tests",status:"fail"}]});
+  assert.equal(nonCompiler.typecheck_error_codes,undefined);
+});
+
+test("RunnerClient forwards fixed acceptance labels only for an acceptance-only FAIL",async()=>{
+  const acceptance_failure={failed_checks:["ui_pending_actions"],
+    timed_out:false,unclassified_failure:false};
+  const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
+    "build","playwright_e2e","researcher_acceptance"].map(phase=>({
+      phase,status:phase==="researcher_acceptance"?"fail":"pass"}));
+  const fixture={request_id:request.request_id,repository:request.repository,
+    branch:request.branch,tested_commit_sha:request.commit_sha,runner_profile:"poc-default",
+    status:"fail",phases,project_tests:{status:"pass",phases:phases.slice(0,-1)},
+    researcher_acceptance:phases.at(-1),acceptance_failure};
+  const run=async(data:unknown)=>new RunnerClient({
+    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify(data),{status:200})
+  }).run(request);
+  assert.deepEqual((await run(fixture)).acceptance_failure,acceptance_failure);
+  assert.equal((await run({...fixture,acceptance_failure:{...acceptance_failure,
+    raw_assertion:"PRIVATE"}})).acceptance_failure,undefined);
+  await assert.rejects(run({...fixture,status:"pass"}),
+    /contradictory failure evidence/);
+  assert.equal((await run({...fixture,project_tests:{status:"fail",phases}}))
+    .acceptance_failure,undefined);
+  await assert.rejects(run({...fixture,tested_commit_sha:"b".repeat(40)}),/authorized request/u);
+});

@@ -16,6 +16,10 @@
     "check:scaffold": "node ./scripts/check-scaffold.mjs",
     "check:imports": "node --experimental-vm-modules ./scripts/check-local-imports.mjs",
     "infra:init": "node ./scripts/init-local-env.mjs",
+    "local:prepare": "bash ./scripts/local-prepare.sh",
+    "console": "node ./engineer-console/src/server.mjs",
+    "console:user": "node ./engineer-console/scripts/create-user.mjs",
+    "console:test": "node --test ./engineer-console/test/*.test.mjs",
     "infra:up": "bash ./scripts/phase1-up.sh",
     "infra:check": "bash ./scripts/phase1-check.sh",
     "infra:down": "bash ./scripts/phase1-down.sh",
@@ -23,8 +27,10 @@
     "gateway:start": "npm run start -w @thesis/gateway",
     "agent-runtime:test": "npm run test -w @thesis/agent-runtime",
     "orchestrator-runtime:test": "npm run test -w @thesis/orchestrator-runtime",
-    "orchestrator:bootstrap": "npm run bootstrap -w @thesis/orchestrator",
-    "experiment:repro-check": "node ./scripts/phase12b-check-reproducibility.mjs"
+    "experiment:repro-check": "node ./scripts/phase12b-check-reproducibility.mjs",
+    "audit:r6:references": "node --experimental-vm-modules --experimental-strip-types ./scripts/r6-legacy-references.mjs",
+    "audit:r6:types": "node ./scripts/r6-type-imports.mjs",
+    "audit:r6:runtime-named": "node ./scripts/r6-historical-named-imports.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",

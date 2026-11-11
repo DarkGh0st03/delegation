@@ -1,6 +1,7 @@
+import { GatewayError } from "./errors.ts";
+import { classifyGatewayOperation } from "./operation-support.ts";
 import {
   AGENT_ROLES,
-  TOOL_NAMES,
   type AgentRole,
   type NormalizedToolRequest,
   type PrepareAuthorizationRequest,
@@ -96,16 +97,34 @@ export function validateRepositoryPath(value: unknown): string {
   return segments.join("/");
 }
 
-function role(value: unknown): AgentRole {
-  if (typeof value !== "string" || !(AGENT_ROLES as readonly string[]).includes(value)) {
+const OWNER_READ_ONLY_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
+function role(value:unknown,operation:ToolName,ownerReadOnly:boolean):AgentRole{
+  const original=typeof value==="string"&&
+    (AGENT_ROLES as readonly string[]).includes(value);
+  const additional=ownerReadOnly&&operation==="read_file"&&
+    typeof value==="string"&&OWNER_READ_ONLY_ROLE.test(value)&&
+    !["constructor","prototype"].includes(value);
+  if(!original&&!additional)
     throw new Error("agent_role is not supported");
-  }
+  // Legacy enumerated roles retain their precise public contract.
+  // Additional identities are accepted only at the private authority-only
+  // Gateway preflight, which independently verifies the signed Task/Child.
   return value as AgentRole;
 }
 
 function toolName(value: unknown): ToolName {
-  if (typeof value !== "string" || !(TOOL_NAMES as readonly string[]).includes(value)) {
-    throw new Error("tool is not supported");
+  const support = classifyGatewayOperation(value);
+  if (support === "unknown") {
+    throw new GatewayError(400, "unknown_operation", "Tool is not in the authoritative Rust Operation catalog");
+  }
+  if (support === "unavailable") {
+    // Do not accept a VP, mint a prepare token, or execute any provider here.
+    // Provider support is not implied by recognizing a Rust enum variant.
+    throw new GatewayError(
+      501,
+      "provider_operation_unavailable",
+      "Recognized operation has no implemented Gateway execution adapter"
+    );
   }
   return value as ToolName;
 }
@@ -114,6 +133,23 @@ function normalizeArguments(tool: ToolName, raw: unknown): NormalizedToolRequest
   const args = object(raw, "arguments");
 
   switch (tool) {
+    case "read_repository": {
+      exactKeys(args, []);
+      return {tool, arguments: {}};
+    }
+    case "list_directory": {
+      exactKeys(args, ["branch"], ["path"]);
+      const path = args.path === undefined || args.path === ""
+        ? ""
+        : validateRepositoryPath(args.path);
+      return {
+        tool,
+        arguments: {
+          branch: validateBranchName(args.branch),
+          path
+        }
+      };
+    }
     case "read_file": {
       exactKeys(args, ["branch", "path"]);
       return {
@@ -179,7 +215,9 @@ function normalizeArguments(tool: ToolName, raw: unknown): NormalizedToolRequest
   }
 }
 
-export function validatePrepareAuthorizationRequest(raw: unknown): {
+export function validatePrepareAuthorizationRequest(
+ raw:unknown,options:{allowOwnerAdditionalReadOnlyRole?:boolean}={}
+): {
   task_id: string;
   agent_role: AgentRole;
   request: NormalizedToolRequest;
@@ -190,7 +228,7 @@ export function validatePrepareAuthorizationRequest(raw: unknown): {
   const tool = toolName(value.tool);
   return {
     task_id: string(value.task_id, "task_id", { max: 256 }),
-    agent_role: role(value.agent_role),
+    agent_role: role(value.agent_role,tool,options.allowOwnerAdditionalReadOnlyRole===true),
     request: normalizeArguments(tool, value.arguments)
   };
 }

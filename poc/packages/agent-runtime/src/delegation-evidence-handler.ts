@@ -1,5 +1,8 @@
 import type { DelegationEvidence } from "./contracts.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
+import {invokeNativeCrypto} from "./native-crypto-ipc.ts";
+import {createOwnerPrivateNativeCryptoMcpSession}
+ from "../../../mcp-shared/src/owner-private-native-crypto-stdio.mjs";
 
 type FetchLike = typeof fetch;
 
@@ -15,10 +18,14 @@ export interface PreparedGatewayAuthorization {
 }
 
 export interface DelegationEvidenceHandlerConfig {
-  adapterBaseUrl: string;
+  /** Historical unsigned HTTP fixture only; native Rust VP needs no Adapter URL. */
+  adapterBaseUrl?: string;
   adapterToken: string;
   evidence: DelegationEvidence;
   timeoutMs?: number;
+  nativeSocketPath?: string;
+  /** Trusted host only; not received from A2A/ADK/model/tool arguments. */
+  nativePresentationTransport?: "direct"|"mcp-stdio";
   fetchFn?: FetchLike;
   signal?: AbortSignal;
 }
@@ -28,13 +35,22 @@ export class DelegationEvidenceHandler {
   readonly #adapterToken: string;
   readonly #evidence: DelegationEvidence;
   readonly #timeoutMs: number;
+  readonly #nativeSocketPath?:string;
+  readonly #nativePresentationTransport:"direct"|"mcp-stdio";
   readonly #fetch: FetchLike;
   readonly #signal?: AbortSignal;
 
   constructor(config: DelegationEvidenceHandlerConfig) {
-    if (config.adapterBaseUrl.trim().length === 0) {
+    if (!config.nativeSocketPath && !config.adapterBaseUrl?.trim()) {
       throw new Error("Delegation Adapter base URL cannot be empty");
     }
+    if(config.nativePresentationTransport!==undefined&&
+       config.nativePresentationTransport!=="direct"&&
+       config.nativePresentationTransport!=="mcp-stdio")
+      throw Error("Native MCP presenter transport unavailable");
+    if(config.nativePresentationTransport==="mcp-stdio"&&
+       !config.nativeSocketPath)
+      throw Error("Private MCP native presenter requires trusted Rust socket");
     if (config.adapterToken.trim().length === 0) {
       throw new Error("Delegation Adapter token cannot be empty");
     }
@@ -42,10 +58,16 @@ export class DelegationEvidenceHandler {
       throw new Error("Delegation credential id cannot be empty");
     }
 
-    this.#adapterBaseUrl = config.adapterBaseUrl.replace(/\/+$/u, "");
+    // Signed canonical Tasks must not fall back to the old Adapter HTTP
+    // presenter when the native Rust socket is absent.
+    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&!config.nativeSocketPath)
+      throw Error("Canonical signed Task VP requires native Rust signer socket");
+    this.#adapterBaseUrl = (config.adapterBaseUrl??"").replace(/\/+$/u, "");
     this.#adapterToken = config.adapterToken;
     this.#evidence = structuredClone(config.evidence);
     this.#timeoutMs = config.timeoutMs ?? 5_000;
+    this.#nativeSocketPath=config.nativeSocketPath;
+    this.#nativePresentationTransport=config.nativePresentationTransport??"direct";
     this.#fetch = config.fetchFn ?? fetch;
     this.#signal = config.signal;
   }
@@ -62,6 +84,42 @@ export class DelegationEvidenceHandler {
     prepared: PreparedGatewayAuthorization
   ): Promise<string> {
     this.#signal?.throwIfAborted();
+    // Native path uses the SAME Rust CryptoRuntime as the Engineer root
+    // and the Orchestrator child. NEVER fall back to HTTP after native denial.
+    if(this.#nativeSocketPath){
+      let issued:unknown;
+      try{
+        const args={
+          credential_id:this.#evidence.credential_id,
+          disclosed_permissions:[prepared.required_permission],
+          audience:prepared.audience,challenge:prepared.challenge
+        };
+        // The original A2A Task's signed Child and Gateway challenge are
+        // fixed by the trusted handler before this host-selected transport.
+        // A failed/ambiguous MCP signing call is never retried directly.
+        issued=this.#nativePresentationTransport==="mcp-stdio"
+          ?await createOwnerPrivateNativeCryptoMcpSession(
+            "presentation_create",{
+              socketPath:this.#nativeSocketPath,
+              bearerToken:this.#adapterToken,timeoutMs:this.#timeoutMs,
+              signal:this.#signal
+            },args).invokeOnce()
+          :await invokeNativeCrypto({
+            socketPath:this.#nativeSocketPath,token:this.#adapterToken,
+            timeoutMs:this.#timeoutMs
+          },"create_presentation",args);
+      }catch{
+        throw new ControlledToolError("tool_unavailable",
+          "Native Rust cryptographic presentation unavailable");
+      }
+      this.#signal?.throwIfAborted();
+      const signed=issued&&typeof issued==="object"&&!Array.isArray(issued)
+        ?(issued as {signed_vp?:unknown}).signed_vp:undefined;
+      if(typeof signed!=="string"||!signed.trim())
+        throw new ControlledToolError("tool_unavailable",
+          "Native Rust cryptographic presentation malformed");
+      return signed;
+    }
     let response: Response;
     try {
       response = await this.#fetch(`${this.#adapterBaseUrl}/v1/presentations`, {

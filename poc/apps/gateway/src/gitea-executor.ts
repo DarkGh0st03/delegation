@@ -1,5 +1,6 @@
+import {createHash} from "node:crypto";
 import { ProviderOperationUnavailableError } from "./errors.ts";
-import type { GiteaClient } from "./gitea-client.ts";
+import { GiteaClient } from "./gitea-client.ts";
 import type { RunnerClient } from "./runner-client.ts";
 import type {
   ExecutionPort,
@@ -13,6 +14,36 @@ import type {
   RunnerExecutionResult
 } from "./types.ts";
 
+const readWitnesses=new WeakMap<object,Readonly<{
+ record:PreparedRequestRecord;request_id:string;fingerprint:string;
+ branch:string;path:string;revision:string;blob_sha:string;
+ source_sha256:string;source_bytes:number
+}>>();
+/**
+ * Only an actual GiteaExecutor.read_file return is accepted as result
+ * provenance. Reconstructed JSON, mutation and foreign Prepare objects fail.
+ * This proves provider invocation in-process, not Engineer approval or VP.
+ */
+export function assertTrustedGatewayGiteaReadResult(
+ record:PreparedRequestRecord,result:GiteaReadFileExecutionResult
+):Readonly<{source_sha256:string;source_bytes:number}>{
+ const proof=readWitnesses.get(result);
+ if(!proof||proof.record!==record||proof.request_id!==record.request_id||
+    proof.fingerprint!==record.request_fingerprint||
+    result.provider!=="gitea"||result.performed!==true||
+    result.tool!=="read_file"||
+    result.branch!==proof.branch||result.path!==proof.path||
+    result.revision!==proof.revision||
+    result.blob_sha!==proof.blob_sha||
+    typeof result.content!=="string")
+  throw Error("Gateway Gitea read result missing trusted provider provenance");
+ const bytes=Buffer.from(result.content,"utf8");
+ if(bytes.length!==proof.source_bytes||
+    createHash("sha256").update(bytes).digest("hex")!==proof.source_sha256)
+  throw Error("Gateway Gitea read result changed after provider success");
+ return Object.freeze({source_sha256:proof.source_sha256,
+  source_bytes:proof.source_bytes});
+}
 const MAIN_BRANCH = "main";
 const FEATURE_BRANCH = "feature/account-suspension";
 
@@ -24,10 +55,14 @@ function commitMessage(
   return `thesis-gateway: ${tool} ${path} [${requestId}]`;
 }
 
-function requireFeatureBranch(branch: string): void {
-  if (branch !== FEATURE_BRANCH) {
+function requireFeatureBranch(record:PreparedRequestRecord,branch:string):void{
+  // Legacy no-plan path is still strictly frozen. The opt-in path has a
+  // trusted immutable plan and a branch confirmed at Gateway Prepare/Execute.
+  const allowed=record.approved_plan_digest&&record.approved_work_branch
+    ? record.approved_work_branch:FEATURE_BRANCH;
+  if(branch!==allowed||branch==="main"||!branch.startsWith("feature/")){
     throw new ProviderOperationUnavailableError(
-      "Phase 5B.2 Gitea file mutations are restricted to feature/account-suspension"
+      "Gitea mutation is outside the verified approved working branch"
     );
   }
 }
@@ -48,15 +83,35 @@ export class GiteaExecutor implements ExecutionPort {
     this.#runnerRepositoryUri = runnerRepositoryUri;
   }
 
+  /** Resolve once before composite authorization; individual reads pass SHA. */
+  async resolveReadRevision(branch:string):Promise<string>{
+    return (await this.#client.getBranchMetadata(branch)).commit_sha;
+  }
+
   providerFor(record: PreparedRequestRecord): "gitea" | "runner" {
     return record.request.tool === "run_tests" ? "runner" : "gitea";
   }
 
   async execute(record: PreparedRequestRecord, signal?: AbortSignal): Promise<ExecutionResult> {
+    if (record.request.tool === "read_repository") {
+      const snapshot = await this.#client.readRepository(record.pinned_revision);
+      return {provider:"gitea",performed:true,tool:"read_repository",...snapshot};
+    }
+
+    if (record.request.tool === "list_directory") {
+      const snapshot = await this.#client.listDirectory(
+        record.request.arguments.branch,
+        record.request.arguments.path,
+        record.pinned_revision
+      );
+      return {provider:"gitea",performed:true,tool:"list_directory",...snapshot};
+    }
+
     if (record.request.tool === "read_file") {
       const snapshot = await this.#client.readTextFile(
         record.request.arguments.branch,
-        record.request.arguments.path
+        record.request.arguments.path,
+        record.pinned_revision
       );
 
       const result: GiteaReadFileExecutionResult = {
@@ -65,16 +120,30 @@ export class GiteaExecutor implements ExecutionPort {
         tool: "read_file",
         ...snapshot
       };
+      // Only record real GiteaClient provider output, not a mock executor.
+      // WeakMap ties THIS original in-memory result and request object.
+      if(this.#client instanceof GiteaClient){
+       const bytes=Buffer.from(result.content,"utf8");
+       readWitnesses.set(result,Object.freeze({
+        record,request_id:record.request_id,
+        fingerprint:record.request_fingerprint,
+        branch:result.branch,path:result.path,revision:result.revision,
+        blob_sha:result.blob_sha,
+        source_sha256:createHash("sha256").update(bytes).digest("hex"),
+        source_bytes:bytes.length
+       }));
+      }
       return result;
     }
 
     if (record.request.tool === "create_branch") {
       const { base_branch, branch } = record.request.arguments;
-      if (base_branch !== MAIN_BRANCH || branch !== FEATURE_BRANCH) {
+      if (base_branch !== MAIN_BRANCH) {
         throw new ProviderOperationUnavailableError(
-          "Phase 5B.1 Gitea provider only creates feature/account-suspension from main"
+          "Gitea provider can create feature branches only from main"
         );
       }
+      requireFeatureBranch(record,branch);
 
       const created = await this.#client.createBranch(base_branch, branch);
       const result: GiteaCreateBranchExecutionResult = {
@@ -91,17 +160,23 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "create_pull_request") {
       const { head_branch, base_branch, title, body } = record.request.arguments;
-      if (head_branch !== FEATURE_BRANCH || base_branch !== MAIN_BRANCH) {
+      if (base_branch !== MAIN_BRANCH) {
         throw new ProviderOperationUnavailableError(
-          "Phase 5B.3 Gitea provider only creates feature/account-suspension -> main pull requests"
+          "Gitea pull requests must target protected main"
         );
       }
+      requireFeatureBranch(record,head_branch);
 
+      if(record.approved_plan_digest&&!record.approved_tested_head_sha){
+        throw new ProviderOperationUnavailableError(
+          "Approved PR is missing independently tested feature SHA");
+      }
       const created = await this.#client.createPullRequest(
         head_branch,
         base_branch,
         title,
-        body
+        body,
+        record.approved_tested_head_sha
       );
       const result: GiteaCreatePullRequestExecutionResult = {
         provider: "gitea",
@@ -119,7 +194,7 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "create_file") {
       const { branch, path, content } = record.request.arguments;
-      requireFeatureBranch(branch);
+      requireFeatureBranch(record,branch);
       const created = await this.#client.createFile(
         branch,
         path,
@@ -141,7 +216,7 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "update_file") {
       const { branch, path, content } = record.request.arguments;
-      requireFeatureBranch(branch);
+      requireFeatureBranch(record,branch);
       const updated = await this.#client.updateFile(
         branch,
         path,
@@ -167,7 +242,7 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "run_tests") {
       const { branch, profile } = record.request.arguments;
-      requireFeatureBranch(branch);
+      requireFeatureBranch(record,branch);
       if (!this.#runnerClient || !this.#runnerRepositoryUri) {
         throw new ProviderOperationUnavailableError(
           "Controlled Test Runner is not configured"
@@ -203,7 +278,19 @@ export class GiteaExecutor implements ExecutionPort {
           : { researcher_acceptance: run.researcher_acceptance }),
         ...(run.log_reference === undefined
           ? {}
-          : { log_reference: run.log_reference })
+          : { log_reference: run.log_reference }),
+        ...(run.project_e2e_failure===undefined
+          ?{}:{project_e2e_failure:run.project_e2e_failure}),
+        ...(run.acceptance_failure===undefined
+          ?{}:{acceptance_failure:run.acceptance_failure}),
+        ...(run.failing_test_files===undefined
+          ?{}:{failing_test_files:[...run.failing_test_files]}),
+        ...(run.typecheck_diagnostics===undefined
+          ?{}
+          :{typecheck_diagnostics:run.typecheck_diagnostics}),
+        ...(run.typecheck_error_codes===undefined
+          ?{}
+          :{typecheck_error_codes:run.typecheck_error_codes})
       };
       return result;
     }

@@ -1,0 +1,193 @@
+/** Owner-only control flow. Hooks belong to the original Engineer host; this
+ * module creates no authority, signs nothing, and trusts no A2A completion. */
+import {BaseLlm} from '@google/adk';
+import {TrustedAuthorityOnlyAdkDecisionProposer} from './trusted-authority-only-adk-decision-proposer.mjs';
+// An Engineer-signed source change may span several individually verified
+// file Tasks; each keeps its own native Child, same-file read/CAS journal and
+// exact original root permissions. At most 24 Child-consuming Tasks plus
+// one terminal (no-Child) decision; 25 is the hard owner-only turn ceiling.
+const deny=s=>{throw Error('Authority-only adaptive work loop: '+s);};
+const isFileSpecialist=role=>role!=='orchestrator'&&role!=='test';
+export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false}){
+ if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>25||
+    !hooks||['readContext','beforeDecision','executeTask','confirmReady','retire']
+     .some(k=>typeof hooks[k]!=='function')||
+    (hooks.runDecision!==undefined&&typeof hooks.runDecision!=='function')||
+    (hooks.observeVerifiedTestFailure!==undefined&&
+     typeof hooks.observeVerifiedTestFailure!=='function')||
+    (typeof requireVerifiedRepairDiagnostic!=='boolean')||
+    (requireVerifiedRepairDiagnostic&&typeof hooks.verifyRepairDiagnostic!=='function')||
+    (signal!==undefined&&!(signal instanceof AbortSignal)))deny('invalid original owner loop configuration');
+ let executed=0,retestRequired=false;
+ try{
+  for(let step=0;step<maxSteps;step++){
+   signal?.throwIfAborted();
+   const before=structuredClone(await hooks.readContext());
+   await hooks.beforeDecision();
+   const decide=()=>new TrustedAuthorityOnlyAdkDecisionProposer({
+    ...before,model,decisionKind:'adaptive'
+   }).propose();
+   const decision=await (hooks.runDecision?hooks.runDecision(decide):decide());
+   signal?.throwIfAborted();
+   const after=await hooks.readContext();
+   if(JSON.stringify(before)!==JSON.stringify(after))deny('original owner progress changed during model decision');
+   if(decision.action==='blocked'){
+    await hooks.retire();
+    return Object.freeze({status:'owner_adaptive_work_blocked',executed_tasks:executed,
+     reason:decision.reason,pr_created:false});
+   }
+   if(decision.action==='ready_for_pr'){
+    if(retestRequired)deny(retestRequired);
+    const proof=await hooks.confirmReady();
+    signal?.throwIfAborted();
+    if(proof?.status!=='owner_verified_tested_head_not_pr_authorized'||
+       !/^[a-f0-9]{40}$/u.test(proof.tested_commit_sha))
+     deny('independent current Test proof missing');
+    // R366: readiness must refer to the latest independently completed
+    // Test on the exact Gitea HEAD observed before the model decision.
+    // Re-read AFTER asynchronous receipt verification to fence a HEAD,
+    // root, completion-ledger or failure-state race. A model claim or an
+    // older Test PASS never creates PR authority.
+    const latestTest=before.executionProgress.completed_work
+     .filter(p=>p.agent_id==='test'&&p.operation==='run_tests').at(-1);
+    const afterProof=structuredClone(await hooks.readContext());
+    signal?.throwIfAborted();
+    if(!latestTest||proof.task_id!==latestTest.task_id||
+       typeof proof.runtime_task_id!=='string'||!proof.runtime_task_id.trim()||
+       proof.tested_commit_sha!==before.executionProgress?.current_head_sha||
+       JSON.stringify(afterProof)!==JSON.stringify(before))
+     deny('independent current Test proof or original owner context changed');
+    return Object.freeze({status:'owner_adaptive_work_ready_for_pr',executed_tasks:executed,
+     source_test_task_id:proof.task_id,source_test_runtime_task_id:proof.runtime_task_id,
+     tested_commit_sha:proof.tested_commit_sha,pr_created:false});
+   }
+   // R385.6: opt-in owner policy. After an independently verified Test FAIL,
+   // model-selected UPDATE can be staged only after a distinct signed,
+   // Gateway-completed diagnostic read of that *same* source and HEAD.
+   // No model excerpt, permission claim or A2A result can satisfy this gate.
+   if(requireVerifiedRepairDiagnostic&&before.verifiedFailureHistory?.length&&
+      decision.task.permissions.some(p=>p.operation==='create_file'))
+    deny('strict post-FAIL CREATE needs a separate authenticated investigation policy');
+   if(requireVerifiedRepairDiagnostic&&before.verifiedFailureHistory?.length&&
+      decision.task.permissions.some(p=>p.operation==='update_file')){
+    const binding=await hooks.verifyRepairDiagnostic(Object.freeze({
+     task:decision.task,context:before
+    }));
+    if(binding?.status!=='owner_verified_signed_diagnostic_read_for_repair'||
+       binding.repair_task_id!==decision.task.task_id||
+       binding.agent_id!==decision.task.agent_id||
+       binding.resource!==decision.task.permissions.find(p=>p.operation==='update_file')?.resource||
+       binding.revision!==before.executionProgress?.current_head_sha||
+       !/^[a-f0-9]{64}$/u.test(binding.evidence_sha256??'')||
+       typeof binding.read_task_id!=='string'||
+       !before.executionProgress?.completed_work?.some(row=>
+        row.task_id===binding.read_task_id&&
+        row.agent_id===decision.task.agent_id&&row.operation==='read_file'))
+     deny('post-FAIL UPDATE lacks independently signed diagnostic source');
+    signal?.throwIfAborted();
+    const afterReadGate=await hooks.readContext();
+    if(JSON.stringify(afterReadGate)!==JSON.stringify(before))
+     deny('original owner changed during authenticated diagnostic read gate');
+   }
+   // A thrown A2A/provider error is *always* terminal. Recovery is
+   // possible only through an explicit outcome authenticated by the owner.
+   const effect=await hooks.executeTask(decision.task,before);
+   if(effect?.status==='owner_verified_specialist_no_change'){
+    const observed=effect.observation;
+    if(before.specialistNoChange||!observed||
+       !isFileSpecialist(decision.task.agent_id)||
+       !before.agents?.[decision.task.agent_id]?.capabilities?.includes('read_file')||
+       !before.agents?.[decision.task.agent_id]?.capabilities?.includes('update_file')||
+       decision.task.permissions.length!==2||
+       !decision.task.permissions.some(p=>p.operation==='read_file')||
+       !decision.task.permissions.some(p=>p.operation==='update_file')||
+       decision.task.permissions[0].resource!==decision.task.permissions[1].resource||
+       observed.agent_id!==decision.task.agent_id||observed.task_id!==decision.task.task_id||
+       observed.read_revision!==before.executionProgress.current_head_sha||
+       !/^[a-f0-9]{64}$/u.test(observed.read_evidence_sha256)||
+       effect.gateway_task_completed!==false||effect.recovery_authorized!==false)
+     deny('specialist no-change is not bound to the original attested read');
+    signal?.throwIfAborted();
+    const progress=await hooks.readContext();
+    const {nextEpoch,specialistNoChange,...unchanged}=progress;
+    const {nextEpoch:priorEpoch,...prior}=before;
+    if(nextEpoch!==priorEpoch+1||
+       JSON.stringify(specialistNoChange)!==JSON.stringify(observed)||
+       JSON.stringify(unchanged)!==JSON.stringify(prior))
+     deny('specialist no-change did not preserve the original authority and success ledger');
+    retestRequired='verified specialist no-change requires a new independently completed Test';
+    continue;
+   }
+   if(effect?.status==='owner_verified_native_test_failure_preflight_only'){
+    if(!hooks.observeVerifiedTestFailure||decision.task.agent_id!=='test'||
+       decision.task.permissions.filter(p=>p.operation==='run_tests').length!==1)
+     deny('untrusted or unexpected recoverable Test failure result');
+    const observed=await hooks.observeVerifiedTestFailure(Object.freeze({
+     task:decision.task,context:before
+    }));
+    signal?.throwIfAborted();
+    if(observed?.status!=='owner_verified_native_test_failure_preflight_only'||
+       observed.failed_task_id!==decision.task.task_id||
+       typeof observed.failed_runtime_task_id!=='string'||
+       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(observed.failed_runtime_task_id)||
+       observed.gateway_task_completed!==false||
+       observed.recovery_authorized!==false||
+       observed.tested_commit_sha!==before.executionProgress?.current_head_sha||
+       !['typecheck','backend_tests','frontend_tests','build',
+         'playwright_e2e','researcher_acceptance'].includes(observed.failed_phase)||
+       !/^[a-f0-9]{64}$/u.test(observed.source_evidence_sha256))
+     deny('Test failure is not independently verified by the original owner');
+    const progress=await hooks.readContext();
+    const expectedHistory=[...(before.verifiedFailureHistory??[]),{
+     failed_task_id:observed.failed_task_id,
+     failed_phase:observed.failed_phase,
+     source_evidence_sha256:observed.source_evidence_sha256,
+     tested_commit_sha:observed.tested_commit_sha
+    }];
+    if(JSON.stringify(progress.verifiedFailureHistory)!==JSON.stringify(expectedHistory))
+     deny('verified Test FAIL history differs from the original owner proof');
+    if(progress.nextEpoch!==before.nextEpoch+1||
+       JSON.stringify(progress.rootPermissions)!==JSON.stringify(before.rootPermissions)||
+       progress.branch!==before.branch||
+       progress.requirement!==before.requirement||
+       JSON.stringify(progress.agents)!==JSON.stringify(before.agents)||
+       JSON.stringify(progress.previousTasks)!==JSON.stringify(before.previousTasks)||
+       progress.executionProgress?.current_head_sha!==observed.tested_commit_sha||
+       JSON.stringify(progress.executionProgress?.completed_work)!==
+        JSON.stringify(before.executionProgress?.completed_work)||
+       JSON.stringify(progress.specialistNoChange)!==JSON.stringify(before.specialistNoChange)||
+       JSON.stringify(progress.verifiedFailure)!==JSON.stringify({
+        failed_phase:observed.failed_phase,
+        source_evidence_sha256:observed.source_evidence_sha256,
+        ...(observed.typecheck_error_codes?.length?
+         {typecheck_error_codes:[...observed.typecheck_error_codes]}:{}),
+        ...(observed.failing_test_files?.length?{failing_test_files:observed.failing_test_files}:{}),
+        ...(observed.acceptance_failure?{acceptance_failure:observed.acceptance_failure}:{})
+       }))
+     deny('verified Test FAIL did not preserve the original authority and success ledger');
+    // The failed Task is registered (epoch advances), but NOT completed.
+    // Its evidence is diagnostic input for the next model decision only.
+    retestRequired='verified Test FAIL requires a new independently completed Test';
+    continue;
+   }
+   signal?.throwIfAborted();
+   const progress=await hooks.readContext();
+   if(progress.nextEpoch!==before.nextEpoch+1||
+      progress.previousTasks.length!==before.previousTasks.length+1||
+      !progress.previousTasks.some(p=>p.task_id===decision.task.task_id&&p.agent_id===decision.task.agent_id))
+    deny('Task did not yield independently attested owner progress');
+   if(JSON.stringify(progress.verifiedFailureHistory)!==JSON.stringify(before.verifiedFailureHistory)||
+      JSON.stringify(progress.verifiedFailure)!==JSON.stringify(before.verifiedFailure)||
+      JSON.stringify(progress.specialistNoChange)!==JSON.stringify(before.specialistNoChange))
+    deny('completed Task changed the authenticated failure history');
+   if(decision.task.agent_id==='test'&&decision.task.permissions.some(p=>p.operation==='run_tests'))
+    retestRequired=false;
+   executed++;
+  }
+  deny('bounded decision budget exhausted without verified PR readiness');
+ }catch(error){
+  try{await hooks.retire();}
+  catch{throw Error('Authority-only adaptive work loop: failure and original root retirement unconfirmed',{cause:error});}
+  throw error;
+ }
+}

@@ -1,0 +1,55 @@
+# NON-BILLABLE self-hosted workflow identity rendezvous. It holds the
+# *same* GitHub run open while an independently controlled Engineer host
+# reviews/executes/retire a signed DAG. This job never calls Gemini,
+# checks out source, signs approval, opens credentials, or invokes tools.
+# The operator must provision the immutable /opt/delegation/r5 build,
+# private mTLS runner leaf and independently pinned workflow source SHA.
+name: R5 Private Runner Authenticated Hold (No Model Execution)
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: "Separate explicit future Gemini charges consent; this job itself is offline"
+        type: string
+        required: true
+      model:
+        description: "Exact Gemini model, bound to protected OIDC admission only"
+        type: string
+        required: true
+        default: "gemini-3.8-flash"
+      max_model_turns:
+        type: string
+        required: true
+        default: "12"
+      max_output_tokens:
+        type: string
+        required: true
+        default: "16000"
+      max_model_call_ms:
+        type: string
+        required: true
+        default: "120000"
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: trusted-r5-private-run-hold
+  cancel-in-progress: false
+jobs:
+  authenticated-hold-only:
+    name: OIDC-mTLS and bounded host status wait, no model/approval
+    environment: r5-private-admission
+    runs-on: [self-hosted, linux, x64, delegation-private]
+    if: ${{ github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}
+    timeout-minutes: 75
+    steps:
+      # CAUTION: privileged self-hosted runner. Never checkout mutable Git
+      # content or download actions into the process holding private mTLS.
+      - name: Submit OIDC then hold this SAME job until signed DAG closure
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/apps/orchestrator/src/hold-private-github-session.mjs
+      - name: Clarify the distinct authority boundaries
+        shell: bash
+        run: |
+          echo "Host-reported signed DAG closed; no Engineer authority was held by GitHub."
+          echo "The GitHub job only authenticated and remained active; no Gemini requests were made here."
