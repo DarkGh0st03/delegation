@@ -38,6 +38,6 @@ test("offline real Backend, Frontend and Test A2A under distinct role-scoped Lin
   throw Error("Offline original cross-UID Docker test failed: "+
    (diagnostic.join(" | ")||String(error?.code??"unknown")));
  }
- assert.match(stdout,/pass 4/u,stderr.slice(-1200));
+ assert.match(stdout,/pass 5/u,stderr.slice(-1200));
  assert.match(stdout,/fail 0/u,stderr.slice(-1200));
 });
