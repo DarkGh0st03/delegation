@@ -28,7 +28,8 @@ import {TrustedAuthorityOnlyCreateEffectStager}
  from "../../../apps/gateway/src/trusted-authority-only-create-effect-stager.ts";
 import {
  TrustedAuthorityOnlyRemoteEffectBootstrap,
- type TrustedAuthorityOnlyRemoteEffectBootstrapOptions
+ type TrustedAuthorityOnlyRemoteEffectBootstrapOptions,
+ type TrustedOriginalNativeModelPrebindReceipt
 } from "./trusted-authority-only-remote-effect-bootstrap.ts";
 import {validateWorkflowArtifact,type ValidatedWorkflowArtifact}
  from "./artifact-validation.ts";
@@ -72,6 +73,10 @@ interface OwnerDispatchInput {
  taskId:string;runtimeTaskId:string;instruction:string;
  /** Constructed only by the trusted owner, already fixed to HEAD/Task. */
  effectStager:TrustedEffectStagingPort;
+ /** Only trusted original owner process may supply this callback. */
+ onNativeOriginalTaskPrebound?:(
+  receipt:TrustedOriginalNativeModelPrebindReceipt
+ )=>(()=>void);
 }
 export interface OwnerA2AReport {
  status:"a2a_report_not_gateway_completed";
@@ -257,6 +262,8 @@ export class TrustedAuthorityOnlyA2AOwner {
   return this.#bootstrap.dispatchApprovedTask({
    taskId:input.taskId,runtimeTaskId:input.runtimeTaskId,
    effectStager:input.effectStager,
+   ...(input.onNativeOriginalTaskPrebound
+    ?{onNativeOriginalTaskPrebound:input.onNativeOriginalTaskPrebound}:{}),
    dispatch:async()=>{
     const live=this.#coordinator.assertTrustedGatewayAuthorityBinding();
     if(live.session_id!==root.session_id||

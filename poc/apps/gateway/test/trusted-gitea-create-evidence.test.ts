@@ -1,4 +1,11 @@
 import test from "node:test";
+import {BaseLlm} from "@google/adk";
+import {DisposablePrivateBudgetedAdkModel}
+ from "../../orchestrator/src/disposable-gemini-live-budgeted-model.mjs";
+import {DisposableOriginalA2AModelCallWindowStore}
+ from "../../orchestrator/src/disposable-gemini-original-task-call-window.mjs";
+import {reconcileOriginalOwnerTaskCreateFromStore}
+ from "../../orchestrator/src/disposable-gemini-gitea-write-reconcile.mjs";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import {mkdtemp,mkdir,rm,readdir,readFile,writeFile} from "node:fs/promises";
@@ -157,5 +164,106 @@ test("R383.6 observer rechecks current feature HEAD even after MAC receipt",asyn
  await f.publisher.publish(intent,binding,result,"opa");
  f.setHead("f".repeat(40));
  await assert.rejects(f.observer.observe(binding));
+ assert.equal(f.stats().writes,0);
+});
+
+test("R383.6 owner-only CREATE digest matches authenticated independent receipt without disclosing source",async t=>{
+ const f=await fixture(t);
+ const evidence=await f.publisher.publish(intent,binding,result,"opa");
+ const digest=await f.observer.observeAuthenticatedSourceDigest(binding);
+ assert.equal(digest.status,"owner_verified_gateway_gitea_create_digest_only");
+ assert.equal(digest.task_id,binding.task_id);
+ assert.equal(digest.runtime_task_id,binding.runtime_task_id);
+ assert.equal(digest.agent_did,binding.agent_did);
+ assert.equal(digest.credential_id,binding.credential_id);
+ assert.equal(digest.branch,branch);
+ assert.equal(digest.path,path);
+ assert.equal(digest.previous_head_sha,OLD);
+ assert.equal(digest.commit_sha,NEW);
+ assert.equal(digest.old_path_absent_at_pinned_head,true);
+ assert.equal(digest.source_sha256,sha(content));
+ assert.equal(digest.source_bytes,Buffer.byteLength(content));
+ assert.equal(digest.evidence_sha256,evidence);
+ assert.equal(JSON.stringify(digest).includes(content),false);
+ assert.equal("mac_sha256" in digest,false);
+ assert.equal(f.stats().writes,0);
+});
+test("R383.6 owner-only CREATE digest refuses forged Task and stale HEAD",async t=>{
+ const f=await fixture(t);
+ await f.publisher.publish(intent,binding,result,"opa");
+ await assert.rejects(f.observer.observeAuthenticatedSourceDigest({
+  ...binding,credential_id:"urn:foreign-child"
+ }),/original signed Task\/Child/u);
+ f.setHead("d".repeat(40));
+ await assert.rejects(f.observer.observeAuthenticatedSourceDigest(binding));
+ assert.equal(f.stats().writes,0);
+});
+
+class OfflineCreateModel extends BaseLlm{
+ constructor(nextSource=content){
+  super({model:"offline-gitea-created-source-not-real-gemini"});
+  this.nextSource=nextSource;
+ }
+ async *generateContentAsync(){
+  yield {content:{role:"model",parts:[{functionCall:{
+   name:"create_file",args:{branch,path,content:this.nextSource}
+  }}]},usageMetadata:{promptTokenCount:2,candidatesTokenCount:3,totalTokenCount:5}};
+ }
+}
+async function createMeteredWitness(source=content){
+ const model=new DisposablePrivateBudgetedAdkModel({
+  delegate:new OfflineCreateModel(source),phase:"backend",
+  maxCalls:3,maxReportedTokens:100,maxPerCallTokens:30
+ });
+ for await(const _ of model.generateContentAsync({})){}
+ const store=new DisposableOriginalA2AModelCallWindowStore({role:"backend",model});
+ store.callbackForOriginalA2A()({
+  task_id:binding.task_id,runtime_task_id:binding.runtime_task_id,
+  credential_id:binding.credential_id,role:"backend",
+  call_index_before:0,call_index_after:1
+ });
+ return {model,ownerWindowStore:store};
+}
+test("owner CREATE model bytes reconcile only against original signed Task/Child and authenticated Gitea CAS",async t=>{
+ const f=await fixture(t);
+ const witness=await createMeteredWitness();
+ const params={...witness,createObserver:f.observer,
+  completionExpectation:binding,role:"backend",
+  registeredAgentDid:binding.agent_did};
+ await assert.rejects(reconcileOriginalOwnerTaskCreateFromStore(params));
+ const evidence=await f.publisher.publish(intent,binding,result,"opa");
+ const matched=await reconcileOriginalOwnerTaskCreateFromStore(params);
+ assert.equal(matched.status,
+  "signed_gateway_gitea_create_cas_matches_model_proposed_bytes_only");
+ assert.equal(matched.task_id,binding.task_id);
+ assert.equal(matched.commit_sha,NEW);
+ assert.equal(matched.gateway_evidence_sha256,evidence);
+ assert.equal(matched.old_path_absent_at_pinned_head,true);
+ assert.equal(matched.model_emitted_write_matches_committed_bytes,true);
+ assert.equal(matched.model_generated_source_proven,false);
+ assert.equal(matched.provider_origin_independently_verified,false);
+ await assert.rejects(reconcileOriginalOwnerTaskCreateFromStore(params),
+  /reconciliation NO-GO/u);
+ assert.equal(f.stats().writes,0);
+});
+test("owner CREATE model mismatch, foreign Child and stale HEAD are all NO-GO",async t=>{
+ const f=await fixture(t);
+ await f.publisher.publish(intent,binding,result,"opa");
+ const wrong=await createMeteredWitness("export const attacker = true;\\n");
+ await assert.rejects(reconcileOriginalOwnerTaskCreateFromStore({
+  ...wrong,createObserver:f.observer,completionExpectation:binding,
+  role:"backend",registeredAgentDid:binding.agent_did
+ }),/reconciliation NO-GO/u);
+ const good=await createMeteredWitness();
+ await assert.rejects(reconcileOriginalOwnerTaskCreateFromStore({
+  ...good,createObserver:f.observer,
+  completionExpectation:{...binding,credential_id:"urn:forged:child"},
+  role:"backend",registeredAgentDid:binding.agent_did
+ }),/original signed Task\/Child/u);
+ f.setHead("f".repeat(40));
+ await assert.rejects(reconcileOriginalOwnerTaskCreateFromStore({
+  ...good,createObserver:f.observer,completionExpectation:binding,
+  role:"backend",registeredAgentDid:binding.agent_did
+ }));
  assert.equal(f.stats().writes,0);
 });

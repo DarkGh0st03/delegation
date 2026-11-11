@@ -11,6 +11,8 @@ import {createServer} from "node:net";
 import {BaseLlm} from "@google/adk";
 import {createTrustedAuthorityOnlyReviewHost}
  from "../../../apps/orchestrator/src/trusted-authority-only-review-host.mjs";
+import {createDisposableOriginalThreeRoleModelTaskAdmission}
+ from "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs";
 import {AuthorityPlanningCheckpointStore}
  from "../src/trusted-authority-planning-checkpoint.ts";
 import {TrustedOperationalRecoveryStore}
@@ -145,6 +147,17 @@ const strictReadProbe=process.env.R3858_NATIVE_STRICT_POSTFAIL_PROBE==="1";
 const secondReadProbe=process.env.R3859_NATIVE_SECOND_REPAIR_PROBE==="1";
 const testAgentProbe=process.env.R38512_NATIVE_TEST_AGENT_SOURCE_PROBE==="1";
 const strictFullRecovery=process.env.R38513_NATIVE_STRICT_FULL_RECOVERY==="1";
+// In the experimental CI-only profile, approval is selected AFTER the
+// original backend-signed Planning checkpoint, not pre-written as a fixture.
+// Default original tests remain untouched unless the explicit opt-in is set.
+const ciApprovalAfterPlanning=
+ process.env.R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING==="1";
+if(ciApprovalAfterPlanning){
+ assert.equal(strictFullRecovery,true);
+ assert.equal(process.env.GITHUB_ACTIONS,"true");
+ for(const key of ["GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY"])
+  assert.equal(process.env[key],undefined);
+}
 const r399NativeSamePrGate=process.env.R399_NATIVE_SAME_PR_GATE==="1";
 assert.ok(!r399NativeSamePrGate||strictFullRecovery,
  "R399 native same-PR Security CI must use strict R385.13 original owner");
@@ -356,7 +369,7 @@ const proposed={
 const grant=selectAuthorityOnlyGrant(proposed,grantPermissions,{
  allowedOperations:new Set(RUST_OPERATIONS)
 });
-const receipt=signAuthorityOnlyGrant({
+const receipt=ciApprovalAfterPlanning?null:signAuthorityOnlyGrant({
  authorization:grant,engineerDid,keyId:authKey,
  privateKeyPem:privateKey.export({format:"pem",type:"pkcs8"}),
  issuedAt,expiresAt:approvalExpiresAt,
@@ -375,7 +388,8 @@ const names=["approvals","keys","checkpoints","recovery","root-journal","coordin
  "runner-intent","runner-receipts","runner-fail-receipts","runner-logs"];
 try{
  for(const name of names)await mkdir(path(name),{mode:0o700});
- await writeFile(path("approvals")+"/"+sessionId+".json",
+ if(!ciApprovalAfterPlanning)await writeFile(
+  path("approvals")+"/"+sessionId+".json",
   JSON.stringify(receipt),{mode:0o600,flag:"wx"});
   // R375.2: the original Engineer Review Host owns Planning, root,
   // Coordinator, Gateway, Child issuer and every model-selected Task.
@@ -502,7 +516,16 @@ try{
    throw Error("R375 Planning cannot execute write or unknown Gateway route");
   };
   const operationalSessions=new TrustedOperationalSessionStore(path("gateway-activation"));
+  // The SAME original signed native Rust/Child/Review Host lifecycle now
+  // emits one-use R323 receipts to the three-role owner Model IPC gate.
+  // This is free scripted-only: local ADK workers are still in-process here.
+  const ownerModelTaskAdmission=strictFullRecovery?
+   createDisposableOriginalThreeRoleModelTaskAdmission():null;
   const host=await createTrustedAuthorityOnlyReviewHost({
+   ...(ownerModelTaskAdmission?{
+    disposableOwnerModelTaskPrebind:
+     ownerModelTaskAdmission.onNativeOriginalTaskPrebound
+   }:{}),
    snapshot,requirement,workBranch:branch,preliminaryRoot:preliminary,
    checkpoint:{store:checkpoints,backendKeyId:"owner",
     backendPrivateKeyPem:checkpointKey.privateKey.export({
@@ -540,6 +563,22 @@ try{
     adapterToken:tokens.orchestrator,fetchFn:planningTransport,
     timeoutMs:60000}
   });
+  if(ciApprovalAfterPlanning){
+   // Sign the actual original backend-signed Planner proposal. This file
+   // is consumed by the SAME Review Host before Rust Root activation.
+   const {writeOriginalDisposableCiEngineerReceipt}=await import(
+    "../../../apps/orchestrator/src/disposable-ci-original-signed-review.mjs"
+   );
+   const review=await writeOriginalDisposableCiEngineerReceipt({
+    checkpointStore:checkpoints,snapshot,workBranch:branch,requirement,
+    receiptDirectory:path("approvals"),privateKeyFile:engineerFile,
+    engineerDid,keyId:authKey,
+    publicKeyPem:publicKey.export({format:"pem",type:"spki"}).toString()
+   });
+   assert.equal(review.original_receipt_written_and_independently_verified,true);
+   assert.equal(review.permission_count,23);
+   assert.equal(review.native_root_issued_here,false);
+  }
   assert.equal(planningModel.calls,2);
   if(strictFullRecovery){
    assert.equal(researchPlanningModel.observedCalls,2);
@@ -1633,6 +1672,21 @@ const tool=record?.request?.tool,role=record?.agent_role;
     "Every original A2A role must sign via native MCP: "+role);
   }
   if(strictFullRecovery){
+   // The original R385.13 signed native session must enter and leave
+   // the exact three worker model Task ledgers without authority leaks.
+   // These receipts are the REAL original Coordinator/Child/Gateway bind
+   // in this SAME native E2E, not JSON clones or offline Root stubs.
+   const admission=ownerModelTaskAdmission.snapshot();
+   assert.equal(admission.original_native_root_bound,true);
+   assert.equal(admission.closed,false);
+   for(const role of ["backend","frontend","test"]){
+    assert.ok(admission.admitted[role]>0,
+     "original native Review Host did not prebind "+role+" model Task");
+    assert.equal(admission.active[role],0,
+     "original native "+role+" model Task remains active after A2A");
+    assert.equal(admission.admitted[role],admission.fenced[role],
+     "native "+role+" model Task was not retired at terminal A2A");
+   }
    // This proof is emitted only after the existing independent native
    // Rust/Gateway/Runner/Gitea/PR assertions succeeded, not when merely
    // receiving untrusted model text or A2A completion.
@@ -1660,10 +1714,16 @@ const tool=record?.request?.tool,role=record?.agent_role;
     individually_signed_repair_tasks:10,
     original_owner_adaptive_decisions:25,
     native_child_count:24,
+    // The same original Root/Child authenticated every model Task prebind,
+    // but this free R385.13 runtime still hosts worker SDKs in-process.
+    original_native_three_role_model_task_receipts_fenced:true,
+    isolated_worker_model_ipc_in_this_native_e2e:false,
     latest_test_pass_same_head:true,
     no_extra_child_for_terminal_decision:true
    }:{}),
    original_main_immutable:true,
+   original_engineer_ci_approval_from_actual_planning_checkpoint:
+    ciApprovalAfterPlanning,
    ...(strictFullRecovery?{
     // Same-process SCRIPTED ADK Planning + adaptive decision counters,
     // linked to the original native credential/Gitea/Docker assertions.
@@ -1717,6 +1777,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
   PrivateMcpTaskRegistry.prototype.takeSignedPresentation=originalProofTake;
   DelegationEvidenceHandler.prototype.createPresentation=originalCreate;
   LocalCryptoMcpBridge.prototype.createSignedPresentation=originalMcpBridge;
+  // On the ORIGINAL signed Engineer host shutdown, retire the shared
+  // worker model gate SYNCHRONOUSLY. A still-running role-specific Unix
+  // connection cannot begin a new model call while native Rust/Gateway
+  // and A2A shutdown are awaiting their own effect-fence ACKs.
+  ownerModelTaskAdmission?.retireAll();
   const results=await Promise.allSettled([
    host.close(),localWorkers?.close(),
    new Promise((resolve,reject)=>
@@ -1724,6 +1789,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
   ]);
   for(const result of results)
    if(result.status==="rejected")throw result.reason;
+ }
+ if(strictFullRecovery){
+  assert.equal(ownerModelTaskAdmission.snapshot().closed,true);
+  assert.deepEqual(ownerModelTaskAdmission.snapshot().active,
+   {backend:0,frontend:0,test:0});
  }
  assert.equal(host.phase,"revoked");
  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,

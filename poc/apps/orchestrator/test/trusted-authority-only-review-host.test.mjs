@@ -290,6 +290,26 @@ function executionDeps(f){
   }}
  };
 }
+test('disposable owner model Task prebind stays offline-only and cannot bypass original Planning',async t=>{
+ const f=await fixture(t);
+ f.options.disposableOwnerModelTaskPrebind={};
+ await assert.rejects(f.start(),/disposable model Task prebind requires offline private owner code/u);
+ f.options.disposableOwnerModelTaskPrebind=()=>()=>{};
+ const old=process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+ process.env.DELEGATION_DISPOSABLE_LIVE_MODE='gemini-real';
+ try{
+  await assert.rejects(f.start(),/disposable model Task prebind requires offline private owner code/u);
+ }finally{
+  if(old===undefined)delete process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+  else process.env.DELEGATION_DISPOSABLE_LIVE_MODE=old;
+ }
+ let called=0;
+ f.options.disposableOwnerModelTaskPrebind=()=>{called++;return ()=>{};};
+ const host=await f.start();
+ assert.equal(host.phase,'planning');
+ assert.equal(called,0,'no native Task prebind exists before an original signed Root');
+});
+
 test('R350 same R349 Engineer session activates independently verified Gateway and native Child issuer',async t=>{
  const f=await fixture(t),host=await f.start();
  await assert.rejects(host.admitOperationalExecution(executionDeps(f)),/requires an activated/);
@@ -888,7 +908,7 @@ test('R367.1 same-session Owner starts pinned SDK A2A before first Task/Child',a
  }
 });
 
-for(const mode of ['missing','backend','frontend','test','failure',
+for(const mode of ['missing','backend','backend-ipc-native','frontend','test','failure',
  'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied',
  'pr','pr-denied','pr-invalid','pr-stale','pr-execute','pr-execute-stale',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
@@ -928,6 +948,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'R351.4 original Engineer ADK/A2A Test invokes authenticated Runner evidence and attests PASS':
  mode==='frontend'?
  'R351.3 actual Frontend A2A Gateway evidence unlocks bounded ADK Test Agent choice':
+ mode==='backend-ipc-native'?
+ 'Disposable native R323 Task prebind admits original signed model turn before A2A':
  mode==='backend'?
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
@@ -946,6 +968,76 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const wantsPrGrant=(mode.startsWith('pr')&&mode!=='pr-denied')||mode==='adaptive-repair-pr';
  const f=await fixture(t,throughFrontend?{includeTestPermission:true,
   includePullRequestPermission:wantsPrGrant}:{});
+ const modelPrebinds=[];
+ let threeRoleModelGate,originalRootInvalidated=false;
+ if(mode==='adaptive-from-zero-test'){
+  const {createDisposableOriginalThreeRoleModelTaskAdmission}=await import(
+   '../src/disposable-gemini-original-ipc-task-admission.mjs');
+  // One original Root, three role-scoped IPC authorizers, genuine R323
+  // receipts. No new owner or agent and no Gemini provider invocation.
+  threeRoleModelGate=createDisposableOriginalThreeRoleModelTaskAdmission();
+  f.options.disposableOwnerModelTaskPrebind=prebind=>{
+   const {role,receipt,assertOriginalRootActive}=prebind;
+   const checkedOriginalRoot=()=>{
+    if(originalRootInvalidated)throw Error('original operational Root retired');
+    return assertOriginalRootActive();
+   };
+   const ownerOnlyPrebind={...prebind,assertOriginalRootActive:checkedOriginalRoot};
+   const retirement=threeRoleModelGate.onNativeOriginalTaskPrebound(ownerOnlyPrebind);
+   assert.throws(()=>threeRoleModelGate.onNativeOriginalTaskPrebound({
+    ...ownerOnlyPrebind,receipt:{...receipt}
+   }),/authentic one-use original prebind/u,
+   'an A2A/IPC JSON clone cannot acquire a Task');
+   const credentialId=role==='backend'?staged?.credential_id:
+    role==='frontend'?frontendStaged?.credential_id:
+     testStaged?.credential_id;
+   assert.ok(credentialId,'native issued Child must predate model IPC admission');
+   const task=Object.freeze({
+    task_id:receipt.task_id,runtime_task_id:receipt.runtime_task_id,
+    session_id:assertOriginalRootActive().session_id,
+    credential_id:credentialId
+   });
+   // A live Rust presentation is admissible ONLY for the exact genuine
+   // Child bound by this one-use R323 receipt. No worker A2A text or
+   // role-correct HMAC can authorize a foreign Child.
+   assert.equal(threeRoleModelGate.authorizeNativePresentation({
+    role,credentialId
+   }),true);
+   assert.throws(()=>threeRoleModelGate.authorizeNativePresentation({
+    role,credentialId:'urn:foreign:child:'+role
+   }),/Disposable original signed IPC Task admission NO-GO/u);
+   const modelCall=threeRoleModelGate.roleAuthorizers[role]({
+    role,task,callId:'r368-native-model-turn-'+role+'-001'
+   });
+   const record={role,taskId:receipt.task_id,task,modelCall,
+    retired:false};
+   modelPrebinds.push(record);
+   return ()=>{retirement();record.retired=true;};
+  };
+ }
+ if(mode==='backend-ipc-native'){
+  const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+   '../src/disposable-gemini-original-ipc-task-admission.mjs');
+  f.options.disposableOwnerModelTaskPrebind=({
+   role,receipt,assertOriginalRootActive
+  })=>{
+   assert.equal(role,'backend');
+   // Real original native prebind has a one-use private WeakMap brand.
+   // A worker-supplied A2A JSON clone cannot pass this owner gate.
+   const ledger=createDisposableOriginalNativeIpcTaskAdmission({
+    role,assertOriginalRootActive
+   });
+   const granted=ledger.bindOriginalReceipt(receipt,{maxCalls:2});
+   const modelCall=ledger.authorizeSignedTask({
+    role,task:{
+     task_id:receipt.task_id,runtime_task_id:receipt.runtime_task_id,
+     session_id:snapshot.session_id,credential_id:staged.credential_id
+    },callId:'r351-original-native-model-call-001'
+   });
+   modelPrebinds.push({ledger,granted,modelCall});
+   return ()=>ledger.retireTask(receipt.runtime_task_id);
+  };
+ }
  const host=await f.start();
  await f.approve(throughFrontend?['permission-1','permission-2','permission-3',
   ...(wantsPrGrant?['permission-4']:[])]:
@@ -1439,6 +1531,52 @@ for(const mode of ['missing','backend','frontend','test','failure',
    });
    assert.equal(result.status,fullTest?'owner_adaptive_work_ready_for_pr':'owner_adaptive_work_blocked');
    assert.equal(result.executed_tasks,fullTest?3:2);
+   if(fullTest){
+    assert.deepEqual(modelPrebinds.map(p=>p.role),[
+     'backend','frontend','test'
+    ],'the adaptive Owner must admit only its three specialist Tasks');
+    assert.deepEqual(modelPrebinds.map(p=>p.retired),[true,true,true],
+     'each IPC model Task must be fenced before the next adaptive step');
+    assert.equal(new Set(modelPrebinds.map(p=>p.taskId)).size,3);
+    const admissionSummary=threeRoleModelGate.snapshot();
+    assert.equal(admissionSummary.original_native_root_bound,true);
+    assert.deepEqual(admissionSummary.admitted,
+     {backend:1,frontend:1,test:1});
+    assert.deepEqual(admissionSummary.fenced,
+     {backend:1,frontend:1,test:1});
+    assert.deepEqual(admissionSummary.active,
+     {backend:0,frontend:0,test:0});
+    for(const record of modelPrebinds){
+     assert.equal(await record.modelCall,true);
+     assert.throws(()=>threeRoleModelGate.authorizeNativePresentation({
+      role:record.role,credentialId:record.task.credential_id
+     }),/Disposable original signed IPC Task admission NO-GO/u,
+     'a real Rust VP may never be signed for a retired Child');
+     await assert.rejects(threeRoleModelGate.roleAuthorizers[record.role]({
+      role:record.role,task:record.task,
+      callId:'r368-after-remote-task-fence-'+record.role
+     }),/Disposable original signed IPC Task admission NO-GO/u,
+     'owner model authorization must be revoked on successful A2A completion');
+    }
+    // The original Coordinator Root disappears after all three authentic
+    // prebinds; the next IPC authorization must revoke every role at once.
+    originalRootInvalidated=true;
+    await assert.rejects(threeRoleModelGate.roleAuthorizers.backend({
+     role:'backend',task:modelPrebinds[0].task,
+     callId:'r368-after-original-root-revoked-001'
+    }),/Disposable original signed IPC Task admission NO-GO/u);
+    assert.equal(threeRoleModelGate.snapshot().closed,true);
+    for(const role of ['backend','frontend','test']){
+     const expired=modelPrebinds.find(p=>p.role===role);
+     assert.throws(()=>threeRoleModelGate.authorizeNativePresentation({
+      role,credentialId:expired.task.credential_id
+     }),/Disposable original signed IPC Task admission NO-GO/u);
+     await assert.rejects(threeRoleModelGate.roleAuthorizers[role]({
+      role,task:modelPrebinds.find(p=>p.role===role).task,
+      callId:'r368-root-closed-'+role+'-002'
+     }),/Disposable original signed IPC Task admission NO-GO/u);
+    }
+   }
    assert.equal(result.pr_created,false);
    assert.equal(adaptive.calls,fullTest?4:3);
    assert.deepEqual(supplied,[{epoch:1,agent_id:'backend'},
@@ -1486,6 +1624,20 @@ for(const mode of ['missing','backend','frontend','test','failure',
   });
   assert.equal(report.status,'a2a_report_not_gateway_completed');
   assert.equal(report.provider_completion_attested,false);
+  if(mode==='backend-ipc-native'){
+   assert.equal(modelPrebinds.length,1);
+   const admitted=modelPrebinds[0];
+   assert.equal(admitted.granted.runtime_task_id,task.runtimeTaskId);
+   assert.equal(admitted.granted.model_calls_started_here,0);
+   assert.equal(await admitted.modelCall,true);
+   await assert.rejects(admitted.ledger.authorizeSignedTask({
+    role:'backend',task:{
+     task_id:task.task.task_id,runtime_task_id:task.runtimeTaskId,
+     session_id:snapshot.session_id,credential_id:staged.credential_id
+    },callId:'r351-original-native-model-call-002'
+   }),/Disposable original signed IPC Task admission NO-GO/u,
+   'completed original A2A Task must retire its model authorization');
+  }
   assert.equal(report.artifact.commit_sha,fileSha);
   assert.deepEqual(report.artifact.files_modified,['apps/user.ts']);
   assert.deepEqual(events,[
@@ -2490,6 +2642,14 @@ test('R350.8 original Engineer session creates real canonical Gateway Prepare an
  assert.equal(durable.request_id,prepared.request_id);
  assert.equal(durable.kind,'flight');
  assert.equal(gateway.stagedCompletedTaskCount,0);
+ // A prepared but UNATTESTED signed native mutation cannot become a
+ // successful model-generated write or release any dependent Task.
+ assert.throws(()=>gateway.assertTrustedCompletedMutationObservationBinding(
+  task.task.task_id,task.runtimeTaskId),
+  /original UPDATE observation not independently completed/);
+ assert.throws(()=>gateway.assertTrustedCompletedCreateObservationBinding(
+  task.task.task_id,task.runtimeTaskId),
+  /original CREATE observation not independently completed/);
  await assert.rejects(gateway.attestTrustedTaskCompletion(
   task.task.task_id,task.runtimeTaskId),
   /trusted completion observer or owner-private journal missing/);

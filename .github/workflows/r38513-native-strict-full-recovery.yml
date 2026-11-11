@@ -11,7 +11,18 @@ on:
   # R385.18: native full E2E may be reused by disposable positive Security
   # CI on the exact same source SHA; no secrets/paid inference inputs.
   workflow_call:
+    inputs:
+      original_ci_engineer_after_planning:
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
+    inputs:
+      original_ci_engineer_after_planning:
+        description: "Free original same-session Engineer approval AFTER Planning"
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -29,6 +40,7 @@ jobs:
       R3858_NATIVE_STRICT_POSTFAIL_PROBE: "1"
       R38512_NATIVE_TEST_AGENT_SOURCE_PROBE: "1"
       R38513_NATIVE_STRICT_FULL_RECOVERY: "1"
+      R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING: ${{ inputs.original_ci_engineer_after_planning && '1' || '0' }}
       # The canonical native strict E2E also verifies Security CI's
       # exact status on its OWN generated Draft PR (no merge/no paid AI).
       R399_NATIVE_SAME_PR_GATE: "1"
@@ -110,6 +122,7 @@ jobs:
       - name: Refuse paid model and competing Adapter startup
         run: |
           test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
           test ! -e /tmp/native-evm-adapter.pid
@@ -121,6 +134,10 @@ jobs:
       - name: Preflight free R371 root Branch-before-SDK operational launcher
         run: |
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
+          node --check poc/apps/orchestrator/src/disposable-ci-original-signed-review.mjs
+          # Reject a mismatched workflow origin BEFORE the costly Rust/Docker
+          # E2E. This tests the same original signed post-Planning review.
+          node --experimental-strip-types --test --test-name-pattern="CI-only signer refuses private hosts" poc/apps/orchestrator/test/disposable-ci-original-signed-review.test.mjs
           node --check poc/packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-adaptive-work-loop.test.mjs
           node --test poc/apps/orchestrator/test/trusted-authority-only-operational-launcher.test.mjs
@@ -227,6 +244,7 @@ jobs:
           test "$R3818_CANONICAL_NATIVE_MCP" = "1"
           test "${DELEGATION_GATEWAY_ARCHITECTURE:-}" = "authority-only"
           test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           set -a
           source poc/infra/.env
@@ -241,6 +259,7 @@ jobs:
           test "${R38513_NATIVE_STRICT_FULL_RECOVERY:-}" = "1"
           test "${APPROVED_RUNNER_NATIVE_MCP:-}" = "1"
           test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
           node --check poc/packages/orchestrator-runtime/test/r375-native-protected-main-functional-draft-pr-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/native-gitea-ci-human-gate-fixture.mjs
@@ -262,6 +281,11 @@ jobs:
           grep -Fq '"second_docker_status":"pass"' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"researcher_acceptance_pass":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"original_root_pr_created":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          # A manual scripted-native run MUST prove its CI Engineer signed
+          # the original post-Planning checkpoint, not a prewritten fixture.
+          if [[ "${R38513_CI_ORIGINAL_APPROVAL_AFTER_PLANNING:-0}" = "1" ]]; then
+            grep -Fq '"original_engineer_ci_approval_from_actual_planning_checkpoint":true' "$RUNNER_TEMP/r38513-proof.jsonl"
+          fi
           grep -Fq '"independent_pr_get":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"pr_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"pr_merged":false' "$RUNNER_TEMP/r38513-proof.jsonl"
@@ -271,6 +295,16 @@ jobs:
           grep -Fq '"read_only_human_gate_denied_draft":true' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"source_code_generated_autonomously_by_model":false' "$RUNNER_TEMP/r38513-proof.jsonl"
           grep -Fq '"paid_model_calls":0' "$RUNNER_TEMP/r38513-proof.jsonl"
+      # R385.13 same-run structured evidence gate: refuse missing/mismatched
+      # signed native, Docker, exact PR and source-origin claims. This gate
+      # explicitly declares SCRIPTED source, NEVER authentic Gemini code.
+      - name: Verify same-run native proof and prohibit fake Gemini provenance (No AI)
+        run: |
+          set -euo pipefail
+          test -z "${GEMINI_API_KEY:-}"
+          test -z "${GOOGLE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          node poc/scripts/verify-disposable-native-e2e-proof.mjs "$RUNNER_TEMP/r38513-proof.jsonl"
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only

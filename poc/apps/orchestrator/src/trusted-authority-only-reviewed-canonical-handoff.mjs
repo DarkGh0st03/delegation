@@ -13,6 +13,8 @@
  * operational transition retires the ORIGINAL Review Host; it never falls
  * back to the legacy Signed DAG, creates another signer or retries a Root.
  */
+import {isIssuedDisposableOwnerSourceGate}
+ from "./disposable-gemini-owner-source-gate-brand.mjs";
 const SHA=/^[a-f0-9]{40}$/u;
 const DIGEST=/^[a-f0-9]{64}$/u;
 const ROOT_KEYS=["credential_id","valid_from","validity_seconds",
@@ -47,7 +49,10 @@ function validatedProof(proof,sessionId,baseRevision,planDigest,engineerDid){
 }
 function validatedProvision(result){
  const required=["root","dependencies","workflow","prepareNativeEffects"];
- if(!allowed(result,[...required,"installNativeAuthorization","startLocalWorkers"])||
+ if(!allowed(result,[...required,"installNativeAuthorization","startLocalWorkers",
+   "ownerSourceGate"])||
+     (Object.hasOwn(result,"ownerSourceGate")&&
+      !isIssuedDisposableOwnerSourceGate(result.ownerSourceGate))||
     !required.every(key=>Object.hasOwn(result,key))||
     ["installNativeAuthorization","startLocalWorkers"].some(key=>
      Object.hasOwn(result,key)&&typeof result[key]!=="function")||
@@ -168,7 +173,9 @@ export function createTrustedAuthorityOnlyReviewedCanonicalHandoff({
      const effects=await owned.prepareNativeEffects(execution.gateway);
      if(closed||reviewHost.phase!=="operational"||!liveNative())
       deny("original Executor retired before native effect binding");
-     execution.bindNativeGatewayEffects(effects);
+     execution.bindNativeGatewayEffects(
+      owned.ownerSourceGate?{...effects,
+       ownerSourceGate:owned.ownerSourceGate}:effects);
      await owned.installNativeAuthorization?.();
      if(closed||reviewHost.phase!=="operational"||!liveNative())
       deny("original Executor retired before canonical execution");

@@ -36,6 +36,25 @@ function validBinder(b:unknown):b is AgentBinder{
   typeof (b as AgentBinder).fence==="function";
 }
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+/**
+ * Original native owner-only successful prebind receipts, NOT model claims.
+ * The only issuer is bindRegisteredTask AFTER Coordinator/Child/Gateway
+ * concurrence AND the private agent IPC binding has succeeded. The brand
+ * is deliberately separate from HTTP/A2A, workflow JSON and receipt data.
+ */
+const ISSUED_ORIGINAL_IPC_PROOFS=new WeakMap<object,Readonly<{
+ role:string;task_id:string;runtime_task_id:string;
+ credential_id:string;session_id:string;authority_digest:string;
+ root_credential_id:string
+}>>();
+/** Consume one true original owner prebind; cannot forge with JSON or clone. */
+export function claimTrustedOriginalNativeTaskPrebindForModelIpc(receipt:unknown){
+ if(!receipt||typeof receipt!=="object")deny("original Task prebind proof required");
+ const pin=ISSUED_ORIGINAL_IPC_PROOFS.get(receipt);
+ if(!pin)deny("only an authentic one-use original prebind may admit Gemini IPC");
+ ISSUED_ORIGINAL_IPC_PROOFS.delete(receipt);
+ return pin;
+}
 function deny(message:string):never{
  throw Error("Trusted remote authority-only effect owner NO-GO: "+message);
 }
@@ -220,11 +239,22 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    // the owner stage port is fenced before returning a success receipt.
    deny("Engineer root changed during authenticated remote bind");
   }
-  return Object.freeze({
-   status:"owner_remote_effect_task_prebound_not_executed",
+  const receipt=Object.freeze({
+   status:"owner_remote_effect_task_prebound_not_executed" as const,
    task_id:taskId,runtime_task_id:runtimeTaskId,
-   gateway_execution_authorized:false
+   gateway_execution_authorized:false as const
   });
+  // This brand is created ONLY after genuine original native preflight,
+  // successful authenticated owner->agent binding and a live Root recheck.
+  // It carries identity pins, not a credential, signature or effect grant.
+  if(ROLES.includes(row.agent_id as Role))
+   ISSUED_ORIGINAL_IPC_PROOFS.set(receipt,Object.freeze({
+    role:row.agent_id,task_id:taskId,runtime_task_id:runtimeTaskId,
+    credential_id:issued.credential_id,session_id:root.session_id,
+    authority_digest:root.authority_digest,
+    root_credential_id:root.root_credential_id
+   }));
+  return receipt;
  }
  async fence(runtimeTaskId:string):Promise<void>{
   if(!this.#attempted.has(runtimeTaskId))deny("unknown remote Task fence");

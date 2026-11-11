@@ -9,6 +9,11 @@ import {Buffer} from "node:buffer";
 import {lstat,chmod,unlink} from "node:fs/promises";
 import {dirname,resolve} from "node:path";
 import {loadTrustedPlanIpcSecret} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import {assertTrustedOriginalScopedEffectDirectory,
+ loadTrustedOriginalScopedEffectSecret,
+ assertTrustedOriginalScopedEffectSocket,
+ type TrustedOriginalScopedEffectRole}
+ from "./trusted-effect-staging-scoped-linux.ts";
 import {TrustedEffectStagingTaskRegistry,
  type TrustedEffectTaskOwnerPins} from "./trusted-effect-staging-task-registry.ts";
 import {isProjectTestSource}
@@ -68,10 +73,22 @@ function exactKeys(x:Record<string,unknown>,expected:string):boolean{
 async function createPrivateServer(opts:{
  channel:Channel;socketPath:string;secretFile:string;
  handle:(body:unknown)=>Promise<object>|object;onClose?:()=>void;
+ /** Explicit role-pinned cross-UID layout; never from A2A/LLM content. */
+ originalScopedEffectRole?:TrustedOriginalScopedEffectRole;
 }):Promise<{start():Promise<void>;close():Promise<void>;server:Server}>{
  const socket=fileSocket(opts.socketPath);
- await privateDirectory(dirname(socket));
- const secret=await loadTrustedPlanIpcSecret(opts.secretFile);
+ const scope=opts.originalScopedEffectRole;
+ const side=opts.channel==="stage"?"owner" as const:"worker" as const;
+ if(scope){
+  await assertTrustedOriginalScopedEffectDirectory({
+   channel:opts.channel,side,scope,socketPath:socket,
+   secretFile:opts.secretFile
+  });
+ }else await privateDirectory(dirname(socket));
+ const secret=scope?await loadTrustedOriginalScopedEffectSecret({
+  channel:opts.channel,side,scope,socketPath:socket,
+  secretFile:opts.secretFile
+ }):await loadTrustedPlanIpcSecret(opts.secretFile);
  let running=false,closed=false;
  const nonces=new Map<string,number>();
  const server=createServer(async(req,res)=>{
@@ -118,7 +135,12 @@ async function createPrivateServer(opts:{
   server,
   async start(){
    if(running||closed)deny("socket already started or retired");
-   await privateDirectory(dirname(socket));
+   if(scope){
+    await assertTrustedOriginalScopedEffectDirectory({
+     channel:opts.channel,side,scope,socketPath:socket,
+     secretFile:opts.secretFile
+    });
+   }else await privateDirectory(dirname(socket));
    try{await lstat(socket);deny("preexisting private socket cannot be replaced");}
    catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
    await new Promise<void>((ok,bad)=>{
@@ -127,8 +149,18 @@ async function createPrivateServer(opts:{
     server.once("error",fail);server.once("listening",ready);
     server.listen(socket);
    });
-   try{await chmod(socket,0o600);}
-   catch(e){server.close();throw e;}
+   try{
+    await chmod(socket,scope?0o660:0o600);
+    if(scope)await assertTrustedOriginalScopedEffectSocket({
+     channel:opts.channel,side,scope,socketPath:socket,
+     secretFile:opts.secretFile
+    });
+   }catch(e){
+    server.closeAllConnections();
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+    await unlink(socket).catch(()=>{});
+    throw e;
+   }
    running=true;
   },
   async close(){
@@ -154,8 +186,23 @@ class PrivateClient{
  private constructor(channel:Channel,socket:string,secret:Buffer){
   this.#channel=channel;this.#socket=socket;this.#secret=secret;
  }
- static async connect(channel:Channel,config:{socketPath:string;secretFile:string}){
-  return new PrivateClient(channel,fileSocket(config.socketPath),
+ static async connect(channel:Channel,config:{
+  socketPath:string;secretFile:string;
+  originalScopedEffectRole?:TrustedOriginalScopedEffectRole
+ }){
+  const socket=fileSocket(config.socketPath);
+  const scope=config.originalScopedEffectRole;
+  if(scope){
+   const side=channel==="stage"?"worker" as const:"owner" as const;
+   const secret=await loadTrustedOriginalScopedEffectSecret({
+    channel,side,scope,socketPath:socket,secretFile:config.secretFile
+   });
+   await assertTrustedOriginalScopedEffectSocket({
+    channel,side,scope,socketPath:socket,secretFile:config.secretFile
+   });
+   return new PrivateClient(channel,socket,secret);
+  }
+  return new PrivateClient(channel,socket,
    await loadTrustedPlanIpcSecret(config.secretFile));
  }
  async send(value:object):Promise<Record<string,unknown>>{
@@ -311,12 +358,17 @@ export async function createTrustedOwnerEffectStagingServer(config:{
  socketPath:string;secretFile:string;registry:TrustedOwnerEffectStagingRegistry;
  /** R332 owner-selected role on a role-isolated staging socket. */
  expectedRole?:Role;
+ originalScopedEffectRole?:TrustedOriginalScopedEffectRole;
 }){
+ if(config.originalScopedEffectRole&&
+    config.expectedRole!==config.originalScopedEffectRole.role)
+  deny("owner staging role differs from cross-UID IPC scope");
  if(!(config.registry instanceof TrustedOwnerEffectStagingRegistry)||
     (config.expectedRole!==undefined&&!trustedPrivateRole(config.expectedRole)))
   deny("concrete owner staging registry and trusted role required");
  return createPrivateServer({
   channel:"stage",socketPath:config.socketPath,secretFile:config.secretFile,
+  originalScopedEffectRole:config.originalScopedEffectRole,
   onClose:()=>config.registry.retireAll(),
   handle:async body=>{
    const v=record(body);
@@ -342,8 +394,12 @@ export async function createTrustedOwnerEffectStagingServer(config:{
  });
 }
 export async function connectTrustedOwnerEffectStagingClient(
- config:{socketPath:string;secretFile:string}
+ config:{socketPath:string;secretFile:string;expectedRole?:Role;
+  originalScopedEffectRole?:TrustedOriginalScopedEffectRole}
 ){
+ if(config.originalScopedEffectRole&&
+    config.expectedRole!==config.originalScopedEffectRole.role)
+  deny("worker staging role differs from cross-UID IPC scope");
  const channel=await PrivateClient.connect("stage",config);
  return Object.freeze({
   async stage(runtimeTaskId:string,requestId:string):Promise<void>{
@@ -386,16 +442,29 @@ export async function createTrustedEffectAgentBindingServer(config:{
   Partial<Pick<Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>,"attest"|"reportNoChange">>;
  /** Production agents pin their own role before accepting owner Task binds. */
  expectedRole?:Role;
+ /** Original Rust MCP signer DID, pinned by the trusted owner bootstrap,
+  * never inferred from an untrusted A2A Card or request body. */
+ expectedPresenterDid?:string;
+ originalScopedEffectRole?:TrustedOriginalScopedEffectRole;
 }){
+ if(config.originalScopedEffectRole&&
+    config.expectedRole!==config.originalScopedEffectRole.role)
+  deny("worker bind role differs from cross-UID IPC scope");
  if(config.expectedRole!==undefined&&
     !trustedPrivateRole(config.expectedRole))
   deny("invalid locally pinned Agent role");
+ if(config.expectedPresenterDid!==undefined&&(
+     !config.expectedRole||
+     typeof config.expectedPresenterDid!=="string"||
+     !/^did:[A-Za-z0-9:._-]{6,240}$/u.test(config.expectedPresenterDid)))
+  deny("invalid owner-pinned native Rust signer DID");
  if(!(config.registry instanceof TrustedEffectStagingTaskRegistry)||
     !config.ownerStageClient||
     typeof config.ownerStageClient.stage!=="function")
   deny("actual agent registry and owner stage client required");
  return createPrivateServer({
   channel:"bind",socketPath:config.socketPath,secretFile:config.secretFile,
+  originalScopedEffectRole:config.originalScopedEffectRole,
   onClose:()=>config.registry.retireAll(),
   handle:async body=>{
    const v=record(body);
@@ -404,6 +473,12 @@ export async function createTrustedEffectAgentBindingServer(config:{
     const pins=v.pins;
     if(config.expectedRole!==undefined&&pins.role!==config.expectedRole)
      deny("owner Task role differs from local Agent host role");
+    // A role-correct HMAC never makes a different signed Child DID valid.
+    // On the native isolated worker, bind the original signer/Card DID to
+    // the original trusted Coordinator/Child presenter BEFORE any Task.
+    if(config.expectedPresenterDid!==undefined&&
+       pins.presenterId!==config.expectedPresenterDid)
+     deny("signed Child presenter differs from original native signer DID");
     if(pins.operation==="read_then_update"&&
        typeof config.ownerStageClient.attest!=="function")
      deny("mixed Task needs original private independent attestation channel");
@@ -442,8 +517,12 @@ export async function createTrustedEffectAgentBindingServer(config:{
  });
 }
 export async function connectTrustedEffectAgentBindingClient(
- config:{socketPath:string;secretFile:string;expectedRole?:Role}
+ config:{socketPath:string;secretFile:string;expectedRole?:Role;
+  originalScopedEffectRole?:TrustedOriginalScopedEffectRole}
 ){
+ if(config.originalScopedEffectRole&&
+    config.expectedRole!==config.originalScopedEffectRole.role)
+  deny("owner bind role differs from cross-UID IPC scope");
  if(config.expectedRole!==undefined&&!trustedPrivateRole(config.expectedRole))
   deny("invalid trusted local binding-client role");
  const channel=await PrivateClient.connect("bind",config);

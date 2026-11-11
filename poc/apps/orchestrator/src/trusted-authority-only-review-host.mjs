@@ -7,6 +7,8 @@ import {runTrustedAuthorityOnlyOperationalWorkflow}
 import {createTrustedAuthorityOnlyReviewedCanonicalHandoff}
  from './trusted-authority-only-reviewed-canonical-handoff.mjs';
 import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
+import {isIssuedDisposableOwnerSourceGate}
+ from './disposable-gemini-owner-source-gate-brand.mjs';
 /** Owner-assembled permission-only Planning -> authenticated Engineer review
  * -> independent native root -> dynamic Coordinator. No public root issuer.
  * The caller owns listener binding; this factory never starts inference until
@@ -117,6 +119,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     'maxProposalRevisions','thinkingLevel','maxModelCallMs','maxOutputTokens','maxPlanningMs'])||
   !fields(options.gateway,['gatewayBaseUrl','adapterBaseUrl','adapterToken','fetchFn','timeoutMs']))
   deny('explicit trusted dependencies required; legacy/context overrides forbidden');
+ // Disposable owner-private, offline-only seam. A2A/model/workflow JSON
+ // cannot mint an R323 native receipt or call this host-only callback.
+ // Paid startup stays disabled until OS/process isolation is proven.
+ if(options.disposableOwnerModelTaskPrebind!==undefined&&
+    (typeof options.disposableOwnerModelTaskPrebind!=='function'||
+     process.env.DELEGATION_DISPOSABLE_LIVE_MODE==='gemini-real'))
+  deny('disposable model Task prebind requires offline private owner code');
  const projectTestSourceProfile=options.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
  if(!isTrustedProjectTestSourceProfile(projectTestSourceProfile))
   deny('trusted repository test-source profile required');
@@ -607,7 +616,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
      if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver','readObserver',
-          'create','createObserver'])||
+          'create','createObserver','ownerSourceGate'])||
+        (deps.ownerSourceGate!==undefined&&
+         (!isIssuedDisposableOwnerSourceGate(deps.ownerSourceGate)||
+          !(deps.mutationObserver instanceof
+           AuthenticatedGiteaMutationCompletionObserver)))||
         (Object.hasOwn(deps,'create')!==Object.hasOwn(deps,'createObserver'))||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
@@ -1430,7 +1443,31 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        operationalCoordinator.assertTrustedGatewayAuthorityBinding();
        const report=await a2aOwner.dispatchIssuedTask({
         taskId:input.taskId,runtimeTaskId:input.runtimeTaskId,
-        instruction:input.instruction,effectStager:input.effectStager
+        instruction:input.instruction,effectStager:input.effectStager,
+        ...(options.disposableOwnerModelTaskPrebind?{
+         // Called ONLY by the original native R323 prebind, after signed
+         // Coordinator/Child/Gateway checks and authenticated agent bind.
+         // This one-use receipt never enters HTTP, A2A, IPC or Gemini.
+         onNativeOriginalTaskPrebound:receipt=>{
+          if(!['backend','frontend','test'].includes(pin.agent_id)||
+             closed||session.phase!=='operational')
+           deny('disposable model prebind needs an active original specialist');
+          const assertOriginalRootActive=()=>{
+           if(closed||session.phase!=='operational')
+            deny('disposable model prebind root retired');
+           return operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+          };
+          const root=assertOriginalRootActive();
+          if(root.session_id!==snapshot.session_id||root.branch!==branch)
+           deny('disposable model prebind original Root changed');
+          const retirement=options.disposableOwnerModelTaskPrebind({
+           role:pin.agent_id,receipt,assertOriginalRootActive
+          });
+          if(typeof retirement!=='function')
+           deny('disposable model Task admission must provide retirement');
+          return retirement;
+         }
+        }:{})
        });
        if(closed||session.phase!=='operational')
         deny('Engineer retired while A2A Task was executing');
@@ -1850,6 +1887,39 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        if(!pin||pin.task_id!==input.taskId||
           gatewayAttestedTaskIds.has(input.taskId))
         deny('Gateway completion no longer matches original staged Task');
+       // Optional ONLY for an original consented, metered model set.
+       // The no-billing scripted host stays unchanged. The Gateway's
+       // authenticated UPDATE expectation is read from its private
+       // completed Task/Child state, never from A2A or model arguments.
+       // No successor Task may be scheduled until this check succeeds.
+       const ownerGate=nativeEffectBinding?.ownerSourceGate;
+       if(ownerGate&&(pin.operation==='update_file'||
+                      pin.operation==='create_file')){
+        const isCreate=pin.operation==='create_file';
+        const sourceBinding=isCreate?
+         gateway.assertTrustedCompletedCreateObservationBinding(
+          input.taskId,input.runtimeTaskId):
+         gateway.assertTrustedCompletedMutationObservationBinding(
+          input.taskId,input.runtimeTaskId);
+        const matched=await ownerGate({
+         role:pin.agent_id,operation:pin.operation,
+         mutationObserver:nativeEffectBinding.mutationObserver,
+         createObserver:nativeEffectBinding.createObserver,
+         completionExpectation:sourceBinding.expectation
+        });
+        if(matched?.status!==(isCreate?
+            'signed_gateway_gitea_create_cas_matches_model_proposed_bytes_only':
+            'signed_gateway_gitea_cas_matches_model_proposed_bytes_only')||
+           matched.task_id!==input.taskId||
+           matched.gateway_evidence_sha256!==sourceBinding.evidence_sha256||
+           matched.model_emitted_write_matches_committed_bytes!==true||
+           matched.model_write_and_gateway_receipt_replay_fenced!==true||
+           matched.branch!==branch||
+           canonicalFileUri(snapshot.repository,branch,matched.path)!==
+            sourceBinding.permission_resource||
+           (isCreate&&matched.old_path_absent_at_pinned_head!==true))
+         deny('model source differs from original signed Gitea file effect');
+       }
        gatewayAttestedTaskIds.set(input.taskId,Object.freeze({
         task_id:pin.task_id,agent_id:pin.agent_id
        }));

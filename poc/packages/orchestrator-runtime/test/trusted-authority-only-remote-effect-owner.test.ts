@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {TrustedAuthorityOnlyRemoteEffectOwner}
+import {TrustedAuthorityOnlyRemoteEffectOwner,
+ claimTrustedOriginalNativeTaskPrebindForModelIpc}
  from "../src/trusted-authority-only-remote-effect-owner.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
@@ -97,6 +98,17 @@ test("R323 real owner proof objects derive exact signed Backend file permission"
  const r=await f.owner.bindRegisteredTask({taskId,runtimeTaskId,effectStager:port});
  assert.equal(r.status,"owner_remote_effect_task_prebound_not_executed");
  assert.equal(r.gateway_execution_authorized,false);
+ const proof=claimTrustedOriginalNativeTaskPrebindForModelIpc(r);
+ assert.deepEqual(proof,{
+  role:"backend",task_id:taskId,runtime_task_id:runtimeTaskId,
+  credential_id:credentialId,session_id:root.session_id,
+  authority_digest:digest,root_credential_id:root.root_credential_id
+ });
+ assert.equal(Object.isFrozen(proof),true);
+ assert.throws(()=>claimTrustedOriginalNativeTaskPrebindForModelIpc(r),
+  /authentic one-use original prebind/u);
+ assert.throws(()=>claimTrustedOriginalNativeTaskPrebindForModelIpc({...r}),
+  /authentic one-use original prebind/u);
  assert.equal(f.calls[0],"bind");
  const pins=JSON.parse(f.calls[1]!);
  assert.deepEqual(pins,{
@@ -300,4 +312,170 @@ test("R389 original native Test Child can bind CREATE only for one exact project
   childCredentialId:credentialId,presenterId:testDid,branch,
   operation:"create_file",path:source
  });
+});
+
+test("original native prebind is the ONLY IPC authorization origin, with exact live Root and bounded turns",async()=>{
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
+ const f=fixture();
+ let currentRoot={...root};
+ const approval=createDisposableOriginalNativeIpcTaskAdmission({
+  role:"backend",assertOriginalRootActive:()=>currentRoot
+ });
+ const signed=await f.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ });
+ assert.equal(approval.boundTaskCount,0);
+ assert.throws(()=>approval.bindOriginalReceipt({...signed}),
+  /only an authentic one-use original prebind/u);
+ const bound=approval.bindOriginalReceipt(signed,{maxCalls:2});
+ assert.equal(bound.gateway_execution_authorized,false);
+ assert.equal(bound.model_calls_started_here,0);
+ assert.equal(approval.boundTaskCount,1);
+ const exactTask={task_id:taskId,runtime_task_id:runtimeTaskId,
+  credential_id:credentialId,session_id:root.session_id};
+ const call=callId=>approval.authorizeSignedTask({
+  role:"backend",task:exactTask,callId,payload:{contents:[]}
+ });
+ assert.equal(await call("call-native-000001"),true);
+ assert.equal(approval.retired,false);
+ assert.equal(await call("call-native-000002"),true);
+ // A replay or over-budget attempt permanently closes this Task's
+ // admission; it is NOT permissible to continue after ambiguous reuse.
+ await assert.rejects(call("call-native-000001"),
+  /Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(call("call-native-000003"),
+  /Disposable original signed IPC Task admission NO-GO/u);
+ assert.throws(()=>approval.bindOriginalReceipt(signed),
+  /authentic one-use original prebind/u);
+});
+test("original IPC Task admission denies wrong Child, wrong role and revoked Root BEFORE model invocation",async()=>{
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
+ const f=fixture(),signed=await f.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ });
+ let currentRoot={...root};
+ const gate=createDisposableOriginalNativeIpcTaskAdmission({
+  role:"backend",assertOriginalRootActive:()=>currentRoot
+ });
+ gate.bindOriginalReceipt(signed,{maxCalls:2});
+ const actual={task_id:taskId,runtime_task_id:runtimeTaskId,
+  credential_id:credentialId,session_id:root.session_id};
+ await assert.rejects(gate.authorizeSignedTask({
+  role:"frontend",task:actual,callId:"call-native-01"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(gate.authorizeSignedTask({
+  role:"backend",task:{...actual,credential_id:"forged"},
+  callId:"call-native-02"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(gate.authorizeSignedTask({
+  role:"backend",task:actual,callId:"call-native-03"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ // New genuine Task instance: Root retirement denies independently.
+ const f2=fixture();
+ const signed2=await f2.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ });
+ const active=createDisposableOriginalNativeIpcTaskAdmission({
+  role:"backend",assertOriginalRootActive:()=>currentRoot
+ });
+ active.bindOriginalReceipt(signed2);
+ currentRoot={...root,root_credential_id:"revoked-root"};
+ await assert.rejects(active.authorizeSignedTask({
+  role:"backend",task:actual,callId:"call-native-04"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ assert.equal(active.retired,true);
+ await assert.rejects(active.authorizeSignedTask({
+  role:"backend",task:actual,callId:"call-native-05"
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+});
+
+test("real Unix RPC accepts only original Coordinator/native Child/Gateway prebind and meters the owner ADK",async t=>{
+ const {mkdtemp,writeFile,rm}=await import("node:fs/promises");
+ const {tmpdir}=await import("node:os");
+ const {join}=await import("node:path");
+ const {randomBytes}=await import("node:crypto");
+ const {BaseLlm}=await import("@google/adk");
+ const {DisposablePrivateBudgetedAdkModel}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-live-budgeted-model.mjs");
+ const {createDisposableOriginalOwnerIpcModelAdapter}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-owner-ipc-model-adapter.mjs");
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
+ const {startDisposableOwnerModelIpcServer,
+  connectDisposableWorkerModelIpcClient}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-owner-worker-ipc.mjs");
+ const original=fixture();
+ // This is the ORIGINAL R323 prebind running its exact typed checks and
+ // owner private IPC binder; no fake approval minted by the model transport.
+ const receipt=await original.owner.bindRegisteredTask({
+  taskId,runtimeTaskId,effectStager:port
+ });
+ const gate=createDisposableOriginalNativeIpcTaskAdmission({
+  role:"backend",assertOriginalRootActive:()=>root
+ });
+ gate.bindOriginalReceipt(receipt,{maxCalls:1});
+ class OfflineModel extends BaseLlm{
+  calls=0;
+  constructor(){super({model:"gemini-3.8-flash"});}
+  async *generateContentAsync(){
+   this.calls++;
+   yield {content:{role:"model",parts:[{text:"OFFLINE_NATIVE_SIGNED_TASK"}]},
+    usageMetadata:{promptTokenCount:5,candidatesTokenCount:3,
+     totalTokenCount:8}};
+  }
+  connect(){throw Error("No real provider allowed");}
+ }
+ const delegate=new OfflineModel();
+ const model=new DisposablePrivateBudgetedAdkModel({
+  delegate,phase:"backend",maxCalls:2,maxReportedTokens:100,
+  maxPerCallTokens:90
+ });
+ const adapter=createDisposableOriginalOwnerIpcModelAdapter({
+  role:"backend",model
+ });
+ const dir=await mkdtemp(join(tmpdir(),"r323-ipc-admission-"));
+ const socketPath=join(dir,"model.sock"),secretFile=join(dir,"model.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+  {mode:0o600,flag:"wx"});
+ const owner=await startDisposableOwnerModelIpcServer({
+  role:"backend",socketPath,secretFile,
+  authorizeSignedTask:gate.authorizeSignedTask,
+  invokeModel:adapter.invokeModel
+ });
+ t.after(async()=>{
+  gate.retireAll();adapter.retire();
+  await owner.close().catch(()=>{});
+  await rm(dir,{recursive:true,force:true});
+ });
+ const client=await connectDisposableWorkerModelIpcClient({
+  role:"backend",socketPath,secretFile
+ });
+ const exact={task_id:taskId,runtime_task_id:runtimeTaskId,
+  credential_id:credentialId,session_id:root.session_id};
+ const payload={contents:[{role:"user",
+  parts:[{text:"Read approved backend source offline"}]}]};
+ const good=await client.call({
+  task:exact,callId:"r323-original-model-call-1",payload
+ });
+ assert.equal(good.chunks.length,1);
+ assert.equal(good.chunks[0].content.parts[0].text,
+  "OFFLINE_NATIVE_SIGNED_TASK");
+ assert.equal(good.metered_calls_started,1);
+ assert.equal(good.metered_total_tokens,8);
+ assert.equal(delegate.calls,1);
+ assert.equal(good.owner_original_signed_task_verified_here,false);
+ // Full signed Task/Child/Gateway agreement is the ORIGINAL native prebind;
+ // it is not invented by transport flags or provider model output.
+ await assert.rejects(client.call({
+  task:exact,callId:"r323-original-model-call-2",payload
+ }),/Disposable owner-worker model IPC NO-GO/u);
+ await assert.rejects(client.call({
+  task:{...exact,credential_id:"urn:forged:child"},
+  callId:"r323-original-model-call-3",payload
+ }),/Disposable owner-worker model IPC NO-GO/u);
+ assert.equal(delegate.calls,1);
+ assert.throws(()=>gate.bindOriginalReceipt({...receipt}),
+  /authentic one-use original prebind/u);
 });
