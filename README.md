@@ -1,6 +1,24 @@
 # Delegation — authority-only thesis PoC
 
-**Active development:** `refactor/post-prof-plan-contracts-20261021` · [GitHub PR #38](https://github.com/DarkGh0st03/delegation/pull/38), **Draft, not merged**.
+## Quick start (local, Docker only)
+
+Requirements: Docker (on Windows: Docker Desktop). From the repository root:
+
+```bash
+cp .env.example .env        # then set ENGINEER_PASSWORD in .env
+docker compose up -d --build
+```
+
+Open **http://127.0.0.1:8700** and sign in as `engineer`. The first build compiles the
+native Rust modules and takes several minutes. Compose starts Gitea, OPA and Anvil,
+prepares accounts, the example repository and the on-chain registries automatically,
+then the Engineer console. Full guide (Italian): [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+
+**Current status of the local application:** login, environment checks, repository
+selection/import, per-repository policy parameters and requirement drafts work.
+Planning with permission review, signed approval and agent execution are being
+wired into the console next; until then the full authority-only chain is exercised
+by the scripted native E2E described below.
 
 **Start here:** [Current authority-only roadmap](docs/ACTIVE_AUTHORITY_ONLY_ROADMAP.md) and [implementation map](docs/IMPLEMENTATION_STATE.md). The 15 October Google ADK/Gemini experiments described in older documents are **historical**, not the current execution architecture.
 

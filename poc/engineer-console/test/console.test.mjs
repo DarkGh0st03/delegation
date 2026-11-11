@@ -172,7 +172,9 @@ test("repository import accepts only plain https URLs and valid names", async (t
   const {call, login, gitea} = await startConsole(t);
   const cookie = await login();
   for (const clone_url of ["http://github.com/a/b.git", "https://user:pw@github.com/a/b.git",
-    "file:///etc/passwd", "https://github.com/a/b.git?x=1"]) {
+    "file:///etc/passwd", "https://github.com/a/b.git?x=1",
+    "https://github.com/a/b/tree/feature/x", "https://github.com/a/b/blob/main/README.md",
+    "https://github.com/onlyowner"]) {
     const r = await call("POST", "/api/repos/import", {cookie, body: {clone_url, name: "b"}});
     assert.equal(r.status, 400, clone_url);
   }
@@ -257,4 +259,14 @@ test("importing a repository name that already exists returns a clear 409", asyn
     body: {clone_url: "https://github.com/a/b.git", name: "b"}});
   assert.equal(r.status, 409);
   assert.match((await r.json()).error, /Esiste già/u);
+});
+
+test("Gitea 422 on import becomes an actionable message", async (t) => {
+  const {call, login, gitea} = await startConsole(t);
+  gitea.importRepository = async () => { const e = Error("Gitea POST /repos/migrate failed with HTTP 422"); e.status = 422; throw e; };
+  const cookie = await login();
+  const r = await call("POST", "/api/repos/import", {cookie,
+    body: {clone_url: "https://github.com/a/b.git", name: "b"}});
+  assert.equal(r.status, 422);
+  assert.match((await r.json()).error, /indirizzo di clonazione/u);
 });

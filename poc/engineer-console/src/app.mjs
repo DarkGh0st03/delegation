@@ -144,6 +144,9 @@ export function createConsoleHandler({auth, gitea, store, health, port}) {
         } catch (error) {
           if (error.status === 409)
             throw new HttpError(409, "Esiste già una repository con questo nome in Gitea");
+          if (error.status === 422)
+            throw new HttpError(422, "Gitea ha rifiutato l'import: controlla che l'URL sia " +
+              "l'indirizzo di clonazione di una repository pubblica (https://…/utente/progetto.git)");
           throw new HttpError(400, error.message);
         }
       }

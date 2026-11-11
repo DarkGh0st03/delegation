@@ -11,13 +11,19 @@ export function validateRepoName(name) {
   return name;
 }
 
-/** Only public https clone URLs without embedded credentials. */
+/** Only public https clone URLs without embedded credentials. A web page
+ * address (branch, file or commit view) is refused with a clear hint. */
 export function validateCloneUrl(raw) {
   let url;
-  try { url = new URL(raw); } catch { throw Error("Invalid clone URL"); }
+  try { url = new URL(raw); } catch { throw Error("URL non valido"); }
   if (url.protocol !== "https:" || url.username || url.password ||
       url.search || url.hash || String(raw).length > 300)
-    throw Error("Clone URL must be a plain https URL without credentials");
+    throw Error("Serve un URL https semplice, senza credenziali né parametri");
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length < 2 ||
+      segments.some(s => ["tree", "blob", "commit", "commits", "pull", "pulls", "-"].includes(s)))
+    throw Error("Usa l'indirizzo di clonazione della repository, ad esempio " +
+      "https://github.com/utente/progetto.git (non l'indirizzo di un branch o di un file)");
   return url.toString();
 }
 
