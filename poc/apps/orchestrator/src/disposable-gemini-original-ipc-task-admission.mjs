@@ -16,6 +16,8 @@ import {claimTrustedOriginalNativeTaskPrebindForModelIpc}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-remote-effect-owner.ts";
 import {startDisposableOwnerModelIpcServer}
  from "./disposable-gemini-owner-worker-ipc.mjs";
+import {startDisposableOriginalNativeRustPresentationRelays}
+ from "./disposable-gemini-original-native-rust-presentation-relays.mjs";
 
 const LIMIT=Object.freeze({backend:20,frontend:14,test:10});
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
@@ -272,7 +274,8 @@ export function createDisposableOriginalThreeRoleModelTaskAdmission(){
  * Never accept worker/IPC data as an owner admission function.
  */
 export async function startDisposableOriginalThreeRoleModelIpcOwner({
- channels,invokeModelByRole,originalScopedRoles,offlineSyntheticOnly
+ channels,invokeModelByRole,originalScopedRoles,nativeRust,
+ offlineSyntheticOnly
 }={}){
  const roles=Object.keys(LIMIT);
  const triple=value=>value&&typeof value==="object"&&
@@ -319,8 +322,19 @@ export async function startDisposableOriginalThreeRoleModelIpcOwner({
    deny();
   paths.add(channel.socketPath);paths.add(channel.secretFile);
  }
+ // Optional one-Rust signer composition. This is the ONLY supported way
+ // for the model Owner and the Rust VP relays to share the authentic R323
+ // Child/Root admission ledger. No direct worker signer token can mint it.
+ if(nativeRust!==undefined&&(
+    !originalScopedRoles||
+    !exact(nativeRust,["originalNativeSocketPath","roleSockets","roleTokens"])||
+    !triple(nativeRust.roleSockets)||!triple(nativeRust.roleTokens)||
+    paths.has(nativeRust.originalNativeSocketPath)||
+    Object.values(nativeRust.roleSockets).some(p=>paths.has(p))))
+  deny();
  const gate=createDisposableOriginalThreeRoleModelTaskAdmission();
  const servers=[];
+ let presenter;
  try{
   for(const role of roles){
    servers.push(await startDisposableOwnerModelIpcServer({
@@ -332,9 +346,19 @@ export async function startDisposableOriginalThreeRoleModelIpcOwner({
     }:{})
    }));
   }
+  if(nativeRust){
+   presenter=await startDisposableOriginalNativeRustPresentationRelays({
+    ...nativeRust,scopes:originalScopedRoles,
+    authorizeNativePresentation:gate.authorizeNativePresentation,
+    offlineSyntheticOnly:true
+   });
+  }
  }catch{
   gate.retireAll();
-  await Promise.allSettled(servers.reverse().map(server=>server.close()));
+  await Promise.allSettled([
+   presenter?.close(),
+   ...servers.reverse().map(server=>server.close())
+  ]);
   deny();
  }
  let closing;
@@ -343,9 +367,10 @@ export async function startDisposableOriginalThreeRoleModelIpcOwner({
  const close=()=>{
   gate.retireAll();
   return closing??=(async()=>{
-   const outcomes=await Promise.allSettled(
-    servers.reverse().map(server=>server.close())
-   );
+   const outcomes=await Promise.allSettled([
+    ...(presenter?[presenter.close()]:[]),
+    ...servers.reverse().map(server=>server.close())
+   ]);
    if(outcomes.some(outcome=>outcome.status==="rejected"))deny();
   })();
  };
@@ -354,6 +379,7 @@ export async function startDisposableOriginalThreeRoleModelIpcOwner({
   roleAuthorizers:gate.roleAuthorizers,
   authorizeNativePresentation:gate.authorizeNativePresentation,
   snapshot:gate.snapshot,
+  nativeRustPresenterSnapshot:()=>presenter?.snapshot()??null,
   close
  });
 }
