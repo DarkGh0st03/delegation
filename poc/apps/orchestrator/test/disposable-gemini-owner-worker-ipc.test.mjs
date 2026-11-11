@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {randomBytes,createHash,createHmac} from "node:crypto";
-import {mkdtemp,writeFile,rm,lstat} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,rm,lstat} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawn} from "node:child_process";
@@ -13,6 +13,8 @@ import {request as httpRequest} from "node:http";
 import {startDisposableOwnerModelIpcServer,
  connectDisposableWorkerModelIpcClient}
  from "../src/disposable-gemini-owner-worker-ipc.mjs";
+import {startDisposableOriginalThreeRoleModelIpcOwner}
+ from "../src/disposable-gemini-original-ipc-task-admission.mjs";
 
 const DENY=/Disposable owner-worker model IPC NO-GO/u;
 const task=Object.freeze({
@@ -225,4 +227,85 @@ test("original owner close rejects an in-flight synthetic model response",async 
  await f.server.close();
  await rejected;
  assert.equal(f.server.status(),"closed_or_closing");
+});
+
+
+test("one offline Root gate starts three original owner model sockets, denies unbound signed calls and retires synchronously",async t=>{
+ const dir=await mkdtemp(join(tmpdir(),"dgm-three-role-owner-"));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const roles=["backend","frontend","test"],channels={},invokers={};
+ let models=0;
+ for(const role of roles){
+  const root=join(dir,role);
+  await mkdir(root,{mode:0o700});
+  const secretFile=join(root,"model.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+   {mode:0o600,flag:"wx"});
+  channels[role]={socketPath:join(root,"model.sock"),secretFile};
+  invokers[role]=async()=>{models++;return {chunks:[]};};
+ }
+ const owner=await startDisposableOriginalThreeRoleModelIpcOwner({
+  channels,invokeModelByRole:invokers,offlineSyntheticOnly:true
+ });
+ t.after(()=>owner.close());
+ assert.deepEqual(Object.keys(owner.roleAuthorizers).sort(),roles);
+ assert.deepEqual(owner.snapshot().active,{backend:0,frontend:0,test:0});
+ assert.equal(owner.snapshot().original_native_root_bound,false);
+ for(const role of roles){
+  const client=await connectDisposableWorkerModelIpcClient({
+   role,...channels[role]
+  });
+  await assert.rejects(client.call({
+   task,callId:callId(),payload
+  }),DENY,"HMAC possession never creates a native signed Child");
+ }
+ assert.equal(models,0);
+ // A wrong role or missing HMAC role is a NO-GO, never a fallback.
+ await assert.rejects(owner.roleAuthorizers.backend({
+  role:"frontend",task,callId:callId()
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ const closing=owner.close();
+ assert.equal(owner.snapshot().closed,true,
+  "the shared original Owner retires all role ledgers before any await");
+ await closing;
+ for(const role of roles){
+  await assert.rejects(owner.roleAuthorizers[role]({
+   role,task,callId:callId()
+  }),/Disposable original signed IPC Task admission NO-GO/u);
+ }
+ assert.equal(models,0);
+});
+
+test("three-role Owner model IPC refuses mismatched channels, foreign roles and paid startup",async t=>{
+ const dir=await mkdtemp(join(tmpdir(),"dgm-three-fail-closed-"));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const roles=["backend","frontend","test"],channels={},invokers={};
+ for(const role of roles){
+  const sub=join(dir,role);
+  await mkdir(sub,{mode:0o700});
+  const secretFile=join(sub,"model.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+   {mode:0o600,flag:"wx"});
+  channels[role]={socketPath:join(sub,"model.sock"),secretFile};
+  invokers[role]=async()=>({chunks:[]});
+ }
+ const valid={channels,invokeModelByRole:invokers,offlineSyntheticOnly:true};
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,channels:{...channels,test:channels.backend}
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,invokeModelByRole:{...invokers,orchestrator:async()=>({})}
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,offlineSyntheticOnly:false
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ const previous=process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+ process.env.DELEGATION_DISPOSABLE_LIVE_MODE="gemini-real";
+ try{
+  await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner(valid),
+   /Disposable original signed IPC Task admission NO-GO/u);
+ }finally{
+  if(previous===undefined)delete process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+  else process.env.DELEGATION_DISPOSABLE_LIVE_MODE=previous;
+ }
 });
