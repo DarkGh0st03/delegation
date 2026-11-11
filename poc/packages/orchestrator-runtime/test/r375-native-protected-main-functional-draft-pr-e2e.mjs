@@ -1777,6 +1777,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
   PrivateMcpTaskRegistry.prototype.takeSignedPresentation=originalProofTake;
   DelegationEvidenceHandler.prototype.createPresentation=originalCreate;
   LocalCryptoMcpBridge.prototype.createSignedPresentation=originalMcpBridge;
+  // On the ORIGINAL signed Engineer host shutdown, retire the shared
+  // worker model gate SYNCHRONOUSLY. A still-running role-specific Unix
+  // connection cannot begin a new model call while native Rust/Gateway
+  // and A2A shutdown are awaiting their own effect-fence ACKs.
+  ownerModelTaskAdmission?.retireAll();
   const results=await Promise.allSettled([
    host.close(),localWorkers?.close(),
    new Promise((resolve,reject)=>
@@ -1784,6 +1789,11 @@ const tool=record?.request?.tool,role=record?.agent_role;
   ]);
   for(const result of results)
    if(result.status==="rejected")throw result.reason;
+ }
+ if(strictFullRecovery){
+  assert.equal(ownerModelTaskAdmission.snapshot().closed,true);
+  assert.deepEqual(ownerModelTaskAdmission.snapshot().active,
+   {backend:0,frontend:0,test:0});
  }
  assert.equal(host.phase,"revoked");
  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
