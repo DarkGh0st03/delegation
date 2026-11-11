@@ -16,6 +16,9 @@ import {join} from "node:path";
 import {AGENT_CARD_PATH} from "@a2a-js/sdk";
 import {startDisposableOriginalPrivilegedThreeRoleWorkers}
  from "../src/disposable-gemini-original-a2a-worker-launcher.mjs";
+// Extra no-network fixture: one synthetic upstream Rust wire with three
+// real cross-UID specialist socket clients. Not signed E2E evidence.
+import "./disposable-gemini-original-native-rust-role-relay-docker-fixture.mjs";
 
 const SCOPE={role:"backend",ownerUid:1001,workerUid:1002,roleGid:2301};
 const OWNER_MODEL="file:///work/poc/apps/orchestrator/src/disposable-gemini-owner-worker-ipc.mjs";
