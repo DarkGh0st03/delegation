@@ -68,9 +68,13 @@ export function assertOriginalDisposableCiReviewOrigin(env,checkoutSha){
     ![EXPERIMENT,ARCHITECTURE].includes(ref)||
     !WORKFLOWS.has(filename)||
     !["workflow_dispatch","push"].includes(env.GITHUB_EVENT_NAME)||
+    // The experimental free workflow is branch+path pinned, and its
+    // push trigger cannot select a paid mode. It reuses THIS same original
+    // signed post-Planning checkpoint, not another Engineer or Root.
     (env.GITHUB_EVENT_NAME==="push"&&
      (ref!==EXPERIMENT||
-      filename!=="disposable-original-engineer-native-ci.yml"))||
+      !["disposable-original-engineer-native-ci.yml",
+        "gemini-authority-only-live-ci-pilot.yml"].includes(filename)))||
     env.GITHUB_RUN_ATTEMPT!=="1"||
     !RUN.test(env.GITHUB_RUN_ID??"")||
     !SHA.test(env.GITHUB_SHA??"")||
