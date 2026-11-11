@@ -37,7 +37,7 @@ test("manual experimental GitHub preflight guarantees NO inference or approval",
 test("all foreign, paid, replay, scripted or unpinned preflight origins deny",()=>{
  const variants=[
   ["GITHUB_ACTIONS","false"],["GITHUB_REPOSITORY","attacker/repo"],
-  ["GITHUB_EVENT_NAME","push"],["GITHUB_REF","refs/heads/main"],
+  ["GITHUB_EVENT_NAME","pull_request"],["GITHUB_REF","refs/heads/main"],
   ["GITHUB_WORKFLOW_REF","untrusted/other.yml@"+REF],
   ["GITHUB_RUN_ID","0"],["GITHUB_RUN_ATTEMPT","2"],
   ["GITHUB_SHA","not-a-sha"],
@@ -75,6 +75,35 @@ test("scripted-native admission remains strictly free, with no claim of executio
  }
 });
 
+test("single experimental branch push is admitted only for free signed E2E",()=>{
+ const automatic={...admission(),GITHUB_EVENT_NAME:"push",
+  DELEGATION_LIVE_CI_PREFLIGHT_MODE:"scripted-native"};
+ const positive=assertDisposableGeminiCiPreflight(automatic,SHA);
+ assert.equal(positive.status,
+  "disposable_single_branch_push_scripted_native_preflight_only");
+ assert.equal(positive.source_pinned_free_push_only,true);
+ assert.equal(positive.scripted_native_e2e_requested,true);
+ assert.equal(positive.scripted_native_e2e_proven_here,false);
+ assert.equal(positive.gemini_api_calls,0);
+ assert.equal(positive.billed_execution_authorized,false);
+ for(const value of ["preflight-only","gemini-real",""]){
+  assert.throws(()=>assertDisposableGeminiCiPreflight({
+   ...automatic,DELEGATION_LIVE_CI_PREFLIGHT_MODE:value
+  },SHA),DENY,value);
+ }
+ for(const [key,value] of [
+  ["GITHUB_REF","refs/heads/main"],
+  ["GITHUB_WORKFLOW_REF","wrong"],
+  ["GITHUB_RUN_ATTEMPT","2"],
+  ["DELEGATION_DISPOSABLE_LIVE_MODE","gemini-real"],
+  ["GEMINI_API_KEY","forbidden"]
+ ]){
+  assert.throws(()=>assertDisposableGeminiCiPreflight({
+   ...automatic,[key]:value
+  },SHA),DENY,key);
+ }
+});
+
 test("live CI manual scripted-native route reuses ORIGINAL signed native job",()=>{
  const workflow=readFileSync(new URL(
   "../../../../.github/workflows/gemini-authority-only-live-ci-pilot.yml",
@@ -85,9 +114,10 @@ test("live CI manual scripted-native route reuses ORIGINAL signed native job",()
  const onBlock=workflow.match(/^on:\n([\s\S]*?)^permissions:/mu)?.[1];
  assert.ok(onBlock);
  assert.match(onBlock,/^  workflow_dispatch:/mu);
- assert.doesNotMatch(onBlock,/^  (?:push|pull_request|schedule):/mu);
+ assert.match(onBlock,/^  push:\n    branches:\n      - experiment\/disposable-gemini-live-20261109\n    paths:\n      - \.github\/workflows\/gemini-authority-only-live-ci-pilot\.yml/mu);
+ assert.doesNotMatch(onBlock,/^  (?:pull_request|schedule):/mu);
  assert.match(workflow,/          - preflight-only\n          - scripted-native/u);
- assert.match(workflow,/DELEGATION_LIVE_CI_PREFLIGHT_MODE: \$\{\{ inputs.mode \}\}/u);
+ assert.match(workflow,/DELEGATION_LIVE_CI_PREFLIGHT_MODE: \$\{\{ github.event_name == 'push' && 'scripted-native' \|\| inputs.mode \}\}/u);
  assert.match(workflow,/github.run_attempt == 1/u);
  assert.match(workflow,/    needs: preflight\n    if:/u);
  assert.match(workflow,/inputs.mode == 'scripted-native'/u);
