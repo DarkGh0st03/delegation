@@ -10,7 +10,8 @@
  */
 import {generateKeyPairSync} from "node:crypto";
 import {constants} from "node:fs";
-import {open} from "node:fs/promises";
+import {open,lstat,realpath,access} from "node:fs/promises";
+import {isAbsolute,resolve} from "node:path";
 import {connectDisposableWorkerModelIpcClient}
  from "./disposable-gemini-owner-worker-ipc.mjs";
 import {createDisposableOriginalWorkerIpcAdkModel}
@@ -66,11 +67,46 @@ const configKeys=[
  "gatewayBaseUrl","maxCalls","modelSecretFile","modelSocketPath",
  "port","role","stageSecretFile","stageSocketPath","task"
 ];
+// Native MCP uses the SAME original Rust signer and one-shot per-Task
+// PrivateMcpTaskRegistry. Both extra pins are owner-only bootstrap data.
+const nativeKeys=[...configKeys,"nativeCryptoSocketPath","nativeSignerDid"];
+const NATIVE_DID=/^did:[a-z0-9]+:[A-Za-z0-9._:%-]{4,180}$/u;
+async function requireOriginalNativeRustSigner(cfg,scoped,isolationRequired){
+ if(isolationRequired!==true||!scoped||process.platform!=="linux"||
+    !NATIVE_DID.test(cfg.nativeSignerDid??"")||
+    typeof cfg.nativeCryptoSocketPath!=="string"||
+    !isAbsolute(cfg.nativeCryptoSocketPath)||
+    resolve(cfg.nativeCryptoSocketPath)!==cfg.nativeCryptoSocketPath||
+    cfg.nativeCryptoSocketPath.length>100||
+    cfg.nativeCryptoSocketPath.includes("\\0")||
+    process.env.APPROVED_RUNNER_NATIVE_MCP!==undefined||
+    process.env.DELEGATION_GATEWAY_ARCHITECTURE!==undefined)deny();
+ let st;
+ try{
+  st=await lstat(cfg.nativeCryptoSocketPath);
+  if(!st.isSocket()||st.isSymbolicLink()||
+     st.uid!==scoped.ownerUid||st.uid===scoped.workerUid||
+     (st.mode&0o007)!==0||
+     await realpath(cfg.nativeCryptoSocketPath)!==cfg.nativeCryptoSocketPath)
+   deny();
+  // A distinct Linux UID must be able to connect through the explicitly
+  // provisioned role-specific native Rust mount / ACL. This check does not
+  // attest signature correctness; only real native Task+Gateway can do so.
+  await access(cfg.nativeCryptoSocketPath,constants.W_OK);
+ }catch{deny();}
+ // The child starts with a scrubbed environment. Install only the path
+ // of the already-inspected ORIGINAL Rust signer, never a bearer or key.
+ process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+ process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
+ process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=cfg.nativeCryptoSocketPath;
+ return true;
+}
 const start=async message=>{
  if(active||stopping||!message||message.type!=="start"||
     !message.config||typeof message.config!=="object"||
     Array.isArray(message.config)||
-    Object.keys(message.config).sort().join(",")!==configKeys.join(","))
+    ![configKeys.join(","),nativeKeys.slice().sort().join(",")].includes(
+     Object.keys(message.config).sort().join(",")))
   deny();
  active=true;
  mustBeClean();
@@ -104,6 +140,11 @@ const start=async message=>{
  // requires distinct kernel UIDs before acknowledging startup.
  if(message.requireOwnerFileIsolation===true&&ownerCanaryReadable)deny();
  const cfg=message.config;
+ const nativeMcp=Object.hasOwn(cfg,"nativeSignerDid")&&
+  Object.hasOwn(cfg,"nativeCryptoSocketPath");
+ if(!nativeMcp&&(
+    Object.hasOwn(process.env,"APPROVED_RUNNER_NATIVE_MCP")||
+    Object.hasOwn(process.env,"DELEGATION_GATEWAY_ARCHITECTURE")))deny();
  if(!ROLES.has(cfg.role)||!Number.isSafeInteger(cfg.port)||
     cfg.port<1024||cfg.port>65535||
     typeof cfg.gatewayBaseUrl!=="string"||
@@ -123,6 +164,11 @@ const start=async message=>{
      cfg.bindSocketPath,cfg.bindSecretFile,
      cfg.stageSocketPath,cfg.stageSecretFile
     ]).size!==6)deny();
+ // No Rust signer configured: preserve the existing offline HMAC-only
+ // A2A worker. A partial native config is rejected by the exact-key gate.
+ if(nativeMcp)await requireOriginalNativeRustSigner(
+  cfg,scoped,message.requireOwnerFileIsolation
+ );
  const client=await connectDisposableWorkerModelIpcClient({
   role:cfg.role,socketPath:cfg.modelSocketPath,
   secretFile:cfg.modelSecretFile,
@@ -158,10 +204,12 @@ const start=async message=>{
  server=await startSpecializedAgentServer({
   role:cfg.role,host:"127.0.0.1",port:cfg.port,
   capabilityProfile:"approved-plan",delegatedAuthorization:true,
+  ...(nativeMcp?{nativeSignerDid:cfg.nativeSignerDid}:{}),
   adk:{model,gatewayBaseUrl:cfg.gatewayBaseUrl,
    adapterBaseUrl:cfg.adapterBaseUrl,
    adapterToken:cfg.adapterToken,maxModelTurns:cfg.maxCalls,
    trustedEffectTaskRegistry,
+   ...(nativeMcp?{nativePresentationTransport:"mcp-stdio"}:{}),
    trustedOriginalWorkerIpcTaskBinding:pin=>model.beginOwnerBoundTask(pin)},
   mcpTaskSigning:{
    signingPrivateKeyPem:ephemeral.privateKey.export({
