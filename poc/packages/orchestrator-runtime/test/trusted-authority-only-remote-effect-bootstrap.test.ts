@@ -278,3 +278,87 @@ test("R324 a failed original model prebind callback cannot dispatch A2A or retry
   }),/duplicate or invalid owner dispatch/u);
  }finally{await x.close();}
 });
+
+test("same original HMAC Stage Bind and owner Model IPC consume one native signed Child Task (zero inference)",async()=>{
+ // This is one offline, same-session three-direction Unix socket test.
+ // No Gemini key, provider call, actual OS UID isolation or Rust issuance.
+ const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
+ const {startDisposableOwnerModelIpcServer,
+  connectDisposableWorkerModelIpcClient}=await import(
+   "../../../apps/orchestrator/src/disposable-gemini-owner-worker-ipc.mjs");
+ const x=await fixture();
+ let modelServer:Awaited<ReturnType<typeof startDisposableOwnerModelIpcServer>>|undefined;
+ try{
+  const socketPath=join(x.dir,"model.sock");
+  const secretFile=join(x.dir,"model.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+   {mode:0o600,flag:"wx"});
+  const gate=createDisposableOriginalNativeIpcTaskAdmission({
+   role:"backend",assertOriginalRootActive:()=>root
+  });
+  let modelInvocations=0;
+  modelServer=await startDisposableOwnerModelIpcServer({
+   role:"backend",socketPath,secretFile,
+   authorizeSignedTask:gate.authorizeSignedTask,
+   // Free stub: independent native signed Task authentication remains real.
+   invokeModel:async({role,task,payload}:{
+    role:string;task:{runtime_task_id:string};payload:{contents:unknown[]}
+   })=>{
+    assert.equal(role,"backend");
+    assert.equal(task.runtime_task_id,runtimeTaskId);
+    assert.equal(payload.contents.length,1);
+    modelInvocations++;
+    return {
+     chunks:[{content:{role:"model",parts:[{text:"offline-only-answer"}]}}],
+     metered_calls_started:modelInvocations,
+     metered_total_tokens:12*modelInvocations,
+     owner_original_signed_task_verified_here:false,
+     provider_billed_amount_verified:false,
+     model_generated_source_proven:false
+    };
+   }
+  });
+  const worker=await connectDisposableWorkerModelIpcClient({
+   role:"backend",socketPath,secretFile
+  });
+  const host=await x.start();
+  const claim={task_id:taskId,runtime_task_id:runtimeTaskId,
+   session_id:root.session_id,credential_id:child.credential_id};
+  const payload={contents:[{role:"user",parts:[{text:"read signed task only"}]}]};
+  let prebound=0,staged=0;
+  const result=await host.dispatchApprovedTask({
+   taskId,runtimeTaskId,effectStager:{
+    async stage(){staged++;}
+   },
+   onNativeOriginalTaskPrebound:receipt=>{
+    prebound++;
+    gate.bindOriginalReceipt(receipt,{maxCalls:1});
+    return ()=>gate.retireTask(runtimeTaskId);
+   },
+   dispatch:async()=>{
+    // A2A may start only AFTER the real original owner Stage+Bind ACK;
+    // the role HMAC alone cannot authorize model execution.
+    const response=await worker.call({task:claim,
+     callId:"r324-authenticated-model-call-001",payload});
+    const port=x.agentRegistry.selectFor(context());
+    await port.stage("r324-authorized-model-stage-001");
+    return response;
+   }
+  });
+  assert.equal(prebound,1);
+  assert.equal(modelInvocations,1);
+  assert.equal(staged,1);
+  assert.equal(result.chunks[0].content.parts[0].text,"offline-only-answer");
+  assert.equal(gate.boundTaskCount,1);
+  // The R324 model gate is fenced on terminal A2A dispatch. Its second
+  // call cannot be replayed under the previously approved Child/Root.
+  await assert.rejects(worker.call({task:claim,
+   callId:"r324-authenticated-model-call-002",payload}),
+   /Disposable owner-worker model IPC NO-GO/u);
+  assert.equal(modelInvocations,1);
+ }finally{
+  await modelServer?.close();
+  await x.close();
+ }
+});
