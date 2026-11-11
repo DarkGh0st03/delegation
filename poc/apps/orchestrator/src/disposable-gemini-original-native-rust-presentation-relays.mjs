@@ -8,7 +8,7 @@
  */
 import {createServer} from "node:net";
 import {createHash,timingSafeEqual} from "node:crypto";
-import {chmod,lstat,realpath,unlink} from "node:fs/promises";
+import {chmod,lstat,realpath,readFile,unlink} from "node:fs/promises";
 import {dirname,isAbsolute,resolve} from "node:path";
 import {invokeNativeCryptoWire}
  from "../../../mcp-shared/src/native-rust-transport.mjs";
@@ -137,6 +137,28 @@ export async function startDisposableOriginalNativeRustPresentationRelays({
   await checkRoleDirectory(path,scope);
  }
  if(uids.size!==3||gids.size!==3||paths.size!==4)deny();
+ // A role VP relay lives only in the already-privilege-dropped ORIGINAL
+ // Owner, never in the UID=0 provisioning parent or a user sharing worker
+ // credentials. The kernel, not a worker-supplied ready flag, is evidence.
+ let proc;
+ try{proc=await readFile("/proc/self/status","utf8");}
+ catch{deny();}
+ const field=name=>proc.split("\n").find(line=>
+  line.startsWith(name+":")
+ )?.slice(name.length+1).trim();
+ const numbers=name=>field(name)?.split(/\s+/u).map(Number);
+ const ownerUids=numbers("Uid"),ownerGids=numbers("Gid");
+ const ownerGroups=numbers("Groups");
+ if(!ownerUids||ownerUids.length!==4||
+    ownerUids.some(v=>v!==uid)||
+    !ownerGids||ownerGids.length!==4||
+    ownerGids.some(v=>v!==ownerGids[0])||
+    ownerGids[0]===0||gids.has(ownerGids[0])||
+    !ownerGroups||ownerGroups.length!==3||
+    new Set(ownerGroups).size!==3||
+    ownerGroups.some(v=>!gids.has(v))||
+    field("NoNewPrivs")!=="1"||
+    !/^0+$/u.test(field("CapEff")??""))deny();
  const handles=[],counts=Object.fromEntries(ROLES.map(role=>[role,0]));
  let closed=false,closing;
  const close=()=>{
