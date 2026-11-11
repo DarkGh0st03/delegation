@@ -969,25 +969,20 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
  const f=await fixture(t,throughFrontend?{includeTestPermission:true,
   includePullRequestPermission:wantsPrGrant}:{});
  const modelPrebinds=[];
+ let threeRoleModelGate;
  if(mode==='adaptive-from-zero-test'){
-  const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+  const {createDisposableOriginalThreeRoleModelTaskAdmission}=await import(
    '../src/disposable-gemini-original-ipc-task-admission.mjs');
-  // This is the SAME original Root/Coordinator/Gateway/SDK A2A
-  // adaptive session, not three separate claimed Task receipts.
-  f.options.disposableOwnerModelTaskPrebind=({
-   role,receipt,assertOriginalRootActive
-  })=>{
-   assert.ok(['backend','frontend','test'].includes(role));
-   const ledger=createDisposableOriginalNativeIpcTaskAdmission({
-    role,assertOriginalRootActive
-   });
-   const granted=ledger.bindOriginalReceipt(receipt,{maxCalls:1});
-   assert.equal(granted.status,
-    'original_native_child_gateway_model_task_prebound_not_executed');
-   assert.equal(granted.model_calls_started_here,0);
-   assert.throws(()=>ledger.bindOriginalReceipt({...receipt}),
-    /authentic one-use original prebind/u,
-    'an A2A/IPC JSON clone cannot acquire a Task');
+  // One original Root, three role-scoped IPC authorizers, genuine R323
+  // receipts. No new owner or agent and no Gemini provider invocation.
+  threeRoleModelGate=createDisposableOriginalThreeRoleModelTaskAdmission();
+  f.options.disposableOwnerModelTaskPrebind=prebind=>{
+   const {role,receipt,assertOriginalRootActive}=prebind;
+   const retirement=threeRoleModelGate.onNativeOriginalTaskPrebound(prebind);
+   assert.throws(()=>threeRoleModelGate.onNativeOriginalTaskPrebound({
+    ...prebind,receipt:{...receipt}
+   }),/authentic one-use original prebind/u,
+   'an A2A/IPC JSON clone cannot acquire a Task');
    const credentialId=role==='backend'?staged?.credential_id:
     role==='frontend'?frontendStaged?.credential_id:
      testStaged?.credential_id;
@@ -997,19 +992,13 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
     session_id:assertOriginalRootActive().session_id,
     credential_id:credentialId
    });
-   // Exercise the ACTUAL owner gate once per real native prebound Task.
-   // No Gemini transport is invoked: the scripted SDK Agent retains its
-   // own offline response, and Gateway remains the only effect authority.
-   const modelCall=ledger.authorizeSignedTask({
+   const modelCall=threeRoleModelGate.roleAuthorizers[role]({
     role,task,callId:'r368-native-model-turn-'+role+'-001'
    });
-   const record={role,taskId:receipt.task_id,ledger,task,modelCall,
+   const record={role,taskId:receipt.task_id,task,modelCall,
     retired:false};
    modelPrebinds.push(record);
-   return ()=>{
-    ledger.retireTask(receipt.runtime_task_id);
-    record.retired=true;
-   };
+   return ()=>{retirement();record.retired=true;};
   };
  }
  if(mode==='backend-ipc-native'){
@@ -1535,10 +1524,17 @@ for(const mode of ['missing','backend','backend-ipc-native','frontend','test','f
     assert.deepEqual(modelPrebinds.map(p=>p.retired),[true,true,true],
      'each IPC model Task must be fenced before the next adaptive step');
     assert.equal(new Set(modelPrebinds.map(p=>p.taskId)).size,3);
-    assert.ok(modelPrebinds.every(p=>p.ledger.boundTaskCount===1));
+    const admissionSummary=threeRoleModelGate.snapshot();
+    assert.equal(admissionSummary.original_native_root_bound,true);
+    assert.deepEqual(admissionSummary.admitted,
+     {backend:1,frontend:1,test:1});
+    assert.deepEqual(admissionSummary.fenced,
+     {backend:1,frontend:1,test:1});
+    assert.deepEqual(admissionSummary.active,
+     {backend:0,frontend:0,test:0});
     for(const record of modelPrebinds){
      assert.equal(await record.modelCall,true);
-     await assert.rejects(record.ledger.authorizeSignedTask({
+     await assert.rejects(threeRoleModelGate.roleAuthorizers[record.role]({
       role:record.role,task:record.task,
       callId:'r368-after-remote-task-fence-'+record.role
      }),/Disposable original signed IPC Task admission NO-GO/u,
