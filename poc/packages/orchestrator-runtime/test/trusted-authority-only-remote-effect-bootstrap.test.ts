@@ -327,6 +327,12 @@ test("same original Stage Bind and model HMAC RPC consume one prebound Child fix
   const claim={task_id:taskId,runtime_task_id:runtimeTaskId,
    session_id:root.session_id,credential_id:child.credential_id};
   const payload={contents:[{role:"user",parts:[{text:"read signed task only"}]}]};
+  // The worker's valid HMAC is NOT permission to invoke a model before
+  // the original owner has authenticated native Child/Task + private bind.
+  await assert.rejects(worker.call({task:claim,
+   callId:"r324-before-original-native-prebind",payload}),
+   /Disposable owner-worker model IPC NO-GO/u);
+  assert.equal(modelInvocations,0);
   let prebound=0,staged=0;
   const result=await host.dispatchApprovedTask({
    taskId,runtimeTaskId,effectStager:{
