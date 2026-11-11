@@ -29,9 +29,12 @@ test("offline real Backend, Frontend and Test A2A under distinct role-scoped Lin
   // No provider key or private credential is mounted in this Docker test.
   // Still print ONLY TAP failure metadata, never stdout wholesale.
   const lines=String(error?.stdout??"").split("\n");
+  // The inner TAP stack is essential for distinguishing a launcher
+  // ReferenceError from a role HMAC or Rust security denial. Include
+  // bounded, credential-free file:line frames, never raw stdout or stderr.
   const diagnostic=lines.filter(line=>
-   /(?:not ok [0-9]|failureType:|error:|code:|original three-role|native NO-GO|owner exited)/u.test(line)
-  ).map(line=>line.slice(0,300)).slice(0,12);
+   /(?:not ok [0-9]|failureType:|error:|code:|original three-role|native NO-GO|owner exited|^\s+at (?:TestContext|file:|async |startDisposable|Object\.)|^\s+stack:)/u.test(line)
+  ).map(line=>line.slice(0,260)).slice(0,18);
   throw Error("Offline original cross-UID Docker test failed: "+
    (diagnostic.join(" | ")||String(error?.code??"unknown")));
  }
