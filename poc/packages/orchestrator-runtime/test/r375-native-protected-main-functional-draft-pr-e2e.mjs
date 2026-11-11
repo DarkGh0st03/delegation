@@ -1714,6 +1714,10 @@ const tool=record?.request?.tool,role=record?.agent_role;
     individually_signed_repair_tasks:10,
     original_owner_adaptive_decisions:25,
     native_child_count:24,
+    // The same original Root/Child authenticated every model Task prebind,
+    // but this free R385.13 runtime still hosts worker SDKs in-process.
+    original_native_three_role_model_task_receipts_fenced:true,
+    isolated_worker_model_ipc_in_this_native_e2e:false,
     latest_test_pass_same_head:true,
     no_extra_child_for_terminal_decision:true
    }:{}),
