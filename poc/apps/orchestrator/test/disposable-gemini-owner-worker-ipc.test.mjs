@@ -319,6 +319,25 @@ test("three-role Owner model IPC refuses mismatched channels, foreign roles and 
    test:{...scoped.test,ownerUid:2001}}
  }),/Disposable original signed IPC Task admission NO-GO/u,
  "one owner cannot silently become multiple owners");
+ // The one-Rust signer transport cannot start without the SAME
+ // original cross-UID Root-bound Owner model gate, or reuse model IPC.
+ const nativeRust={
+  originalNativeSocketPath:join(dir,"missing-owner.sock"),
+  roleSockets:Object.fromEntries(roles.map(role=>[
+   role,join(dir,role,"native.sock")
+  ])),
+  roleTokens:Object.fromEntries(roles.map(role=>[
+   role,"offline-rust-role-"+role
+  ]))
+ };
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,nativeRust
+ }),/Disposable original signed IPC Task admission NO-GO/u);
+ await assert.rejects(startDisposableOriginalThreeRoleModelIpcOwner({
+  ...valid,originalScopedRoles:scoped,
+  nativeRust:{...nativeRust,roleSockets:{...nativeRust.roleSockets,
+   test:channels.test.socketPath}}
+ }),/Disposable original signed IPC Task admission NO-GO/u);
  const previous=process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
  process.env.DELEGATION_DISPOSABLE_LIVE_MODE="gemini-real";
  try{
