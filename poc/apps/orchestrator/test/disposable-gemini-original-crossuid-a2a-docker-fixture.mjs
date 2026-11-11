@@ -401,7 +401,7 @@ const threeRoleOwnerScript=[
  ""
 ].join("\n");
 
-test("all three original specialists simultaneously under ONE offline owner, separate UID/GID and no signed Task",async t=>{
+test("one offline original Owner binds and fences Backend Frontend Test over distinct Linux UIDs after rejecting unbound model calls",async t=>{
  if(process.platform!=="linux"||process.getuid()!==0){
   t.skip("Explicit offline Docker root fixture only");return;
  }
@@ -555,8 +555,50 @@ test("all three original specialists simultaneously under ONE offline owner, sep
    assert.equal(outcome.stdout,"DENIED",
     "own-role HMAC is not permission to invoke an unbound model Task");
   }
+  // Same real owner PID and the SAME three real worker PIDs now exercise
+  // actual original R323 signed-Task prebinding (offline Root/Child fixtures).
+  // No additional owner, worker, planner, signer or provider is started.
+  const nativeThree=await new Promise((resolve,reject)=>{
+   let finished=false,stderr="";
+   owner.stderr.on("data",chunk=>stderr+=chunk);
+   const timer=setTimeout(()=>finish(Error(
+    "original three-role cross-UID native owner dispatch timeout")),75000);
+   const finish=(err,result)=>{
+    if(finished)return;
+    finished=true;clearTimeout(timer);
+    owner.off("message",onMessage);owner.off("exit",onExit);
+    if(err)reject(err);else resolve(result);
+   };
+   const onMessage=msg=>{
+    if(msg?.type==="original_three_result")finish(null,msg.report);
+    if(msg?.type==="original_three_failure")
+     finish(Error("original three-role native NO-GO: "+msg.error));
+   };
+   const onExit=code=>finish(Error("owner exited "+code+
+    " "+stderr.slice(-1000)));
+   owner.on("message",onMessage);owner.once("exit",onExit);
+   owner.send({type:"run_original_three",urls:Object.fromEntries(
+    ready.map(item=>[item.role,item.baseUrl])
+   )},error=>{if(error)finish(error);});
+  });
+  assert.equal(nativeThree.ownerUid,1001);
+  assert.equal(nativeThree.staged,0,
+   "no Gitea or Docker provider effect may be fabricated in this offline proof");
+  assert.equal(nativeThree.syntheticRootOnly,true);
+  assert.equal(nativeThree.paidInference,false);
+  assert.deepEqual(Object.keys(nativeThree.roles).sort(),
+   ["backend","frontend","test"]);
+  for(const role of ["backend","frontend","test"]){
+   assert.deepEqual(nativeThree.roles[role],{
+    prebound:true,fenced:true,replayDenied:true,
+    modelCalls:1,a2aIncomplete:true
+   },"original "+role+" R323 prebind/model IPC/retirement must all succeed");
+  }
   assert.equal(owner.exitCode,null);
-  // No signed Child, Root, Gemini model call or Gateway effect was started.
+  assert.ok(workers.every(worker=>worker.exitCode===null),
+   "all three original Linux role workers remain alive after fenced Tasks");
+  // No genuine Engineer/Rust approval, provider model call or Gateway
+  // effect was started. Offline Task/Child/Root replies are fixtures.
  }finally{
   for(const worker of workers.reverse()){
    if(worker.connected){
