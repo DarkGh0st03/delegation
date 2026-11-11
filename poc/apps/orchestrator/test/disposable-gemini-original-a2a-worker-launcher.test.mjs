@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {randomBytes} from "node:crypto";
 import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {join,dirname} from "node:path";
 import {createServer} from "node:net";
 import {DeterministicA2AOrchestrator}
  from "../../../packages/agent-runtime/src/orchestrator.ts";
@@ -137,6 +137,37 @@ test("offline A2A subprocess refuses paid mode and forged specialist role",async
   if(previous===undefined)delete process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
   else process.env.DELEGATION_DISPOSABLE_LIVE_MODE=previous;
  }
+});
+
+test("native Rust MCP pins never turn a same-UID subprocess into an isolated signed worker",async t=>{
+ const f=await fixture(t);
+ const native={
+  ...f.config,
+  nativeCryptoSocketPath:join(dirname(f.config.modelSocketPath),"missing-rust.sock"),
+  nativeSignerDid:"did:thesis:backend-agent"
+ };
+ await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(native),
+  deny,"a same-UID worker cannot opt into native Rust MCP");
+ await assert.rejects(startDisposableOriginalA2aWorkerSubprocess({
+  ...f.config,nativeCryptoSocketPath:native.nativeCryptoSocketPath
+ }),deny,"a partial native Rust signer config must not be ignored");
+ await assert.rejects(startDisposableOriginalA2aWorkerSubprocess({
+  ...f.config,nativeSignerDid:native.nativeSignerDid
+ }),deny,"an unpaired signer DID is not a signing authorization");
+ if(process.platform==="linux"&&typeof process.getuid==="function"&&
+    typeof process.getgid==="function"&&process.getuid()>0){
+  const ownerUid=process.getuid();
+  const scoped={role:"backend",ownerUid,workerUid:ownerUid+1001,
+   roleGid:process.getgid()+1001};
+  await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(native,{
+   requireOwnerFileIsolation:true,originalScopedRole:scoped,
+   ownerPrivateBoundary:{
+    directory:dirname(f.config.modelSocketPath),
+    keyFile:f.config.modelSecretFile
+   }
+  }),deny,"a missing original Rust socket cannot bootstrap a cross-UID signer");
+ }
+ assert.equal(f.modelCalls(),0);
 });
 
 test("ORIGINAL owner HMAC-binds a signed-Task claim into separate Backend A2A PID, stages exactly once and fences it",async t=>{
