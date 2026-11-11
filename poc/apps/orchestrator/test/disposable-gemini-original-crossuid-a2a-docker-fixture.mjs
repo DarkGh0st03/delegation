@@ -594,6 +594,42 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
     modelCalls:1,a2aIncomplete:true
    },"original "+role+" R323 prebind/model IPC/retirement must all succeed");
   }
+  // Separate Linux processes now attempt replay with the EXACT previously
+  // bound Task/Child and their own valid role HMAC. Denial must come from
+  // the actual OWNER Unix model server, not only an in-process test ledger.
+  const afterNativeFenceProbe=[
+   'const {connectDisposableWorkerModelIpcClient}=await import(process.argv[1]);',
+   'const cfg=JSON.parse(process.argv[2]),scope=JSON.parse(process.argv[3]);',
+   'const client=await connectDisposableWorkerModelIpcClient({',
+   ' role:scope.role,socketPath:cfg.modelSocketPath,',
+   ' secretFile:cfg.modelSecretFile,originalScopedModelRole:scope});',
+   'const tags={backend:"B",frontend:"F",test:"T"};',
+   'const task={task_id:"r323-original-three-crossuid-"+scope.role,',
+   ' runtime_task_id:"dispatch_"+tags[scope.role].repeat(22),',
+   ' credential_id:"urn:offline:original-child:"+scope.role,',
+   ' session_id:cfg.task.session_id};',
+   'try{await client.call({task,callId:"three-role-after-native-fence-002",',
+   ' payload:{contents:[{role:"user",parts:[{text:"REPLAY"}]}]}});',
+   ' process.stdout.write("UNSAFE");}',
+   'catch(error){if(!String(error.message).includes("model IPC NO-GO"))',
+   ' throw error;process.stdout.write("DENIED");}'
+  ].join("\n");
+  for(const [role,uid,gid] of roles){
+   const probe=spawnAs(uid,gid,[],[
+    "--input-type=module","-e",afterNativeFenceProbe,OWNER_MODEL,
+    JSON.stringify(configs[role]),JSON.stringify(scopes[role])
+   ]);
+   const outcome=await new Promise((resolve,reject)=>{
+    let stdout="",stderr="";
+    probe.stdout.on("data",chunk=>stdout+=chunk);
+    probe.stderr.on("data",chunk=>stderr+=chunk);
+    probe.once("error",reject);
+    probe.once("close",code=>resolve({code,stdout,stderr}));
+   });
+   assert.equal(outcome.code,0,outcome.stderr.slice(-500));
+   assert.equal(outcome.stdout,"DENIED",
+    "a retired original "+role+" Task must not resume over valid cross-UID HMAC");
+  }
   assert.equal(owner.exitCode,null);
   assert.ok(workers.every(worker=>worker.exitCode===null),
    "all three original Linux role workers remain alive after fenced Tasks");
