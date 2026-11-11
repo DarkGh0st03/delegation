@@ -494,7 +494,7 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    assert.equal(actual.originalNativeTaskBindingPresent,false);
    assert.equal(actual.osIsolationVerified,false);
    const proc=await import("node:fs/promises").then(fs=>
-    fs.readFile("/proc/"+child.pid+"/status","utf8"));
+    fs.readFile("/proc/"+actual.pid+"/status","utf8"));
    const uids=proc.match(/^Uid:\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)/mu);
    const gids=proc.match(/^Gid:\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)/mu);
    assert.deepEqual(uids?.slice(1).map(Number),[uid,uid,uid,uid]);
