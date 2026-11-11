@@ -73,6 +73,34 @@ function respond(socket,result){
   ok:false,error:"native_rust_role_presentation_denied"
  }));
 }
+// Do NOT use a Readable async iterator here: Node destroys a net.Socket
+// when for-await finishes even with allowHalfOpen:true. The native wire
+// protocol half-closes requests and still needs the writable reply side.
+function readHalfClosedRequest(socket){
+ return new Promise((resolveRead,rejectRead)=>{
+  const chunks=[];let length=0,done=false;
+  const finish=(error,result)=>{
+   if(done)return;done=true;
+   socket.off("data",onData);
+   socket.off("end",onEnd);
+   socket.off("error",onError);
+   socket.off("close",onClose);
+   if(error)rejectRead(error);else resolveRead(result);
+  };
+  const onData=chunk=>{
+   length+=chunk.length;
+   if(length>MAX_BODY)finish(Error("too large"));
+   else chunks.push(chunk);
+  };
+  const onEnd=()=>finish(null,Buffer.concat(chunks));
+  const onError=()=>finish(Error("socket error"));
+  const onClose=()=>finish(Error("socket closed"));
+  socket.on("data",onData);
+  socket.once("end",onEnd);
+  socket.once("error",onError);
+  socket.once("close",onClose);
+ });
+}
 
 /**
  * Run in already-unprivileged original Owner UID. Worker-provided A2A and
@@ -139,14 +167,9 @@ export async function startDisposableOriginalNativeRustPresentationRelays({
      try{
       if(closed||busy)deny();
       busy=true;
-      const chunks=[];let length=0;
-      for await(const chunk of socket){
-       length+=chunk.length;
-       if(length>MAX_BODY)deny();
-       chunks.push(chunk);
-      }
+      const body=await readHalfClosedRequest(socket);
       if(closed)deny();
-      const message=JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const message=JSON.parse(body.toString("utf8"));
       if(!exact(message,["body","operation","token"])||
          message.operation!=="create_presentation"||
          !equals(message.token,roleTokens[role])||
