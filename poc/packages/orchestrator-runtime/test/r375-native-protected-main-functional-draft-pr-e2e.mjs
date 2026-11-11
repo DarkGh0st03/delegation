@@ -11,6 +11,8 @@ import {createServer} from "node:net";
 import {BaseLlm} from "@google/adk";
 import {createTrustedAuthorityOnlyReviewHost}
  from "../../../apps/orchestrator/src/trusted-authority-only-review-host.mjs";
+import {createDisposableOriginalThreeRoleModelTaskAdmission}
+ from "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs";
 import {AuthorityPlanningCheckpointStore}
  from "../src/trusted-authority-planning-checkpoint.ts";
 import {TrustedOperationalRecoveryStore}
@@ -514,7 +516,16 @@ try{
    throw Error("R375 Planning cannot execute write or unknown Gateway route");
   };
   const operationalSessions=new TrustedOperationalSessionStore(path("gateway-activation"));
+  // The SAME original signed native Rust/Child/Review Host lifecycle now
+  // emits one-use R323 receipts to the three-role owner Model IPC gate.
+  // This is free scripted-only: local ADK workers are still in-process here.
+  const ownerModelTaskAdmission=strictFullRecovery?
+   createDisposableOriginalThreeRoleModelTaskAdmission():null;
   const host=await createTrustedAuthorityOnlyReviewHost({
+   ...(ownerModelTaskAdmission?{
+    disposableOwnerModelTaskPrebind:
+     ownerModelTaskAdmission.onNativeOriginalTaskPrebound
+   }:{}),
    snapshot,requirement,workBranch:branch,preliminaryRoot:preliminary,
    checkpoint:{store:checkpoints,backendKeyId:"owner",
     backendPrivateKeyPem:checkpointKey.privateKey.export({
@@ -1661,6 +1672,21 @@ const tool=record?.request?.tool,role=record?.agent_role;
     "Every original A2A role must sign via native MCP: "+role);
   }
   if(strictFullRecovery){
+   // The original R385.13 signed native session must enter and leave
+   // the exact three worker model Task ledgers without authority leaks.
+   // These receipts are the REAL original Coordinator/Child/Gateway bind
+   // in this SAME native E2E, not JSON clones or offline Root stubs.
+   const admission=ownerModelTaskAdmission.snapshot();
+   assert.equal(admission.original_native_root_bound,true);
+   assert.equal(admission.closed,false);
+   for(const role of ["backend","frontend","test"]){
+    assert.ok(admission.admitted[role]>0,
+     "original native Review Host did not prebind "+role+" model Task");
+    assert.equal(admission.active[role],0,
+     "original native "+role+" model Task remains active after A2A");
+    assert.equal(admission.admitted[role],admission.fenced[role],
+     "native "+role+" model Task was not retired at terminal A2A");
+   }
    // This proof is emitted only after the existing independent native
    // Rust/Gateway/Runner/Gitea/PR assertions succeeded, not when merely
    // receiving untrusted model text or A2A completion.
