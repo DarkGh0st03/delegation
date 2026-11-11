@@ -908,7 +908,7 @@ test('R367.1 same-session Owner starts pinned SDK A2A before first Task/Child',a
  }
 });
 
-for(const mode of ['missing','backend','frontend','test','failure',
+for(const mode of ['missing','backend','backend-ipc-native','frontend','test','failure',
  'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied',
  'pr','pr-denied','pr-invalid','pr-stale','pr-execute','pr-execute-stale',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
@@ -948,6 +948,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'R351.4 original Engineer ADK/A2A Test invokes authenticated Runner evidence and attests PASS':
  mode==='frontend'?
  'R351.3 actual Frontend A2A Gateway evidence unlocks bounded ADK Test Agent choice':
+ mode==='backend-ipc-native'?
+ 'Disposable native R323 Task prebind admits original signed model turn before A2A':
  mode==='backend'?
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
@@ -966,6 +968,30 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const wantsPrGrant=(mode.startsWith('pr')&&mode!=='pr-denied')||mode==='adaptive-repair-pr';
  const f=await fixture(t,throughFrontend?{includeTestPermission:true,
   includePullRequestPermission:wantsPrGrant}:{});
+ const modelPrebinds=[];
+ if(mode==='backend-ipc-native'){
+  const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
+   '../src/disposable-gemini-original-ipc-task-admission.mjs');
+  f.options.disposableOwnerModelTaskPrebind=({
+   role,receipt,assertOriginalRootActive
+  })=>{
+   assert.equal(role,'backend');
+   // Real original native prebind has a one-use private WeakMap brand.
+   // A worker-supplied A2A JSON clone cannot pass this owner gate.
+   const ledger=createDisposableOriginalNativeIpcTaskAdmission({
+    role,assertOriginalRootActive
+   });
+   const granted=ledger.bindOriginalReceipt(receipt,{maxCalls:2});
+   const modelCall=ledger.authorizeSignedTask({
+    role,task:{
+     task_id:receipt.task_id,runtime_task_id:receipt.runtime_task_id,
+     session_id:snapshot.session_id,credential_id:staged.credential_id
+    },callId:'r351-original-native-model-call-001'
+   });
+   modelPrebinds.push({ledger,granted,modelCall});
+   return ()=>ledger.retireTask(receipt.runtime_task_id);
+  };
+ }
  const host=await f.start();
  await f.approve(throughFrontend?['permission-1','permission-2','permission-3',
   ...(wantsPrGrant?['permission-4']:[])]:
@@ -1506,6 +1532,20 @@ for(const mode of ['missing','backend','frontend','test','failure',
   });
   assert.equal(report.status,'a2a_report_not_gateway_completed');
   assert.equal(report.provider_completion_attested,false);
+  if(mode==='backend-ipc-native'){
+   assert.equal(modelPrebinds.length,1);
+   const admitted=modelPrebinds[0];
+   assert.equal(admitted.granted.runtime_task_id,task.runtimeTaskId);
+   assert.equal(admitted.granted.model_calls_started_here,0);
+   assert.equal(await admitted.modelCall,true);
+   await assert.rejects(admitted.ledger.authorizeSignedTask({
+    role:'backend',task:{
+     task_id:task.task.task_id,runtime_task_id:task.runtimeTaskId,
+     session_id:snapshot.session_id,credential_id:staged.credential_id
+    },callId:'r351-original-native-model-call-002'
+   }),/Disposable original signed IPC Task admission NO-GO/u,
+   'completed original A2A Task must retire its model authorization');
+  }
   assert.equal(report.artifact.commit_sha,fileSha);
   assert.deepEqual(report.artifact.files_modified,['apps/user.ts']);
   assert.deepEqual(events,[
