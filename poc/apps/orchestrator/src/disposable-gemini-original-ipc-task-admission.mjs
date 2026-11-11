@@ -14,6 +14,8 @@
  */
 import {claimTrustedOriginalNativeTaskPrebindForModelIpc}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-remote-effect-owner.ts";
+import {startDisposableOwnerModelIpcServer}
+ from "./disposable-gemini-owner-worker-ipc.mjs";
 
 const LIMIT=Object.freeze({backend:20,frontend:14,test:10});
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
@@ -228,5 +230,84 @@ export function createDisposableOriginalThreeRoleModelTaskAdmission(){
  });
  return Object.freeze({
   onNativeOriginalTaskPrebound,roleAuthorizers,retireAll,snapshot
+ });
+}
+
+
+/**
+ * Start the EXISTING one-per-role owner Unix HMAC model servers with one
+ * shared native Root gate. This is not an alternative agent runtime or
+ * launch workflow: a signed Review Host still mints every R323 receipt,
+ * and the existing trusted A2A worker must present its exact Task/Child.
+ *
+ * OFFLINE ONLY: caller-supplied callbacks produce scripted responses.
+ * Cross-UID file/peer isolation and native DID signer identity must be
+ * independently verified before use in an operational paid deployment.
+ * Never accept worker/IPC data as an owner admission function.
+ */
+export async function startDisposableOriginalThreeRoleModelIpcOwner({
+ channels,invokeModelByRole,originalScopedRoles,offlineSyntheticOnly
+}={}){
+ const roles=Object.keys(LIMIT);
+ const triple=value=>value&&typeof value==="object"&&
+  !Array.isArray(value)&&
+  Object.keys(value).sort().join(",")===roles.slice().sort().join(",");
+ if(offlineSyntheticOnly!==true||
+    process.env.DELEGATION_DISPOSABLE_LIVE_MODE==="gemini-real"||
+    ["GEMINI_API_KEY","GOOGLE_API_KEY","OPENAI_API_KEY",
+     "GOOGLE_APPLICATION_CREDENTIALS"].some(key=>
+       Object.hasOwn(process.env,key))||
+    !triple(channels)||!triple(invokeModelByRole)||
+    (originalScopedRoles!==undefined&&!triple(originalScopedRoles)))
+  deny();
+ const paths=new Set();
+ for(const role of roles){
+  const channel=channels[role];
+  if(!exact(channel,["secretFile","socketPath"])||
+     typeof channel.socketPath!=="string"||
+     typeof channel.secretFile!=="string"||
+     channel.socketPath===channel.secretFile||
+     paths.has(channel.socketPath)||paths.has(channel.secretFile)||
+     typeof invokeModelByRole[role]!=="function"||
+     (originalScopedRoles!==undefined&&
+      originalScopedRoles[role]?.role!==role))
+   deny();
+  paths.add(channel.socketPath);paths.add(channel.secretFile);
+ }
+ const gate=createDisposableOriginalThreeRoleModelTaskAdmission();
+ const servers=[];
+ try{
+  for(const role of roles){
+   servers.push(await startDisposableOwnerModelIpcServer({
+    role,...channels[role],
+    authorizeSignedTask:gate.roleAuthorizers[role],
+    invokeModel:invokeModelByRole[role],
+    ...(originalScopedRoles?{
+     originalScopedModelRole:originalScopedRoles[role]
+    }:{})
+   }));
+  }
+ }catch{
+  gate.retireAll();
+  await Promise.allSettled(servers.reverse().map(server=>server.close()));
+  deny();
+ }
+ let closing;
+ // Local retirement is SYNCHRONOUS. A future worker callback never
+ // gains time to start another model call during asynchronous shutdown.
+ const close=()=>{
+  gate.retireAll();
+  return closing??=(async()=>{
+   const outcomes=await Promise.allSettled(
+    servers.reverse().map(server=>server.close())
+   );
+   if(outcomes.some(outcome=>outcome.status==="rejected"))deny();
+  })();
+ };
+ return Object.freeze({
+  onNativeOriginalTaskPrebound:gate.onNativeOriginalTaskPrebound,
+  roleAuthorizers:gate.roleAuthorizers,
+  snapshot:gate.snapshot,
+  close
  });
 }
