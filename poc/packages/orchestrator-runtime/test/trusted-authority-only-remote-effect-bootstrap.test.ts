@@ -279,9 +279,10 @@ test("R324 a failed original model prebind callback cannot dispatch A2A or retry
  }finally{await x.close();}
 });
 
-test("same original HMAC Stage Bind and owner Model IPC consume one native signed Child Task (zero inference)",async()=>{
- // This is one offline, same-session three-direction Unix socket test.
- // No Gemini key, provider call, actual OS UID isolation or Rust issuance.
+test("same original Stage Bind and model HMAC RPC consume one prebound Child fixture (zero inference)",async()=>{
+ // This is a single free, same-session three-direction Unix socket test.
+ // Root/Child/Gateway are offline fixtures; no Rust signer, paid model,
+ // real provider effects or proof of cross-UID isolation.
  const {createDisposableOriginalNativeIpcTaskAdmission}=await import(
   "../../../apps/orchestrator/src/disposable-gemini-original-ipc-task-admission.mjs");
  const {startDisposableOwnerModelIpcServer,
@@ -301,7 +302,7 @@ test("same original HMAC Stage Bind and owner Model IPC consume one native signe
   modelServer=await startDisposableOwnerModelIpcServer({
    role:"backend",socketPath,secretFile,
    authorizeSignedTask:gate.authorizeSignedTask,
-   // Free stub: independent native signed Task authentication remains real.
+   // The real R323 one-use prebind runs against offline Root/Child fixtures.
    invokeModel:async({role,task,payload}:{
     role:string;task:{runtime_task_id:string};payload:{contents:unknown[]}
    })=>{
@@ -337,7 +338,7 @@ test("same original HMAC Stage Bind and owner Model IPC consume one native signe
     return ()=>gate.retireTask(runtimeTaskId);
    },
    dispatch:async()=>{
-    // A2A may start only AFTER the real original owner Stage+Bind ACK;
+    // Dispatch starts only AFTER the original owner Stage+Bind ACK;
     // the role HMAC alone cannot authorize model execution.
     const response=await worker.call({task:claim,
      callId:"r324-authenticated-model-call-001",payload});
