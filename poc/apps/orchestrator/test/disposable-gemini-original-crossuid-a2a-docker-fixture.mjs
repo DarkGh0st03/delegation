@@ -446,7 +446,7 @@ test("one offline original Owner binds and fences Backend Frontend Test over dis
    "--experimental-strip-types","--input-type=module","-e",
    threeRoleOwnerScript,OWNER_MODEL,STAGE,
    JSON.stringify(configs),JSON.stringify(scopes)
-  ]);
+  ],{ipc:true});
   await observeReady(owner);
   const pending=[];
   for(const [role,uid,gid] of roles){
