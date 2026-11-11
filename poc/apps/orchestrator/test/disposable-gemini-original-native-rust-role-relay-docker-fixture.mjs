@@ -19,18 +19,24 @@ const data=JSON.parse(process.argv[1]);
 const allowed=new Map(),roles=["backend","frontend","test"];
 let fakeRustCalls=0;
 const original=createServer({allowHalfOpen:true},socket=>{
- void(async()=>{
-  const chunks=[];
-  for await(const chunk of socket)chunks.push(chunk);
-  const req=JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  if(req.operation!=="create_presentation"||
-     !roles.some(role=>data.roleTokens[role]===req.token))
-   throw Error("no native signature in synthetic upstream");
-  fakeRustCalls++;
-  socket.end(JSON.stringify({ok:true,result:{
-   signed_vp:"SYNTHETIC_ONLY_NOT_A_RUST_SIGNATURE"
-  }}));
- })().catch(()=>socket.end(JSON.stringify({ok:false,error:"offline_stub"})));
+ // This fake Rust listener must keep its writable half after request EOF,
+ // just like the real one-shot native Rust transport.
+ const chunks=[];
+ socket.on("data",chunk=>chunks.push(chunk));
+ socket.once("end",()=>{
+  try{
+   const req=JSON.parse(Buffer.concat(chunks).toString("utf8"));
+   if(req.operation!=="create_presentation"||
+      !roles.some(role=>data.roleTokens[role]===req.token))
+    throw Error("no native signature in synthetic upstream");
+   fakeRustCalls++;
+   socket.end(JSON.stringify({ok:true,result:{
+    signed_vp:"SYNTHETIC_ONLY_NOT_A_RUST_SIGNATURE"
+   }}));
+  }catch{
+   socket.end(JSON.stringify({ok:false,error:"offline_stub"}));
+  }
+ });
 });
 await new Promise((resolve,reject)=>{
  original.once("error",reject);
