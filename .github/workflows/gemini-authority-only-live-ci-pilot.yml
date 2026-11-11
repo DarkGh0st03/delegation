@@ -6,6 +6,13 @@
 # explicit financial consent, verified spend controls and source pinning.
 name: Gemini Authority-Only LIVE CI — Free Preflight and Scripted Native E2E (No AI Billing)
 on:
+  # One free same-source E2E when this experimental workflow changes.
+  # Unrelated pushes do not retrigger the scripted Docker session.
+  push:
+    branches:
+      - experiment/disposable-gemini-live-20261109
+    paths:
+      - .github/workflows/gemini-authority-only-live-ci-pilot.yml
   workflow_dispatch:
     inputs:
       mode:
@@ -29,11 +36,12 @@ jobs:
     if: >-
       github.repository == 'DarkGh0st03/delegation' &&
       github.ref == 'refs/heads/experiment/disposable-gemini-live-20261109' &&
-      github.event_name == 'workflow_dispatch' &&
       github.run_attempt == 1 &&
-      (inputs.mode == 'preflight-only' || inputs.mode == 'scripted-native')
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' &&
+        (inputs.mode == 'preflight-only' || inputs.mode == 'scripted-native')))
     env:
-      DELEGATION_LIVE_CI_PREFLIGHT_MODE: ${{ inputs.mode }}
+      DELEGATION_LIVE_CI_PREFLIGHT_MODE: ${{ github.event_name == 'push' && 'scripted-native' || inputs.mode }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,10 +72,11 @@ jobs:
     needs: preflight
     if: >-
       github.repository == 'DarkGh0st03/delegation' &&
-      github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/experiment/disposable-gemini-live-20261109' &&
       github.run_attempt == 1 &&
-      inputs.mode == 'scripted-native'
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' &&
+        inputs.mode == 'scripted-native'))
     # The original native job creates and consumes ONE Ed25519-signed review
     # of its own authentic Planning checkpoint, then issues the operational
     # Rust Root and exercises the exact three original specialists.
