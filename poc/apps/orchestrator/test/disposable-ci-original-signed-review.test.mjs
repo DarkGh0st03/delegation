@@ -201,6 +201,29 @@ test("CI-only signer refuses private hosts, foreign workflow, replay attempt and
   pushed.GITHUB_REF};
  assert.equal(assertOriginalDisposableCiReviewOrigin(
   allowedPush,observed).original_root_issued,false);
+ // The free pilot's exact workflow path may trigger a one-time push E2E
+ // on the experimental branch, but it is NEVER a human approval or a
+ // paid-model consent. This used to fail after all Rust builds completed.
+ const pilotPush={...pushed,GITHUB_WORKFLOW_REF:
+  "DarkGh0st03/delegation/.github/workflows/gemini-authority-only-live-ci-pilot.yml@"+
+   pushed.GITHUB_REF};
+ const admitted=assertOriginalDisposableCiReviewOrigin(pilotPush,observed);
+ assert.equal(admitted.workflow,"gemini-authority-only-live-ci-pilot.yml");
+ assert.equal(admitted.provider_calls_authorized,false);
+ assert.equal(admitted.human_approval_verified,false);
+ assert.equal(admitted.original_root_issued,false);
+ for(const change of [
+  {GITHUB_REF:"refs/heads/main"},
+  {GITHUB_RUN_ATTEMPT:"2"},
+  {GITHUB_EVENT_NAME:"pull_request"},
+  {DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES"},
+  {GEMINI_API_KEY:"forbidden"},
+  {DELEGATION_DISPOSABLE_LIVE_MODE:"gemini-real"}
+ ]){
+  assert.throws(()=>assertOriginalDisposableCiReviewOrigin(
+   {...pilotPush,...change},observed),DENY,
+   "push Engineer signer must never accept foreign or paid origin");
+ }
  await assert.rejects(access(join(f.receipts,f.sessionId+".json")));
 });
 
