@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delegation Console</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <strong>Delegation · Console del Software Engineer</strong>
+    <span id="whoami"></span>
+    <button id="logout" hidden>Esci</button>
+  </header>
+
+  <main>
+    <!-- Login -->
+    <section id="login-view" hidden>
+      <h1>Accesso Engineer</h1>
+      <form id="login-form">
+        <label>Username <input name="username" autocomplete="username" required></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Accedi</button>
+      </form>
+      <p class="error" id="login-error"></p>
+    </section>
+
+    <!-- Application -->
+    <section id="app-view" hidden>
+      <nav>
+        <button data-tab="env" class="active">1 · Ambiente</button>
+        <button data-tab="repo">2 · Repository</button>
+        <button data-tab="policy">3 · Policy</button>
+        <button data-tab="request">4 · Requisito</button>
+        <button data-tab="planning" class="todo">5 · Planning e permessi</button>
+        <button data-tab="execution" class="todo">6 · Esecuzione</button>
+      </nav>
+
+      <div class="tab" id="tab-env">
+        <h2>Stato dell'ambiente</h2>
+        <p>Prima di iniziare una sessione tutti i controlli devono essere verdi.</p>
+        <button id="env-refresh">Ricontrolla</button>
+        <table><thead><tr><th>Componente</th><th>Stato</th><th>Dettaglio / cosa fare</th></tr></thead>
+          <tbody id="env-rows"></tbody></table>
+      </div>
+
+      <div class="tab" id="tab-repo" hidden>
+        <h2>Repository in Gitea</h2>
+        <p>Organizzazione: <code id="repo-org"></code>. Seleziona la repository su cui lavoreranno gli agenti.</p>
+        <table><thead><tr><th></th><th>Nome</th><th>Branch principale</th><th>Aggiornata</th></tr></thead>
+          <tbody id="repo-rows"></tbody></table>
+        <h3>Importa una repository pubblica da GitHub</h3>
+        <form id="import-form">
+          <label>URL https <input name="clone_url" placeholder="https://github.com/utente/progetto.git" required></label>
+          <label>Nome in Gitea <input name="name" placeholder="progetto" required></label>
+          <button type="submit">Importa</button>
+        </form>
+        <p class="hint">L'import protegge automaticamente il branch principale (nessun push diretto, merge solo con approvazione).</p>
+        <p id="import-msg"></p>
+        <div id="repo-detail" hidden>
+          <h3>Repository selezionata</h3>
+          <dl>
+            <dt>Nome</dt><dd id="sel-name"></dd>
+            <dt>Branch principale</dt><dd id="sel-branch"></dd>
+            <dt>Commit attuale</dt><dd><code id="sel-sha"></code></dd>
+            <dt>Branch protetti in Gitea</dt><dd id="sel-protected"></dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="tab" id="tab-policy" hidden>
+        <h2>Policy della repository</h2>
+        <p id="policy-none">Seleziona prima una repository.</p>
+        <form id="policy-form" hidden>
+          <p>Sorgente: <strong id="policy-source"></strong></p>
+          <label>Branch protetti (uno per riga; deve includere il principale)
+            <textarea name="protected_branches" rows="3"></textarea></label>
+          <label>Prefisso dei branch di lavoro degli agenti
+            <input name="work_branch_prefix"></label>
+          <label>Percorsi vietati agli agenti (uno per riga, es. <code>.github/</code>)
+            <textarea name="forbidden_path_prefixes" rows="4"></textarea></label>
+          <label>Profilo dei test (Runner) <input name="runner_profile"></label>
+          <label class="inline"><input type="checkbox" name="allow_pull_request"> Consenti la creazione di una Draft PR</label>
+          <p class="hint">Fisso: gli agenti non possono mai fare merge. Il merge resta una decisione umana.</p>
+          <button type="submit">Salva policy</button>
+          <button type="button" id="policy-reset">Ripristina predefinita</button>
+        </form>
+        <p id="policy-msg"></p>
+        <p class="hint">Nota: in questa versione la policy viene salvata. Il collegamento a OPA (applicazione reale delle regole) è il prossimo passo.</p>
+      </div>
+
+      <div class="tab" id="tab-request" hidden>
+        <h2>Requisito per l'Orchestrator</h2>
+        <p id="request-none">Seleziona prima una repository.</p>
+        <form id="request-form" hidden>
+          <p>Repository: <strong id="request-repo"></strong></p>
+          <label>Cosa deve fare il sistema? (linguaggio naturale)
+            <textarea name="requirement" rows="6" placeholder="Es.: Consenti a un amministratore di sospendere e riattivare un account utente dall'interfaccia di amministrazione."></textarea></label>
+          <button type="submit">Salva richiesta</button>
+        </form>
+        <p id="request-msg"></p>
+        <h3>Richieste salvate</h3>
+        <table><thead><tr><th>Data</th><th>Repository</th><th>Commit base</th><th>Requisito</th><th>Stato</th></tr></thead>
+          <tbody id="request-rows"></tbody></table>
+      </div>
+
+      <div class="tab" id="tab-planning" hidden>
+        <h2>Planning e revisione dei permessi</h2>
+        <p class="todo-box">Prossimo passo dello sviluppo. Qui l'Orchestrator analizzerà la repository con una credenziale di sola lettura
+          e proporrà i permessi (ResourceURI + operazione). Comparirà la finestra per togliere o restringere i permessi
+          e firmare l'approvazione.</p>
+      </div>
+
+      <div class="tab" id="tab-execution" hidden>
+        <h2>Esecuzione</h2>
+        <p class="todo-box">Prossimo passo dello sviluppo. Qui vedrai i Task degli agenti, le decisioni del Gateway e di OPA,
+          i test in Docker, la Draft PR e il pulsante di stop (revoca della Root).</p>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
