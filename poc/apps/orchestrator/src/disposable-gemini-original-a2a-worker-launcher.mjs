@@ -10,7 +10,7 @@
 import {fork,spawn} from "node:child_process";
 import {randomBytes} from "node:crypto";
 import {mkdtemp,writeFile,rm,lstat,realpath,readFile} from "node:fs/promises";
-import {join,resolve,isAbsolute} from "node:path";
+import {join,dirname,resolve,isAbsolute} from "node:path";
 import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 import {inspectDisposableOriginalLinuxBoundary}
@@ -38,10 +38,19 @@ async function verifyOwnerNativeRustSocket(config,scope){
      config.bindSocketPath,config.bindSecretFile
     ].includes(path))deny();
  try{
-  const st=await lstat(path);
-  if(!st.isSocket()||st.isSymbolicLink()||
+  const [st,dir]=await Promise.all([lstat(path),lstat(dirname(path))]);
+  // A real Rust signer must expose a DISTINCT owner-created socket for
+  // this specialist's Linux GID. An owner-only socket, another role's
+  // group, a world-accessible path or a worker-writable directory may
+  // never be interpreted as cross-UID native signer access.
+  if(!st.isSocket()||st.isSymbolicLink()||st.nlink!==1||
      st.uid!==scope.ownerUid||st.uid===scope.workerUid||
-     (st.mode&0o007)!==0||await realpath(path)!==path)deny();
+     st.gid!==scope.roleGid||(st.mode&0o777)!==0o660||
+     !dir.isDirectory()||dir.isSymbolicLink()||
+     dir.uid!==scope.ownerUid||dir.gid!==scope.roleGid||
+     (dir.mode&0o7777)!==0o2750||
+     await realpath(dirname(path))!==dirname(path)||
+     await realpath(path)!==path)deny();
  }catch{deny();}
 }
 export async function startDisposableOriginalA2aWorkerSubprocess(
