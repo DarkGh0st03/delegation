@@ -260,6 +260,25 @@ export async function startDisposableOriginalThreeRoleModelIpcOwner({
     !triple(channels)||!triple(invokeModelByRole)||
     (originalScopedRoles!==undefined&&!triple(originalScopedRoles)))
   deny();
+ // The three ORIGINAL specialists must be separate Linux principals.
+ // Per-role HMAC file checks alone would miss reuse of a worker UID/GID
+ // across two agents; never call that a three-role isolated topology.
+ if(originalScopedRoles!==undefined){
+  const owners=new Set(),workers=new Set(),groups=new Set();
+  for(const role of roles){
+   const scope=originalScopedRoles[role];
+   if(!exact(scope,["ownerUid","role","roleGid","workerUid"])||
+      scope.role!==role||
+      ![scope.ownerUid,scope.workerUid,scope.roleGid].every(
+       v=>Number.isSafeInteger(v)&&v>0
+      )||
+      scope.ownerUid===scope.workerUid)deny();
+   owners.add(scope.ownerUid);
+   workers.add(scope.workerUid);
+   groups.add(scope.roleGid);
+  }
+  if(owners.size!==1||workers.size!==3||groups.size!==3)deny();
+ }
  const paths=new Set();
  for(const role of roles){
   const channel=channels[role];
