@@ -26,12 +26,32 @@ const KEYS=[
 ];
 const deny=()=>{throw Error("Disposable original A2A subprocess launcher NO-GO");};
 export async function startDisposableOriginalA2aWorkerSubprocess(
- config,{requireOwnerFileIsolation=false,ownerPrivateBoundary}={}
+ config,{
+  requireOwnerFileIsolation=false,ownerPrivateBoundary,
+  originalScopedRole
+ }={}
 ){
  // The owner-only file path is never sent to the worker; only the trusted
  // parent may inspect its metadata through /proc and lstat. This is a
  // necessary cross-UID boundary check, not production proof of isolation.
  if(typeof requireOwnerFileIsolation!=="boolean"||
+    (requireOwnerFileIsolation?
+     !originalScopedRole||
+     typeof originalScopedRole!=="object"||
+     Array.isArray(originalScopedRole)||
+     Object.keys(originalScopedRole).sort().join(",")!==
+      "ownerUid,role,roleGid,workerUid"||
+     originalScopedRole.role!==config?.role||
+     !Number.isSafeInteger(originalScopedRole.ownerUid)||
+     originalScopedRole.ownerUid<=0||
+     !Number.isSafeInteger(originalScopedRole.workerUid)||
+     originalScopedRole.workerUid<=0||
+     !Number.isSafeInteger(originalScopedRole.roleGid)||
+     originalScopedRole.roleGid<=0||
+     originalScopedRole.ownerUid===originalScopedRole.workerUid||
+     typeof process.getuid!=="function"||
+     originalScopedRole.ownerUid!==process.getuid()
+     :originalScopedRole!==undefined)||
     (requireOwnerFileIsolation
      ?(!ownerPrivateBoundary||
        Object.keys(ownerPrivateBoundary).sort().join(",")!==
@@ -151,7 +171,8 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
    child.once("exit",onExit);
    child.once("error",onError);
    child.send({type:"start",config,ownerCanaryPath,
-    requireOwnerFileIsolation});
+    requireOwnerFileIsolation,
+    ...(originalScopedRole?{originalScopedRole}:{})});
   });
   if(ready?.type!=="ready"||ready.pid!==child.pid||
      ready.role!==config.role||
@@ -160,6 +181,7 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
      ready.originalNativeTaskBindingPresent!==false||
      ready.originalTaskBindingChannelReady!==true||
      typeof ready.ownerCanaryReadable!=="boolean"||
+     ready.crossUidChannelsConfigured!==requireOwnerFileIsolation||
      ready.osIsolationVerified!==false)deny();
   // The parent inspects BOTH kernel UIDs, mount namespaces, effective
   // capabilities, NoNewPrivs and parent/child PID relationship.
@@ -172,7 +194,9 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
   }
   let scopedIpcPermissions=null;
   if(requireOwnerFileIsolation){
-   if(linuxBoundaryAudit?.requiredKernelConditionsPassed!==true)deny();
+   if(linuxBoundaryAudit?.requiredKernelConditionsPassed!==true||
+      linuxBoundaryAudit.ownerUid!==originalScopedRole.ownerUid||
+      linuxBoundaryAudit.workerUid!==originalScopedRole.workerUid)deny();
    // A different Linux UID is NOT enough. The model/stage socket files
    // and secrets must be group-scoped to exactly this specialist, while
    // the owner Gemini/Engineer key remains owner-private (0700/0600).
@@ -188,12 +212,15 @@ export async function startDisposableOriginalA2aWorkerSubprocess(
     bindSocketPath:config.bindSocketPath,
     bindSecretFile:config.bindSecretFile
    });
-   if(scopedIpcPermissions.layoutPotentiallyUsable!==true)deny();
+   if(scopedIpcPermissions.layoutPotentiallyUsable!==true||
+      scopedIpcPermissions.conditions.distinctRolePrimaryGroup!==true||
+      scopedIpcPermissions.conditions.workerHasNoOtherSupplementaryGroups!==true)deny();
   }
   return Object.freeze({
    role:config.role,pid:child.pid,baseUrl:ready.baseUrl,
    originalNativeTaskBindingPresent:false,
    originalTaskBindingChannelReady:true,
+   crossUidChannelsConfigured:ready.crossUidChannelsConfigured,
    osIsolationVerified:false,
    ownerCanaryReadableFromWorker:ready.ownerCanaryReadable,
    ownerAndWorkerShareUid:linuxBoundaryAudit?

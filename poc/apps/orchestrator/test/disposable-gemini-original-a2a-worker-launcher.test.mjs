@@ -297,3 +297,26 @@ test("strict launcher requires owner-only protected-key metadata and never accep
   }}),deny);
  assert.equal(f.modelCalls(),0);
 });
+
+test("strict cross-UID A2A worker refuses any scope that names its actual same-UID owner",async t=>{
+ const f=await fixture(t);
+ const orig=process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+ delete process.env.DELEGATION_DISPOSABLE_LIVE_MODE;
+ try{
+  await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(
+   f.config,{requireOwnerFileIsolation:true,
+    ownerPrivateBoundary:{directory:"/tmp/private",keyFile:"/tmp/private/key"},
+    originalScopedRole:{role:"backend",ownerUid:Math.max(1,process.getuid()),
+     workerUid:Math.max(1,process.getuid())+1,
+     roleGid:Math.max(1,process.getgid())}
+   }),deny);
+  await assert.rejects(startDisposableOriginalA2aWorkerSubprocess(
+   f.config,{requireOwnerFileIsolation:false,
+    originalScopedRole:{role:"backend",ownerUid:1001,
+     workerUid:1002,roleGid:2301}
+   }),deny);
+  assert.equal(f.modelCalls(),0);
+ }finally{
+  if(orig!==undefined)process.env.DELEGATION_DISPOSABLE_LIVE_MODE=orig;
+ }
+});

@@ -79,6 +79,26 @@ const start=async message=>{
  const ownerCanaryReadable=await canOpenOwnerCanary(message.ownerCanaryPath);
  if(message.requireOwnerFileIsolation!==undefined&&
     typeof message.requireOwnerFileIsolation!=="boolean")deny();
+ // Strict Linux role scope comes from the trusted local launcher ONLY.
+ // The ORIGINAL private R322 channels stay in use when it is absent.
+ const scoped=message.originalScopedRole;
+ if(message.requireOwnerFileIsolation===true){
+  if(process.platform!=="linux"||
+     !scoped||typeof scoped!=="object"||Array.isArray(scoped)||
+     Object.keys(scoped).sort().join(",")!==
+      "ownerUid,role,roleGid,workerUid"||
+     scoped.role!==message.config.role||
+     !Number.isSafeInteger(scoped.ownerUid)||scoped.ownerUid<=0||
+     !Number.isSafeInteger(scoped.workerUid)||scoped.workerUid<=0||
+     !Number.isSafeInteger(scoped.roleGid)||scoped.roleGid<=0||
+     scoped.ownerUid===scoped.workerUid||
+     typeof process.getuid!=="function"||
+     typeof process.getgid!=="function"||
+     typeof process.getgroups!=="function"||
+     process.getuid()!==scoped.workerUid||
+     process.getgid()!==scoped.roleGid||
+     process.getgroups().some(gid=>gid!==scoped.roleGid))deny();
+ }else if(scoped!==undefined)deny();
  // Refuse an obviously readable owner file BEFORE opening any binder,
  // model proxy, SDK session or A2A HTTP listener. The parent separately
  // requires distinct kernel UIDs before acknowledging startup.
@@ -105,7 +125,8 @@ const start=async message=>{
     ]).size!==6)deny();
  const client=await connectDisposableWorkerModelIpcClient({
   role:cfg.role,socketPath:cfg.modelSocketPath,
-  secretFile:cfg.modelSecretFile
+  secretFile:cfg.modelSecretFile,
+  ...(scoped?{originalScopedModelRole:scoped}:{})
  });
  // Trusted parent pins the session once. Signed Task/Child is activated
  // only through the authenticated ORIGINAL registry after A2A dispatch.
@@ -120,12 +141,15 @@ const start=async message=>{
  // bind socket can prebind the exact signed Child/Task pins.
  const trustedEffectTaskRegistry=new TrustedEffectStagingTaskRegistry();
  const ownerStageClient=await connectTrustedOwnerEffectStagingClient({
-  socketPath:cfg.stageSocketPath,secretFile:cfg.stageSecretFile
+  socketPath:cfg.stageSocketPath,secretFile:cfg.stageSecretFile,
+  expectedRole:cfg.role,
+  ...(scoped?{originalScopedEffectRole:scoped}:{})
  });
  binder=await createTrustedEffectAgentBindingServer({
   socketPath:cfg.bindSocketPath,secretFile:cfg.bindSecretFile,
   expectedRole:cfg.role,registry:trustedEffectTaskRegistry,
-  ownerStageClient
+  ownerStageClient,
+  ...(scoped?{originalScopedEffectRole:scoped}:{})
  });
  await binder.start();
  // This private per-worker MCP key is NOT the Engineer approval signing
@@ -152,6 +176,9 @@ const start=async message=>{
   originalNativeTaskBindingPresent:false,
   originalTaskBindingChannelReady:true,
   ownerCanaryReadable,
+  // Cross-UID channels are separately pinned and tested; they never
+  // claim a verified OS boundary or native Root/Child evidence.
+  crossUidChannelsConfigured:scoped!==undefined,
   osIsolationVerified:false});
 };
 mustBeClean();
