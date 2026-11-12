@@ -232,6 +232,24 @@ export class EngineerSessions {
       }
     });
 
+    // Owner-side diagnostics: the Gateway hides provider errors from agents
+    // (by design), but the Engineer must see why a test run failed.
+    const runner = operational.nativeEffects.runnerClient;
+    const runTests = runner.run.bind(runner);
+    runner.run = async (request, signal) => {
+      this.#log(session, "Test avviati nel Runner sul commit " + String(request?.commit_sha).slice(0, 12));
+      try {
+        const result = await runTests(request, signal);
+        const failed = (result.phases ?? []).find(p => p.status === "fail")?.phase;
+        this.#log(session, "Esito del Runner: " + result.status.toUpperCase() +
+          (failed ? " (prima fase fallita: " + failed + ")" : ""));
+        return result;
+      } catch (error) {
+        this.#log(session, "Il Runner non ha dato un esito: " + String(error?.message ?? error).slice(0, 300));
+        throw error;
+      }
+    };
+
     // The operational Root may not outlive the signed approval.
     const receipt = JSON.parse(readFileSync(join(live.dirs.approvals, session.id + ".json"), "utf8"));
     const validity = Math.floor((Date.parse(receipt.expires_at) - Date.now()) / 1000) - 120;

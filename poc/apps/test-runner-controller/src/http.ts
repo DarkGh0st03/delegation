@@ -69,6 +69,7 @@ export function createRunnerHttpServer(
     }
 
     if (!authorized(request, config.gateway_token)) {
+      process.stderr.write("Controlled Test Runner rejected a request: invalid Gateway bearer\n");
       json(response, 401, { error: "unauthorized" });
       return;
     }
@@ -77,6 +78,9 @@ export function createRunnerHttpServer(
     try {
       normalized = validateRunnerRunRequest(await readJsonBody(request), config.contract);
     } catch (error) {
+      process.stderr.write(
+        `Controlled Test Runner rejected a request: ${error instanceof Error ? error.message : String(error)}\n`
+      );
       json(response, 400, {
         error: "invalid_runner_request",
         message: error instanceof Error ? error.message : String(error)
