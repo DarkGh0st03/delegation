@@ -400,6 +400,9 @@ function openReview(s) {
   if (!s || s.phase !== "awaiting_review") return;
   $("rv-repo").textContent = s.repository.owner + "/" + s.repository.name;
   $("rv-branch").textContent = s.work_branch;
+  const until = s.proposal.expires_at ? new Date(s.proposal.expires_at) : null;
+  $("rv-expiry").textContent = until ? "Proposta firmabile fino alle " + until.toLocaleTimeString() +
+    " (mancano " + Math.max(0, Math.round((until - Date.now()) / 60000)) + " minuti). Dopo va rifatto il Planning." : "";
   $("rv-simulated").textContent = s.mode === "scripted"
     ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso."
     : s.mode === "reference" ? "Proposta della SOLUZIONE DI RIFERIMENTO: file della soluzione nota, nessuna IA." : "";

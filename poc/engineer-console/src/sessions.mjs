@@ -12,6 +12,7 @@ import {randomBytes, generateKeyPairSync, createPrivateKey, createPublicKey} fro
 import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync, chmodSync} from "node:fs";
 import {join} from "node:path";
 import {readEnvFile} from "./env.mjs";
+import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../packages/plan-contracts/src/planning-limits.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
 import {preflightGemini, createSessionGeminiModels} from "./gemini-models.mjs";
@@ -26,6 +27,8 @@ import {simulatedExecutionPlan, ScriptedWorkerModel, ScriptedTestModel, Scripted
   ScriptedDecisionModel, ScriptedRootTaskModel} from "./scripted-execution-models.mjs";
 
 const SESSION_ID = /^s-[a-f0-9]{12}$/u;
+/** How long the Engineer may review a proposal (canonical maximum is 1 h). */
+const PROPOSAL_REVIEW_MS = 25 * 60 * 1000;
 const PERMISSION_ID = /^permission-[1-9][0-9]{0,2}$/u;
 // Phases that only exist while this process holds the session's host. After
 // an app restart the chain is new and every earlier Root is gone with it.
@@ -144,6 +147,9 @@ export class EngineerSessions {
     const known = new Set(session.proposal.permissions.map(p => p.id));
     if (permissionIds.some(x => !known.has(x))) throw Error("Permesso non presente nella proposta");
     if (typeof password !== "string" || !password) throw Error("Password richiesta");
+    if (session.proposal.expires_at && Date.parse(session.proposal.expires_at) <= Date.now() + 5000)
+      throw Error("La proposta è scaduta (si può firmare per " + PROPOSAL_REVIEW_MS / 60000 +
+        " minuti dopo il Planning): premi \"Rifiuta\" e avvia un nuovo Planning");
 
     session.phase = "approving"; this.#save(session);
     try {
@@ -392,7 +398,10 @@ export class EngineerSessions {
     const approved = await call("POST", "/api/approve", {proposal_digest: digest,
       approved_permission_ids: permissionIds, confirmation: "APPROVE " + digest},
       {cookie, "x-csrf-token": review.data.csrf_token});
-    if (approved.response.status !== 201) throw Error(approved.data.error ?? "Firma non riuscita");
+    if (approved.response.status !== 201)
+      throw Error(approved.response.status === 500
+        ? "Il server di approvazione ha rifiutato la firma (proposta scaduta o non più valida): rifai il Planning"
+        : approved.data.error ?? "Firma non riuscita");
     return approved.data;
   }
 
@@ -597,7 +606,8 @@ export class EngineerSessions {
     const now = Date.now();
     const preliminaryRoot = {
       credential_id: `urn:delegation:${session.id}:preliminary`,
-      valid_from: isoSeconds(now), validity_seconds: 40 * 60,
+      // Canonical maximum: it must outlive Planning plus the review window.
+      valid_from: isoSeconds(now), validity_seconds: MAX_PRELIMINARY_ROOT_SECONDS,
       credential_status: {type: "BitstringStatusListEntry", statusPurpose: "revocation",
         statusListIndex: statusIndex(), statusListCredential: STATUS_LIST}
     };
@@ -619,7 +629,7 @@ export class EngineerSessions {
     try {
     host = await createTrustedAuthorityOnlyReviewHost({
       snapshot, requirement: session.requirement, workBranch: session.work_branch, preliminaryRoot,
-      checkpoint: {store: checkpointStore, backendKeyId: "owner",
+      checkpoint: {store: checkpointStore, backendKeyId: "owner", lifetimeMs: PROPOSAL_REVIEW_MS,
         backendPrivateKeyPem: checkpointKey.privateKey.export({format: "pem", type: "pkcs8"}).toString()},
       activationJournal: new DurableAuthorityOnlyActivationJournal(dirs.activation),
       taskJournal: new DurableAuthorityTaskJournal(dirs.tasks),
@@ -651,7 +661,9 @@ export class EngineerSessions {
       permissions: checkpoint.proposal.requested_permissions
         .map((p, i) => ({id: "permission-" + (i + 1), ...p})),
       assumptions: checkpoint.assumptions ?? [], uncertainties: checkpoint.uncertainties ?? [],
-      verified_source_reads: checkpoint.verified_source_reads ?? null
+      verified_source_reads: checkpoint.verified_source_reads ?? null,
+      // After this instant the signed proposal can no longer be approved.
+      expires_at: checkpoint.expires_at
     };
     session.phase = "awaiting_review";
     this.#live.set(session.id, {host, gatewayServer, gatewayBaseUrl, revisions, checkpointStore,
