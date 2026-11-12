@@ -597,7 +597,8 @@ export class EngineerSessions {
     let gemini;
     if (session.mode === "gemini") {
       gemini = await createSessionGeminiModels({apiKey: process.env.GEMINI_API_KEY,
-        model: geminiModelName(), record: entry => this.#recordModelCall(sessionRef.current, entry)});
+        model: geminiModelName(), workBranch: session.work_branch,
+        record: entry => this.#recordModelCall(sessionRef.current, entry)});
       model = gemini.planning();
       this.#log(session, `Planner: Gemini (${geminiModelName()}), con limiti di chiamate e token per sessione`);
     } else if (session.mode === "reference") {

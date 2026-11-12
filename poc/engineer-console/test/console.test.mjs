@@ -550,3 +550,25 @@ test("free modes: app work, then Test reads the changed app files, then Test wri
     ["t99-test", "run", null]]);
   assert.deepEqual(plan.tasks[2].permissions.map(p => p.operation), ["read_file"]);
 });
+
+test("budgeted Gemini accepts a proposed write on the session branch, never on another", async () => {
+  const {BaseLlm} = await import("@google/adk");
+  const {createSessionGeminiModels} = await import("../src/gemini-models.mjs");
+  const write = branch => ({content: {role: "model", parts: [{functionCall: {name: "update_file",
+    args: {branch, path: "packages/shared/src/account-status.ts", content: "export const x = 1;\n"}}}]},
+    finishReason: "STOP", usageMetadata: {promptTokenCount: 1271, candidatesTokenCount: 124, totalTokenCount: 1963}});
+  const answers = [write("feature/s-520705307cbd"), write("feature/other")];
+  class FakeGemini extends BaseLlm {
+    constructor() { super({model: "gemini-3.8-flash"}); }
+    async *generateContentAsync() { yield answers.shift(); }
+  }
+  const records = [];
+  const g = await createSessionGeminiModels({apiKey: "unused", model: "gemini-3.8-flash",
+    workBranch: "feature/s-520705307cbd", record: r => records.push(r), createProvider: () => new FakeGemini()});
+  const backend = g.execution().backend;
+  const out = [];
+  for await (const r of backend.generateContentAsync({})) out.push(r);
+  assert.equal(out[0].content.parts[0].functionCall.name, "update_file", "today's real case now passes");
+  const frontend = g.execution().frontend;
+  await assert.rejects(async () => { for await (const _ of frontend.generateContentAsync({})); }, /NO-GO/u);
+});

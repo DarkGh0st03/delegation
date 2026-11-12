@@ -93,7 +93,7 @@ class ObservedModel extends BaseLlm {
  * All paid models of one session share ONE canonical session budget.
  * `record(entry)` receives one entry per provider call or rejection.
  */
-export async function createSessionGeminiModels({apiKey, model, record, createProvider}) {
+export async function createSessionGeminiModels({apiKey, model, record, createProvider, workBranch}) {
   // Tests inject a fake provider; production always uses Google ADK Gemini.
   const createGeminiAdkModel = createProvider ??
     (await import("../../packages/agent-runtime/src/gemini-adk-model.ts")).createGeminiAdkModel;
@@ -105,7 +105,9 @@ export async function createSessionGeminiModels({apiKey, model, record, createPr
     const provider = new ObservedModel({delegate: createGeminiAdkModel({apiKey, model}),
       phase, layer: "provider", record});
     const budgeted = new DisposablePrivateBudgetedAdkModel({delegate: provider, phase,
-      ...PRIVATE_GEMINI_SESSION_LIMITS[phase], sessionBudget});
+      ...PRIVATE_GEMINI_SESSION_LIMITS[phase], sessionBudget,
+      // Writes proposed by the model must target THIS session's branch.
+      ...(workBranch ? {writeBranch: workBranch} : {})});
     models.push(budgeted);
     return new ObservedModel({delegate: budgeted, phase, layer: "budget", record});
   };

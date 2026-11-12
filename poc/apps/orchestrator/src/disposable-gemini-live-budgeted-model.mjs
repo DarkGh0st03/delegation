@@ -66,7 +66,11 @@ function nextBeforeAbort(iterator,signal){
  * SHA-256 of the successfully committed UTF-8 content. A future original
  * owner may reconcile the two only AFTER independent receipt verification.
  */
-function fingerprintModelWrites(buffered,phase,callIndex){
+// Default kept for the historical fixed-branch pilots; console sessions pass
+// their own Engineer-approved work branch.
+const LEGACY_WRITE_BRANCH="feature/account-suspension";
+const WRITE_BRANCH=/^feature\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u;
+function fingerprintModelWrites(buffered,phase,callIndex,writeBranch){
  const observed=[];
  for(const response of buffered){
   const parts=response?.content?.parts;
@@ -78,7 +82,7 @@ function fingerprintModelWrites(buffered,phase,callIndex){
    if(!["backend","frontend","test"].includes(phase)||
       !args||typeof args!=="object"||Array.isArray(args)||
       Object.keys(args).sort().join(",")!=="branch,content,path"||
-      args.branch!=="feature/account-suspension"||
+      args.branch!==writeBranch||
       typeof args.path!=="string"||
       args.path.length<1||args.path.length>512||
       args.path.startsWith("/")||
@@ -192,8 +196,10 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  #busy=false;#blocked=false;#sessionBudget;#proposedWrites=[];
  #claimedWrites=new WeakSet();#claimedGatewayEvidence=new Set();
  #ownerCancellation=new AbortController();
+ #writeBranch;
  constructor({
-  delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens,sessionBudget
+  delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens,sessionBudget,
+  writeBranch=LEGACY_WRITE_BRANCH
  }={}){
   if(!(delegate instanceof BaseLlm)||typeof delegate.model!=="string"||
      !delegate.model||!PHASES.has(phase)||
@@ -201,7 +207,9 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
      !positive(maxPerCallTokens,65536)||
      maxPerCallTokens>maxReportedTokens||
      (sessionBudget!==undefined&&
-      !(sessionBudget instanceof DisposablePrivateSessionUsageBudget)))
+      !(sessionBudget instanceof DisposablePrivateSessionUsageBudget))||
+     typeof writeBranch!=="string"||!WRITE_BRANCH.test(writeBranch)||
+     writeBranch.endsWith(".lock"))
    deny();
   super({model:delegate.model});
   this.#delegate=delegate;
@@ -209,6 +217,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
   this.#maxTokens=maxReportedTokens;
   this.#maxPerCall=maxPerCallTokens;
   this.#sessionBudget=sessionBudget;
+  this.#writeBranch=writeBranch;
  }
  get phase(){return this.#phase;}
  /**
@@ -330,7 +339,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
    // No partial response (especially FunctionTool calls) may be executed
    // without a final, valid provider-reported usage entry.
    if(this.#blocked||combined.aborted||!last)deny();
-   const proposedWrites=fingerprintModelWrites(buffered,this.#phase,this.#calls);
+   const proposedWrites=fingerprintModelWrites(buffered,this.#phase,this.#calls,this.#writeBranch);
    if(this.#proposedWrites.length+proposedWrites.length>256)deny();
    if(sessionClaim)this.#sessionBudget.commit(sessionClaim,last.total);
    this.#proposedWrites.push(...proposedWrites);
