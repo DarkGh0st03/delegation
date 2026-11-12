@@ -15,7 +15,7 @@ function deny(){throw Error("Invalid private local A2A worker configuration");}
 /** Start private, role-pinned agent listeners without dispatching Tasks.
  * The original Review Host starts its SDK owner with the returned pins. */
 export async function startTrustedAuthorityOnlyLocalA2AWorkers({
- directory,workers,native=true,a2aPolling,trustedAgentRegistry
+ directory,workers,native=true,a2aPolling,trustedAgentRegistry,projectTestSourceProfile
 }){
  const roles=workers&&typeof workers==="object"&&!Array.isArray(workers)
   ?Object.keys(workers).sort():[];
@@ -90,7 +90,8 @@ export async function startTrustedAuthorityOnlyLocalA2AWorkers({
    };
    const stage=stageChannels[role]=await channel("stage");
    const bind=agentBindingChannels[role]=await channel("bind");
-   const registry=new TrustedEffectStagingTaskRegistry();
+   const registry=new TrustedEffectStagingTaskRegistry(
+    projectTestSourceProfile===undefined?{}:{projectTestSourceProfile});
    const binder=await createTrustedEffectAgentBindingServer({
     ...bind,registry,expectedRole:role,
     ownerStageClient:await connectTrustedOwnerEffectStagingClient(stage)

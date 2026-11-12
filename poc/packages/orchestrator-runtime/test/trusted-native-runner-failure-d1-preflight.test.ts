@@ -71,7 +71,7 @@ const expected={
   .map(k=>[k,intent[k as keyof typeof intent]])),
  status:"owner_authenticated_runner_failure_observed_staged",
  tested_commit_sha:intent.expected_head_sha,
- first_failed_phase:"typecheck",repair_candidate:true,
+ first_failed_phase:"typecheck",environment_phase:"dependency_install",repair_candidate:true,
  evidence_sha256:"f".repeat(64),
  gateway_task_completed:false,recovery_authorized:false
 };

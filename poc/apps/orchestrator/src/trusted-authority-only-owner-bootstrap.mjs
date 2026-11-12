@@ -123,6 +123,9 @@ const verifiedManifest=new WeakSet();
 function deny(){throw Error("Protected canonical authority bootstrap denied");}
 function plain(x){return x!==null&&typeof x==="object"&&!Array.isArray(x)&&
  Object.getPrototypeOf(x)===Object.prototype;}
+/** Repository base branch: a safe name outside the agents' feature/ space. */
+const safeBaseBranch=b=>typeof b==="string"&&/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u.test(b)&&
+ !b.startsWith("feature/")&&!b.includes("..")&&!b.includes("//")&&!b.endsWith("/");
 function exact(v,keys){return plain(v)&&
  Object.keys(v).sort().join(",")===keys.slice().sort().join(",");}
 function frozen(value){
@@ -518,7 +521,7 @@ export async function createProtectedCanonicalOperationalProvision(
     !(operational.completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
     !(authority?.operationalSessionStore instanceof TrustedOperationalSessionStore)||
     operational.workflow?.createBranch?.branch!==authority.workBranch||
-    operational.workflow?.createBranch?.baseBranch!=="main")
+    !safeBaseBranch(operational.workflow?.createBranch?.baseBranch))
   deny();
  const {journalDirectory,orchestratorTokenFile,completionObserver,workflow}=operational;
  const reserveRoot=operational.rootReservation===undefined?operational.reserveRoot:
@@ -527,8 +530,10 @@ export async function createProtectedCanonicalOperationalProvision(
   await prepareCanonicalNativeEffects(authority,operational.nativeEffects);
  const {localWorkers}=operational;
  if(Object.hasOwn(operational,"localWorkers")&&
-    (!localWorkers||(!exact(localWorkers,["directory","workers"])&&
-     !exact(localWorkers,["directory","workers","a2aPolling"]))||
+    (!localWorkers||![["directory","workers"],["directory","workers","a2aPolling"],
+      ["directory","workers","projectTestSourceProfile"],
+      ["directory","workers","a2aPolling","projectTestSourceProfile"]]
+      .some(keys=>exact(localWorkers,keys))||
      Object.hasOwn(workflow,"sdk")))
   deny();
  const workerOptions=localWorkers?{
@@ -545,7 +550,7 @@ export async function createProtectedCanonicalOperationalProvision(
       effect&&(Object.hasOwn(effect,"prepare")||Object.hasOwn(effect,"execute")))||
      (workflow.draftPullRequest&&
       (workflow.draftPullRequest.headBranch!==authority.workBranch||
-       workflow.draftPullRequest.baseBranch!=="main"))))
+       workflow.draftPullRequest.baseBranch!==workflow.createBranch.baseBranch))))
   deny();
  const repository=authority.snapshot?.repository;
  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;

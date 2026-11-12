@@ -76,7 +76,7 @@ const flight={...pins,status:"gateway_original_test_flight_preflight_only",
  gateway_execution_authorized:false};
 const observed={...pins,status:"owner_authenticated_runner_failure_observed_staged",
  tested_commit_sha:intent.expected_head_sha,first_failed_phase:"typecheck",
- repair_candidate:true,evidence_sha256:"f".repeat(64),
+ environment_phase:"dependency_install",repair_candidate:true,evidence_sha256:"f".repeat(64),
  gateway_task_completed:false,recovery_authorized:false};
 const candidate={role:"backend" as const,permissions:[writePerm]};
 

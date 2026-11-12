@@ -167,7 +167,10 @@ function renderPolicy() {
   f.protected_branches.value = p.protected_branches.join("\n");
   f.work_branch_prefix.value = p.work_branch_prefix;
   f.forbidden_path_prefixes.value = p.forbidden_path_prefixes.join("\n");
-  f.runner_profile.value = p.runner_profile;
+  f.profile_image.value = p.project_profile.image;
+  f.profile_phases.value = JSON.stringify(p.project_profile.phases, null, 2);
+  f.profile_test_roots.value = p.project_profile.test_sources.roots.join("\n");
+  f.profile_test_suffixes.value = p.project_profile.test_sources.suffixes.join("\n");
   f.allow_pull_request.checked = p.allow_pull_request;
 }
 
@@ -175,12 +178,17 @@ $("policy-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const f = event.target.elements, r = selectedRepo.repository;
   try {
+    let phases;
+    try { phases = JSON.parse(f.profile_phases.value); }
+    catch { throw Error("Le fasi del profilo di test non sono JSON valido"); }
     selectedRepo = await api("PUT", "/api/repos/" + encodeURIComponent(r.name) + "/policy", {
-      version: 1, repository: {owner: r.owner, name: r.name}, base_branch: r.default_branch,
+      version: 2, repository: {owner: r.owner, name: r.name}, base_branch: r.default_branch,
       protected_branches: lines(f.protected_branches.value),
       work_branch_prefix: f.work_branch_prefix.value.trim(),
       forbidden_path_prefixes: lines(f.forbidden_path_prefixes.value),
-      runner_profile: f.runner_profile.value.trim(),
+      project_profile: {version: 1, image: f.profile_image.value.trim(), phases,
+        test_sources: {roots: lines(f.profile_test_roots.value),
+          suffixes: lines(f.profile_test_suffixes.value)}},
       allow_pull_request: f.allow_pull_request.checked,
       agents_may_merge: false
     });
@@ -406,6 +414,13 @@ function openReview(s) {
   $("rv-simulated").textContent = s.mode === "scripted"
     ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso."
     : s.mode === "reference" ? "Proposta della SOLUZIONE DI RIFERIMENTO: file della soluzione nota, nessuna IA." : "";
+  const profile = s.project_profile;
+  $("rv-profile-summary").textContent = profile
+    ? `Immagine ${profile.image}; il Test agent scrive solo in ${profile.test_sources.roots.join(", ")} ` +
+      `(${profile.test_sources.suffixes.join(", ")}). Impronta ${s.project_profile_sha256.slice(0, 16)}…`
+    : "Profilo di test non disponibile";
+  const phasesList = $("rv-profile-phases"); phasesList.replaceChildren();
+  for (const p of profile?.phases ?? []) li(phasesList, `${p.name}: ${p.command}`);
   const a = $("rv-assumptions"), u = $("rv-uncertainties");
   a.replaceChildren(); u.replaceChildren();
   for (const t of s.proposal.assumptions) li(a, t);

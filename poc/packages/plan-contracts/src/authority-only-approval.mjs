@@ -88,9 +88,20 @@ function validatePermissionKinds(rows,repo,branch){
   }else deny("unimplemented operation cannot be approved by this migration contract");
  }
 }
+/** Optional binding of the Engineer-approved project profile (what "the
+ * tests pass" means). When present it is part of the signed grant. */
+const PROFILE_FIELD="project_profile_sha256";
+function profileFields(x,base){
+ if(x&&typeof x==="object"&&Object.hasOwn(x,PROFILE_FIELD)){
+  if(typeof x[PROFILE_FIELD]!=="string"||!SHA64.test(x[PROFILE_FIELD]))
+   deny("invalid project profile binding");
+  return [...base,PROFILE_FIELD];
+ }
+ return base;
+}
 export function validateAuthorityProposal(proposal,{allowedOperations}={}){
- exact(proposal,["schema_version","session_id","repository","branch",
-  "base_revision","requirement","requested_permissions"]);
+ exact(proposal,profileFields(proposal,["schema_version","session_id","repository","branch",
+  "base_revision","requirement","requested_permissions"]));
  if(proposal.schema_version!==AUTHORITY_ONLY_SCHEMA)deny("unsupported schema");
  validSessionContext(proposal);
  if(typeof proposal.requirement!=="string"||
@@ -120,14 +131,15 @@ export function selectAuthorityOnlyGrant(proposal,approvedPairs,{allowedOperatio
   branch:proposal.branch,
   base_revision:proposal.base_revision,
   requirement_sha256:requirementDigest(proposal.requirement),
+  ...(Object.hasOwn(proposal,PROFILE_FIELD)?{[PROFILE_FIELD]:proposal[PROFILE_FIELD]}:{}),
   permissions:sortedPairs(approvedPairs)
  };
  validateAuthorityOnlyGrant(grant,{allowedOperations});
  return grant;
 }
 export function validateAuthorityOnlyGrant(grant,{allowedOperations}={}){
- exact(grant,["schema_version","session_id","repository","branch",
-  "base_revision","requirement_sha256","permissions"]);
+ exact(grant,profileFields(grant,["schema_version","session_id","repository","branch",
+  "base_revision","requirement_sha256","permissions"]));
  if(grant.schema_version!==AUTHORITY_ONLY_SCHEMA)deny("unsupported schema");
  validSessionContext(grant);
  if(typeof grant.requirement_sha256!=="string"||

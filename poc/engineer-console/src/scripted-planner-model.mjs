@@ -90,12 +90,13 @@ export function referenceProposal(referencePaths, snapshotFiles) {
 }
 
 export class ScriptedPlannerModel extends BaseLlm {
-  #files; #readTarget; #reference; calls = 0;
-  constructor({snapshotFiles, requirement, referencePaths}) {
+  #files; #readTarget; #reference; #baseBranch; calls = 0;
+  constructor({snapshotFiles, requirement, referencePaths, baseBranch = "main"}) {
     super({model: referencePaths ? "reference-solution-planner-no-ai" : "scripted-planner-no-ai"});
     this.#reference = referencePaths ? referenceProposal(referencePaths, snapshotFiles) : null;
     this.#files = referencePaths ? [...referencePaths].filter(p => snapshotFiles.includes(p)).sort()
       : selectPlanningFiles(snapshotFiles, requirement);
+    this.#baseBranch = baseBranch;
     this.#readTarget = this.#files[0] ??
       snapshotFiles.find(f => /^readme/iu.test(f)) ?? snapshotFiles[0];
   }
@@ -106,7 +107,7 @@ export class ScriptedPlannerModel extends BaseLlm {
     if (this.calls === 1 && this.#readTarget) {
       yield {content: {role: "model", parts: [{functionCall: {
         id: "scripted-source-read", name: "read_file",
-        args: {branch: "main", path: this.#readTarget}}}]}};
+        args: {branch: this.#baseBranch, path: this.#readTarget}}}]}};
       return;
     }
     yield {content: {role: "model", parts: [{text: JSON.stringify(

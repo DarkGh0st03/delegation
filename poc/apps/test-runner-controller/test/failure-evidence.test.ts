@@ -1,3 +1,4 @@
+import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,writeFile,readdir,readFile,stat,rm} from "node:fs/promises";
@@ -11,7 +12,7 @@ test("private failure bundle preserves exact archive and log with revision and h
   const archivePath=join(root,"input.tar.gz"),directory=join(root,"evidence");
   await writeFile(archivePath,"exact archive");
   const input={directory,archivePath,log:"FAIL expected 409 actual 200",request:{
-   request_id:"r",repository:"gitea://local/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const},
+   request_id:"r",repository:"gitea://local/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)},
    phases:[{phase:"frontend_tests" as const,status:"fail" as const}]};
   await retainFailureEvidence(input);
   const bundle=join(directory,(await readdir(directory))[0]);
@@ -33,9 +34,9 @@ test("Runner retains only failures when opted in and keeps bundle out of its res
  const {IsolatedDockerRunnerExecutor}=await import("../src/isolated-executor.ts");
  const root=await mkdtemp(join(tmpdir(),"runner-retain-"));
  try{
-  const request={request_id:"retention",repository:"gitea://local/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const};
+  const request={request_id:"retention",repository:"gitea://local/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)};
   let failed=false;
-  const executor=new IsolatedDockerRunnerExecutor({gitea_base_url:"http://localhost",gitea_owner:"o",gitea_repository:"r",gitea_token:"secret",docker_image:"node",phase_timeout_ms:1000,log_dir:join(root,"logs"),failure_evidence_dir:join(root,"private")},{
+  const executor=new IsolatedDockerRunnerExecutor({gitea_base_url:"http://localhost",gitea_token:"secret",phase_timeout_ms:1000,log_dir:join(root,"logs"),failure_evidence_dir:join(root,"private")},{
    fetch_fn:async(url)=>String(url).includes("/archive/")?new Response("archive"):new Response(JSON.stringify({commit:{id:request.commit_sha}})),
    command_runner:async(_command,args)=>({exit_code:failed&&args.includes("bash")?1:0,stdout:"test output",stderr:"",timed_out:false})
   });

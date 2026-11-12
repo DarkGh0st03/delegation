@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {RunnerClient,assertTrustedRunnerClientResult}
  from "../src/runner-client.ts";
+import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 import {validateTrustedRunnerPass}
  from "../src/trusted-authority-only-runner-pass.ts";
 
@@ -18,7 +20,7 @@ const fixed=[
 const successful=()=>({
  request_id:request.request_id,repository:request.repository,
  branch:request.branch,tested_commit_sha:request.commit_sha,
- runner_profile:"poc-default",status:"pass",
+ runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"pass",
  phases:[...fixed,"researcher_acceptance"].map(phase=>({
   phase,status:"pass"
  })),
@@ -30,14 +32,14 @@ const successful=()=>({
 });
 function clientFor(payload:unknown){
  let calls=0;
- const client=new RunnerClient({
+ const client=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
   baseUrl:"http://runner.local:3001",gatewayToken:"owner-only",
   fetchFn:(async(_url:URL|string,init?:RequestInit)=>{
    calls++;
    assert.equal(init?.method,"POST");
    assert.equal((init.headers as Record<string,string>).authorization,
     "Bearer owner-only");
-   assert.deepEqual(JSON.parse(String(init.body)),request);
+   assert.deepEqual(JSON.parse(String(init.body)),{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
    return new Response(JSON.stringify(payload),{status:200});
   }) as typeof fetch
  });
@@ -79,7 +81,7 @@ test("R303.2 untrusted, contradictory or incomplete PASS cannot attest completio
   const {client}=clientFor(body);
   const result=await client.run(request);
   assert.throws(()=>validateTrustedRunnerPass(client,request,result),
-   /Runner PASS claim|fixed Runner|researcher acceptance|pinned Runner phases/);
+   /Runner PASS claim|approved project phase|researcher acceptance|pinned Runner phases/);
  }
 });
 test("R303.2 switched Child's Runner request, SHA or branch is not portable",async()=>{

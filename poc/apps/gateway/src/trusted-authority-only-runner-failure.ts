@@ -11,15 +11,7 @@ import {RunnerClient,assertTrustedRunnerClientResult,
 import {DurableAuthorityOnlyRunnerIntentJournal,
  type TrustedAuthorityOnlyRunnerIntent}
  from "./trusted-authority-only-runner-intent-journal.ts";
-const PHASES=[
- "dependency_install","typecheck","backend_tests","frontend_tests",
- "build","playwright_e2e","researcher_acceptance"
-] as const;
 const LOG=/^runner-log:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-const REPAIRABLE=new Set<string>([
- "typecheck","backend_tests","frontend_tests","build",
- "playwright_e2e","researcher_acceptance"
-]);
 function deny(reason:string):never{
  throw Error("Authority-only verified Runner FAIL NO-GO: "+reason);
 }
@@ -28,7 +20,9 @@ export interface TrustedRunnerFailStage{
  readonly task_id:string;readonly runtime_task_id:string;
  readonly credential_id:string;readonly request_id:string;
  readonly request_fingerprint:string;readonly tested_commit_sha:string;
- readonly first_failed_phase:typeof PHASES[number];
+ readonly first_failed_phase:string;
+ /** First phase of the approved profile: prepares the environment. */
+ readonly environment_phase:string;
  readonly repair_candidate:boolean;
  readonly gateway_task_completed:false;
  readonly recovery_authorized:false;
@@ -48,9 +42,15 @@ export function validateTrustedRunnerFailure(
     intent.expected_head_sha!==request.commit_sha||
     request.profile!=="poc-default"||
     result.runner_profile!=="poc-default"||
+    result.project_profile_sha256!==client.projectProfileSha256||
     result.status!=="fail"||
     !LOG.test(result.log_reference??""))
    deny("Runner FAIL differs from original immutable Test intent");
+ // The approved profile's phases, then the researcher slot. The FIRST
+ // profile phase prepares the environment (e.g. dependency installation):
+ // its failure is not a code defect the agents could repair.
+ const PHASES=[...client.projectProfile.phases.map(x=>x.name),"researcher_acceptance"];
+ const last=PHASES.length-1;
  const p=result.phases;
  const project=result.project_tests;
  if(!Array.isArray(p)||p.length!==PHASES.length||
@@ -61,12 +61,12 @@ export function validateTrustedRunnerFailure(
       v.status!==p[i].status)||
     !result.researcher_acceptance||
     result.researcher_acceptance.phase!=="researcher_acceptance"||
-    result.researcher_acceptance.status!==p[6].status)
+    result.researcher_acceptance.status!==p[last].status)
    deny("Runner FAIL has incomplete or reordered controlled phases");
  const first=p.findIndex(v=>v.status==="fail");
  if(first<0||p.some((v,i)=>v.status!==(i<first?"pass":
      i===first?"fail":"skipped"))||
-    (first===6?(project.status!=="pass"):(project.status!=="fail"))||
+    (first===last?(project.status!=="pass"):(project.status!=="fail"))||
     (p[first].failed!==undefined&&
      (!Number.isSafeInteger(p[first].failed)||p[first]!.failed!<1))||
     p.some(v=>v.failed!==undefined&&
@@ -81,7 +81,8 @@ export function validateTrustedRunnerFailure(
   request_fingerprint:intent.request_fingerprint,
   tested_commit_sha:intent.expected_head_sha,
   first_failed_phase:PHASES[first]!,
-  repair_candidate:REPAIRABLE.has(PHASES[first]!),
+  environment_phase:PHASES[0]!,
+  repair_candidate:first>0,
   gateway_task_completed:false as const,
   recovery_authorized:false as const,
   child_credential_issued:false as const

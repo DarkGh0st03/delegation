@@ -11,10 +11,13 @@
  * workflow: the Runner reports it as "skipped". A historical "pass" is
  * still accepted; a "fail" is never a PASS (the overall status is "fail").
  */
+import {isRunnerPhaseName} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {RunnerClient,assertTrustedRunnerClientResult,
  type RunnerClientRequest,type RunnerClientResult}
  from "./runner-client.ts";
 export interface VerifiedRunnerPass{
+ /** Digest of the Engineer-approved project profile that passed. */
+ readonly project_profile_sha256:string;
  readonly status:"owner_verified_runner_pass_staged";
  readonly request_id:string;readonly repository:string;
  readonly branch:string;readonly tested_commit_sha:string;
@@ -26,10 +29,6 @@ export interface VerifiedRunnerPass{
  readonly runner_execution_authorized:false;
 }
 const ACCEPTANCE_OK=new Set(["skipped","pass"]);
-const PROJECT=[
- "dependency_install","typecheck","backend_tests","frontend_tests",
- "build","playwright_e2e"
-] as const;
 function deny(s:string):never{
  throw Error("Authority-only Runner PASS evidence NO-GO: "+s);
 }
@@ -46,6 +45,7 @@ export function validateTrustedRunnerPass(
  if(request.profile!=="poc-default"||
     !/^[a-f0-9]{40}$/u.test(request.commit_sha)||
     result.runner_profile!=="poc-default"||
+    result.project_profile_sha256!==client.projectProfileSha256||
     result.status!=="pass"||
     !result.project_tests||
     result.project_tests.status!=="pass"||
@@ -59,6 +59,10 @@ export function validateTrustedRunnerPass(
     result.typecheck_diagnostics!==undefined||
     result.typecheck_error_codes!==undefined)
   deny("Runner PASS claim is incomplete or contains failure evidence");
+ // Every phase of the Engineer-approved project profile, in order.
+ const PROJECT=client.projectProfile.phases.map(p=>p.name);
+ if(!PROJECT.length||!PROJECT.every(isRunnerPhaseName))
+  deny("approved project profile has no valid phases");
  if(!Array.isArray(result.phases)||
     result.phases.length!==PROJECT.length+1||
     !Array.isArray(result.project_tests.phases)||
@@ -69,7 +73,7 @@ export function validateTrustedRunnerPass(
   if(p.phase!==PROJECT[i]||q.phase!==PROJECT[i]||
      p.status!=="pass"||q.status!=="pass"||
      (p.failed??0)!==0||(q.failed??0)!==0)
-   deny("fixed Runner project phase skipped, duplicated, reordered or failed");
+   deny("approved project phase skipped, duplicated, reordered or failed");
  }
  const researcher=result.phases[PROJECT.length];
  if(researcher.phase!=="researcher_acceptance"||
@@ -81,6 +85,7 @@ export function validateTrustedRunnerPass(
   request_id:request.request_id,repository:request.repository,
   branch:request.branch,tested_commit_sha:request.commit_sha,
   runner_profile:"poc-default",
+  project_profile_sha256:client.projectProfileSha256,
   all_project_tests_passed:true,
   researcher_acceptance:result.researcher_acceptance.status as "skipped"|"pass",
   completed_phases:Object.freeze([...PROJECT,"researcher_acceptance"]),

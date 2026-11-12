@@ -1,4 +1,5 @@
 import {randomUUID} from "node:crypto";
+import {validateProjectProfile,testSourceProfileOf} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {resolveTrustedAuthorityOnlyExecutionBudgets} from "./trusted-authority-only-execution-budgets.mjs";
 import {join} from "node:path";
 import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
@@ -65,7 +66,8 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  if(typeof loadModelFactory!=="function")deny();
  const standardKeys=["directory","giteaUrl","giteaWriterFile","giteaReaderFile",
   "runnerUrl","runnerTokenFile","opaUrl","evidenceKeyFile","orchestratorTokenFile",
-  "workerTokens","workerPorts","rootIndex","childIndices","draftTitle","draftBody"];
+  "workerTokens","workerPorts","rootIndex","childIndices","draftTitle","draftBody",
+  "projectProfile"];
  // No implicit CREATE enablement from an environment variable or agent payload:
  // only the already protected 0600 owner deployment manifest may opt in.
  const nativeCreateEnabled=c?.enableNativeCreateFile===true;
@@ -73,6 +75,7 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  // post-failure authenticated diagnostic-read-before-UPDATE policy.
  const requireVerifiedRepairDiagnostic=c?.requireVerifiedRepairDiagnostic===true;
  const optionalKeys=[...(nativeCreateEnabled?["enableNativeCreateFile"]:[]),
+  ...(Object.hasOwn(c??{},"baseBranch")?["baseBranch"]:[]),
   ...(requireVerifiedRepairDiagnostic?["requireVerifiedRepairDiagnostic"]:[]),
   ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[]),
   ...(Object.hasOwn(c??{},"internalHttpHosts")?["internalHttpHosts"]:[])];
@@ -111,11 +114,17 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  const repository=pins.snapshot.repository,branch=pins.workBranch;
  const resource=canonicalRepositoryUri(repository);
  const repoName=repository.owner+"/"+repository.repository;
+ // The repository's base branch (default "main"): source of the work branch
+ // (at the Engineer-pinned commit) and target of the Draft PR.
+ const baseBranch=c.baseBranch??"main";
  const gitea=secret=>new GiteaClient({
-  baseUrl:giteaUrl,token:secret,owner:repository.owner,repository:repository.repository
+  baseUrl:giteaUrl,token:secret,owner:repository.owner,repository:repository.repository,baseBranch
  });
  const giteaClient=gitea(writer),independentGiteaClient=gitea(reader);
- const runnerClient=new RunnerClient({baseUrl:runnerUrl,gatewayToken:runnerKey});
+ // The Runner executes ONLY the phases of the Engineer-approved project
+ // profile (validated here; its digest is bound in the signed grant).
+ const projectProfile=validateProjectProfile(c.projectProfile);
+ const runnerClient=new RunnerClient({baseUrl:runnerUrl,gatewayToken:runnerKey,projectProfile});
  const audit=new InMemoryAuditSink(),store=new InMemoryRequestStore();
  const rootGateway={audit,verifier:loadDirectCoreRustVerifier({allowGiteaScopeCoverage:true}),
   policy:new OpaPolicyClient({baseUrl:opaUrl}),executor:new GiteaExecutor(giteaClient)};
@@ -178,13 +187,14 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   nativeEffects:{store,giteaClient,independentGiteaClient,runnerClient,runnerPassObserver,
    readObserver,directories,evidenceKey,
    installAuthorization(deps){authorization=Object.freeze({...rootGateway,...deps,repository});}},
-  localWorkers:{directory:c.directory,workers:Object.fromEntries(roles.map((role,i)=>[
+  localWorkers:{directory:c.directory,projectTestSourceProfile:testSourceProfileOf(projectProfile),
+   workers:Object.fromEntries(roles.map((role,i)=>[
    role,{port:c.workerPorts[role],adk:{model:model(),gatewayBaseUrl:gatewayUrl,
     adapterToken:workerTokens[i],scopeModelPaths:true,fetchFn:workerFetch(role),
     gatewayTimeoutMs:role==="test"?900000:60000}}
   ]))},
   workflow:{
-   createBranch:{model:model(),branch,baseBranch:"main",permission:{resource,operation:"create_branch"}},
+   createBranch:{model:model(),branch,baseBranch,permission:{resource,operation:"create_branch"}},
    adaptive:{model:model(),maxSteps:executionBudget.maxDecisions,
     maxVerifiedFailures:executionBudget.maxVerifiedFailures,
     ...(requireVerifiedRepairDiagnostic?{requireVerifiedRepairDiagnostic:true}:{}),
@@ -199,7 +209,7 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
      credential_status:{type:"BitstringStatusListEntry",statusPurpose:"revocation",
       statusListCredential:list,statusListIndex:index}};
    }},
-   draftPullRequest:{model:model(),headBranch:branch,baseBranch:"main",
+   draftPullRequest:{model:model(),headBranch:branch,baseBranch,
     title:c.draftTitle,body:c.draftBody,permission:{resource,operation:"create_pull_request"}}
   }
  };

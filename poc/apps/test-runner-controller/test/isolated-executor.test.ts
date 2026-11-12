@@ -1,10 +1,10 @@
+import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolve } from "node:path";
 import {spawnSync} from "node:child_process";
 import {
   IsolatedDockerRunnerExecutor,
-  runnerFixedPhaseCommands,
   runnerResearcherAcceptanceCommand,
   isolatedDockerCliEnvironment
 } from "../src/isolated-executor.ts";
@@ -14,15 +14,15 @@ const request = {
   repository: "gitea://gitea.local/thesis/iam-console-poc",
   branch: "feature/account-suspension",
   commit_sha: "a".repeat(40),
-  profile: "poc-default" as const
+  profile: "poc-default" as const,
+  project_profile: IAM_CONSOLE_PROJECT_PROFILE,
+  project_profile_sha256: projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)
 };
+const runnerFixedPhaseCommands = IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => ({phase: p.name, command: p.command}));
 
 const config = {
   gitea_base_url: "http://127.0.0.1:3000",
-  gitea_owner: "thesis",
-  gitea_repository: "iam-console-poc",
   gitea_token: "runner-read-only-secret",
-  docker_image: "node:22.15.0-bookworm",
   phase_timeout_ms: 10_000,
   log_dir: "/tmp/delegation-runner-test-logs"
 };

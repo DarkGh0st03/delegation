@@ -117,7 +117,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   !fields(options.approval,['engineerDid','keyId','publicKeyPem','privateKeyFile',
     'receiptDirectory','passwordSaltHex','passwordScryptHex'])||
   !fields(options.planner,['model','planId','onObservation','maxModelTurns',
-    'maxProposalRevisions','thinkingLevel','maxModelCallMs','maxOutputTokens','maxPlanningMs'])||
+    'maxProposalRevisions','thinkingLevel','maxModelCallMs','maxOutputTokens','maxPlanningMs',
+    'projectProfileSha256'])||
   !fields(options.gateway,['gatewayBaseUrl','adapterBaseUrl','adapterToken','fetchFn','timeoutMs']))
   deny('explicit trusted dependencies required; legacy/context overrides forbidden');
  // Disposable owner-private, offline-only seam. A2A/model/workflow JSON
@@ -133,8 +134,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  const snapshot=structuredClone(options.snapshot),requirement=options.requirement,branch=options.workBranch;
  // Optional disposable feature-source Planning is a trusted snapshot pin,
  // not a second source branch that a client or model may substitute.
- if(snapshot.planning_branch!==undefined&&snapshot.planning_branch!==branch)
-  deny('Planning source branch differs from Engineer-reviewed work branch');
+ // A non-"main" repository base branch is the other accepted source pin.
+ if(snapshot.planning_branch!==undefined&&snapshot.planning_branch!==branch&&
+    (snapshot.planning_branch!==options.baseBranch||snapshot.planning_branch.startsWith('feature/')))
+  deny('Planning source branch differs from Engineer-reviewed work or base branch');
  const approval={...options.approval},checkpoint={...options.checkpoint};
  const store=checkpoint.store;
  store.assertContext(snapshot,branch,requirement);
@@ -387,6 +390,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      coordinator:operationalCoordinator,approvals:files,
      operationalSessionStore:deps.operationalSessionStore,
      taskJournal:deps.gatewayTaskJournal,childJournal:deps.gatewayChildJournal,
+     projectTestSourceProfile,
+     ...(options.baseBranch===undefined?{}:{baseBranch:options.baseBranch}),
      ...(deps.effectFenceJournal===undefined?{}:{effectFenceJournal:deps.effectFenceJournal}),
      ...(deps.sequentialEffectJournal===undefined?{}:{sequentialEffectJournal:deps.sequentialEffectJournal}),
      ...(deps.completionObserver===undefined?{}:{completionObserver:deps.completionObserver})
@@ -851,6 +856,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      };
      adaptiveLoopFlight=runTrustedAuthorityOnlyAdaptiveWorkLoop({
       model:input.model,maxSteps:input.maxSteps,signal:input.signal,
+      projectTestSourceProfile,
       // Private original owner opt-in; scripted historical tests remain in
       // legacy mode, and the model cannot change this policy mid-flight.
       requireVerifiedRepairDiagnostic:input.requireVerifiedRepairDiagnostic===true,

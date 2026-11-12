@@ -145,7 +145,7 @@ export class TrustedAuthorityOnlyGiteaCreatePreflight {
   if(record.request.tool!=="create_file")deny("wrong canonical operation");
   const {branch,path,content}=record.request.arguments;
   const bytes=Buffer.from(content,"utf8");
-  if(branch!==this.#branch||branch==="main"||
+  if(branch!==this.#branch||branch===this.#client.baseBranch||
      path.length>512||path.startsWith("/")||
      path.split("/").some(x=>!x||x==="."||x===".."||
        x.includes("%")||x.includes("\\"))||

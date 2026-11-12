@@ -12,6 +12,7 @@ export interface UnapprovedAuthorityProposal {
  proposal:{schema_version:string;session_id:string;
   repository:TrustedPlanningSnapshot['repository'];branch:string;
   base_revision:string;requirement:string;
+  project_profile_sha256?:string;
   requested_permissions:{resource:string;operation:string}[]};
  assumptions:string[];uncertainties:string[];digest:string;verified_source_reads:number;
 }
@@ -27,7 +28,7 @@ export const AUTHORITY_ONLY_PLANNING_INSTRUCTIONS=[
  'Request minimal scope. The Engineer may remove permission pairs. This output grants nothing.',
  'No fixed Task order is required. Future execution and recovery are separate from this proposal.',
  'Behaviour changes need tests written for them: also request create_file (new files) or read_file+update_file (existing files) for the project test sources that will verify the new behaviour, inside the existing test directories of the snapshot. A Test specialist will read the changed application files before writing them.',
- 'The owner-fixed execution workflow edits ONLY the trusted work branch: it first creates that branch from main, runs the project tests on it, and opens a Draft PR only after the tests pass. For a requirement that changes repository files, therefore ALSO request exactly one create_branch (repository), one run_tests (branch) and one create_pull_request (repository). The Engineer may still remove them.',
+ 'The owner-fixed execution workflow edits ONLY the trusted work branch: it first creates that branch from the repository base branch, runs the project tests on it, and opens a Draft PR only after the tests pass. For a requirement that changes repository files, therefore ALSO request exactly one create_branch (repository), one run_tests (branch) and one create_pull_request (repository). The Engineer may still remove them.',
  'Stop exploration before exhausting the model budget and reserve a final turn for JSON.'
 ].join('\n');
 function deny(s:string):never {throw Error('Authority-only Planning proposal: '+s);}
@@ -42,7 +43,9 @@ function notes(v:unknown):string[]{
  return [...v];
 }
 export function compileAuthorityOnlyPlanningProposal(raw:unknown,cfg:{
- snapshot:TrustedPlanningSnapshot;requirement:string;workBranch:string
+ snapshot:TrustedPlanningSnapshot;requirement:string;workBranch:string;
+ /** Owner-supplied digest of the Engineer's project profile (never model data). */
+ projectProfileSha256?:string
 }):UnapprovedAuthorityProposal {
  const v=exact(raw,['requested_permissions','assumptions','uncertainties']);
  if(!Array.isArray(v.requested_permissions)||v.requested_permissions.length<1||
@@ -78,6 +81,7 @@ export function compileAuthorityOnlyPlanningProposal(raw:unknown,cfg:{
  const proposal={schema_version:'1.0.0',session_id:cfg.snapshot.session_id,
   repository:structuredClone(cfg.snapshot.repository),branch:cfg.workBranch,
   base_revision:cfg.snapshot.base_revision,requirement:cfg.requirement,
+  ...(cfg.projectProfileSha256!==undefined?{project_profile_sha256:cfg.projectProfileSha256}:{}),
   requested_permissions:requested};
  validateAuthorityProposal(proposal,{allowedOperations:new Set(RUST_OPERATIONS)});
  return {status:'unapproved_authority_proposal',proposal,

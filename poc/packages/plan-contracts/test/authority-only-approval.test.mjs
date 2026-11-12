@@ -199,3 +199,21 @@ test("R1 an already authenticated grant expires before any later execution prefl
   allowedOperations,nowMs:Date.parse("2026-11-05T08:00:00Z")
  }),/expired/);
 });
+
+test("the project profile digest is carried from the proposal into the signed grant", async () => {
+  const {selectAuthorityOnlyGrant, authorityOnlyDigest, validateAuthorityProposal} =
+    await import("../src/authority-only-approval.mjs");
+  const repository = {authority: "gitea.local", owner: "thesis", repository: "iam-console-poc"};
+  const base = {schema_version: "1.0.0", session_id: "s-profile", repository,
+    branch: "feature/s-profile", base_revision: "a".repeat(40), requirement: "Add a feature",
+    requested_permissions: [{operation: "create_branch", resource: "gitea://gitea.local/thesis/iam-console-poc"}]};
+  const withProfile = sha => ({...base, project_profile_sha256: sha});
+  const g1 = selectAuthorityOnlyGrant(withProfile("1".repeat(64)), base.requested_permissions, {allowedOperations});
+  const g2 = selectAuthorityOnlyGrant(withProfile("2".repeat(64)), base.requested_permissions, {allowedOperations});
+  assert.equal(g1.project_profile_sha256, "1".repeat(64));
+  assert.notEqual(authorityOnlyDigest(g1, {allowedOperations}), authorityOnlyDigest(g2, {allowedOperations}),
+    "signing a different test profile is a different Engineer decision");
+  assert.throws(() => validateAuthorityProposal(withProfile("not-a-digest"), {allowedOperations}), /project profile/u);
+  assert.equal(Object.hasOwn(selectAuthorityOnlyGrant(base, base.requested_permissions, {allowedOperations}),
+    "project_profile_sha256"), false);
+});

@@ -7,22 +7,44 @@
  * These parameters are later published to OPA as a data document; the
  * Rego rules that consume them are a separate, reviewed artifact.
  */
+import {validateProjectProfile, IAM_CONSOLE_PROJECT_PROFILE}
+  from "../../packages/plan-contracts/src/project-profile.mjs";
+
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u;
 const PREFIX = /^[a-z0-9][a-z0-9._-]{0,30}\/$/u;
-const PROFILE = /^[a-z0-9][a-z0-9-]{0,40}$/u;
+/** Label of the Runner contract shared by agents, OPA and Gateway. The
+ * actual commands are in the Engineer's project profile (bound by digest). */
+export const RUNNER_CONTRACT_LABEL = "poc-default";
+export const POLICY_VERSION = 2;
+/** Example repository of the thesis: its known test setup. */
+export const EXAMPLE_REPOSITORY = "iam-console-poc";
+/** Starting point for any other repository: a plain npm project. The
+ * Engineer reviews and adapts it before Planning (it is part of what they sign). */
+export const NPM_PROJECT_PROFILE_TEMPLATE = validateProjectProfile({
+  version: 1,
+  image: "node:22.15.0-bookworm",
+  phases: [{name: "dependency_install", command: "npm ci"},
+    {name: "tests", command: "npm test"}],
+  test_sources: {roots: ["test", "tests"], suffixes: [".test.js", ".test.ts", ".spec.js", ".spec.ts"]}
+});
+const plainProfile = profile => JSON.parse(JSON.stringify(profile));
+export function defaultProjectProfile(repository) {
+  return plainProfile(repository.name === EXAMPLE_REPOSITORY
+    ? IAM_CONSOLE_PROJECT_PROFILE : NPM_PROJECT_PROFILE_TEMPLATE);
+}
 
 export const DEFAULT_FORBIDDEN_PATHS = Object.freeze([".github/", "security/"]);
 export const SUPPORTED_WORK_BRANCH_PREFIX = "feature/";
 
 export function defaultPolicy(repository) {
   return {
-    version: 1,
+    version: POLICY_VERSION,
     repository: {owner: repository.owner, name: repository.name},
     base_branch: repository.default_branch,
     protected_branches: [repository.default_branch],
     work_branch_prefix: SUPPORTED_WORK_BRANCH_PREFIX,
     forbidden_path_prefixes: [...DEFAULT_FORBIDDEN_PATHS],
-    runner_profile: "poc-default",
+    project_profile: defaultProjectProfile(repository),
     allow_pull_request: true,
     agents_may_merge: false
   };
@@ -43,13 +65,19 @@ function safePathPrefix(value) {
 
 /** Strict validation: unknown fields and weakening of fixed rules are refused. */
 export function validatePolicy(raw, repository) {
+  // Version 1 had only a profile label: migrate it to the repository's
+  // default project profile (same commands the Runner always ran).
+  if (raw && typeof raw === "object" && raw.version === 1 && raw.runner_profile === RUNNER_CONTRACT_LABEL) {
+    const {runner_profile: _label, ...rest} = raw;
+    raw = {...rest, version: POLICY_VERSION, project_profile: defaultProjectProfile(repository)};
+  }
   const allowed = ["version", "repository", "base_branch", "protected_branches",
-    "work_branch_prefix", "forbidden_path_prefixes", "runner_profile",
+    "work_branch_prefix", "forbidden_path_prefixes", "project_profile",
     "allow_pull_request", "agents_may_merge"];
   if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
       Object.keys(raw).some(k => !allowed.includes(k)))
     throw Error("Policy contains unknown fields");
-  if (raw.version !== 1) throw Error("Unsupported policy version");
+  if (raw.version !== POLICY_VERSION) throw Error("Unsupported policy version");
   if (raw.repository?.owner !== repository.owner || raw.repository?.name !== repository.name)
     throw Error("Policy belongs to another repository");
   if (raw.base_branch !== repository.default_branch)
@@ -69,18 +97,19 @@ export function validatePolicy(raw, repository) {
   if (!Array.isArray(raw.forbidden_path_prefixes) || raw.forbidden_path_prefixes.length > 32 ||
       !raw.forbidden_path_prefixes.every(safePathPrefix))
     throw Error("Forbidden paths must be relative repository paths");
-  if (typeof raw.runner_profile !== "string" || !PROFILE.test(raw.runner_profile))
-    throw Error("Invalid runner profile");
+  let projectProfile;
+  try { projectProfile = validateProjectProfile(raw.project_profile); }
+  catch (error) { throw Error(error.message.replace("Invalid project profile", "Profilo di test non valido")); }
   if (typeof raw.allow_pull_request !== "boolean") throw Error("allow_pull_request must be boolean");
   if (raw.agents_may_merge !== false) throw Error("Agents can never merge");
   return {
-    version: 1,
+    version: POLICY_VERSION,
     repository: {owner: repository.owner, name: repository.name},
     base_branch: raw.base_branch,
     protected_branches: [...raw.protected_branches],
     work_branch_prefix: raw.work_branch_prefix,
     forbidden_path_prefixes: [...raw.forbidden_path_prefixes],
-    runner_profile: raw.runner_profile,
+    project_profile: plainProfile(projectProfile),
     allow_pull_request: raw.allow_pull_request,
     agents_may_merge: false
   };
@@ -99,7 +128,7 @@ export function toOpaRepositoryConfig(policy) {
     protected_branches: [...policy.protected_branches],
     work_branch_prefix: policy.work_branch_prefix,
     forbidden_path_prefixes: [...policy.forbidden_path_prefixes],
-    runner_profile: policy.runner_profile,
+    runner_profile: RUNNER_CONTRACT_LABEL,
     allow_pull_request: policy.allow_pull_request
   };
 }

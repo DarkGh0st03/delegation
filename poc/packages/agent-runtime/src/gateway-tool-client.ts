@@ -28,6 +28,8 @@ export interface TrustedEffectStagingPort {
   /** Owner-only independent native evidence confirmation, never model data. */
   attest?(requestId:string,tool:"read_file"|"update_file"):Promise<void>;
   reportNoChange?(requestId:string):Promise<void>;
+  /** Test-source rule of the project profile, from the owner Task registry. */
+  readonly projectTestSourceProfile?:unknown;
   /** read_then_update only: number of signed reads before the single update,
    * as fixed by the owner's durable effect manifest (never model data). */
   readonly plannedReads?:number;
@@ -151,7 +153,8 @@ export class GatewayControlledToolClient {
     // independently bound to the signed Task by Gateway/Rust/OPA.
     const nativeCreateRoleAllowed=this.#agentRole==="backend"||
       this.#agentRole==="frontend"||
-      (this.#agentRole==="test"&&isProjectTestSource(args.path));
+      (this.#agentRole==="test"&&isProjectTestSource(args.path,
+        this.#trustedEffectStager?.projectTestSourceProfile));
     if(this.#trustedEffectStager?.stagedTool==="read_then_update"&&
        tool!=="read_file"&&tool!=="update_file")
       throw new ControlledToolError("authorization_denied",

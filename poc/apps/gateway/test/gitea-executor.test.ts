@@ -5,6 +5,8 @@ import type { GiteaClient } from "../src/gitea-client.ts";
 import { GiteaExecutor } from "../src/gitea-executor.ts";
 import { RunnerClient } from "../src/runner-client.ts";
 import type { NormalizedToolRequest, PreparedRequestRecord } from "../src/types.ts";
+import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 
 function record(request: NormalizedToolRequest): PreparedRequestRecord {
   return {
@@ -285,7 +287,7 @@ test("Gitea executor resolves the exact feature-branch SHA before invoking the C
         repository: "gitea://gitea.local/thesis/iam-console-poc",
         branch: "feature/account-suspension",
         tested_commit_sha: "c".repeat(40),
-        runner_profile: "poc-default",
+        runner_profile: "poc-default",project_profile_sha256:PROFILE_SHA,
         status: "pass",
         phases: [
           { phase: "dependency_install", status: "pass" },
@@ -343,7 +345,7 @@ test("Runner to GiteaExecutor preserves only bounded typecheck codes on pinned S
   } as unknown as GiteaClient;
   // Use the real RunnerClient decoder rather than an unsanitized mocked
   // RunnerClient, so this covers the actual transport and Gateway boundary.
-  const runner=new RunnerClient({
+  const runner=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
     fetchFn:async(_url,init)=>{
       invoked++;
@@ -353,7 +355,7 @@ test("Runner to GiteaExecutor preserves only bounded typecheck codes on pinned S
       return new Response(JSON.stringify({
         request_id:"req-fixed",repository:body.repository,
         branch:body.branch,tested_commit_sha:sha,
-        runner_profile:"poc-default",status:"fail",
+        runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
         phases:[{phase:"dependency_install",status:"pass"},
           {phase:"typecheck",status:"fail"}],
         typecheck_error_codes:["TS2304","TS2688"],
@@ -413,7 +415,7 @@ test("real Gitea executor allows only the signed Gateway-approved feature branch
    async run(request:unknown){
      calls.push(request);
      return {request_id:"req-fixed",branch:desired,tested_commit_sha:"b".repeat(40),
-       runner_profile:"poc-default",status:"pass",phases:[],
+       runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"pass",phases:[],
        project_tests:{status:"pass",phases:[]},
        researcher_acceptance:{phase:"researcher_acceptance",status:"pass"}};
    }
@@ -469,7 +471,7 @@ test("unbound legacy requests cannot choose another feature branch even with val
 
 // The real transport decoder must retain safe failure locations through the
 // provider boundary, without interpreting them as new signed Task grants.
-test("Project-test diagnostics survive real RunnerClient and GiteaExecutor only for the matching first failed phase",async()=>{
+test("Project-test diagnostics survive real RunnerClient and GiteaExecutor only for a failed test phase of the profile",async()=>{
   const sha="e".repeat(40),secret="PRIVATE_ASSERTION_AND_SOURCE";
   const client={async getBranchMetadata(){return {commit_sha:sha};}} as unknown as GiteaClient;
   const e2e={locations:[{check_id:"baseline_user_profile",line:8,column:55}],
@@ -478,12 +480,12 @@ test("Project-test diagnostics survive real RunnerClient and GiteaExecutor only 
     const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
       "build","playwright_e2e","researcher_acceptance"];
     const index=phases.indexOf(failed);
-    const runner=new RunnerClient({baseUrl:"http://runner.internal:8095",
+    const runner=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,baseUrl:"http://runner.internal:8095",
       gatewayToken:"private-token",fetchFn:async(_url,init)=>{
         const body=JSON.parse(String(init?.body));
         return new Response(JSON.stringify({
           request_id:body.request_id,repository:body.repository,branch:body.branch,
-          tested_commit_sha:sha,runner_profile:"poc-default",status:"fail",
+          tested_commit_sha:sha,runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
           phases:phases.map((phase,i)=>({phase,status:i<index?"pass":i===index?"fail":"skipped"})),
           failing_test_files:["tests/backend/users.test.ts","tests/frontend/access.test.tsx",
             "../private/password.test.ts","tests/backend/users.test.ts",
@@ -498,9 +500,10 @@ test("Project-test diagnostics survive real RunnerClient and GiteaExecutor only 
     assert.equal(result.tool,"run_tests");
     if(result.tool!=="run_tests")throw Error("Unexpected provider result");
     assert.equal(result.tested_commit_sha,sha);
-    assert.deepEqual(result.failing_test_files,failed==="backend_tests"
-      ?["tests/backend/users.test.ts"]:failed==="frontend_tests"
-        ?["tests/frontend/access.test.tsx"]:undefined);
+    // Failing files come only with a profile phase that reports Vitest
+    // failures, and only as test sources of the approved profile.
+    assert.deepEqual(result.failing_test_files,failed==="backend_tests"||failed==="frontend_tests"
+      ?["tests/backend/users.test.ts","tests/frontend/access.test.tsx"]:undefined);
     assert.deepEqual(result.project_e2e_failure,failed==="playwright_e2e"?e2e:undefined);
     assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION|password/);
   }

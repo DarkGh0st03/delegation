@@ -7,6 +7,8 @@ import {RunnerClient} from "../src/runner-client.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
 import {DurableAuthorityOnlyRunnerIntentJournal}
  from "../src/trusted-authority-only-runner-intent-journal.ts";
+import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 import {TrustedGatewayRunnerFailEvidencePublisher,
  AuthenticatedRunnerFailureObserver}
  from "../src/trusted-authority-only-runner-failure-evidence.ts";
@@ -35,7 +37,7 @@ function failure(){
  const states=phases.map((phase,i)=>({phase,status:i<1?"pass":i===1?"fail":"skipped"}));
  return {
   request_id:request.request_id,repository:request.repository,branch,
-  tested_commit_sha:sha,runner_profile:"poc-default",status:"fail",
+  tested_commit_sha:sha,runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
   phases:states,project_tests:{status:"fail",phases:states.slice(0,6)},
   researcher_acceptance:states[6],
   log_reference:"runner-log://12345678-1234-1234-1234-123456789abc"
@@ -62,11 +64,11 @@ async function fixture(action:(p:{
    return new Response(JSON.stringify({name:branch,commit:{id:head}}));
   }) as typeof fetch
  });
- const runner=new RunnerClient({
+ const runner=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
   baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner",
   fetchFn:(async(_url:URL|string,init?:RequestInit)=>{
    assert.equal(init?.method,"POST");
-   assert.deepEqual(JSON.parse(String(init?.body)),request);
+   assert.deepEqual(JSON.parse(String(init?.body)),{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
    return new Response(JSON.stringify(body),{status:200});
   }) as typeof fetch
  });
@@ -189,7 +191,7 @@ test("R377.5 authenticated Backend FAIL binds the sanitized Vitest paths",async(
  const path="tests/backend/account.test.ts";
  const body={...failure(),phases:states,
   project_tests:{status:"fail",phases:states.slice(0,6)},researcher_acceptance:states[6],
-  failing_test_files:[path,"tests/frontend/foreign.test.tsx","private assertion"]};
+  failing_test_files:[path,"src/outside-profile.test.ts","private assertion"]};
  await fixture(async({publisher,observer,runner,directory})=>{
   const result=await runner.run(request);
   await publisher.publish(intent,binding,request,result,"opa-r3775");

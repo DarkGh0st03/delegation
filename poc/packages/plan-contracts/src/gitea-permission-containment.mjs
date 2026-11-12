@@ -9,7 +9,9 @@
 const SCOPED_OPS=new Set(["read_file","update_file","create_file","list_directory"]);
 const SEG=/^[A-Za-z0-9_@.-]+$/u;
 const HOST=/^[a-z0-9][a-z0-9.-]*$/u;
-const BRANCH=/^(?:main|feature\/[a-z0-9][a-z0-9./_-]*)$/u;
+// The repository base branch (any safe name, e.g. main or master) or an
+// agents' work branch (strict feature/ form).
+const BRANCH=/^(?:(?!feature\/)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}|feature\/[a-z0-9][a-z0-9./_-]*)$/u;
 
 function scope(resource) {
  if(typeof resource!=="string"||resource.length>1024||

@@ -16,7 +16,7 @@ import {assertTrustedOriginalScopedEffectDirectory,
  from "./trusted-effect-staging-scoped-linux.ts";
 import {TrustedEffectStagingTaskRegistry,
  type TrustedEffectTaskOwnerPins} from "./trusted-effect-staging-task-registry.ts";
-import {isProjectTestSource,MAX_TASK_READS}
+import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import type {TrustedEffectStagingPort} from "./gateway-tool-client.ts";
 
@@ -246,7 +246,7 @@ class PrivateClient{
 type PublicPins=Omit<TrustedEffectTaskOwnerPins,"effectStager">;
 const pinFields="branch,childCredentialId,operation,path,planTaskId,presenterId,role,runtimeTaskId";
 const noPathFields="branch,childCredentialId,operation,planTaskId,presenterId,role,runtimeTaskId";
-function validPins(value:unknown,expectedRole?:Role):value is PublicPins{
+function validPins(value:unknown,expectedRole:Role|undefined,testSources:unknown):value is PublicPins{
  const v=record(value);
  if(!v||![pinFields,noPathFields].includes(Object.keys(v).sort().join(","))||
     typeof v.runtimeTaskId!=="string"||!DISPATCH.test(v.runtimeTaskId)||
@@ -259,7 +259,7 @@ function validPins(value:unknown,expectedRole?:Role):value is PublicPins{
        v.role!==expectedRole)||
     !["read_file","update_file","create_file","run_tests","read_then_update"].includes(v.operation as string)||
      (v.operation==="create_file"&&v.role==="test"&&
-       (typeof v.path!=="string"||!isProjectTestSource(v.path))))
+       (typeof v.path!=="string"||!isProjectTestSource(v.path,testSources))))
   return false;
  return v.operation==="run_tests" ? !("path" in v)
   :typeof v.path==="string";
@@ -475,7 +475,7 @@ export async function createTrustedEffectAgentBindingServer(config:{
   handle:async body=>{
    const v=record(body);
    if(!v)deny("invalid Task binding envelope");
-   if(exactKeys(v,"action,pins")&&v.action==="bind"&&validPins(v.pins,config.expectedRole)){
+   if(exactKeys(v,"action,pins")&&v.action==="bind"&&validPins(v.pins,config.expectedRole,config.registry.projectTestSourceProfile)){
     const pins=v.pins;
     if(config.expectedRole!==undefined&&pins.role!==config.expectedRole)
      deny("owner Task role differs from local Agent host role");
@@ -524,8 +524,13 @@ export async function createTrustedEffectAgentBindingServer(config:{
 }
 export async function connectTrustedEffectAgentBindingClient(
  config:{socketPath:string;secretFile:string;expectedRole?:Role;
-  originalScopedEffectRole?:TrustedOriginalScopedEffectRole}
+  originalScopedEffectRole?:TrustedOriginalScopedEffectRole;
+  /** Test-source rule of the project profile (default: example repository). */
+  projectTestSourceProfile?:unknown}
 ){
+ const testSources=config.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+ if(!isTrustedProjectTestSourceProfile(testSources))
+  deny("project test-source profile must come from a trusted project profile");
  if(config.originalScopedEffectRole&&
     config.expectedRole!==config.originalScopedEffectRole.role)
   deny("owner bind role differs from cross-UID IPC scope");
@@ -534,7 +539,7 @@ export async function connectTrustedEffectAgentBindingClient(
  const channel=await PrivateClient.connect("bind",config);
  return Object.freeze({
   async bindTask(pins:PublicPins):Promise<void>{
-   if(!validPins(pins,config.expectedRole))
+   if(!validPins(pins,config.expectedRole,testSources))
     deny("malformed owner Task pins");
    if(config.expectedRole!==undefined&&pins.role!==config.expectedRole)
     deny("wrong-role owner Task pins");

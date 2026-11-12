@@ -3,6 +3,7 @@
  * durable, independently verified native Runner FAIL. This is not a
  * recovery admission, a new child grant or a successful Test Task.
  */
+import {isRunnerPhaseName} from "../../plan-contracts/src/project-profile.mjs";
 import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {canonicalBranchUri,canonicalFileUri}
@@ -24,8 +25,9 @@ import type {DelegatedPermission} from "./delegated-permission.ts";
 
 type Role="backend"|"frontend"|"test";
 const SHA64=/^[a-f0-9]{64}$/u;
-const actionable=new Set(["typecheck","backend_tests","frontend_tests",
- "build","playwright_e2e","researcher_acceptance"]);
+// Any phase of the approved profile; the Gateway marks a failure of the
+// environment phase as not a repair candidate.
+const actionable={has:(phase:unknown)=>isRunnerPhaseName(phase)};
 const keys=["session_id","authority_digest","root_credential_id","task_id",
  "runtime_task_id","epoch","agent_did","credential_id",
  "request_id","request_fingerprint"] as const;
@@ -110,6 +112,9 @@ export async function observeTrustedNativeTestFailure(
     fail.tested_commit_sha!==intent.expected_head_sha||
     !SHA64.test(fail.evidence_sha256)||
     !actionable.has(fail.first_failed_phase)||
+    // A failure of the environment phase is not a code defect to repair.
+    !actionable.has(fail.environment_phase)||
+    fail.first_failed_phase===fail.environment_phase||
     fail.repair_candidate!==true||
     fail.recovery_authorized!==false||
     fail.gateway_task_completed!==false)

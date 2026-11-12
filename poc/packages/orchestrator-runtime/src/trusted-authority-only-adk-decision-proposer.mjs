@@ -2,6 +2,7 @@
  * authority or issues a Child DC. The original trusted Coordinator is the
  * sole register/validate boundary after this unsigned proposal.
  * No tools, URLs, keys, DIDs, receipts, or model-supplied session pins. */
+import {isRunnerPhaseName} from '../../plan-contracts/src/project-profile.mjs';
 import {sanitizeVitestFailureFiles} from '../../../apps/test-runner-controller/src/vitest-failure-files.ts';
 import {safeAcceptanceFailureSummary} from '../../../runner/acceptance/failure-catalog.mjs';
 import {BaseLlm,LlmAgent,Runner,InMemorySessionService} from '@google/adk';
@@ -154,8 +155,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    this.specialistNoChange=Object.freeze({...specialistNoChange});
   }
   if(verifiedFailureHistory!==undefined){
-   const phases=new Set(['typecheck','backend_tests','frontend_tests',
-    'build','playwright_e2e','researcher_acceptance']);
+   const phases={has:isRunnerPhaseName};
    if(decisionKind!=='adaptive'||!Array.isArray(verifiedFailureHistory)||
       !verifiedFailureHistory.length||
      verifiedFailureHistory.length>this.maxVerifiedFailures||
@@ -179,8 +179,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    this.verifiedFailureHistory=Object.freeze(structuredClone(verifiedFailureHistory));
   }
   if(verifiedFailure!==undefined){
-   const phases=new Set(['typecheck','backend_tests','frontend_tests',
-    'build','playwright_e2e','researcher_acceptance']);
+   const phases={has:isRunnerPhaseName};
    const base=['failed_phase','source_evidence_sha256'];
    const codes=verifiedFailure&&typeof verifiedFailure==='object'&&
     Object.hasOwn(verifiedFailure,'typecheck_error_codes');
@@ -196,9 +195,9 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
         exact(verifiedFailure,[...base,'failing_test_files']))||
       (Object.hasOwn(verifiedFailure,'failing_test_files')&&
        (decisionKind!=='adaptive'||!runnerGrant||
-        (phase!=='backend_tests'&&phase!=='frontend_tests')||
+        phase==='researcher_acceptance'||
         !Array.isArray(files)||!files.length||
-        JSON.stringify(sanitizeVitestFailureFiles(files,phase))!==JSON.stringify(files)||
+        JSON.stringify(sanitizeVitestFailureFiles(files))!==JSON.stringify(files)||
         files.some(path=>!roots.some(p=>giteaPermissionCovers(p,{
          resource:runnerGrant.resource+'/files/'+path.split('/').map(encodeURIComponent).join('/'),
          operation:'read_file'

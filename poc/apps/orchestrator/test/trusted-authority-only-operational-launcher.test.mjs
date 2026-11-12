@@ -139,10 +139,11 @@ test('R370 reject arbitrary Gateway signer/provider override before SDK startup'
  await assert.rejects(launch(cfg),/trusted owner, protected A2A and bounded adaptive model required/);
  assert.deepEqual(events,[]);
 });
-test('R370 reject PR without exact Engineer grant, private native callbacks or main base',async()=>{
+test('R370 reject PR without exact Engineer grant, private native callbacks or a safe base branch',async()=>{
  for(const mutate of [
   x=>{x.permission.operation='update_file';},
-  x=>{x.baseBranch='evil-base';},
+  x=>{x.baseBranch='feature/evil-base';},
+  x=>{x.baseBranch='../main';},
   x=>{delete x.prepare;},
   x=>{x.execute=null;},
   x=>{x.title=' ';},
@@ -276,9 +277,10 @@ test('R371 cannot launch SDK or workers when original Branch GET has not atteste
   /branch not independently attested/);
  assert.deepEqual(events,['branch-proposal']);
 });
-test('R371 deny wrong Branch permission or alternate base before private model',async()=>{
+test('R371 deny wrong Branch permission or a base inside the agents namespace before private model',async()=>{
  for(const mutate of [
-  b=>{b.baseBranch='development';},
+  b=>{b.baseBranch='feature/development';},
+  b=>{b.baseBranch='main/';},
   b=>{b.permission.operation='create_pull_request';},
   b=>{b.branch='feature/../main';},
   b=>{b.prepare=null;},

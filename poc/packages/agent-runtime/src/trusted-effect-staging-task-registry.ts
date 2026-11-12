@@ -1,4 +1,5 @@
-import {isProjectTestSource,MAX_TASK_READS} from "../../plan-contracts/src/gitea-permission-containment.mjs";
+import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
+ from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R320: trusted host-only, per-Task ADK/A2A -> Gateway effect binding.
  *
@@ -71,6 +72,15 @@ function readUpdateHints(hints:readonly {operation?:unknown;path?:unknown}[],
 export class TrustedEffectStagingTaskRegistry {
  readonly #entries=new Map<string,Entry>();
  #retired=false;
+ readonly #testSources:unknown;
+ /** Owner-provisioned: where the Test agent may write (project profile). */
+ constructor(opts:{projectTestSourceProfile?:unknown}={}){
+  const rule=opts.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+  if(!isTrustedProjectTestSourceProfile(rule))
+   deny("project test-source profile must come from a trusted project profile");
+  this.#testSources=rule;
+ }
+ get projectTestSourceProfile():unknown{return this.#testSources;}
 
  /** Only callable by privileged in-process owner assembly, not A2A. */
  bindTask(input:TrustedEffectTaskOwnerPins):void{
@@ -82,7 +92,7 @@ export class TrustedEffectStagingTaskRegistry {
      !["read_file","update_file","create_file","run_tests","read_then_update"].includes(input.operation)||
       (input.operation==="create_file"&&
        (input.effectStager.stagedTool!=="create_file"||
-        (input.role==="test"&&!isProjectTestSource(input.path))))||
+        (input.role==="test"&&!isProjectTestSource(input.path,this.#testSources))))||
      typeof input.effectStager?.stage!=="function"||
      (input.operation==="read_then_update"&&
       (input.effectStager.stagedTool!=="read_then_update"||
@@ -101,7 +111,7 @@ export class TrustedEffectStagingTaskRegistry {
   }
   if(input.role==="test"&&
      (input.operation==="update_file"||
-      (input.operation==="read_then_update"&&!isProjectTestSource(input.path))))
+      (input.operation==="read_then_update"&&!isProjectTestSource(input.path,this.#testSources))))
    deny("Test updates require an exact project test source read/update binding");
   if(this.#entries.has(input.runtimeTaskId)||
      [...this.#entries.values()].some(b=>
@@ -161,6 +171,7 @@ export class TrustedEffectStagingTaskRegistry {
   if(p.operation==="read_then_update")b.plannedReads=readUpdateHints(hints,p.path!)!;
   return Object.freeze({
    stagedTool:p.operation,
+   projectTestSourceProfile:this.#testSources,
    stage:async(requestId:string):Promise<unknown>=>{
     if(this.#retired||b.state!=="selected"||
        (p.operation!=="read_then_update"&&b.attempted))

@@ -1,4 +1,5 @@
-import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,readUpdateGrantShape,exactFilePath,isProjectTestCreateGrant,isProjectTestSource}
+import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,readUpdateGrantShape,exactFilePath,isProjectTestCreateGrant,isProjectTestSource,
+ isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R287 — opt-in, in-process Gateway admission of permission-only Engineer
@@ -111,6 +112,14 @@ function assertObservedCompletion(
   deny("independent completion evidence does not match protected Task flight");
 }
 export class TrustedAuthorityOnlyGatewayAdmissions {
+ /** Test-source rule of the repository's Engineer-approved project profile. */
+ readonly #testSources:unknown;
+ readonly #baseBranch:string;
+ get projectTestSourceProfile():unknown{
+  // An object that only borrows this prototype gets the default (most
+  // restrictive, example-repository) rule, never a wider one.
+  return #testSources in this?this.#testSources:IAM_CONSOLE_PROJECT_TEST_PROFILE;
+ }
  readonly #repository:GatewayRepositoryConfig;
  readonly #engineerDid:string;
  readonly #coordinator:TrustedAuthorityOnlyExecutionCoordinator;
@@ -179,6 +188,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   effectFenceJournal?:DurableAuthorityOnlyTaskFenceJournal;
   sequentialEffectJournal?:DurableAuthorityOnlySequentialEffectJournal;
   completionObserver?:TrustedAuthorityOnlyCompletionObserver;
+  /** Where the Test agent may write: the repository's project profile. */
+  projectTestSourceProfile?:unknown;
+  /** Repository base branch (branch creation source and PR target). */
+  baseBranch?:string;
   nowMs?:()=>number;
  }){
   if(!opts||
@@ -192,6 +205,15 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
        typeof opts.repository[k as keyof GatewayRepositoryConfig]==="string"&&
        !!opts.repository[k as keyof GatewayRepositoryConfig].trim()))
    deny("trusted Gateway admission dependencies missing");
+  const testSources=opts.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+  if(!isTrustedProjectTestSourceProfile(testSources))
+   deny("project test-source profile must come from a trusted project profile");
+  this.#testSources=testSources;
+  const baseBranch=opts.baseBranch??"main";
+  if(typeof baseBranch!=="string"||!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u.test(baseBranch)||
+     baseBranch.startsWith("feature/")||baseBranch.includes(".."))
+   deny("invalid repository base branch");
+  this.#baseBranch=baseBranch;
   this.#repository=structuredClone(opts.repository);
   this.#engineerDid=opts.engineerDid;
   this.#coordinator=opts.coordinator;
@@ -971,7 +993,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const shape=readUpdateGrantShape(permissions);
   if(!bound||!child||bound.row.task_id!==taskId||!shape||
      (!["backend","frontend"].includes(bound.row.agent_id)&&
-      !(bound.row.agent_id==="test"&&isProjectTestRepairGrant(bound.row.permissions)))||
+      !(bound.row.agent_id==="test"&&isProjectTestRepairGrant(bound.row.permissions,this.#testSources)))||
      bound.row.root_credential_id!==root.root_credential_id||
      bound.row.authority_digest!==root.authority_digest||
      child.agent_did!==bound.row.agent_did||
@@ -1661,12 +1683,12 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const {tool,arguments:args}=request.request;
   switch(tool){
    case "create_branch":
-    if(args.branch!==this.#branch||args.base_branch!=="main")
+    if(args.branch!==this.#branch||args.base_branch!==this.#baseBranch)
      deny("branch creation outside approved feature branch");
     this.#assertBranchPin(request.task_id);
     break;
    case "create_pull_request":
-    if(args.head_branch!==this.#branch||args.base_branch!=="main")
+    if(args.head_branch!==this.#branch||args.base_branch!==this.#baseBranch)
      deny("PR branch outside approved feature branch");
     this.#assertPullRequestPin(request.task_id);
     break;
@@ -1682,7 +1704,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const typed=this.#sequential.get(bound.row.task_id);
   if(typed?.writeFenced)deny("original mixed Task fenced before write");
   if(request.agent_role==="test"&&request.request.tool==="update_file"&&
-     (!typed?.manifest.effect_plan||!isProjectTestSource(request.request.arguments.path)))
+     (!typed?.manifest.effect_plan||!isProjectTestSource(request.request.arguments.path,this.#testSources)))
    deny("Test updates require an owner-pinned read/update Task for project test source");
   const readPin=this.#readPins.get(request.task_id);
   const nativeHead=typed?.manifest.effect_plan!==undefined&&
@@ -1930,7 +1952,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!bound||!child||!taskId||
      !(["backend","frontend"].includes(bound.row.agent_id)||
        (bound.row.agent_id==="test"&&
-        isProjectTestCreateGrant(bound.row.permissions)))||
+        isProjectTestCreateGrant(bound.row.permissions,this.#testSources)))||
      bound.row.agent_id!==record.agent_role||
      bound.row.permissions.length!==1||
      bound.row.permissions[0].operation!=="create_file"||
@@ -1999,7 +2021,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!bound||record.request.tool!=="create_file"||
      !(["backend","frontend"].includes(bound.row.agent_id)||
        (bound.row.agent_id==="test"&&
-        isProjectTestCreateGrant(bound.row.permissions)))||
+        isProjectTestCreateGrant(bound.row.permissions,this.#testSources)))||
      bound.row.permissions.length!==1||
      pair(bound.row.permissions[0])!==pair(record.required_permission)||
      record.required_permission.operation!=="create_file"||

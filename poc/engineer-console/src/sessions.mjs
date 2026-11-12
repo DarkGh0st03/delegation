@@ -13,6 +13,7 @@ import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, renameS
 import {join} from "node:path";
 import {readEnvFile} from "./env.mjs";
 import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../packages/plan-contracts/src/planning-limits.mjs";
+import {projectProfileDigest, testSourceProfileOf} from "../../packages/plan-contracts/src/project-profile.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
 import {preflightGemini, createSessionGeminiModels, GEMINI_WORKER_SETTINGS} from "./gemini-models.mjs";
@@ -200,7 +201,7 @@ export class EngineerSessions {
       throw Error("Il permesso create_branch non è stato approvato: senza branch di lavoro non si può eseguire");
     const scripted = FREE_MODES.has(session.mode);
     const reference = session.mode === "reference";
-    const plan = simulatedExecutionPlan(approved, session.id);
+    const plan = simulatedExecutionPlan(approved, session.id, testSourceProfileOf(session.project_profile));
     if (scripted && !plan.tasks.length)
       throw Error("Nessun file approvato con lettura e modifica: niente da eseguire");
 
@@ -247,6 +248,8 @@ export class EngineerSessions {
         workerTokens: Object.fromEntries(roles.map(role =>
           [role, secret(role + ".token", local[`ADAPTER_CALLER_${role.toUpperCase()}`])])),
         workerPorts, rootIndex: session.operational_status_index, childIndices,
+        projectProfile: session.project_profile,
+        baseBranch: session.base_branch ?? "main",
         // Paid runs may repair after up to two verified test failures (as in the
         // earlier real pilots); free runs stop at the first one.
         executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: scripted ? 1 : 2},
@@ -285,6 +288,10 @@ export class EngineerSessions {
 
     // The operational Root may not outlive the signed approval.
     const receipt = JSON.parse(readFileSync(join(live.dirs.approvals, session.id + ".json"), "utf8"));
+    // The Runner may execute only the test phases the Engineer signed.
+    if (receipt.authorization?.project_profile_sha256 !== session.project_profile_sha256 ||
+        projectProfileDigest(session.project_profile) !== session.project_profile_sha256)
+      throw Error("Il profilo di test non corrisponde a quello firmato dall'Engineer: ripeti il Planning");
     const validity = Math.floor((Date.parse(receipt.expires_at) - Date.now()) / 1000) - 120;
     if (!(validity >= 300)) throw Error("Approvazione firmata troppo vicina alla scadenza: ripeti il Planning");
     operational.rootReservation.validitySeconds = Math.min(validity, 7200);
@@ -490,11 +497,11 @@ export class EngineerSessions {
     }
     const {owner, name} = session.repository;
     const repo = await this.#gitea.repositoryDetail(name);
-    if (repo.default_branch !== "main")
-      throw Error(`Il branch principale di ${owner}/${name} è "${repo.default_branch}": ` +
-        "per ora il Planning supporta solo repository con branch principale \"main\"");
+    // The repository's base (default) branch: Planning reads it, the work
+    // branch starts from its pinned commit and the Draft PR targets it.
+    session.base_branch = repo.default_branch;
     if (repo.head_sha !== session.base_sha)
-      throw Error("Il branch main è cambiato dopo il salvataggio della richiesta: crea una nuova richiesta");
+      throw Error(`Il branch ${repo.default_branch} è cambiato dopo il salvataggio della richiesta: crea una nuova richiesta`);
 
     // 1. Repository policy (saved or default) must be enforced by OPA.
     const stored = this.#store.loadPolicy(owner, name);
@@ -513,6 +520,13 @@ export class EngineerSessions {
     }
     await this.#opa.publish(this.#store.listPolicies());
     this.#log(session, "Policy della repository applicata da OPA");
+    // The project profile (Runner image, test phases, test folders) is pinned
+    // to the session: its digest enters the proposal the Engineer signs.
+    session.project_profile = policy.project_profile;
+    session.project_profile_sha256 = projectProfileDigest(policy.project_profile);
+    this.#log(session, `Profilo di test della repository: ${policy.project_profile.phases.length} fasi ` +
+      `(${policy.project_profile.phases.map(p => p.name).join(", ")}), impronta ` +
+      session.project_profile_sha256.slice(0, 12));
 
     // 2. Trusted owner snapshot of every path at the pinned commit.
     const tree = await this.#gitea.repositoryTree(name, session.base_sha);
@@ -520,6 +534,7 @@ export class EngineerSessions {
       session_id: session.id,
       repository: {authority: AUTHORITY, owner, repository: name},
       base_revision: session.base_sha,
+      ...(session.base_branch && session.base_branch !== "main" ? {planning_branch: session.base_branch} : {}),
       hierarchical_preliminary_read: true,
       directories: tree.directories, files: tree.files
     };
@@ -542,7 +557,7 @@ export class EngineerSessions {
     };
     const revisions = new TrustedPlanningRevisions(new GiteaClient({
       baseUrl: this.#config.giteaUrl, token: giteaEnv.GITEA_GATEWAY_TOKEN,
-      owner, repository: name, timeoutMs: 30000}));
+      owner, repository: name, baseBranch: session.base_branch, timeoutMs: 30000}));
     const audit = {emit: event => {
       if (event.event !== "authorization_executed") return;
       session.gateway_decisions.push({at: event.timestamp, agent: event.agent_role,
@@ -606,10 +621,12 @@ export class EngineerSessions {
       this.#log(session, `Planner: Gemini (${geminiModelName()}), con limiti di chiamate e token per sessione`);
     } else if (session.mode === "reference") {
       model = new ScriptedPlannerModel({snapshotFiles: tree.files, requirement: session.requirement,
+        baseBranch: session.base_branch,
         referencePaths: Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES)});
       this.#log(session, "Planner: SOLUZIONE DI RIFERIMENTO (nessuna IA, nessun costo)");
     } else {
-      model = new ScriptedPlannerModel({snapshotFiles: tree.files, requirement: session.requirement});
+      model = new ScriptedPlannerModel({snapshotFiles: tree.files, requirement: session.requirement,
+        baseBranch: session.base_branch});
       this.#log(session, "Planner: SIMULATO (nessuna IA, nessun costo)");
     }
 
@@ -651,10 +668,13 @@ export class EngineerSessions {
         publicKeyPem: engineerPublicPem, privateKeyFile: engineerKeyFile,
         receiptDirectory: dirs.approvals,
         passwordSaltHex: userRecord.salt, passwordScryptHex: userRecord.hash},
-      planner: session.mode === "gemini"
+      planner: {...(session.mode === "gemini"
         ? {model, planId: session.id, maxModelTurns: 24, maxProposalRevisions: 2,
            thinkingLevel: "LOW", maxModelCallMs: 180000, maxOutputTokens: 12288, maxPlanningMs: 600000}
-        : {model, planId: session.id, maxModelTurns: 3, maxProposalRevisions: 0},
+        : {model, planId: session.id, maxModelTurns: 3, maxProposalRevisions: 0}),
+        projectProfileSha256: session.project_profile_sha256},
+      projectTestSourceProfile: testSourceProfileOf(session.project_profile),
+      baseBranch: session.base_branch,
       trustedAgentRegistry,
       credentials: this.#core.credentials,
       planningRevisions: revisions,

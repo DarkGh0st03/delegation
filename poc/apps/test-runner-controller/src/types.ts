@@ -1,22 +1,29 @@
 export const RUNNER_PROFILE = "poc-default" as const;
 export type RunnerProfile = typeof RUNNER_PROFILE;
 
+/** Engineer-approved project profile (see plan-contracts/project-profile.mjs). */
+export interface RunnerProjectProfile {
+  readonly version: 1;
+  readonly image: string;
+  readonly phases: readonly {readonly name: string; readonly command: string;
+    readonly failure_report?: "vitest"}[];
+  readonly test_sources: {readonly roots: readonly string[]; readonly suffixes: readonly string[]};
+}
+
 export interface RunnerRunRequest {
   request_id: string;
   repository: string;
   branch: string;
   commit_sha: string;
   profile: RunnerProfile;
+  /** Image and ordered test phases to run, fixed by the Engineer's profile. */
+  project_profile: RunnerProjectProfile;
+  /** SHA-256 of the canonical profile, as signed by the Engineer. */
+  project_profile_sha256: string;
 }
 
-export type RunnerPhaseName =
-  | "dependency_install"
-  | "typecheck"
-  | "backend_tests"
-  | "frontend_tests"
-  | "build"
-  | "playwright_e2e"
-  | "researcher_acceptance";
+/** A phase name of the project profile, or the historical researcher suite. */
+export type RunnerPhaseName = string;
 
 export interface RunnerPhaseResult {
   phase: RunnerPhaseName;
@@ -42,6 +49,8 @@ export interface RunnerRunResult {
   branch: string;
   tested_commit_sha: string;
   runner_profile: RunnerProfile;
+  /** Digest of the profile whose phases were run (echo of the request). */
+  project_profile_sha256: string;
   status: "pass" | "fail";
   phases: RunnerPhaseResult[];
   project_tests?: RunnerProjectTestsResult;
@@ -73,4 +82,7 @@ export interface RunnerContractConfig {
    * single fixed branch (one Runner serving per-session work branches).
    * The Gateway still binds every run_tests to the exact signed branch. */
   branch_prefix?: string;
+  /** Optional: accept every repository of one Gitea organization, e.g.
+   * "gitea://gitea.local/thesis/" (the Runner token is read-only). */
+  repository_prefix?: string;
 }

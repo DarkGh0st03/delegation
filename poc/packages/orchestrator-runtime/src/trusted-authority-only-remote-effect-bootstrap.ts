@@ -182,7 +182,8 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
      socketPath:ch.socketPath,secretFile:ch.secretFile,
      // Extra roles must match the owner-provisioned physical binder.
      // Without this pin the IPC validator deliberately admits only base roles.
-     ...(multi?{expectedRole:liveRoles[i]}:{})
+     ...(multi?{expectedRole:liveRoles[i]}:{}),
+     projectTestSourceProfile:opts.gateway.projectTestSourceProfile
     })
    ));
    const binders=multi

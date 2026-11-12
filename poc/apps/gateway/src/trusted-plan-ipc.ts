@@ -1,4 +1,5 @@
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
+import {isRunnerPhaseName} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * Separate-process approved-plan control over an owner-only Unix socket.
@@ -211,10 +212,9 @@ function validate(x:unknown):Command{
 
 /** Gateway-issued metadata only: no stdout/stderr, source, VP, DC or permission.
  * The allowlist protects both IPC serialization and the remote host client. */
-const FAILURE_PHASES=new Set([
-  "typecheck","backend_tests","frontend_tests","build",
-  "playwright_e2e","researcher_acceptance"
-]);
+/** A failed phase name of the approved project profile (the Gateway already
+ * refused to stage a repair for a failure of the environment phase). */
+const isFailurePhase=(phase:unknown)=>isRunnerPhaseName(phase);
 const FAILURE_KEYS=[
   "status","session_id","root_plan_digest","request_id","plan_task_id",
   "runtime_task_id","epoch_version","branch","tested_commit_sha",
@@ -241,7 +241,7 @@ function boundedTestFailure(
      !/^[A-Za-z0-9][A-Za-z0-9._/%-]*$/u.test(r.branch)||
      typeof r.tested_commit_sha!=="string"||!SHA.test(r.tested_commit_sha)||
      typeof r.first_failed_phase!=="string"||
-     !FAILURE_PHASES.has(r.first_failed_phase)||
+     !isFailurePhase(r.first_failed_phase)||
      !Array.isArray(r.typecheck_error_codes)||
      r.typecheck_error_codes.length>16||
      r.typecheck_error_codes.some(
@@ -255,7 +255,7 @@ function boundedTestFailure(
     fail("invalid Gateway acceptance failure receipt");
   const project=r.project_test_failure===undefined?undefined
     :safeProjectTestFailureDiagnostic(r.project_test_failure);
-  if(r.project_test_failure!==undefined&&(!project||!["backend_tests","frontend_tests"].includes(project.phase)||
+  if(r.project_test_failure!==undefined&&(!project||project.phase==="researcher_acceptance"||
      project.phase!==r.first_failed_phase||(r.typecheck_error_codes as string[]).length!==0))
     fail("invalid Gateway project-test failure receipt");
   return Object.freeze({

@@ -79,7 +79,22 @@
             <input name="work_branch_prefix" readonly></label>
           <label>Percorsi che gli agenti non possono modificare (uno per riga, es. <code>.github/</code>; la lettura resta consentita)
             <textarea name="forbidden_path_prefixes" rows="4"></textarea></label>
-          <label>Profilo dei test (Runner) <input name="runner_profile"></label>
+          <fieldset>
+            <legend>Profilo di test: che cosa significa «i test passano»</legend>
+            <p class="hint">Il Runner esegue queste fasi, in ordine, in un container Docker usa e getta
+              sul commit finale; la Draft PR si crea solo se passano tutte. La prima fase prepara
+              l'ambiente (es. installazione): un suo errore non viene fatto riparare agli agenti.
+              L'impronta del profilo entra nella firma dell'Engineer: gli agenti non possono cambiarlo.</p>
+            <label>Immagine Docker (con versione esplicita, es. <code>node:22.15.0-bookworm</code>)
+              <input name="profile_image"></label>
+            <label>Fasi (JSON: elenco di <code>{"name": ..., "command": ...}</code>;
+              <code>"failure_report": "vitest"</code> per avere i file di test falliti)
+              <textarea name="profile_phases" rows="8" spellcheck="false"></textarea></label>
+            <label>Cartelle dei test (una per riga): solo qui il Test agent può scrivere
+              <textarea name="profile_test_roots" rows="2"></textarea></label>
+            <label>Suffissi dei file di test (uno per riga, es. <code>.test.ts</code>)
+              <textarea name="profile_test_suffixes" rows="2"></textarea></label>
+          </fieldset>
           <label class="inline"><input type="checkbox" name="allow_pull_request"> Consenti la creazione di una Draft PR</label>
           <p class="hint">Fisso: gli agenti non possono mai fare merge. Il merge resta una decisione umana.</p>
           <button type="submit">Salva policy</button>
@@ -177,6 +192,9 @@
       <p><strong id="rv-repo"></strong> — branch di lavoro <code id="rv-branch"></code></p>
       <p class="hint" id="rv-simulated"></p>
       <p><strong id="rv-expiry"></strong></p>
+      <h3>Profilo di test che firmi</h3>
+      <p class="hint" id="rv-profile-summary"></p>
+      <ol id="rv-profile-phases"></ol>
       <h3>Ipotesi del Planner</h3><ul id="rv-assumptions"></ul>
       <h3>Incertezze</h3><ul id="rv-uncertainties"></ul>
       <h3>Permessi richiesti</h3>

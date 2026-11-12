@@ -94,7 +94,8 @@ export class TrustedAuthorityOnlyCreateEffectStager implements TrustedEffectStag
      record.request.tool!=="create_file"||
      !(["backend","frontend"].includes(record.agent_role)||
        (record.agent_role==="test"&&
-        isProjectTestCreateGrant([record.required_permission])))||
+        isProjectTestCreateGrant([record.required_permission],
+          this.#admissions.projectTestSourceProfile)))||
      record.consumed!==false||
      !Number.isSafeInteger(record.expires_at_ms)||
      record.expires_at_ms<=Date.now())

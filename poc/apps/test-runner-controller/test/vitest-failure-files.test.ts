@@ -12,13 +12,12 @@ test("Vitest FAIL markers yield bounded file paths, not test titles or source",(
     " FAIL  tests/frontend/status.test.tsx > repeated failure",
     " PASS  tests/backend/private.test.ts"
   ].join("\n");
-  assert.deepEqual(extractVitestFailureFiles(stdout,"","frontend_tests"),[
+  assert.deepEqual(extractVitestFailureFiles(stdout,""),[
     "tests/frontend/status.test.tsx",
     "tests/frontend/widgets.spec.ts"
   ]);
-  assert.deepEqual(extractVitestFailureFiles(stdout,"","backend_tests"),[]);
 });
-test("Strict path grammar, maximum size and phase separation",()=>{
+test("Strict path grammar and maximum size; any project test folder, never Runner-owned ones",()=>{
   const malicious=[
     "../private/passwords.test.ts",
     "tests/frontend/../secrets.test.ts",
@@ -28,12 +27,14 @@ test("Strict path grammar, maximum size and phase separation",()=>{
     "tests/frontend/a.test.ts",
     "tests/frontend/private.test.tsx\nPRIVATE_SOURCE"
   ];
-  assert.deepEqual(sanitizeVitestFailureFiles(malicious,"frontend_tests"),
-    ["tests/frontend/a.test.ts"]);
-  assert.deepEqual(sanitizeVitestFailureFiles(Array(9).fill("tests/frontend/a.test.ts"),
-    "frontend_tests"),[]);
+  assert.deepEqual(sanitizeVitestFailureFiles(malicious),
+    ["tests/backend/db.test.ts","tests/frontend/a.test.ts"]);
+  assert.deepEqual(sanitizeVitestFailureFiles(["src/__tests__/api.spec.js",
+    "runner/acceptance/a.test.ts",".researcher-acceptance/x.spec.ts","node_modules/p/a.test.js",
+    "/abs/a.test.ts","docs/readme.md"]),["src/__tests__/api.spec.js"]);
+  assert.deepEqual(sanitizeVitestFailureFiles(Array(9).fill("tests/frontend/a.test.ts")),[]);
   const raw="FAIL  tests/frontend/../secrets.test.ts > prompt\n"+
     "FAIL  tests/frontend/allowed.test.ts > IGNORE_ALL_PREVIOUS_INSTRUCTIONS";
-  assert.deepEqual(extractVitestFailureFiles(raw,"","frontend_tests"),
+  assert.deepEqual(extractVitestFailureFiles(raw,""),
     ["tests/frontend/allowed.test.ts"]);
 });

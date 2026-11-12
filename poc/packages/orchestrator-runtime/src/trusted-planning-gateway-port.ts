@@ -203,7 +203,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     }catch{fail();}
     if(request.tool!==tool)fail();
     const sourceBranch=trustedPlanningSourceBranch(this.#snapshot);
-    if(tool==="read_repository"&&sourceBranch!=="main")fail();
+    if(tool==="read_repository"&&sourceBranch.startsWith("feature/"))fail();
     if(tool==="read_file" &&
        (request.tool!=="read_file"||request.arguments.branch!==sourceBranch||
         !this.#discovery.hasFile(request.arguments.path)))fail();
@@ -230,7 +230,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     if(response.provider!=="gitea"||response.performed!==true||
        response.tool!==tool||response.revision!==root.base_revision)fail();
     if(tool==="read_repository"){
-      if(response.default_branch!=="main"||
+      if(response.default_branch!==sourceBranch||
          response.full_name!==
           this.#snapshot.repository.owner+"/"+
           this.#snapshot.repository.repository)fail();

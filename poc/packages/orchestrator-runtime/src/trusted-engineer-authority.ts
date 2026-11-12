@@ -131,10 +131,14 @@ function equality(a:unknown,b:unknown):boolean {
 
 export function trustedPlanningSourceBranch(
  snapshot:Pick<TrustedPlanningSnapshot,"planning_branch">):string{
+  // The repository base branch (any safe name, default "main") or a
+  // feature/ work branch of an earlier session.
   const branch=snapshot.planning_branch??"main";
   if(typeof branch!=="string"||
-     (branch!=="main"&&(!/^feature\/[a-z0-9][a-z0-9._/-]*$/u.test(branch)||
-      branch.endsWith("/")||branch.includes("..")||branch.includes("//"))))
+     !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u.test(branch)||
+     branch.endsWith("/")||branch.includes("..")||branch.includes("//")||
+     branch.endsWith(".lock")||
+     (branch.startsWith("feature/")&&!/^feature\/[a-z0-9][a-z0-9._/-]*$/u.test(branch)))
     fail("invalid trusted Planning source branch");
   return branch;
 }
@@ -163,7 +167,8 @@ export function preliminaryReadPermissions(
   // Reading the default repository metadata at an unrelated feature HEAD
   // cannot be revision pinned; feature snapshots authorize only exact
   // feature list/read operations, never an ambiguous main HEAD read.
-  const permissions:DelegatedPermission[]=sourceBranch==="main"?
+  // The base branch (not a feature/ snapshot) allows the repository read.
+  const permissions:DelegatedPermission[]=!sourceBranch.startsWith("feature/")?
     [{resource:canonicalRepositoryUri(repo),operation:"read_repository"}]:[];
   for(const dir of snapshot.directories) {
     path(dir,true);
@@ -230,7 +235,8 @@ function canonicalApprovedPermission(
   const sub=pos<0?"":tail.slice(pos);
   const branchUri=canonicalBranchUri(repository,branch);
   if(p.operation==="run_tests") {
-    if(p.resource!==branchUri || branch==="main")fail("invalid approved test execution branch");
+    // Tests run only on an agents' work branch, never on the base branch.
+    if(p.resource!==branchUri || !branch.startsWith("feature/"))fail("invalid approved test execution branch");
   }else if(p.operation==="list_directory" || p.operation==="read_file" ||
            p.operation==="update_file" || p.operation==="create_file") {
     const directory=p.operation==="list_directory";
@@ -245,8 +251,9 @@ function canonicalApprovedPermission(
       return dec;
     });
     if(!directory && !decoded.length)fail("empty file URI");
-    if(branch==="main" && p.operation!=="list_directory" &&
-       p.operation!=="read_file")fail("write to main not authorized");
+    // Writes only on an agents' feature/ work branch, never on the base branch.
+    if(!branch.startsWith("feature/") && p.operation!=="list_directory" &&
+       p.operation!=="read_file")fail("write outside the work branch not authorized");
     const expected=directory?
       canonicalDirectoryUri(repository,branch,decoded.join("/")):
       canonicalFileUri(repository,branch,decoded.join("/"));

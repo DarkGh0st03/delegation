@@ -3,13 +3,15 @@
 import {BaseLlm} from '@google/adk';
 import {TrustedAuthorityOnlyAdkDecisionProposer} from './trusted-authority-only-adk-decision-proposer.mjs';
 import {readUpdateGrantShape,readGrantsCoverPath} from '../../plan-contracts/src/gitea-permission-containment.mjs';
+import {isRunnerPhaseName} from '../../plan-contracts/src/project-profile.mjs';
 // An Engineer-signed source change may span several individually verified
 // file Tasks; each keeps its own native Child, same-file read/CAS journal and
 // exact original root permissions. At most 24 Child-consuming Tasks plus
 // one terminal (no-Child) decision; 25 is the hard owner-only turn ceiling.
 const deny=s=>{throw Error('Authority-only adaptive work loop: '+s);};
 const isFileSpecialist=role=>role!=='orchestrator'&&role!=='test';
-export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false}){
+export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false,
+ projectTestSourceProfile}){
  if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>25||
     !hooks||['readContext','beforeDecision','executeTask','confirmReady','retire']
      .some(k=>typeof hooks[k]!=='function')||
@@ -32,8 +34,11 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     if(!readGrantsCoverPath(completedGrants.get(o?.task_id),o?.path))
      deny('source observation is not bound to a signed read of a completed Task');
    await hooks.beforeDecision();
+   // The owner's test-source rule (project profile) is passed as a trusted
+   // object, never through the cloned, model-visible progress context.
    const decide=()=>new TrustedAuthorityOnlyAdkDecisionProposer({
-    ...before,model,decisionKind:'adaptive'
+    ...before,model,decisionKind:'adaptive',
+    ...(projectTestSourceProfile===undefined?{}:{projectTestSourceProfile})
    }).propose();
    const decision=await (hooks.runDecision?hooks.runDecision(decide):decide());
    signal?.throwIfAborted();
@@ -138,8 +143,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
        observed.gateway_task_completed!==false||
        observed.recovery_authorized!==false||
        observed.tested_commit_sha!==before.executionProgress?.current_head_sha||
-       !['typecheck','backend_tests','frontend_tests','build',
-         'playwright_e2e','researcher_acceptance'].includes(observed.failed_phase)||
+       !isRunnerPhaseName(observed.failed_phase)||
        !/^[a-f0-9]{64}$/u.test(observed.source_evidence_sha256))
      deny('Test failure is not independently verified by the original owner');
     const progress=await hooks.readContext();

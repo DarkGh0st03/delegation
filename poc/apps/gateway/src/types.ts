@@ -333,14 +333,8 @@ export interface GiteaCreatePullRequestExecutionResult {
 }
 
 export interface RunnerPhaseExecutionResult {
-  phase:
-    | "dependency_install"
-    | "typecheck"
-    | "backend_tests"
-    | "frontend_tests"
-    | "build"
-    | "playwright_e2e"
-    | "researcher_acceptance";
+  /** A phase of the Engineer-approved project profile, or researcher_acceptance. */
+  phase: string;
   status: "pass" | "fail" | "skipped";
   passed?: number;
   failed?: number;

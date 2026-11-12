@@ -39,6 +39,10 @@ function nonempty(value,max){
  *
  * draftPullRequest is OPTIONAL by design: readiness never auto-posts.
  */
+/** Repository base branch: a safe name outside the agents' feature/ space. */
+const safeBaseBranch=b=>typeof b==="string"&&/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u.test(b)&&
+ !b.startsWith("feature/")&&!b.includes("..")&&!b.includes("//")&&!b.endsWith("/");
+
 export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
  if(!exact(input,["execution","sdk","adaptive","draftPullRequest","createBranch"])||
     !input?.execution||!exact(input.sdk,
@@ -72,7 +76,7 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
      !nonempty(branch.branch,190)||
      !/^feature\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(branch.branch)||
      branch.branch.includes("..")||branch.branch.includes("//")||
-     branch.baseBranch!=="main"||
+     !safeBaseBranch(branch.baseBranch)||
      !exact(branch.permission,["resource","operation"])||
      branch.permission.operation!=="create_branch"||
      !nonempty(branch.permission.resource,1024)))
@@ -83,7 +87,8 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
     !pr.model||typeof pr.prepare!=="function"||
     typeof pr.execute!=="function"||
     !nonempty(pr.headBranch,190)||!pr.headBranch.startsWith("feature/")||
-    pr.baseBranch!=="main"||!nonempty(pr.title,150)||
+    !safeBaseBranch(pr.baseBranch)||
+    (branch!==undefined&&pr.baseBranch!==branch.baseBranch)||!nonempty(pr.title,150)||
     !nonempty(pr.body,4096)||
     !exact(pr.permission,["resource","operation"])||
     pr.permission.operation!=="create_pull_request"||
@@ -108,11 +113,11 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
      task.provider_executed!==false||
      task.gateway_execution_authorized!==false||
      !/^[a-f0-9]{40}$/u.test(task.base_revision))
-   deny("original root branch Task was not pinned to reviewed main");
+   deny("original root branch Task was not pinned to the reviewed base revision");
   const request=Object.freeze({
    task_id:runtimeTaskId,agent_role:"orchestrator",
    tool:"create_branch",
-   arguments:Object.freeze({branch:branch.branch,base_branch:"main"})
+   arguments:Object.freeze({branch:branch.branch,base_branch:branch.baseBranch})
   });
   const prepared=await branch.prepare(request);
   if(!prepared||typeof prepared!=="object"||
@@ -199,7 +204,7 @@ export async function runTrustedAuthorityOnlyOperationalWorkflow(input){
   task_id:runtimeTaskId,agent_role:"orchestrator",
   tool:"create_pull_request",
   arguments:Object.freeze({
-   head_branch:pr.headBranch,base_branch:"main",
+   head_branch:pr.headBranch,base_branch:pr.baseBranch,
    title:pr.title,body:pr.body
   })
  });

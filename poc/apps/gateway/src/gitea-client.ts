@@ -13,6 +13,9 @@ export interface GiteaClientConfig {
   token: string;
   owner: string;
   repository: string;
+  /** The repository's base (default) branch; owner-pinned, default "main".
+   * Agents never write it: they work only on feature/ branches. */
+  baseBranch?: string;
   timeoutMs?: number;
   fetchFn?: FetchLike;
 }
@@ -127,6 +130,7 @@ export class GiteaClient {
   readonly #token: string;
   readonly #owner: string;
   readonly #repository: string;
+  readonly #baseBranch: string;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
 
@@ -149,9 +153,18 @@ export class GiteaClient {
     this.#token = config.token;
     this.#owner = config.owner;
     this.#repository = config.repository;
+    const baseBranch = config.baseBranch ?? "main";
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u.test(baseBranch) || baseBranch.startsWith("feature/") ||
+        baseBranch.includes("..") || baseBranch.includes("//") || baseBranch.endsWith("/") ||
+        baseBranch.endsWith(".lock"))
+      throw new Error("Gitea base branch must be a safe branch name outside feature/");
+    this.#baseBranch = baseBranch;
     this.#timeoutMs = config.timeoutMs ?? 3_000;
     this.#fetch = config.fetchFn ?? fetch;
   }
+
+  /** Owner-pinned base branch of the repository. */
+  get baseBranch(): string { return this.#baseBranch; }
 
   #repoApi(suffix = ""): string {
     return `${this.#baseUrl}/api/v1/repos/${encodeURIComponent(this.#owner)}/${encodeURIComponent(this.#repository)}${suffix}`;
@@ -342,7 +355,7 @@ export class GiteaClient {
 
   /** Create only at the Engineer-pinned main revision, never a moving ref. */
   async createPinnedBranch(baseBranch:string,branch:string,expectedBaseSha:string):Promise<GiteaCreatedBranch>{
-    if(baseBranch!=="main"||!/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
+    if(baseBranch!==this.#baseBranch||!/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
        branch.includes("..")||branch.includes("//")||branch.endsWith(".lock")||
        branch.endsWith("/")||branch.endsWith(".")||branch.length>100||
        !/^[a-f0-9]{40}$/u.test(expectedBaseSha))
@@ -365,7 +378,7 @@ export class GiteaClient {
     return {name:branch,base_branch:baseBranch,base_revision:expectedBaseSha,commit_sha:expectedBaseSha};
   }
   async inspectPinnedBranch(baseBranch:string,branch:string,expectedBaseSha:string){
-    if(baseBranch!=="main"||!branch.startsWith("feature/")||!/^[a-f0-9]{40}$/u.test(expectedBaseSha))
+    if(baseBranch!==this.#baseBranch||!branch.startsWith("feature/")||!/^[a-f0-9]{40}$/u.test(expectedBaseSha))
       throw new ProviderUnavailableError("Invalid branch observation context");
     const base=await this.getBranchMetadata(baseBranch);
     const created=await this.getBranchMetadata(branch);
@@ -547,7 +560,7 @@ export class GiteaClient {
     if(!input||!Number.isSafeInteger(input.number)||input.number<1||
        !/^feature\/[A-Za-z0-9][A-Za-z0-9._/-]{0,180}$/u.test(input.headBranch)||
        input.headBranch.includes("..")||input.headBranch.includes("//")||
-       input.baseBranch!=="main"||
+       input.baseBranch!==this.#baseBranch||
        !/^[a-f0-9]{40}$/u.test(input.expectedHeadSha)||
        !/^[a-f0-9]{40}$/u.test(input.expectedBaseSha))
       throw new ProviderConflictError("Invalid exact Draft PR observation request");
@@ -641,7 +654,7 @@ export class GiteaClient {
   }>):Promise<GiteaHeadCasFileMutation>{
     const {branch,path,content,message,requestId,expectedHeadSha,
       expectedBlobSha}=input;
-    if(typeof branch!=="string"||branch==="main"||
+    if(typeof branch!=="string"||branch===this.#baseBranch||
        !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
        branch.includes("..")||branch.includes("//")||
        branch.startsWith("feature/r302-internal-")||
@@ -761,7 +774,7 @@ export class GiteaClient {
     if(!input||typeof input!=="object")throw new ProviderConflictError(
       "Original owner-pinned conditional Gitea create input required");
     const {branch,path,content,message,requestId,expectedHeadSha}=input;
-    if(typeof branch!=="string"||branch==="main"||
+    if(typeof branch!=="string"||branch===this.#baseBranch||
        !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
        branch.includes("..")||branch.includes("//")||
        branch.startsWith("feature/r302-internal-")||
@@ -888,7 +901,7 @@ export class GiteaClient {
       throw new ProviderConflictError("Original owner create observation pins required");
     const {branch,path,expectedHeadSha,createdCommitSha,
       createdBlobSha,expectedContentSha256,expectedContentBytes}=input;
-    if(typeof branch!=="string"||branch==="main"||
+    if(typeof branch!=="string"||branch===this.#baseBranch||
        !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
        branch.includes("..")||branch.includes("//")||
        branch.startsWith("feature/r302-internal-")||

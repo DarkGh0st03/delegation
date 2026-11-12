@@ -698,3 +698,18 @@ for(const mode of ['valid','closed','merged','not-draft','wrong-number','head-ra
   }else await assert.rejects(observe());
  });
 }
+
+test("the repository base branch is owner-pinned: branch creation and PR accept only that base", async () => {
+  const calls: string[] = [];
+  const client = new GiteaClient({baseUrl: "http://gitea.invalid", token: "t", owner: "thesis",
+    repository: "legacy-app", baseBranch: "master",
+    fetchFn: async (url) => { calls.push(String(url)); return new Response("{}", {status: 500}); }});
+  assert.equal(client.baseBranch, "master");
+  await assert.rejects(client.createPinnedBranch("main", "feature/s-1", "a".repeat(40)),
+    /Invalid pinned branch context/u);
+  assert.deepEqual(calls, [], "a foreign base is refused before any Gitea call");
+  for (const baseBranch of ["feature/x", "../main", "main/", "a//b"])
+    assert.throws(() => new GiteaClient({baseUrl: "http://g", token: "t", owner: "o", repository: "r", baseBranch}),
+      /safe branch name/u, baseBranch);
+  assert.equal(new GiteaClient({baseUrl: "http://g", token: "t", owner: "o", repository: "r"}).baseBranch, "main");
+});

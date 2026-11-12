@@ -37,6 +37,13 @@ function bindAddress(value: string): { host: string; port: number } {
   };
 }
 
+function repositoryPrefix(value: string): string {
+  if (!/^gitea:\/\/[a-z0-9.-]+\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}\/$/u.test(value)) {
+    throw new Error("TEST_RUNNER_REPOSITORY_PREFIX must look like 'gitea://host/org/'");
+  }
+  return value;
+}
+
 function branchPrefix(value: string): string {
   if (!/^[a-z0-9][a-z0-9._-]{0,30}\/$/u.test(value)) {
     throw new Error("TEST_RUNNER_BRANCH_PREFIX must look like 'feature/'");
@@ -58,15 +65,13 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
         process.env.TEST_RUNNER_BRANCH ??
         "feature/account-suspension",
       ...(process.env.TEST_RUNNER_BRANCH_PREFIX
-        ? {branch_prefix: branchPrefix(process.env.TEST_RUNNER_BRANCH_PREFIX)} : {})
+        ? {branch_prefix: branchPrefix(process.env.TEST_RUNNER_BRANCH_PREFIX)} : {}),
+      ...(process.env.TEST_RUNNER_REPOSITORY_PREFIX
+        ? {repository_prefix: repositoryPrefix(process.env.TEST_RUNNER_REPOSITORY_PREFIX)} : {})
     },
     execution: {
       gitea_base_url: required("GITEA_RUNNER_BASE_URL").replace(/\/$/u, ""),
-      gitea_owner: process.env.GITEA_OWNER ?? "thesis",
-      gitea_repository: process.env.GITEA_REPOSITORY ?? "iam-console-poc",
       gitea_token: required("GITEA_RUNNER_TOKEN"),
-      docker_image:
-        process.env.TEST_RUNNER_DOCKER_IMAGE ?? "node:22.15.0-bookworm",
       phase_timeout_ms: positiveInteger(
         process.env.TEST_RUNNER_PHASE_TIMEOUT_MS ?? "600000",
         "Runner phase timeout"

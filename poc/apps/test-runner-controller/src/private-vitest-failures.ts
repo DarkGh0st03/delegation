@@ -1,7 +1,7 @@
-import {sanitizeVitestFailureFiles,type VitestPhase} from "./vitest-failure-files.ts";
+import {sanitizeVitestFailureFiles} from "./vitest-failure-files.ts";
 /** Private diagnostics only. Test-controlled titles/messages are untrusted data,
  * never causal proof, signed grants, public telemetry or model instructions. */
-export function extractPrivateVitestFailures(raw:string,phase:VitestPhase){
+export function extractPrivateVitestFailures(raw:string){
  const empty={status:"unavailable" as const,failures:[]};
  if(Buffer.byteLength(raw,"utf8")>1024*1024)return empty;
  let report:any;try{report=JSON.parse(raw);}catch{return empty;}
@@ -10,7 +10,7 @@ export function extractPrivateVitestFailures(raw:string,phase:VitestPhase){
  for(const suite of report.testResults){
   if(typeof suite?.name!=="string"||!Array.isArray(suite.assertionResults))continue;
   const path=suite.name.startsWith("/workspace/")?suite.name.slice(11):suite.name;
-  if(sanitizeVitestFailureFiles([path],phase).length!==1)continue;
+  if(sanitizeVitestFailureFiles([path]).length!==1)continue;
   for(const assertion of suite.assertionResults.slice(0,1000)){
    if(assertion?.status!=="failed"||typeof assertion.fullName!=="string"||
       assertion.fullName.length>500||!Array.isArray(assertion.failureMessages))continue;

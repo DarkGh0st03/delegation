@@ -82,7 +82,7 @@ export class OrchestratorPlanningGatewayReadClient {
     if(normalized.request.tool!==tool ||
        (tool!=="read_repository"&&
          (normalized.request.arguments as {branch?:string}).branch!==this.#planningBranch)||
-       (tool==="read_repository"&&this.#planningBranch!=="main")) {
+       (tool==="read_repository"&&this.#planningBranch.startsWith("feature/"))) {
       throw new OrchestratorGatewayClientError(
         "Planning accepts only trusted snapshot source-branch reads");
     }

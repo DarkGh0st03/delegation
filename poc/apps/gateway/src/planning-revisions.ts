@@ -32,14 +32,15 @@ export interface TrustedPlanningRevision {
   readonly expires_at: string;
 }
 
-function planningRead(request: NormalizedToolRequest): boolean {
+function planningRead(request: NormalizedToolRequest, baseBranch: string): boolean {
   return request.tool === "read_repository" ||
     ((request.tool === "list_directory" || request.tool === "read_file") &&
-      request.arguments.branch === "main");
+      request.arguments.branch === baseBranch);
 }
 
 export class TrustedPlanningRevisions {
   readonly #client: Pick<GiteaClient, "readRepository">;
+  readonly #baseBranch: string;
   readonly #sessions = new Map<string, Session>();
   readonly #now: () => number;
   readonly #retirement?:TrustedPlanningRetirementStore;
@@ -50,6 +51,8 @@ export class TrustedPlanningRevisions {
       retirementStore?:TrustedPlanningRetirementStore } = {}
   ) {
     this.#client = authenticatedGiteaClient;
+    // Planning reads the base branch pinned on the owner's Gitea client.
+    this.#baseBranch = (authenticatedGiteaClient as {baseBranch?: string}).baseBranch ?? "main";
     this.#now = options.nowMs ?? Date.now;
     if(options.retirementStore!==undefined&&
        !(options.retirementStore instanceof TrustedPlanningRetirementStore))
@@ -89,10 +92,10 @@ export class TrustedPlanningRevisions {
           "Trusted Planning session retired before Gitea discovery");
       const repository = await this.#client.readRepository();
       const now = this.#now();
-      if (repository.default_branch !== "main" || !COMMIT_SHA.test(repository.revision)) {
+      if (repository.default_branch !== this.#baseBranch || !COMMIT_SHA.test(repository.revision)) {
         throw new GatewayError(
           503, "planning_revision_unavailable",
-          "Trusted Gitea Planning snapshot must identify main at a full SHA-1 commit"
+          "Trusted Gitea Planning snapshot must identify the base branch at a full SHA-1 commit"
         );
       }
       // A private retire may race the in-flight Gitea discovery. It must
@@ -153,11 +156,11 @@ export class TrustedPlanningRevisions {
   /** Invoked by Gateway prepare; binds immutable revision into the request record. */
   authorizePrepare(taskId: string, role: AgentRole, request: NormalizedToolRequest): string | undefined {
     const session = this.#sessions.get(taskId);
-    if (!session && !planningRead(request)) return undefined;
+    if (!session && !planningRead(request, this.#baseBranch)) return undefined;
 
     // A Planning session cannot be used as an operational Task, even if
     // a model somehow obtains an operational delegation.
-    if (session && (role !== "orchestrator" || !planningRead(request))) {
+    if (session && (role !== "orchestrator" || !planningRead(request, this.#baseBranch))) {
       throw new GatewayError(403, "planning_scope_denied", "Tool outside trusted Planning scope");
     }
     if (!session || role !== "orchestrator" || !session.active ||
@@ -174,7 +177,7 @@ export class TrustedPlanningRevisions {
     if (!session || !record.pinned_revision || !COMMIT_SHA.test(record.pinned_revision) ||
         session.baseRevision !== record.pinned_revision ||
         !session.active || this.#now() >= session.expiresAtMs ||
-        record.agent_role !== "orchestrator" || !planningRead(record.request)) {
+        record.agent_role !== "orchestrator" || !planningRead(record.request, this.#baseBranch)) {
       throw new GatewayError(403, "planning_revision_invalid", "Planning revision not active or mismatched");
     }
   }

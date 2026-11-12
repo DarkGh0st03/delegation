@@ -1,6 +1,7 @@
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
   type TypecheckLocation}
   from "../../../apps/test-runner-controller/src/typecheck-diagnostics.ts";
+import {isRunnerPhaseName} from "../../plan-contracts/src/project-profile.mjs";
 import {sanitizeVitestFailureFiles}
   from "../../../apps/test-runner-controller/src/vitest-failure-files.ts";
 
@@ -8,10 +9,10 @@ import {sanitizeVitestFailureFiles}
  * The Test Agent sees compiler locations only when the current signed Task
  * has an exact read_file grant for the path. Never return source/log text.
  */
-const PHASES=new Set([
-  "dependency_install","typecheck","backend_tests","frontend_tests",
-  "build","playwright_e2e","researcher_acceptance"
-]);
+const PHASES={has:(phase:unknown)=>isRunnerPhaseName(phase)};
+/** A failing project-test phase: any profile phase that is not the
+ * typecheck or the researcher suite (failing files come from its report). */
+const testPhase=(phase:string)=>phase!=="typecheck"&&phase!=="researcher_acceptance";
 export interface TypecheckScopeSummary {
   /** Only bounded counts of previously sanitized compiler locations. */
   parsed_locations:number;
@@ -63,10 +64,9 @@ export function safeRunnerFailureDetails(execution:unknown,
   const codes=failed.phase==="typecheck"
     ?sanitizeTypecheckErrorCodes(x.typecheck_error_codes):[];
   const reads=new Set(approvedReadPaths),writes=new Set(approvedWritePaths);
-  const vitestPhase=failed.phase==="frontend_tests"||failed.phase==="backend_tests"
-    ?failed.phase:null;
+  const vitestPhase=testPhase(failed.phase)?failed.phase:null;
   const failedFiles=vitestPhase
-    ?sanitizeVitestFailureFiles(x.failing_test_files,vitestPhase):[];
+    ?sanitizeVitestFailureFiles(x.failing_test_files):[];
   const scopedFiles=failedFiles.filter(p=>reads.has(p));
   const requiresNewApproval=(failed.phase==="typecheck"&&(
     x.repair_requires_new_approval===true||
@@ -98,16 +98,13 @@ export function safeRunnerFailedPhaseHint(value:unknown):SafeRunnerFailureHint|u
     ?sanitizeTypecheckLocations(x.typecheck_diagnostics):[];
   const codes=x.first_failed_phase==="typecheck"
     ?sanitizeTypecheckErrorCodes(x.typecheck_error_codes):[];
-  const failedFiles=(x.first_failed_phase==="frontend_tests"||
-    x.first_failed_phase==="backend_tests")
-    ?sanitizeVitestFailureFiles(x.failing_test_files,x.first_failed_phase):[];
+  const failedFiles=testPhase(x.first_failed_phase)
+    ?sanitizeVitestFailureFiles(x.failing_test_files):[];
   return {first_failed_phase:x.first_failed_phase,
     ...(locations.length?{typecheck_diagnostics:locations}:{}),
     ...(codes.length?{typecheck_error_codes:codes}:{}),
     ...(failedFiles.length?{failing_test_files:failedFiles}:{}),
-    ...((x.first_failed_phase==="typecheck"||
-          x.first_failed_phase==="frontend_tests"||
-          x.first_failed_phase==="backend_tests")&&
+    ...((x.first_failed_phase==="typecheck"||testPhase(x.first_failed_phase))&&
       x.repair_requires_new_approval===true
         ?{repair_requires_new_approval:true as const}:{}),
     ...(x.first_failed_phase==="typecheck"&&

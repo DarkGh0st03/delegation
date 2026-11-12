@@ -2,6 +2,10 @@ import {createHash} from "node:crypto";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import { ProviderUnavailableError } from "./errors.ts";
+import {validateProjectProfile,projectProfileDigest,isRunnerPhaseName,testSourceProfileOf}
+  from "../../../packages/plan-contracts/src/project-profile.mjs";
+import {isProjectTestSource} from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
+import type {RunnerProjectProfile} from "../../test-runner-controller/src/types.ts";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
   type TypecheckLocation}
   from "../../test-runner-controller/src/typecheck-diagnostics.ts";
@@ -17,6 +21,8 @@ export interface RunnerClientConfig {
   gatewayToken: string;
   timeoutMs?: number;
   fetchFn?: FetchLike;
+  /** Engineer-approved project profile of the session (owner-fixed). */
+  projectProfile: unknown;
 }
 
 export interface RunnerClientRequest {
@@ -33,6 +39,8 @@ export interface RunnerClientResult {
   branch: string;
   tested_commit_sha: string;
   runner_profile: "poc-default";
+  /** Digest of the Engineer-approved profile the Runner executed. */
+  project_profile_sha256: string;
   status: "pass" | "fail";
   phases: RunnerPhaseExecutionResult[];
   project_tests?: {
@@ -71,15 +79,6 @@ export function assertTrustedRunnerClientResult(
   throw new ProviderUnavailableError("Runner result lacks authenticated owner-bound request provenance");
 }
 
-const PHASES = new Set([
-  "dependency_install",
-  "typecheck",
-  "backend_tests",
-  "frontend_tests",
-  "build",
-  "playwright_e2e",
-  "researcher_acceptance"
-]);
 
 function object(value: unknown, label: string): JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -99,7 +98,7 @@ function parsePhase(value: unknown, label: string): RunnerPhaseExecutionResult {
   const phase = object(value, label);
   const name = string(phase.phase, `${label}.phase`);
   const status = string(phase.status, `${label}.status`);
-  if (!PHASES.has(name)) {
+  if (!isRunnerPhaseName(name)) {
     throw new ProviderUnavailableError(`Runner returned unknown phase ${name}`);
   }
   if (!["pass", "fail", "skipped"].includes(status)) {
@@ -129,8 +128,13 @@ export class RunnerClient {
   readonly #gatewayToken: string;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
+  readonly #profile: RunnerProjectProfile;
+  readonly #profileSha256: string;
 
   constructor(config: RunnerClientConfig) {
+    // The profile is fixed for the client's lifetime: no request can change it.
+    this.#profile = validateProjectProfile(config.projectProfile) as RunnerProjectProfile;
+    this.#profileSha256 = projectProfileDigest(this.#profile);
     if (config.baseUrl.trim().length === 0) {
       throw new Error("Runner base URL cannot be empty");
     }
@@ -143,6 +147,10 @@ export class RunnerClient {
     this.#fetch = config.fetchFn ?? fetch;
   }
 
+  /** Engineer-approved profile whose phases every run must execute. */
+  get projectProfile(): RunnerProjectProfile { return this.#profile; }
+  get projectProfileSha256(): string { return this.#profileSha256; }
+
   async run(request: RunnerClientRequest, signal?: AbortSignal): Promise<RunnerClientResult> {
     let response: Response;
     try {
@@ -154,7 +162,8 @@ export class RunnerClient {
           "content-type": "application/json",
           accept: "application/json"
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify({...request, project_profile: this.#profile,
+          project_profile_sha256: this.#profileSha256}),
         signal: signal
           ? AbortSignal.any([signal,AbortSignal.timeout(this.#timeoutMs)])
           : AbortSignal.timeout(this.#timeoutMs)
@@ -185,9 +194,14 @@ export class RunnerClient {
       throw new ProviderUnavailableError(`Runner returned invalid status ${status}`);
     }
     const profile = string(body.runner_profile, "runner_profile");
-    if (profile !== "poc-default") {
+    if (profile !== "poc-default" || body.project_profile_sha256 !== this.#profileSha256) {
       throw new ProviderUnavailableError("Runner returned an unexpected profile");
     }
+    // Every reported phase belongs to the approved profile (or is the
+    // researcher slot); PASS/FAIL validators then enforce the exact sequence.
+    const known = new Set([...this.#profile.phases.map(p => p.name), "researcher_acceptance"]);
+    if (parsePhases(body.phases).some(p => !known.has(p.phase)))
+      throw new ProviderUnavailableError("Runner phase is not in the approved project profile");
 
     // An authenticated controller must not report PASS while sending any
     // failure evidence (even an empty or malformed failure field).
@@ -235,8 +249,8 @@ export class RunnerClient {
         ?p.status==="fail":p.status==="pass")
       ?safeAcceptanceFailureSummary(body.acceptance_failure):null;
     const firstFailedPhase=parsePhases(body.phases).find(p=>p.status==="fail")?.phase;
-    const vitestFailurePhase=firstFailedPhase==="backend_tests"||firstFailedPhase==="frontend_tests"
-      ?firstFailedPhase:null;
+    const vitestFailurePhase=this.#profile.phases.some(p=>p.name===firstFailedPhase&&
+      p.failure_report==="vitest")?firstFailedPhase:null;
     const projectE2eFailure=status==="fail"&&firstFailedPhase==="playwright_e2e"
       ?safeProjectE2eFailureDiagnostic(body.project_e2e_failure):null;
     const result: RunnerClientResult = {
@@ -247,6 +261,7 @@ export class RunnerClient {
       branch: string(body.branch, "branch"),
       tested_commit_sha: string(body.tested_commit_sha, "tested_commit_sha"),
       runner_profile: "poc-default",
+      project_profile_sha256: this.#profileSha256,
       status,
       phases: parsePhases(body.phases),
       ...(projectTests !== undefined && projectStatus !== undefined
@@ -275,8 +290,9 @@ export class RunnerClient {
         ?{typecheck_error_codes:sanitizeTypecheckErrorCodes(body.typecheck_error_codes)}
         :{}),
       ...(status==="fail"&&vitestFailurePhase&&body.failing_test_files!==undefined
-        ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files,
-           vitestFailurePhase)}: {})
+        // Only test sources of the approved profile (its folders/suffixes).
+        ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files)
+           .filter(path=>isProjectTestSource(path,testSourceProfileOf(this.#profile)))}: {})
     };
 
     if (

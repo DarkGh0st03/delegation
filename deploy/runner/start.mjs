@@ -13,10 +13,11 @@ for (const [key, value] of Object.entries({
   TEST_RUNNER_BIND_ADDR: "0.0.0.0:8095",
   TEST_RUNNER_GATEWAY_TOKEN: local.RUNNER_GATEWAY_TOKEN,
   TEST_RUNNER_REPOSITORY_URI: `gitea://gitea.local/${local.GITEA_ORG}/${local.GITEA_REPOSITORY}`,
+  // Any repository of the organization (the console makes the Runner a
+  // read-only collaborator of each imported repository).
+  TEST_RUNNER_REPOSITORY_PREFIX: `gitea://gitea.local/${local.GITEA_ORG}/`,
   TEST_RUNNER_BRANCH_PREFIX: "feature/",
   GITEA_RUNNER_BASE_URL: process.env.GITEA_URL ?? "http://gitea:3000",
-  GITEA_OWNER: local.GITEA_ORG,
-  GITEA_REPOSITORY: local.GITEA_REPOSITORY,
   GITEA_RUNNER_TOKEN: gitea.GITEA_RUNNER_TOKEN,
   // No separate researcher acceptance suite: a PASS means that every phase
   // of the project's own tests passed (including the tests written by the

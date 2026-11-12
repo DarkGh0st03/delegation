@@ -602,3 +602,25 @@ test("budgeted Gemini accepts a proposed write on the session branch, never on a
   const frontend = g.execution().frontend;
   await assert.rejects(async () => { for await (const _ of frontend.generateContentAsync({})); }, /NO-GO/u);
 });
+
+test("policy v2 carries the project profile; v1 policies migrate to the repository default", async () => {
+  const {validatePolicy, defaultPolicy, toOpaRepositoryConfig, NPM_PROJECT_PROFILE_TEMPLATE} =
+    await import("../src/policy.mjs");
+  const {IAM_CONSOLE_PROJECT_PROFILE} = await import("../../packages/plan-contracts/src/project-profile.mjs");
+  const example = {owner: "thesis", name: "iam-console-poc", default_branch: "main"};
+  const other = {owner: "thesis", name: "todo-api", default_branch: "main"};
+  assert.deepEqual(defaultPolicy(example).project_profile.phases.map(p => p.name),
+    IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => p.name));
+  assert.deepEqual(defaultPolicy(other).project_profile.phases.map(p => p.command),
+    NPM_PROJECT_PROFILE_TEMPLATE.phases.map(p => p.command));
+  // A policy saved by the previous version keeps working (same commands as before).
+  const {project_profile: _p, ...v1} = defaultPolicy(example);
+  const migrated = validatePolicy({...v1, version: 1, runner_profile: "poc-default"}, example);
+  assert.equal(migrated.version, 2);
+  assert.deepEqual(migrated.project_profile, defaultPolicy(example).project_profile);
+  // OPA never receives commands: only the contract label.
+  assert.deepEqual(Object.keys(toOpaRepositoryConfig(migrated)).includes("project_profile"), false);
+  assert.equal(toOpaRepositoryConfig(migrated).runner_profile, "poc-default");
+  const bad = defaultPolicy(other); bad.project_profile.image = "node:latest";
+  assert.throws(() => validatePolicy(bad, other), /Profilo di test non valido/u);
+});

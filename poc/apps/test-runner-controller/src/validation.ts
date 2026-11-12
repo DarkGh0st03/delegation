@@ -1,3 +1,5 @@
+import {validateProjectProfile,projectProfileDigest}
+  from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {
   RUNNER_PROFILE,
   type RunnerContractConfig,
@@ -14,7 +16,8 @@ function object(value: unknown): JsonObject {
 }
 
 function exactKeys(value: JsonObject): void {
-  const required = ["request_id", "repository", "branch", "commit_sha", "profile"] as const;
+  const required = ["request_id", "repository", "branch", "commit_sha", "profile",
+    "project_profile", "project_profile_sha256"] as const;
   const allowed = new Set<string>(required);
 
   for (const key of Object.keys(value)) {
@@ -52,7 +55,12 @@ export function validateRunnerRunRequest(
   const commitSha = string(value.commit_sha, "commit_sha", 64);
   const profile = string(value.profile, "profile", 64);
 
-  if (repository !== config.repository) {
+  const repositoryName = config.repository_prefix !== undefined &&
+    repository.startsWith(config.repository_prefix)
+    ? repository.slice(config.repository_prefix.length) : undefined;
+  if (repository !== config.repository &&
+      (repositoryName === undefined || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(repositoryName) ||
+       repositoryName.includes(".."))) {
     throw new Error("repository is outside the controlled Runner repository");
   }
   if (config.branch_prefix !== undefined) {
@@ -70,12 +78,20 @@ export function validateRunnerRunRequest(
   if (profile !== RUNNER_PROFILE) {
     throw new Error(`profile must be ${RUNNER_PROFILE}`);
   }
+  let projectProfile;
+  try { projectProfile = validateProjectProfile(value.project_profile); }
+  catch (error) { throw new Error((error as Error).message); }
+  if (value.project_profile_sha256 !== projectProfileDigest(projectProfile)) {
+    throw new Error("project_profile_sha256 does not match the project profile");
+  }
 
   return {
     request_id: requestId,
     repository,
     branch,
     commit_sha: commitSha,
-    profile: RUNNER_PROFILE
+    profile: RUNNER_PROFILE,
+    project_profile: projectProfile,
+    project_profile_sha256: value.project_profile_sha256 as string
   };
 }

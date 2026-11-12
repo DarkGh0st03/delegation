@@ -1,4 +1,5 @@
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
+import {isRunnerPhaseName} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {sanitizeVitestFailureFiles} from "../../test-runner-controller/src/vitest-failure-files.ts";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import {isActionableRepairFailure, type AcceptanceFailureSummary, type ProjectTestFailureSummary}
@@ -126,10 +127,6 @@ export interface TrustedRunnerFailure {
   readonly acceptance_failure?:AcceptanceFailureSummary;
   readonly project_test_failure?:ProjectTestFailureSummary;
 }
-const RUNNER_PHASES=[
-  "dependency_install","typecheck","backend_tests","frontend_tests",
-  "build","playwright_e2e","researcher_acceptance"
-] as const;
 
 interface ActivePlan {
   readonly sessionId: string;
@@ -914,8 +911,11 @@ export class TrustedApprovedExecutionPlans {
          result.branch!==record.request.arguments.branch||
          !SHA.test(result.tested_commit_sha)||
          result.tested_commit_sha!==result.revision||
-         !Array.isArray(phases)||phases.length!==RUNNER_PHASES.length||
-         phases.some((p,i)=>p.phase!==RUNNER_PHASES[i]||
+         // Profile phases (any valid names, unique), then the researcher slot.
+         !Array.isArray(phases)||phases.length<2||
+         phases.at(-1)?.phase!=="researcher_acceptance"||
+         new Set(phases.map(p=>p.phase)).size!==phases.length||
+         phases.some(p=>!isRunnerPhaseName(p.phase)||
            !["pass","fail","skipped"].includes(p.status))||
          !phases.some(p=>p.status==="fail")||
          result.project_tests?.status==="pass"&&
@@ -936,13 +936,15 @@ export class TrustedApprovedExecutionPlans {
          result.researcher_acceptance?.status!=="fail"||
          phases.slice(0,-1).some(p=>p.status!=="pass")))
         denied("Untrusted acceptance failure diagnostic");
-      const projectIndex=RUNNER_PHASES.indexOf(first);
-      const projectPhase=first==="backend_tests"||first==="frontend_tests"?first:null;
+      const projectIndex=phases.findIndex(p=>p.phase===first);
+      // A failing project phase that reported failing test files.
+      const projectPhase=first!=="researcher_acceptance"&&
+        sanitizeVitestFailureFiles(result.failing_test_files).length>0?first:null;
       const project=projectPhase&&(codes?.length??0)===0&&
         result.project_tests?.status==="fail"&&result.researcher_acceptance?.status==="skipped"&&
         phases.every((p,i)=>p.status===(i<projectIndex?"pass":i===projectIndex?"fail":"skipped"))
         ?safeProjectTestFailureDiagnostic({phase:projectPhase,failed_test_file_count:
-          sanitizeVitestFailureFiles(result.failing_test_files,projectPhase).length}):null;
+          sanitizeVitestFailureFiles(result.failing_test_files).length}):null;
       binding.failedRunner=Object.freeze({
         status:"validation_failed",
         session_id:session.sessionId,root_plan_digest:session.digest,

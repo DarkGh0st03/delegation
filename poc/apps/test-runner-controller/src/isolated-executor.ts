@@ -55,10 +55,7 @@ export const MAX_RUN_TOTAL_MS = 840_000;
 
 export interface IsolatedRunnerConfig {
   gitea_base_url: string;
-  gitea_owner: string;
-  gitea_repository: string;
   gitea_token: string;
-  docker_image: string;
   phase_timeout_ms: number;
   total_timeout_ms?: number;
   log_dir: string;
@@ -91,31 +88,6 @@ type CommandRunner = (
 ) => Promise<CommandResult>;
 
 type FetchFn = typeof fetch;
-
-const FIXED_PHASES: ReadonlyArray<{
-  phase: Exclude<RunnerPhaseName, "researcher_acceptance">;
-  command: string;
-}> = [
-  {
-    phase: "dependency_install",
-    command: "npm ci && npx playwright install --with-deps chromium"
-  },
-  { phase: "typecheck", command: "npm run typecheck" },
-  { phase: "backend_tests", command: "npx vitest run tests/backend" },
-  { phase: "frontend_tests", command: "npx vitest run tests/frontend" },
-  { phase: "build", command: "npm run build" },
-  {
-    phase: "playwright_e2e",
-    command:
-      "set -euo pipefail; " +
-      "npm run start -w @iam/backend >/tmp/runner-backend.log 2>&1 & backend_pid=$!; " +
-      "npm run dev -w @iam/frontend -- --host 127.0.0.1 >/tmp/runner-frontend.log 2>&1 & frontend_pid=$!; " +
-      "cleanup() { kill \"$backend_pid\" \"$frontend_pid\" 2>/dev/null || true; }; " +
-      "trap cleanup EXIT; " +
-      "wait_port() { for _ in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/\"$1\") >/dev/null 2>&1 && return 0; sleep 0.5; done; echo \"Timed out waiting for port $1\" >&2; return 1; }; " +
-      "wait_port 3000; wait_port 5173; npm run test:e2e -- --workers=1"
-  }
-];
 
 const RESEARCHER_ACCEPTANCE_COMMAND =
   "set -euo pipefail; " +
@@ -198,6 +170,13 @@ function branchHeadSha(payload: unknown): string {
   return requiredString((commit as { id?: unknown }).id, "commit.id");
 }
 
+/** owner/name of a validated gitea://<host>/<owner>/<name> repository URI. */
+function repositoryApiPath(repository: string): string {
+  const parts = /^gitea:\/\/[^/]+\/([^/]+)\/([^/]+)$/u.exec(repository);
+  if (!parts) throw new Error("Runner repository URI is not canonical");
+  return `${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`;
+}
+
 function authHeaders(token: string): Record<string, string> {
   return {
     authorization: `token ${token}`,
@@ -230,8 +209,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     const branch = encodeURIComponent(request.branch);
     const url =
       `${this.#config.gitea_base_url}/api/v1/repos/` +
-      `${encodeURIComponent(this.#config.gitea_owner)}/` +
-      `${encodeURIComponent(this.#config.gitea_repository)}/branches/${branch}`;
+      `${repositoryApiPath(request.repository)}/branches/${branch}`;
 
     const response = await this.#fetch(url, {
       headers: authHeaders(this.#config.gitea_token),signal
@@ -251,8 +229,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
   async #downloadArchive(request: RunnerRunRequest, archivePath: string, signal: AbortSignal): Promise<void> {
     const url =
       `${this.#config.gitea_base_url}/api/v1/repos/` +
-      `${encodeURIComponent(this.#config.gitea_owner)}/` +
-      `${encodeURIComponent(this.#config.gitea_repository)}/archive/` +
+      `${repositoryApiPath(request.repository)}/archive/` +
       `${request.commit_sha}.tar.gz`;
 
     const response = await this.#fetch(url, {
@@ -351,7 +328,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           `type=bind,src=${resolve(this.#config.acceptance_dir)},dst=/workspace/.researcher-acceptance,readonly`
         );
       }
-      dockerCreateArgs.push(this.#config.docker_image, "sleep", "infinity");
+      dockerCreateArgs.push(request.project_profile.image, "sleep", "infinity");
 
       // A timed-out/ambiguous Docker CLI response may still leave this named
       // container in the daemon. Attempt cleanup even when create fails.
@@ -403,14 +380,15 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         throw new Error("Could not remove Runner archive from execution container");
       }
 
-      for (const fixed of FIXED_PHASES) {
+      // Phases and commands of the Engineer-approved project profile.
+      for (const fixed of request.project_profile.phases.map(p =>
+        ({phase: p.name, command: p.command, vitest: p.failure_report === "vitest"}))) {
         if (failed) {
           phases.push({ phase: fixed.phase, status: "skipped" });
           continue;
         }
 
-        const privateVitest=this.#config.failure_evidence_dir&&
-          (fixed.phase==="backend_tests"||fixed.phase==="frontend_tests");
+        const privateVitest=this.#config.failure_evidence_dir&&fixed.vitest;
         const reportPath="/tmp/private-"+fixed.phase+"-vitest.json";
         const command=privateVitest?fixed.command+
           " --reporter=default --reporter=json --outputFile="+reportPath:fixed.command;
@@ -433,15 +411,13 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
             typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
             typecheckErrorCodes=extractTypecheckErrorCodes(result.stdout,result.stderr);
           }
-          if((fixed.phase==="frontend_tests"||fixed.phase==="backend_tests")&&
-             !result.timed_out)
-            failingTestFiles=extractVitestFailureFiles(
-              result.stdout,result.stderr,fixed.phase);
-          if(privateVitest&&(fixed.phase==="backend_tests"||fixed.phase==="frontend_tests")){
+          if(fixed.vitest&&!result.timed_out)
+            failingTestFiles=extractVitestFailureFiles(result.stdout,result.stderr);
+          if(privateVitest){
             // A fixed Runner-owned path, never a path supplied by an agent.
             const report=await executeCommand("docker",["exec",containerName,"cat",reportPath]);
             privateVitestFailure=extractPrivateVitestFailures(
-              report.exit_code===0&&!report.timed_out?report.stdout:"",fixed.phase);
+              report.exit_code===0&&!report.timed_out?report.stdout:"");
           }
           failed = true;
           phases.push({
@@ -515,6 +491,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         branch: request.branch,
         tested_commit_sha: request.commit_sha,
         runner_profile: request.profile,
+        project_profile_sha256: request.project_profile_sha256,
         status: failed ? "fail" : "pass",
         phases,
         ...(typecheckDiagnostics.length>0
@@ -562,7 +539,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
   }
 }
 
-export const runnerFixedPhaseCommands = FIXED_PHASES;
 
 
 export const runnerResearcherAcceptanceCommand = RESEARCHER_ACCEPTANCE_COMMAND;

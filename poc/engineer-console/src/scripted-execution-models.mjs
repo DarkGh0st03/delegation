@@ -28,8 +28,8 @@ export function permissionPath(resource) {
  * uses to admit Tasks); other test-like files (e.g. e2e specs) belong to a
  * file specialist.
  */
-export function roleForPath(path) {
-  if (isProjectTestSource(path)) return "test";
+export function roleForPath(path, testSources) {
+  if (isProjectTestSource(path, testSources)) return "test";
   if (/^(tests?|e2e)\//u.test(path) || /\.spec\.[a-z]+$/u.test(path)) return "frontend";
   if (/(^|\/)(frontend|client|web|ui)\//u.test(path) || /\.(tsx|jsx|vue|svelte|css|scss|html)$/u.test(path))
     return "frontend";
@@ -51,7 +51,7 @@ export function simulatedMarker(path, sessionId) {
  * the same Task, the application files changed before it (N signed reads +
  * ONE write, like a real specialist reading the code it tests).
  */
-export function simulatedExecutionPlan(approved, sessionId) {
+export function simulatedExecutionPlan(approved, sessionId, testSources) {
   const byPath = new Map();
   let runTests, branch, pullRequest;
   for (const p of approved) {
@@ -71,7 +71,7 @@ export function simulatedExecutionPlan(approved, sessionId) {
   // updated, the Test agent first reads the changed files in read-only Tasks.
   const work = [], reads = [], tests = [], changed = [];
   for (const [path, entry] of [...byPath].sort(([a], [b]) => a.localeCompare(b))) {
-    const role = roleForPath(path);
+    const role = roleForPath(path, testSources);
     const target = role === "test" ? tests : work;
     if (entry.create_file)
       target.push({agent_id: role, path, op: "create",

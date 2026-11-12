@@ -159,11 +159,11 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   const typedMixed=!!shape&&reads.length>=1&&writes.length===1&&
     effect.operation==="update_file"&&shape.edit===effect.resource;
   if(row.agent_id==="test"&&effect.operation==="update_file"&&
-     !isProjectTestRepairGrant(row.permissions))
+     !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
    deny("Test update requires an exact project test repair grant");
   if(effect.operation==="create_file"){
    if(!(["backend","frontend"].includes(row.agent_id)||
-         (row.agent_id==="test"&&isProjectTestCreateGrant(row.permissions)))||
+         (row.agent_id==="test"&&isProjectTestCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile)))||
       row.permissions.length!==1||
       !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
        effectStager,this.#gateway,taskId,runtimeTaskId,

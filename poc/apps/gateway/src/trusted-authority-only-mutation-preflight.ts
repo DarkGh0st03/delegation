@@ -101,7 +101,7 @@ export class TrustedAuthorityOnlyGiteaMutationPreflight{
   if(record.request.tool!=="update_file")deny("wrong canonical tool");
   const {branch,path,content}=record.request.arguments;
   const bytes=Buffer.from(content,"utf8");
-  if(branch!==this.#branch||branch==="main"||
+  if(branch!==this.#branch||branch===this.#client.baseBranch||
      path.length>512||path.startsWith("/")||
      path.split("/").some(x=>!x||x==="."||x===".."||
       x.includes("\\")||x.includes("%"))||

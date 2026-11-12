@@ -145,6 +145,8 @@ export interface TrustedAdkPlannerConfig {
    * An observer failure fails the Planning attempt closed. */
   onObservation?:(event:Readonly<PlanningObservation>)=>void;
   maxModelTurns?:number;
+  /** Digest of the Engineer-approved project profile, bound into the proposal. */
+  projectProfileSha256?:string;
   /** At most two bounded, unapproved proposal repairs in one Planning session. */
   maxProposalRevisions?:0|1|2;
   /** Host-owned, pure execution-shape check before proposal acceptance.
@@ -685,6 +687,8 @@ export class TrustedAdkReadOnlyPlanner {
        !Number.isSafeInteger(config.maxModelTurns??96)||
        (config.maxModelTurns??96)<1||(config.maxModelTurns??96)>96||
        ![0,1,2].includes(config.maxProposalRevisions??0)||
+       (config.projectProfileSha256!==undefined&&
+        !/^[a-f0-9]{64}$/u.test(config.projectProfileSha256))||
        (config.validateProposedPlan!==undefined&&
          typeof config.validateProposedPlan!=="function")||
        (config.pilotFullDag!==undefined&&typeof config.pilotFullDag!=="boolean")||
@@ -746,7 +750,7 @@ export class TrustedAdkReadOnlyPlanner {
       if(++calls>64)return refuse("read_budget");
       if((tool==="read_file"&&(!files.has(args.path as string)||args.branch!==sourceBranch))||
          (tool==="list_directory"&&(!directories.has(args.path as string)||args.branch!==sourceBranch))||
-         (tool==="read_repository"&&(sourceBranch!=="main"||Object.keys(args).length!==0))){
+         (tool==="read_repository"&&(sourceBranch.startsWith("feature/")||Object.keys(args).length!==0))){
         return refuse("outside_planning_scope");
       }
       try{
@@ -757,11 +761,11 @@ export class TrustedAdkReadOnlyPlanner {
            result.tool!==tool||result.revision!==sp.base_revision)
           throw Error("provider revision mismatched");
         if(tool==="read_repository"){
-          if(result.default_branch!=="main"||
+          if(result.default_branch!==sourceBranch||
              result.full_name!==sp.repository.owner+"/"+sp.repository.repository)
             throw Error("repository identity mismatched");
           verified();
-          return {ok:true,revision:result.revision,default_branch:"main"};
+          return {ok:true,revision:result.revision,default_branch:sourceBranch};
         }
         if(result.path!==args.path||result.branch!==sourceBranch)
           throw Error("provider path mismatched");
@@ -884,7 +888,7 @@ export class TrustedAdkReadOnlyPlanner {
           };
         }
       }),
-      ...(sourceBranch==="main"?[new FunctionTool({
+      ...(!sourceBranch.startsWith("feature/")?[new FunctionTool({
         name:"read_repository",
         description:"Read only pinned trusted repository metadata.",
         // Google Gemini FunctionDeclaration forbids an OBJECT with empty
@@ -941,7 +945,7 @@ export class TrustedAdkReadOnlyPlanner {
           "possible trusted corrections; stop tool exploration before the "+
           "remaining model-call budget reaches three.",
         "Reserve the final reasoning turn for your complete plan; do not exhaust the budget on exploration.",
-        "Never request secrets, write tools, extra scope or operations on main.",
+        "Never request secrets, write tools, extra scope or operations on the base branch.",
         "Return only strict JSON keys: tasks, assumptions, uncertainties.",
         "Each Task has: id, agent_id, title, description, depends_on, permissions.",
         "Each permission has: operation, path, reason.",

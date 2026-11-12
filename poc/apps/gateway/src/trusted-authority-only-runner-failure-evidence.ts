@@ -3,6 +3,7 @@
  * Failure is evidence for *preflight only*, never Gateway completion,
  * D1 authorization, an additional Child, or a successful Test Task.
  */
+import {isRunnerPhaseName} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {createHash,createHmac,timingSafeEqual} from "node:crypto";
 import {constants} from "node:fs";
 import {lstat,open} from "node:fs/promises";
@@ -32,7 +33,7 @@ const BINDING=[
 ] as const;
 const FIELDS=[
  "schema","kind",...BINDING,"repository","branch","tested_commit_sha",
- "first_failed_phase","repair_candidate","runner_profile","log_reference",
+ "first_failed_phase","environment_phase","repair_candidate","runner_profile","log_reference",
  "policy_version","completed_at_ms","verification","mac_sha256"
 ].sort().join(",");
 function fail(reason:string):never{
@@ -49,7 +50,7 @@ function canonical(v:unknown):string{
 }
 const digest=(v:string)=>createHash("sha256").update(v).digest("hex");
 interface FailReceipt{
- readonly schema:"authority-only-runner-fail-evidence-v1";
+ readonly schema:"authority-only-runner-fail-evidence-v2";
  readonly kind:"gateway_controlled_docker_runner_fail";
  readonly session_id:string;readonly authority_digest:string;
  readonly root_credential_id:string;readonly task_id:string;
@@ -58,6 +59,7 @@ interface FailReceipt{
  readonly request_id:string;readonly request_fingerprint:string;
  readonly repository:string;readonly branch:string;
  readonly tested_commit_sha:string;readonly first_failed_phase:string;
+ readonly environment_phase:string;
  readonly typecheck_error_codes?:readonly string[];
  readonly failing_test_files?:readonly string[];
  readonly acceptance_failure?:RunnerClientResult["acceptance_failure"];
@@ -126,9 +128,9 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
  const files=v.failing_test_files;
  if(Object.keys(v).filter(k=>!["typecheck_error_codes","acceptance_failure","failing_test_files"].includes(k)).sort().join(",")!==FIELDS||
     (Object.hasOwn(v,"failing_test_files")&&
-     ((phase!=="backend_tests"&&phase!=="frontend_tests")||
+     (!isRunnerPhaseName(phase)||phase==="researcher_acceptance"||
       !Array.isArray(files)||!files.length||
-      JSON.stringify(sanitizeVitestFailureFiles(files,phase))!==JSON.stringify(files)))||
+      JSON.stringify(sanitizeVitestFailureFiles(files))!==JSON.stringify(files)))||
     (Object.hasOwn(v,"acceptance_failure")&&
      (v.first_failed_phase!=="researcher_acceptance"||
       !safeAcceptanceFailureSummary(v.acceptance_failure)))||
@@ -137,7 +139,7 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
       v.typecheck_error_codes.length===0||
       JSON.stringify(sanitizeTypecheckErrorCodes(v.typecheck_error_codes))!==
        JSON.stringify(v.typecheck_error_codes)))||
-    v.schema!=="authority-only-runner-fail-evidence-v1"||
+    v.schema!=="authority-only-runner-fail-evidence-v2"||
     v.kind!=="gateway_controlled_docker_runner_fail"||
     BINDING.some(k=>v[k]!==e[k]||v[k]!==intent[k])||
     v.repository!==repo||v.branch!==branch||
@@ -148,9 +150,9 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
     !SHA64.test(v.mac_sha256 as string)||
     v.runner_profile!=="poc-default"||
     typeof v.first_failed_phase!=="string"||
-    !["dependency_install","typecheck","backend_tests","frontend_tests",
-       "build","playwright_e2e","researcher_acceptance"].includes(v.first_failed_phase)||
-    v.repair_candidate!==(v.first_failed_phase!=="dependency_install")||
+    !isRunnerPhaseName(v.first_failed_phase)||
+    !isRunnerPhaseName(v.environment_phase)||v.environment_phase==="researcher_acceptance"||
+    v.repair_candidate!==(v.first_failed_phase!==v.environment_phase)||
     !LOG.test(v.log_reference as string)||
     typeof v.policy_version!=="string"||
     !v.policy_version.trim()||v.policy_version.length>128||
@@ -215,7 +217,7 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
   if(!Number.isSafeInteger(now)||now<=0)
    fail("invalid owner time");
   const unsigned:Omit<FailReceipt,"mac_sha256">={
-   schema:"authority-only-runner-fail-evidence-v1",
+   schema:"authority-only-runner-fail-evidence-v2",
    kind:"gateway_controlled_docker_runner_fail",...e,
    repository:this.#repo,branch:this.#branch,
    tested_commit_sha:stage.tested_commit_sha,
@@ -224,8 +226,9 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
     {typecheck_error_codes:sanitizeTypecheckErrorCodes(result.typecheck_error_codes)}:{}),
    ...(stage.first_failed_phase==="researcher_acceptance"&&result.acceptance_failure?
     {acceptance_failure:result.acceptance_failure}:{}),
-   ...((stage.first_failed_phase==="backend_tests"||stage.first_failed_phase==="frontend_tests")&&
+   ...(stage.first_failed_phase!=="researcher_acceptance"&&
     result.failing_test_files?.length?{failing_test_files:result.failing_test_files}:{}),
+   environment_phase:stage.environment_phase,
    repair_candidate:stage.repair_candidate,
    runner_profile:"poc-default",log_reference:result.log_reference!,
    policy_version:policyVersion,completed_at_ms:now,
@@ -263,7 +266,7 @@ export class AuthenticatedRunnerFailureObserver{
  async observe(intent:TrustedAuthorityOnlyRunnerIntent,e:TrustedCompletionExpectation):
  Promise<Readonly<TrustedCompletionExpectation & {
   status:"owner_authenticated_runner_failure_observed_staged";
-  tested_commit_sha:string;first_failed_phase:string;
+  tested_commit_sha:string;first_failed_phase:string;environment_phase:string;
   typecheck_error_codes?:readonly string[];
   failing_test_files?:readonly string[];
   acceptance_failure?:RunnerClientResult["acceptance_failure"];
@@ -289,6 +292,7 @@ export class AuthenticatedRunnerFailureObserver{
    status:"owner_authenticated_runner_failure_observed_staged" as const,
    tested_commit_sha:v.tested_commit_sha,
    first_failed_phase:v.first_failed_phase,
+   environment_phase:v.environment_phase,
    ...(v.typecheck_error_codes?.length?
     {typecheck_error_codes:Object.freeze([...v.typecheck_error_codes])}:{}),
    ...(v.acceptance_failure?{acceptance_failure:safeAcceptanceFailureSummary(v.acceptance_failure)!}:{}),

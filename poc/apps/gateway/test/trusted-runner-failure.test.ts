@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {RunnerClient} from "../src/runner-client.ts";
 import {validateTrustedRunnerFailure}
  from "../src/trusted-authority-only-runner-failure.ts";
+import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 const names=[
  "dependency_install","typecheck","backend_tests","frontend_tests",
  "build","playwright_e2e","researcher_acceptance"
@@ -33,18 +35,18 @@ function outcome(failedAt:number){
  return {
   request_id:request.request_id,repository:request.repository,
   branch:request.branch,tested_commit_sha:request.commit_sha,
-  runner_profile:"poc-default",status:"fail",
+  runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
   phases,project_tests:{
    status:failedAt===6?"pass":"fail",phases:phases.slice(0,6)
   },researcher_acceptance:phases[6],log_reference:log
  };
 }
 function harness(payload:unknown){
- const client=new RunnerClient({baseUrl:"http://runner.test",
+ const client=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,baseUrl:"http://runner.test",
   gatewayToken:"private-test",
   fetchFn:(async(_url:URL|string,init?:RequestInit)=>{
    assert.equal(init?.method,"POST");
-   assert.deepEqual(JSON.parse(String(init?.body)),request);
+   assert.deepEqual(JSON.parse(String(init?.body)),{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
    return new Response(JSON.stringify(payload),{status:200});
   }) as typeof fetch
  });

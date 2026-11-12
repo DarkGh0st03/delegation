@@ -214,7 +214,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   const signedTestRead=role==="test"&&!hasRunner&&!typedMixed&&
     isTestAgentReadGrant(row.permissions);
   const signedTestCreate=role==="test"&&!hasRunner&&!typedMixed&&
-    isProjectTestCreateGrant(row.permissions);
+    isProjectTestCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile);
   // R383.1: the native Task/Child maps to precisely one provider operation,
   // or to N reads (edited file + signed context) followed by ONE CAS update.
   // A spare grant in the signed Task must not be leaked as another
@@ -235,7 +235,7 @@ export class TrustedAuthorityOnlyA2AOwner {
      !signedTestCreate)
    deny("Test CREATE requires one exact signed project-test source");
   if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&
-     !isProjectTestRepairGrant(row.permissions))
+     !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
    deny("Test update requires an exact project test repair grant");
   if(filePermissions.some(p=>p.operation==="create_file")&&
      (filePermissions.length!==1||

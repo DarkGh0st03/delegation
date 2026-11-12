@@ -8,6 +8,7 @@ import {isActionableRepairFailure, type AcceptanceFailureSummary, type ProjectTe
  * It creates only a bounded, source-free planning signal. It cannot issue
  * a DC, admit a plan, mark a Task successful, or dispatch an Agent.
  */
+import {isRunnerPhaseName} from "../../plan-contracts/src/project-profile.mjs";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.mjs";
 import {TrustedApprovedExecutionPlans} from
@@ -19,10 +20,7 @@ import type {TrustedRunnerFailure} from "../../../apps/gateway/src/approved-exec
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u;
-const PHASES=new Set([
-  "typecheck","backend_tests","frontend_tests","build",
-  "playwright_e2e","researcher_acceptance"
-]);
+const PHASES={has:(phase:unknown)=>isRunnerPhaseName(phase)};
 const MAX_TOTAL_EPOCHS=3;
 const deny=(reason:string):never=>{
  throw Error("Trusted repair feedback NO-GO: "+reason);
