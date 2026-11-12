@@ -41,6 +41,9 @@ export function friendlyExecutionError(error) {
     return "i test sono falliti per un problema dell'ambiente di test (ad esempio l'installazione " +
       "delle dipendenze senza rete), non per il codice. L'esecuzione si è fermata in sicurezza e la " +
       "Root è stata revocata. Dettagli: docker compose logs runner";
+  if (/PR forbidden without latest independently completed Test/u.test(text))
+    return "i test non sono stati completati con successo, quindi la Draft PR non è stata " +
+      "creata e la Root è stata revocata";
   if (/runner-?fail|runnerFailureReceipts/iu.test(text) && /ENOENT/u.test(text))
     return "il Runner non ha restituito un esito verificabile (servizio non raggiungibile o errore " +
       "interno). L'esecuzione si è fermata in sicurezza e la Root è stata revocata. Dettagli: " +
@@ -147,7 +150,12 @@ export class EngineerSessions {
     this.#runExecution(session, live).catch(error => {
       if (live.stopRequested) return; // the Engineer's stop records the outcome
       session.phase = "failed";
-      session.error = "Esecuzione interrotta: " + friendlyExecutionError(error);
+      // The canonical launcher's last error can hide the first cause (e.g.
+      // "PR forbidden" after a failed test): show the recorded cause too.
+      const cause = [...session.log].reverse()
+        .find(l => /^(Gateway: |Il Runner non ha|Esito del Runner)/u.test(l.text))?.text;
+      session.error = "Esecuzione interrotta: " + friendlyExecutionError(error) +
+        (cause ? " — Causa: " + cause : "");
       this.#log(session, "Errore: " + session.error);
       this.#shutdown(session.id).catch(() => {});
     });
