@@ -1,0 +1,53 @@
+# Unit tests of the local application. Free: no secrets, no paid model,
+# no Docker Runner, no deployment. Replaces the earlier pilot workflows.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node test suites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned dependencies
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Engineer console
+        run: npm --prefix poc run console:test
+      - name: Plan contracts
+        run: npm --prefix poc run plan-contracts:test
+      - name: Gateway
+        run: npm --prefix poc run gateway:test
+      - name: Agent runtime
+        run: npm --prefix poc run agent-runtime:test
+      - name: Orchestrator runtime
+        run: npm --prefix poc run orchestrator-runtime:test
+      - name: Orchestrator
+        run: npm --prefix poc run orchestrator:test
+      - name: Test Runner
+        run: npm --prefix poc run runner:test
+
+  opa:
+    name: OPA policy tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rego format check and policy tests
+        run: bash poc/scripts/opa-policy-test.sh
