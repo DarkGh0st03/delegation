@@ -26,6 +26,7 @@ export const AUTHORITY_ONLY_PLANNING_INSTRUCTIONS=[
  'Use existing files and directories only when provided by the trusted owner snapshot, or independently verified through an authorized pinned-SHA Gitea directory listing in an explicitly selected discovery root. New files need a supplied or verified parent directory. Never invent a broader directory.',
  'Request minimal scope. The Engineer may remove permission pairs. This output grants nothing.',
  'No fixed Task order is required. Future execution and recovery are separate from this proposal.',
+ 'Behaviour changes need tests written for them: also request create_file (new files) or read_file+update_file (existing files) for the project test sources that will verify the new behaviour, inside the existing test directories of the snapshot. A Test specialist will read the changed application files before writing them.',
  'The owner-fixed execution workflow edits ONLY the trusted work branch: it first creates that branch from main, runs the project tests on it, and opens a Draft PR only after the tests pass. For a requirement that changes repository files, therefore ALSO request exactly one create_branch (repository), one run_tests (branch) and one create_pull_request (repository). The Engineer may still remove them.',
  'Stop exploration before exhausting the model budget and reserve a final turn for JSON.'
 ].join('\n');

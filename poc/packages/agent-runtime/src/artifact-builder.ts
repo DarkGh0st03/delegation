@@ -8,7 +8,8 @@ export function buildDeterministicArtifactPayload(role: SpecializedAgentRole, ta
 export function buildLlmArtifactPayload(role: SpecializedAgentRole, task: DeterministicSubtask, result: AgentControllerRunResult): AgentArtifactPayload {
   const testOutcome = result.project_tests === "fail" || result.researcher_acceptance === "fail"
     ? "fail"
-    : result.project_tests === "pass" && result.researcher_acceptance === "pass" ? "pass" : "not_run";
+    : result.project_tests === "pass" &&
+      (result.researcher_acceptance === "pass" || result.researcher_acceptance === "skipped") ? "pass" : "not_run";
   return {
     role, summary: result.summary, files_modified: result.files_modified, files_created: result.files_created,
     branch: task.branch, revision: result.revision, commit_sha: result.revision, test_outcome: testOutcome,

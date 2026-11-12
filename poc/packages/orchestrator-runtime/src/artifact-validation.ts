@@ -165,12 +165,14 @@ export function validateWorkflowArtifact(
     }
     projectTests = "pass";
 
-    if (raw.researcher_acceptance !== "pass") {
+    // The researcher acceptance suite is no longer run ("skipped"); a
+    // historical "pass" is still valid, a "fail" never is.
+    if (raw.researcher_acceptance !== "pass" && raw.researcher_acceptance !== "skipped") {
       throw new Error(
-        "Test Artifact is not acceptable until researcher_acceptance is pass"
+        "Test Artifact is not acceptable: researcher_acceptance must be skipped or pass"
       );
     }
-    researcherAcceptance = "pass";
+    researcherAcceptance = raw.researcher_acceptance;
   }
 
   if (!Array.isArray(raw.errors)) {

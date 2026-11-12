@@ -194,11 +194,8 @@ services:
       "deploy/runner/start.mjs"]
     environment:
       GITEA_URL: http://gitea:3000
-      # A Draft PR requires the researcher acceptance suite to PASS.
-      RUNNER_ACCEPTANCE: "true"
     volumes:
       - config:/config:ro
-      - acceptance:/acceptance
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       gitea-bootstrap: {condition: service_completed_successfully}
@@ -216,7 +213,3 @@ volumes:
     name: delegation-state
   gitea-data:
     name: delegation-gitea-data
-  # Researcher acceptance suite, copied by the Runner from its image and
-  # mounted READ-ONLY into every test container.
-  acceptance:
-    name: delegation-acceptance

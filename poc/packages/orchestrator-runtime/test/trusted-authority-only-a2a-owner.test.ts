@@ -400,13 +400,19 @@ for(const mode of ["source-outside-tests","acceptance-source",
    signed:{...signed,credentialSubject:{sub:did,per:[permission]}},
    response
   } as never);
+  if(mode==="source-outside-tests"||mode==="acceptance-source"){
+   // The Test agent may now READ any Engineer-signed file (e.g. the code
+   // written by Backend/Frontend) to write tests for it: the read Task is
+   // no longer refused for its path. Its writes stay limited to tests.
+   await f.owner.dispatchIssuedTask(request()).catch(error=>
+    assert.doesNotMatch(String(error),/Test read requires exact signed project test source/u));
+   assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+   return;
+  }
   await assert.rejects(f.owner.dispatchIssuedTask(request()),
-   mode==="source-outside-tests"||mode==="acceptance-source"?
-    /Test read requires exact signed project test source/u:
     mode==="claims-write"?/signed Test investigation cannot claim writes or failures/u:
     /Signed Test preparation Artifact must report not_run/u);
-  assert.deepEqual(f.calls,
-   mode==="source-outside-tests"||mode==="acceptance-source"?[]:["private_bind","a2a_send"]);
+  assert.deepEqual(f.calls,["private_bind","a2a_send"]);
  });
 }
 

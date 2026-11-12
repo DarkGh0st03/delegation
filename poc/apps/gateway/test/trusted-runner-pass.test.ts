@@ -52,7 +52,7 @@ test("R303.2 complete authenticated PASS is staged but never unlocks a Task",asy
  assert.equal(stage.tested_commit_sha,commit);
  assert.equal(stage.completed_phases.length,7);
  assert.equal(stage.all_project_tests_passed,true);
- assert.equal(stage.researcher_acceptance_passed,true);
+ assert.equal(stage.researcher_acceptance,"pass");
  assert.equal(callCount(),1);
  await assert.rejects(async()=>validateTrustedRunnerPass(client,{
   ...request,commit_sha:"b".repeat(40)
@@ -101,4 +101,21 @@ test("R303.2 contradictory PASS+failure artifacts fails before accepting Runner 
   acceptance_failure:{unclassified_failure:true}});
  await assert.rejects(client.run(request),
   /contradictory failure evidence/);
+});
+
+test("Runner PASS without the separate acceptance suite: skipped is valid, fail never is",async()=>{
+ const skipped=successful();
+ skipped.researcher_acceptance={phase:"researcher_acceptance",status:"skipped"};
+ skipped.phases=skipped.phases.map(p=>p.phase==="researcher_acceptance"?{...p,status:"skipped"}:p);
+ const {client}=clientFor(skipped);
+ const result=await client.run(request);
+ const stage=validateTrustedRunnerPass(client,request,result);
+ assert.equal(stage.researcher_acceptance,"skipped");
+ assert.equal(stage.all_project_tests_passed,true);
+ const failed=successful();
+ failed.researcher_acceptance={phase:"researcher_acceptance",status:"fail"};
+ failed.phases=failed.phases.map(p=>p.phase==="researcher_acceptance"?{...p,status:"fail"}:p);
+ const bad=clientFor(failed);
+ const r2=await bad.client.run(request);
+ assert.throws(()=>validateTrustedRunnerPass(bad.client,request,r2),/NO-GO/u);
 });

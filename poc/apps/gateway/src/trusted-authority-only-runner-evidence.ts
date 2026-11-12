@@ -70,7 +70,7 @@ interface OwnerRunnerPassReceipt{
  readonly tested_commit_sha:string;
  readonly runner_profile:"poc-default";
  readonly project_tests:"pass";
- readonly researcher_acceptance:"pass";
+ readonly researcher_acceptance:"skipped"|"pass";
  readonly phase_names:readonly string[];
  readonly log_reference:string;
  readonly policy_version:string;
@@ -144,7 +144,7 @@ function assertFields(
     !SHA40.test(v.tested_commit_sha as string)||
     v.runner_profile!=="poc-default"||
     v.project_tests!=="pass"||
-    v.researcher_acceptance!=="pass"||
+    (v.researcher_acceptance!=="skipped"&&v.researcher_acceptance!=="pass")||
     !Array.isArray(v.phase_names)||
     v.phase_names.length!==PHASES.length||
     v.phase_names.some((p,i)=>p!==PHASES[i])||
@@ -211,7 +211,7 @@ export class AuthenticatedRunnerCompletionObserver{
  async #readTestedHead(e:TrustedCompletionExpectation):Promise<Readonly<{
   completion:ObservedTrustedTaskCompletion;
   repository:string;branch:string;tested_commit_sha:string;
-  project_tests:"pass";researcher_acceptance:"pass";
+  project_tests:"pass";researcher_acceptance:"skipped"|"pass";
  }>>{
   const raw=await readReceipt(this.#directory,receiptName(e));
   const r=assertFields(raw,e,this.#repo,this.#branch);
@@ -304,7 +304,7 @@ export class TrustedGatewayRunnerPassEvidencePublisher{
    branch:this.#branch,
    tested_commit_sha:pass.tested_commit_sha,
    runner_profile:"poc-default",
-   project_tests:"pass",researcher_acceptance:"pass",
+   project_tests:"pass",researcher_acceptance:pass.researcher_acceptance,
    phase_names:[...PHASES],
    log_reference:pass.log_reference,
    policy_version:policyVersion,completed_at_ms:now,

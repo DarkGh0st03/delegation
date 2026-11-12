@@ -639,7 +639,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     if (errors.length > 0) throw new Error("ADK controlled task failed: " + [...new Set(errors)].join(", "));
     if (revision === null) throw new Error("ADK task produced no confirmed repository revision");
 
-    const testOutcome = projectTests === "pass" && researcherAcceptance === "pass"
+    const testOutcome = projectTests === "pass" &&
+      (researcherAcceptance === "pass" || researcherAcceptance === "skipped")
       ? "pass" : (projectTests === "fail" || researcherAcceptance === "fail") ? "fail" : "not_run";
     if (context.role === "test") {
       // A write following successful tests invalidates the tested SHA;

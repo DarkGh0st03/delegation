@@ -11,3 +11,8 @@ export const DEFAULT_ENGINEER_REVIEW_MS = 20 * 60 * 1000;
 export const MAX_ENGINEER_REVIEW_MS = 20 * 60 * 1000;
 /** Allows Gateway bootstrap, checkpoint persistence and handoff overhead. */
 export const TRUSTED_PLANNING_HANDOFF_MARGIN_MS = 2 * 60 * 1000;
+/** Verified read observations (each at most 4096 characters of source) that
+ * the Owner passes to the Orchestrator's Task decisions in one session. Bounds
+ * the decision context (and cost) while letting the Test agent read every
+ * application file changed by Backend/Frontend before writing tests. */
+export const MAX_ADAPTIVE_SOURCE_OBSERVATIONS = 8;

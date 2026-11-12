@@ -1,4 +1,4 @@
-import {giteaPermissionCovers,isProjectTestRepairGrant,isProjectTestReadGrant,isProjectTestCreateGrant,isProjectTestSource}
+import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,isProjectTestSource}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R287 — opt-in, in-process Gateway admission of permission-only Engineer
@@ -521,7 +521,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      bound.row.authority_digest!==root.authority_digest||
      !(["backend","frontend"].includes(bound.row.agent_id)||
       (bound.row.agent_id==="test"&&
-       isProjectTestReadGrant(bound.row.permissions))||
+       isTestAgentReadGrant(bound.row.permissions))||
       ownerAdditionalSingleRead(bound.row))||
      bound.row.permissions.length!==1||
      bound.row.permissions[0]?.operation!=="read_file"||
@@ -855,7 +855,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      bound.row.task_id!==taskId||
      !(["backend","frontend"].includes(bound.row.agent_id)||
       (bound.row.agent_id==="test"&&
-       isProjectTestReadGrant(bound.row.permissions))||
+       isTestAgentReadGrant(bound.row.permissions))||
       ownerAdditionalSingleRead(bound.row))||
      bound.row.permissions.length!==1||
      bound.row.permissions[0]?.operation!=="read_file"||

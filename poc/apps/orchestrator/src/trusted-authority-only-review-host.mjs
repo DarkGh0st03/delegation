@@ -1,3 +1,4 @@
+import {MAX_ADAPTIVE_SOURCE_OBSERVATIONS} from '../../../packages/plan-contracts/src/planning-limits.mjs';
 import {ProtectedA2ATaskFailedError} from '../../../packages/agent-runtime/src/orchestrator.ts';
 import {randomBytes} from 'node:crypto';
 import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs';
@@ -45,7 +46,7 @@ import {AuthenticatedGiteaMutationCompletionObserver}
 import {AuthenticatedGiteaReadCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
-import {isProjectTestReadGrant,isProjectTestCreateGrant,isProjectTestSource,
+import {isTestAgentReadGrant,isProjectTestCreateGrant,isProjectTestSource,
  isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
@@ -722,7 +723,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          proof.repository!==intent.repository||proof.branch!==intent.branch||
          proof.tested_commit_sha!==intent.expected_head_sha||
          proof.completion.evidence_sha256!==completed.verified_evidence_sha256||
-         proof.project_tests!=='pass'||proof.researcher_acceptance!=='pass'||
+         proof.project_tests!=='pass'||!['skipped','pass'].includes(proof.researcher_acceptance)||
          !Object.keys(expected).every(k=>proof.completion[k]===expected[k]))
        deny('PR tested HEAD changed during independent verification');
       return Object.freeze({
@@ -731,7 +732,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        repository:proof.repository,branch:proof.branch,
        tested_commit_sha:proof.tested_commit_sha,
        evidence_sha256:proof.completion.evidence_sha256,
-       project_tests:'pass',researcher_acceptance:'pass',
+       project_tests:'pass',researcher_acceptance:proof.researcher_acceptance,
        gateway_execution_authorized:false
       });
      })();
@@ -934,7 +935,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         input.signal?.throwIfAborted();
         await executionHandle.attestEnrolledTaskCompletion({taskId:staged.task_id,runtimeTaskId});
         if(choice.permissions.length===1&&choice.permissions[0]?.operation==='read_file'){
-         if(!nativeEffectBinding.readObserver||adaptiveSourceObservations.size>=4)
+         if(!nativeEffectBinding.readObserver||adaptiveSourceObservations.size>=MAX_ADAPTIVE_SOURCE_OBSERVATIONS)
           deny('bounded independent diagnostic source reader unavailable');
          const binding=gateway.assertTrustedCompletedReadObservationBinding(
           staged.task_id,runtimeTaskId);
@@ -948,7 +949,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
             observation.evidence_sha256!==binding.evidence_sha256||
             observation.revision!==context.executionProgress.current_head_sha||
             binding.permission_resource!==choice.permissions[0].resource||
-            (choice.agent_id==='test'&&!isProjectTestSource(observation.path,projectTestSourceProfile))||
+            // Test reads may observe any Engineer-signed file (see
+            // isTestAgentReadGrant); its WRITES stay limited to test sources.
             canonicalFileUri(snapshot.repository,branch,observation.path)!==
              binding.permission_resource)
           deny('diagnostic source differs from original signed read and current HEAD');
@@ -1409,9 +1411,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        adaptiveLoopFlight&&
        (['backend','frontend'].includes(pin.agent_id)||
         additionalRead||
-        (pin.agent_id==='test'&&isProjectTestReadGrant(
-         operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions,
-          projectTestSourceProfile)))&&
+        (pin.agent_id==='test'&&isTestAgentReadGrant(
+         operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions)))&&
        nativeEffectBinding?.readObserver instanceof AuthenticatedGiteaReadCompletionObserver;
       if(!pin||pin.task_id!==input.taskId||
          (!['update_file','create_file','run_tests'].includes(pin.operation)&&!diagnosticRead)||

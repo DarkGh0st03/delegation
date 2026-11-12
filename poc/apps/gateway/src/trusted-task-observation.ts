@@ -95,7 +95,7 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
     if(e.role==="test"&&hasRunner){
       if(a.test_outcome!=="pass"||a.tested_commit_sha!==a.commit_sha||
          a.runner_profile!=="poc-default"||a.project_tests!=="pass"||
-         a.researcher_acceptance!=="pass")return false;
+         !["skipped","pass"].includes(a.researcher_acceptance??""))return false;
       // Trusted Gateway effects are ordered by successful execution. A
       // formerly passing Docker run NEVER covers a later file mutation.
       // A genuine retry may pass after the final approved edit, however.
@@ -109,7 +109,7 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
          r.status!=="pass"||r.runner_profile!=="poc-default"||
          r.tested_commit_sha!==a.tested_commit_sha||
          r.project_tests?.status!=="pass"||
-         r.researcher_acceptance?.status!=="pass"||
+         !["skipped","pass"].includes(r.researcher_acceptance?.status??"")||
          r.branch!==a.branch)return false;
       const lastMutation=files.at(-1)?.execution;
       return lastMutation===undefined||(

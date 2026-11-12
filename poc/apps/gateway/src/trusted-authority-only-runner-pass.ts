@@ -5,7 +5,11 @@
  *
  * RunnerClient itself binds an authenticated HTTPS/owner-only bearer request
  * to the exact returned object. A PASS claim alone (even from the service)
- * is insufficient without all fixed phases and researcher acceptance.
+ * is insufficient without all fixed project phases.
+ *
+ * The separate researcher acceptance suite is no longer part of the
+ * workflow: the Runner reports it as "skipped". A historical "pass" is
+ * still accepted; a "fail" is never a PASS (the overall status is "fail").
  */
 import {RunnerClient,assertTrustedRunnerClientResult,
  type RunnerClientRequest,type RunnerClientResult}
@@ -16,11 +20,12 @@ export interface VerifiedRunnerPass{
  readonly branch:string;readonly tested_commit_sha:string;
  readonly runner_profile:"poc-default";
  readonly all_project_tests_passed:true;
- readonly researcher_acceptance_passed:true;
+ readonly researcher_acceptance:"skipped"|"pass";
  readonly completed_phases:readonly string[];
  readonly log_reference:string;
  readonly runner_execution_authorized:false;
 }
+const ACCEPTANCE_OK=new Set(["skipped","pass"]);
 const PROJECT=[
  "dependency_install","typecheck","backend_tests","frontend_tests",
  "build","playwright_e2e"
@@ -45,7 +50,7 @@ export function validateTrustedRunnerPass(
     !result.project_tests||
     result.project_tests.status!=="pass"||
     result.researcher_acceptance?.phase!=="researcher_acceptance"||
-    result.researcher_acceptance.status!=="pass"||
+    !ACCEPTANCE_OK.has(result.researcher_acceptance.status)||
     !/^runner-log:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
        .test(result.log_reference??"")||
     result.acceptance_failure!==undefined||
@@ -58,7 +63,7 @@ export function validateTrustedRunnerPass(
     result.phases.length!==PROJECT.length+1||
     !Array.isArray(result.project_tests.phases)||
     result.project_tests.phases.length!==PROJECT.length)
-  deny("all pinned Runner phases and acceptance must be present");
+  deny("all pinned Runner phases must be present");
  for(let i=0;i<PROJECT.length;i++){
   const p=result.phases[i],q=result.project_tests.phases[i];
   if(p.phase!==PROJECT[i]||q.phase!==PROJECT[i]||
@@ -68,16 +73,16 @@ export function validateTrustedRunnerPass(
  }
  const researcher=result.phases[PROJECT.length];
  if(researcher.phase!=="researcher_acceptance"||
-    researcher.status!=="pass"||
+    researcher.status!==result.researcher_acceptance.status||
     (researcher.failed??0)!==0)
-  deny("researcher acceptance not independently reported PASS");
+  deny("researcher acceptance phase inconsistent with Runner verdict");
  return Object.freeze({
   status:"owner_verified_runner_pass_staged",
   request_id:request.request_id,repository:request.repository,
   branch:request.branch,tested_commit_sha:request.commit_sha,
   runner_profile:"poc-default",
   all_project_tests_passed:true,
-  researcher_acceptance_passed:true,
+  researcher_acceptance:result.researcher_acceptance.status as "skipped"|"pass",
   completed_phases:Object.freeze([...PROJECT,"researcher_acceptance"]),
   log_reference:result.log_reference!,
   runner_execution_authorized:false

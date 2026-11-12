@@ -101,6 +101,18 @@ export function isProjectTestReadGrant(permissions,profile=IAM_CONSOLE_PROJECT_T
  const file=scope(permissions[0].resource);
  return file?.kind==="files"&&isProjectTestSource(file.path.join("/"),profile);
 }
+/** The Test agent may READ, in a dedicated read-only Task, ONE exact file
+ * anywhere in the repository (e.g. the source written by Backend/Frontend),
+ * so that it can write tests for the real behaviour. This is only the grant
+ * SHAPE: the file must still be inside the Engineer-signed root scope, and
+ * Rust VP, OPA and the pinned Gitea HEAD remain mandatory. Writes by the Test
+ * agent stay limited to project test sources (create/repair grants below). */
+export function isTestAgentReadGrant(permissions) {
+ if(!Array.isArray(permissions)||permissions.length!==1||
+    permissions[0]?.operation!=="read_file")return false;
+ const file=scope(permissions[0].resource);
+ return file?.kind==="files"&&file.path.length>0;
+}
 /** Test CREATE is restricted to one exact project test source. This is a
  * grant-shape check only; native Rust, OPA, absence and CAS remain required. */
 export function isProjectTestCreateGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {

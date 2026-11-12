@@ -5,7 +5,8 @@
 import {sanitizeVitestFailureFiles} from '../../../apps/test-runner-controller/src/vitest-failure-files.ts';
 import {safeAcceptanceFailureSummary} from '../../../runner/acceptance/failure-catalog.mjs';
 import {BaseLlm,LlmAgent,Runner,InMemorySessionService} from '@google/adk';
-import {giteaPermissionCovers,isProjectTestRepairGrant,isProjectTestReadGrant,isProjectTestCreateGrant,isProjectTestSource,
+import {MAX_ADAPTIVE_SOURCE_OBSERVATIONS} from '../../plan-contracts/src/planning-limits.mjs';
+import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,isProjectTestSource,
  isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from '../../plan-contracts/src/gitea-permission-containment.mjs';
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -106,7 +107,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    }
    if(Object.hasOwn(executionProgress,'source_observations')){
     const observations=executionProgress.source_observations;
-    if(!Array.isArray(observations)||observations.length<1||observations.length>4)
+    if(!Array.isArray(observations)||observations.length<1||observations.length>MAX_ADAPTIVE_SOURCE_OBSERVATIONS)
      fail();
     const seen=new Set();
     for(const observation of observations){
@@ -117,7 +118,6 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
         !Object.hasOwn(pins,observation.agent_id)||
         observation.agent_id==='orchestrator'||
         !pins[observation.agent_id].includes('read_file')||
-        (observation.agent_id==='test'&&!isProjectTestSource(observation.path,this.projectTestSourceProfile))||
         !executionProgress.completed_work.some(p=>
          p.task_id===observation.task_id&&
          p.agent_id===observation.agent_id&&p.operation==='read_file')||
@@ -251,7 +251,9 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
-    'You MAY select a read_file-only Backend/Frontend investigation Task before development or after a verified failure. A Test specialist may investigate ONLY exact application test sources under the trusted repository profile roots '+this.projectTestSourceProfile.roots.join(', ')+' with allowed suffixes '+this.projectTestSourceProfile.suffixes.join(', ')+'. An independently signed read-only Child and original Engineer grant are mandatory; reading never proves a repair.',
+    'You MAY select a read_file-only investigation Task (exactly ONE read_file of ONE exact file inside the original Engineer scope) for Backend, Frontend or Test, before development, before writing tests, or after a verified failure. An independently signed read-only Child and original Engineer grant are mandatory; reading never proves a repair.',
+    'Generic workflow for ANY requirement: (1) Backend and Frontend implement the requirement, one file per Task; (2) the Test specialist reads the application files that were changed (one read-only Task per file) so that the tests target the real new behaviour; (3) the Test specialist creates or updates project test sources under '+this.projectTestSourceProfile.roots.join(', ')+' (suffixes '+this.projectTestSourceProfile.suffixes.join(', ')+') that cover the NEW behaviour; (4) one final Test run_tests Task on the latest HEAD; (5) ready_for_pr only after an independently verified PASS.',
+    'A Task only sees its own instruction and its own granted file: when delegating a test-writing Task, copy into the instruction the exact exported names, signatures, routes, statuses and expected behaviour taken from the verified source observations of the earlier reads.',
     'To repair project tests, delegate a separate Test Task with read_file and update_file on the SAME exact profile-permitted source; execute tests in a new signed Task afterwards.',
     'To change multiple files, emit ONE separately registered and independently verified Task per file, in the order needed, each within the original signed Engineer Root. A mutation Task is either a single update_file, one create_file on a genuinely absent approved file, OR an exact same-file read_file + update_file pair; never mix create_file with any other operation, unrelated reads, multiple writes or Test in one Task.',
     'create_file is available to Backend/Frontend inside original Engineer scope. For Test it is limited to ONE exact project test source under the trusted repository profile; a new single-effect signed Child, absence proof, owner-pinned HEAD and Rust/OPA/Gitea/CAS remain mandatory. Never create Runner or acceptance/configuration sources.',
@@ -353,7 +355,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    const scopedRead=this.decisionKind==='adaptive'&&selected.length===1&&
      selected[0].operation==='read_file'&&
      (isFileSpecialist(raw.agent_id)||
-      (raw.agent_id==='test'&&isProjectTestReadGrant(selected,this.projectTestSourceProfile)));
+      (raw.agent_id==='test'&&isTestAgentReadGrant(selected)));
    const oneNativeEffect=selected.length===1&&
      ['update_file','create_file','run_tests'].includes(selected[0].operation)&&
      (selected[0].operation!=='run_tests'||raw.agent_id==='test')&&

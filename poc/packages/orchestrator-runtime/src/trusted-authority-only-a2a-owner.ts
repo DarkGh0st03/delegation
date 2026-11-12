@@ -42,7 +42,7 @@ import type {
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-import {isProjectTestRepairGrant,isProjectTestReadGrant,isProjectTestCreateGrant}
+import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 const ROLES=["backend","frontend","test"] as const;
 function deny(reason:string):never{
@@ -214,7 +214,7 @@ export class TrustedAuthorityOnlyA2AOwner {
     filePermissions[0]?.path===filePermissions[1]?.path;
   const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
   const signedTestRead=role==="test"&&!hasRunner&&!typedMixed&&
-    isProjectTestReadGrant(row.permissions);
+    isTestAgentReadGrant(row.permissions);
   const signedTestCreate=role==="test"&&!hasRunner&&!typedMixed&&
     isProjectTestCreateGrant(row.permissions);
   // R383.1: the native Task/Child must map to precisely one provider
@@ -227,11 +227,12 @@ export class TrustedAuthorityOnlyA2AOwner {
      (!hasRunner&&!typedMixed&&
       (row.permissions.length!==1||filePermissions.length!==1)))
    deny("native A2A Task cannot combine unrelated read/write/Runner grants");
-  // R385.12: read-only investigation is supported for the Test Agent only
-  // on exact application test sources, never Runner/acceptance/config paths.
+  // Read-only investigation by the Test Agent: ONE exact Engineer-signed
+  // file (application code or tests), never a directory. Writes by the Test
+  // Agent remain limited to project test sources (checks below).
   if(role==="test"&&filePermissions.length===1&&
      filePermissions[0].operation==="read_file"&&!signedTestRead)
-   deny("Test read requires exact signed project test source");
+   deny("Test read requires one exact Engineer-signed file");
   if(role==="test"&&filePermissions.some(p=>p.operation==="create_file")&&
      !signedTestCreate)
    deny("Test CREATE requires one exact signed project-test source");
