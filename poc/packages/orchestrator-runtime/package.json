@@ -11,6 +11,5 @@
     "@google/adk": "2.2.1",
     "@thesis/agent-runtime": "0.1.0",
     "zod": "4.2.1"
-  },
-  "exports": "./src/index.ts"
+  }
 }

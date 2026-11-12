@@ -9,9 +9,9 @@ docker run --rm \
   -v "$ROOT_DIR/poc/opa:/policy:ro" \
   "$OPA_IMAGE" fmt /policy/policy.rego /policy/policy_test.rego >/dev/null
 
-echo "Running Phase 4A OPA policy tests..."
+echo "Running OPA policy tests..."
 docker run --rm \
   -v "$ROOT_DIR/poc/opa:/policy:ro" \
   "$OPA_IMAGE" test /policy -v
 
-echo "PHASE4A_POLICY_TEST=PASS"
+echo "OPA_POLICY_TEST=PASS"

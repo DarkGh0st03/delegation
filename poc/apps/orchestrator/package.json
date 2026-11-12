@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "engineer:approval-ui": "node --experimental-strip-types ./src/engineer-approval-server.mjs",
-    "engineer:service": "node --experimental-strip-types ./src/start-trusted-engineer-service.mjs"
+    "engineer:approval-ui": "node --experimental-strip-types ./src/engineer-approval-server.mjs"
   },
   "dependencies": {
     "@thesis/orchestrator-runtime": "0.1.0"
