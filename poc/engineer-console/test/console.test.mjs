@@ -437,3 +437,26 @@ test("execution errors from the canonical fail-closed stops are explained in pla
     /esito verificabile/u);
   assert.equal(friendlyExecutionError(Error("other")), "other");
 });
+
+test("simulated Orchestrator asks for a PR only after a verified completed Test Task", async () => {
+  const {ScriptedDecisionModel} = await import("../src/scripted-execution-models.mjs");
+  const plan = {runsTests: true, tasks: [{task_id: "t99-test", agent_id: "test", permissions: [], instruction: "x"}]};
+  const ask = async (request) => {
+    const model = new ScriptedDecisionModel({plan, branchTaskId: "branch"});
+    for await (const _ of model.generateContentAsync({})) break; // delegate the test
+    for await (const e of model.generateContentAsync(request)) return JSON.parse(e.content.parts[0].text);
+  };
+  // Runner unavailable: the Test Task never completed -> honest stop, no PR.
+  assert.equal((await ask({contents: [{parts: [{text: JSON.stringify(
+    {independently_gateway_completed_tasks: [{task_id: "branch"}]})}]}]})).action, "blocked");
+  assert.equal((await ask({contents: [{parts: [{text: JSON.stringify(
+    {independently_gateway_completed_tasks: [{task_id: "branch"}, {task_id: "t99-test"}]})}]}]})).action,
+    "ready_for_pr");
+});
+
+test("scripted planner understands Italian requirements against English paths", async () => {
+  const {selectPlanningFiles} = await import("../src/scripted-planner-model.mjs");
+  assert.deepEqual(selectPlanningFiles(["apps/backend/src/users/user.service.ts", "docs/x.ts",
+    "packages/shared/src/account-status.ts"], "Sospendere e riattivare un account utente"),
+  ["apps/backend/src/users/user.service.ts", "packages/shared/src/account-status.ts"]);
+});

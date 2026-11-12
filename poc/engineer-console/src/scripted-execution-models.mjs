@@ -98,6 +98,26 @@ function findContent(value, depth) {
   return undefined;
 }
 
+/** Task IDs the owner reports as independently Gateway-completed. */
+export function completedTaskIds(request) {
+  const ids = new Set();
+  const walk = (value, depth) => {
+    if (depth > 10 || value === null || value === undefined) return;
+    if (typeof value === "string") {
+      if (value.length < 500000 && value.trim().startsWith("{"))
+        try { walk(JSON.parse(value), depth + 1); } catch { /* plain text */ }
+      return;
+    }
+    if (typeof value !== "object") return;
+    if (Array.isArray(value.independently_gateway_completed_tasks))
+      for (const row of value.independently_gateway_completed_tasks)
+        if (typeof row?.task_id === "string") ids.add(row.task_id);
+    for (const child of Array.isArray(value) ? value : Object.values(value)) walk(child, depth + 1);
+  };
+  walk(request, 0);
+  return ids;
+}
+
 class Scripted extends BaseLlm {
   calls = 0;
   connect() { throw Error("Scripted model has no live connection"); }
@@ -180,12 +200,16 @@ export class ScriptedDecisionModel extends Scripted {
       return;
     }
     const context = JSON.stringify(request);
+    const completed = completedTaskIds(request);
     if (!this.#plan.runsTests)
       yield say(JSON.stringify({action: "blocked",
         reason: "I test non sono stati autorizzati: senza un esito PASS del Runner non si crea la Draft PR"}));
     else if (/independent_runner_failure/u.test(context))
       yield say(JSON.stringify({action: "blocked",
         reason: "Il Runner ha riportato un FAIL verificato: esecuzione simulata, nessuna correzione automatica"}));
+    else if (!completed.has("t99-test"))
+      yield say(JSON.stringify({action: "blocked",
+        reason: "Il Runner non ha restituito un esito di test verificabile: nessuna Draft PR"}));
     else
       yield say(JSON.stringify({action: "ready_for_pr",
         reason: "Test PASS verificato dal Runner sul commit finale del branch"}));

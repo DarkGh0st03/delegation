@@ -13,8 +13,19 @@ const CODE = /\.(ts|tsx|js|jsx|mjs|cjs|py|java|go|rs|rb|php|cs|css|scss|html|vue
 const STOP = new Set(["allow", "from", "with", "that", "this", "into",
   "should", "must", "able", "using", "when", "page", "make", "have", "also", "their"]);
 
+// Italian requirement words -> English stems used in repository paths.
+const ITALIAN = [
+  [/^sospe/u, "suspend"], [/^riattiv/u, "reactiv"], [/^attiv/u, "activ"],
+  [/^utent/u, "user"], [/^account/u, "account"], [/^amministr/u, "admin"],
+  [/^stat[oi]$/u, "status"], [/^pagin/u, "page"], [/^dettagl/u, "detail"],
+  [/^elenc|^list/u, "list"], [/^ruol/u, "role"], [/^permess/u, "permission"],
+  [/^access|^login|^autentic/u, "auth"], [/^profil/u, "profile"], [/^repart|^dipartiment/u, "department"]
+];
+
 function keywords(requirement) {
-  const words = requirement.toLowerCase().match(/[a-z]{4,}/gu) ?? [];
+  const words = (requirement.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/gu, "")
+    .match(/[a-z]{4,}/gu) ?? [])
+    .map(w => ITALIAN.find(([re]) => re.test(w))?.[1] ?? w);
   const stems = new Set();
   for (const word of words) {
     if (STOP.has(word)) continue;
