@@ -12,6 +12,7 @@
  */
 import {BaseLlm} from "@google/adk";
 import {isProjectTestSource} from "../../packages/plan-contracts/src/gitea-permission-containment.mjs";
+import {MAX_ADAPTIVE_SOURCE_OBSERVATIONS} from "../../packages/plan-contracts/src/planning-limits.mjs";
 
 const SLASH = /^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/(.+)$/u;
 
@@ -60,18 +61,30 @@ export function simulatedExecutionPlan(approved, sessionId) {
     entry[p.operation] = p;
     byPath.set(path, entry);
   }
-  const tasks = [];
+  // Order: (1) application files by Backend/Frontend, (2) the Test agent
+  // reads each changed application file, (3) the Test agent writes the test
+  // files, (4) one final run_tests. One Child DC per Task; at most 24.
+  const work = [], reads = [], tests = [];
   for (const [path, entry] of [...byPath].sort(([a], [b]) => a.localeCompare(b))) {
     const role = roleForPath(path);
-    const id = `t${String(tasks.length + 1).padStart(2, "0")}-${role}`;
+    const target = role === "test" ? tests : work;
     if (entry.create_file)
-      tasks.push({task_id: id, agent_id: role, path, op: "create",
+      target.push({agent_id: role, path, op: "create",
         permissions: [pick(entry.create_file)], instruction: `Crea ${path}`});
-    else if (entry.read_file && entry.update_file)
-      tasks.push({task_id: id, agent_id: role, path, op: "update",
+    else if (entry.read_file && entry.update_file) {
+      target.push({agent_id: role, path, op: "update",
         permissions: [pick(entry.read_file), pick(entry.update_file)],
         instruction: `Leggi e aggiorna ${path} (sessione ${sessionId})`});
+      if (role !== "test") reads.push({agent_id: "test", path, op: "read",
+        permissions: [pick(entry.read_file)],
+        instruction: `Leggi ${path}, modificato da ${role}, per scrivere i test sul comportamento nuovo`});
+    }
   }
+  const room = 24 - work.length - tests.length - (runTests ? 1 : 0);
+  // Each read becomes a bounded source observation for the Orchestrator.
+  const readable = Math.max(0, Math.min(room, MAX_ADAPTIVE_SOURCE_OBSERVATIONS));
+  const tasks = [...work, ...(tests.length ? reads.slice(0, readable) : []), ...tests]
+    .map((t, i) => ({task_id: `t${String(i + 1).padStart(2, "0")}-${t.agent_id}${t.op === "read" ? "-read" : ""}`, ...t}));
   if (runTests) tasks.push({task_id: "t99-test", agent_id: "test",
     permissions: [pick(runTests)], instruction: "Esegui i test del progetto sul commit attuale del branch"});
   return {tasks, branch: branch && pick(branch), pullRequest: pullRequest && pick(pullRequest),
@@ -161,6 +174,12 @@ export class ScriptedWorkerModel extends Scripted {
     if (!item) { yield say("Nessun file assegnato a questo ruolo."); return; }
     const {path, op} = item, turn = ++this.#turn;
     const label = this.#contents ? "soluzione di RIFERIMENTO" : "modifica SIMULATA";
+    if (op === "read") {
+      if (turn === 1) { yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path}); return; }
+      this.#queue.shift(); this.#turn = 0;
+      yield say(`Letto ${path}: il comportamento nuovo verrà coperto dai test.`);
+      return;
+    }
     if (op === "create") {
       if (turn === 1) {
         yield call(`create-${this.calls}`, "create_file",

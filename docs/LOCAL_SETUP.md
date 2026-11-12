@@ -116,24 +116,28 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
    verifica la ricevuta, revoca la Root preliminare ed emette la **Root
    operativa** con i soli permessi firmati; la sua durata non supera quella
    dell'approvazione (30 minuti dalla firma) e "Interrompi" la revoca subito.
-   L'Orchestrator lavora **un Task alla volta**: crea il branch, poi delega ogni
-   Task a Backend, Frontend o Test con una **Child DC** propria. Ogni lettura,
-   modifica (con controllo della HEAD di Gitea) e `run_tests` passa dal Gateway:
-   VP verificata dal core Rust, decisione di OPA. I test girano nel servizio
-   `runner`, in un container usa e getta. La **Draft PR** si crea solo se il
-   Runner riporta PASS dei test del progetto **e** dei test di accettazione del
-   ricercatore sul commit finale. A fine esecuzione la Root viene revocata.
+   L'Orchestrator lavora **un Task alla volta**, con un flusso uguale per
+   qualsiasi requisito: (1) crea il branch; (2) Backend e Frontend modificano i
+   file dell'applicazione, un Task per file; (3) l'agente **Test legge** i file
+   dell'applicazione modificati (un Task di sola lettura per file, solo tra
+   quelli firmati dall'Engineer; al massimo 8 letture "osservate" per
+   sessione); (4) il Test **scrive i test** per il comportamento nuovo (solo
+   file di test); (5) esegue i test del progetto. Ogni Task ha una **Child DC**
+   propria e ogni operazione passa dal Gateway: VP verificata dal core Rust,
+   decisione di OPA, HEAD di Gitea controllata. I test girano nel servizio
+   `runner`, in un container usa e getta. La **Draft PR** si crea solo se
+   **tutte le fasi dei test del progetto** passano sul commit finale (non c'è
+   più una suite di accettazione separata). A fine esecuzione la Root viene
+   revocata.
    - *Simulato*: gli agenti non usano IA. Ogni file approvato riceve solo un
-     commento marcato `SIMULATA`, così si vede tutta la catena di autorizzazione
-     su un diff reale. Il requisito non è implementato: i test di accettazione
-     falliscono e **non si crea nessuna PR**. È l'esito corretto e atteso.
+     commento marcato `SIMULATA`: si vede tutta la catena di autorizzazione su
+     un diff reale. Il requisito non è implementato; se i test del progetto
+     passano nasce comunque una Draft PR etichettata `[SIMULATA]`.
    - *Soluzione di riferimento*: gratuita e senza IA, solo per `iam-console-poc`
      al commit di base. Il Planner propone gli 11 file della soluzione nota del
-     ricercatore (10 da aggiornare, 1 test e2e da creare) e gli agenti la
-     scrivono attraverso tutta la catena di autorizzazione. I test di
-     accettazione passano e nasce una **Draft PR reale**, etichettata
-     `[RIFERIMENTO]`: serve a mostrare il percorso completo senza costi, non è
-     codice generato da un modello.
+     ricercatore (codice e test) e gli agenti la scrivono attraverso tutta la
+     catena; nasce una Draft PR etichettata `[RIFERIMENTO]`. Non è codice
+     generato da un modello.
    - *Gemini*: gli agenti scrivono il codice; la PR nasce solo se i test passano.
 
 ### Prova con Gemini (a pagamento)
@@ -166,14 +170,14 @@ Limiti attuali, dichiarati:
   canonico (la pagina Policy non permette altri prefissi);
 - dopo un riavvio dell'app le sessioni precedenti risultano "Non più attive",
   perché la blockchain locale riparte da zero;
-- il Runner esegue i comandi di test del progetto `iam-console-poc` e i test di
-  accettazione del requisito di riferimento (sospensione degli account): per
-  altre repository l'Esecuzione arriva ai test ma non può produrre una PR;
+- il Runner esegue i comandi di test del progetto `iam-console-poc` (`npm ci`,
+  typecheck, `tests/backend`, `tests/frontend`, build, e2e) e il Test scrive
+  solo in `tests/backend` e `tests/frontend`: altre repository richiedono di
+  rendere configurabili questi due elementi (prossimo passo);
 - il servizio `runner` ha il socket Docker dell'host, che equivale a privilegi
   di root sull'host: è isolato nella rete interna, conosce solo un token Gitea
   di sola lettura e accetta richieste solo dal Gateway (token privato). I
-  container di test hanno rete (servono `npm ci` e Playwright) e ricevono i
-  test di accettazione in sola lettura;
+  container di test hanno rete (servono `npm ci` e Playwright);
 - il primo `run_tests` scarica dipendenze e browser: può richiedere vari minuti.
 
 ## Prossimi passi

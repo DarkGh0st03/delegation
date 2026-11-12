@@ -533,3 +533,20 @@ test("paid models are budgeted and every call (or discard) is recorded for the E
   assert.deepEqual([records[2].ok, records[2].layer], [false, "budget"]);
   assert.equal(g.summary().calls_started, 2);
 });
+
+test("free modes: app work, then Test reads the changed app files, then Test writes tests, then run_tests", async () => {
+  const {simulatedExecutionPlan} = await import("../src/scripted-execution-models.mjs");
+  const base = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1";
+  const rw = path => [{operation: "read_file", resource: `${base}/files/${path}`},
+    {operation: "update_file", resource: `${base}/files/${path}`}];
+  const plan = simulatedExecutionPlan([...rw("apps/backend/src/a.ts"), ...rw("apps/frontend/src/B.tsx"),
+    ...rw("tests/backend/a.test.ts"), {operation: "run_tests", resource: base}], "s-1");
+  assert.deepEqual(plan.tasks.map(t => [t.task_id, t.op ?? "run", t.path ?? null]), [
+    ["t01-backend", "update", "apps/backend/src/a.ts"],
+    ["t02-frontend", "update", "apps/frontend/src/B.tsx"],
+    ["t03-test-read", "read", "apps/backend/src/a.ts"],
+    ["t04-test-read", "read", "apps/frontend/src/B.tsx"],
+    ["t05-test", "update", "tests/backend/a.test.ts"],
+    ["t99-test", "run", null]]);
+  assert.deepEqual(plan.tasks[2].permissions.map(p => p.operation), ["read_file"]);
+});
