@@ -164,6 +164,7 @@ export class EngineerSessions {
       throw error;
     }
     session.phase = "executing"; this.#save(session);
+    if (live.sessionRef) live.sessionRef.current = session;
     this.#log(session, "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati");
     this.#runExecution(session, live).catch(error => {
       if (live.stopRequested) return; // the Engineer's stop records the outcome
@@ -586,10 +587,13 @@ export class EngineerSessions {
 
     // 5. Planning model: free scripted stand-in, or Gemini with consent.
     let model;
+    // Paid-call records must go to the CURRENT in-memory session object: the
+    // Execution phase works on a fresh copy loaded at approval time.
+    const sessionRef = {current: session};
     let gemini;
     if (session.mode === "gemini") {
       gemini = await createSessionGeminiModels({apiKey: process.env.GEMINI_API_KEY,
-        model: geminiModelName(), record: entry => this.#recordModelCall(session, entry)});
+        model: geminiModelName(), record: entry => this.#recordModelCall(sessionRef.current, entry)});
       model = gemini.planning();
       this.#log(session, `Planner: Gemini (${geminiModelName()}), con limiti di chiamate e token per sessione`);
     } else if (session.mode === "reference") {
@@ -667,7 +671,7 @@ export class EngineerSessions {
     };
     session.phase = "awaiting_review";
     this.#live.set(session.id, {host, gatewayServer, gatewayBaseUrl, revisions, checkpointStore,
-      snapshot, dirs, preliminaryRoot, operationalSessionStore, trustedAgentRegistry, gemini,
+      snapshot, dirs, preliminaryRoot, operationalSessionStore, trustedAgentRegistry, gemini, sessionRef,
       engineerKeyFile, engineerPublicPem});
     this.#log(session, `Proposta pronta: ${session.proposal.permissions.length} permessi da rivedere`);
     if (gemini) {
