@@ -52,6 +52,10 @@ export function friendlyExecutionError(error) {
     return "i test sono falliti per un problema dell'ambiente di test (ad esempio l'installazione " +
       "delle dipendenze senza rete), non per il codice. L'esecuzione si è fermata in sicurezza e la " +
       "Root è stata revocata. Dettagli: docker compose logs runner";
+  if (/Protected A2A task ended without completion/u.test(text))
+    return "un agente ha terminato il suo Task senza completarlo (ad esempio ha risposto con un testo " +
+      "invece di modificare il file). La Root è stata revocata. Vedi la tabella \"Chiamate a Gemini\": " +
+      "l'ultima chiamata del ruolo indicato mostra cosa ha risposto il modello";
   if (/private Gemini request budget NO-GO/u.test(text))
     return "il limite di sicurezza su Gemini ha scartato una chiamata (budget esaurito, risposta " +
       "troncata o bloccata, oppure errore di Google). La Root è stata revocata. Vedi la tabella " +
