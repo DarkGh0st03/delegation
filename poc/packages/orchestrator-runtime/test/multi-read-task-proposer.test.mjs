@@ -19,8 +19,8 @@ const rootPermissions=[p("read_file",edit),p("update_file",edit),p("read_file",d
  p("read_file",testFile),p("update_file",testFile),{operation:"run_tests",resource:root}];
 class OneChoice extends BaseLlm{
  constructor(choice){super({model:"multi-read-zero-cost-adk"});this.choice=choice;this.calls=0;}
- async *generateContentAsync(){
-  this.calls++;
+ async *generateContentAsync(request){
+  this.calls++;this.request=request;
   yield {content:{role:"model",parts:[{text:JSON.stringify(this.choice)}]}};
  }
  connect(){throw Error("No external model connections");}
@@ -58,4 +58,14 @@ test("no second write, no write without reading the edited file, no Test write o
   decision("test",[p("read_file",edit),p("read_file",testFile),p("update_file",edit)])
  ])await assert.rejects(new Proposer(config(choice)).propose(),undefined,
    JSON.stringify(choice.task.permissions.map(x=>x.operation)));
+});
+
+test("the Orchestrator is told to put dependency reads in the edit Task, not in read-only Tasks",async()=>{
+ const cfg=config(decision("backend",[p("read_file",edit),p("update_file",edit)]));
+ await new Proposer(cfg).propose();
+ const text=JSON.stringify(cfg.model.request);
+ assert.match(text,/Do NOT delegate a read-only Task to read a file you are about to edit/u);
+ assert.match(text,/useful ONLY when no edit Task can carry the read/u);
+ assert.doesNotMatch(text,/before development, before writing tests, or after a verified failure/u,
+  "the old advice that invited superfluous investigation Tasks is gone");
 });
