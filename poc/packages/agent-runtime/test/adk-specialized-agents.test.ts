@@ -727,7 +727,11 @@ test("Signed implementation Tasks include generic type-safety self-review withou
     assert.match(prompt,/known union\/enum literal values/u);
     assert.match(prompt,/mutually exclusive types/u);
     assert.match(prompt,/Do not guess a type, imported symbol, or status literal/u);
-    assert.match(prompt,/not a claim that the project typecheck or tests passed/u);
+    // Native read+update Tasks are one-shot: the prompt must never invite a
+    // re-read after the update (it would be refused and fail the Task).
+    assert.match(prompt,/exactly ONCE in this Task/u);
+    assert.match(prompt,/no second chance to refine/u);
+    assert.doesNotMatch(prompt,/re-read and refine/u);
     assert.deepEqual(built.profile.writable_paths,[file]);
     assert.deepEqual(built.profile.read_only_paths,[]);
     assert.deepEqual(built.agent.tools.map(tool=>tool.name),["read_file","update_file"]);

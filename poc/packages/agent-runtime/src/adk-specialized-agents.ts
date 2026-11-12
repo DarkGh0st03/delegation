@@ -232,6 +232,7 @@ export function createAdkSpecializedAgent(
       "Approved writable existing files:",...list(writable),"",
       "Approved creatable files:",...list(creatable),"",
       "Read and write are independent permissions: never assume either from the other.",
+      "Each granted operation may be used exactly ONCE in this Task (one read_file, one update_file, one create_file or one run_tests). After the write or the test run, call no more tools and reply only with a short report: repeated or extra tool calls are refused and make the Task fail.",
       "Before every update_file, first call read_file for that exact existing path in this same Task.",
       "Use the content returned by that successful read to construct the full replacement. A read from a previous Task is not evidence for this Task.",
       "If that read is not authorized, fails, or the source is unavailable, do not attempt to write; report the limitation.",
@@ -244,7 +245,10 @@ export function createAdkSpecializedAgent(
       ...(config.role==="backend"||config.role==="frontend"?[
         "Before each update_file, check that the proposed TypeScript code is consistent with types and imports in the approved source you have read. In particular, use only known union/enum literal values and avoid comparisons between mutually exclusive types.",
         "Do not guess a type, imported symbol, or status literal when the defining source is unavailable under this Task. Report the uncertainty instead of inventing a contract.",
-        "After a successful update_file, you may re-read and refine that same file only if this Task still has the exact read/update grants. This is source review, not a claim that the project typecheck or tests passed."
+        // The native owner executes a read+update Task as a ONE-SHOT sequence
+        // (one read, then one CAS update); any further tool call is refused
+        // and fails the whole Task. Never invite a re-read after the update.
+        "Write the final, complete content in that single update_file: there is no second chance to refine it in this Task."
       ]:[]),
       "Never claim a commit or successful test without a confirmed controlled tool result.",
       "If the approved Task cannot be completed within these exact grants, report the limitation.",
