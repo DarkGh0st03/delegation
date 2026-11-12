@@ -1,5 +1,7 @@
 # Trusted Engineer and Orchestrator host
 
+> **Nota (novembre 2026):** parti di questo documento descrivono iterazioni precedenti (prove su GitHub Actions, workflow e test di accettazione ora rimossi). Il flusso attuale è descritto nel [README principale](/README.md) e in [docs/LOCAL_SETUP.md](/docs/LOCAL_SETUP.md); i resoconti storici sono in [docs/archive](/docs/archive/).
+
 This application is the **trusted Engineer-side bootstrap**, not the
 model, the three A2A agents, or a second orchestration engine.
 
@@ -95,7 +97,7 @@ treat a synthetic Engineer receipt as real human approval.
 
 - [Archived R0 original route inventory](https://github.com/DarkGh0st03/delegation/blob/5decff3e20592bb15ea6c462fbeac309e689fe22/poc/docs/R0_Canonical_Route_Legacy_Inventory_2026-10-23.md)
 - [Archived R4 historical gate and R5 NO-GO](https://github.com/DarkGh0st03/delegation/blob/5decff3e20592bb15ea6c462fbeac309e689fe22/poc/docs/R4_Security_Gate_and_R5_Readiness_2026-10-23.md)
-- [Trusted manual admission, private runner and recovery](../../docs/trusted-gemini-manual-dispatch.md)
+- [Trusted manual admission, private runner and recovery](../../../docs/archive/poc-docs/trusted-gemini-manual-dispatch.md)
 - [Archived R6 legacy reference evidence](https://github.com/DarkGh0st03/delegation/blob/d1941003304c95e8c91dd6b285c4dece00bfa2a6/poc/docs/R6_Legacy_Reference_Baseline_2026-10-24.md)
 
 **Documentation cleanup note:** The earlier chronological Stage 9–12

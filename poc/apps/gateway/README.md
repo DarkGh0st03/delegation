@@ -1,5 +1,7 @@
 # Cloud Access Gateway — current PoC
 
+> **Nota (novembre 2026):** parti di questo documento descrivono iterazioni precedenti (prove su GitHub Actions, workflow e test di accettazione ora rimossi). Il flusso attuale è descritto nel [README principale](/README.md) e in [docs/LOCAL_SETUP.md](/docs/LOCAL_SETUP.md); i resoconti storici sono in [docs/archive](/docs/archive/).
+
 This Node.js service is the **Policy Enforcement Point (PEP)** for protected operations on the thesis IAM Console repository. It does not trust model-selected permissions.
 
 ## Runtime flow

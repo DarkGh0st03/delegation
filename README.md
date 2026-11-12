@@ -1,72 +1,91 @@
-# Delegation — authority-only thesis PoC
+# Delegation — delegated authorization for AI agents in software engineering
+
+Thesis proof of concept: a Software Engineer delegates **bounded, verifiable
+authority** to a team of AI agents (Orchestrator, Backend, Frontend, Test) that
+work on a Git repository. Every agent operation is authorized by a chain of
+Delegation Credentials verified in Rust and by OPA policy; nothing reaches the
+repository without the Engineer's signed approval, and merging stays human.
 
 ## Quick start (local, Docker only)
 
-Requirements: Docker (on Windows: Docker Desktop). From the repository root:
+Requirements: Docker (on Windows: Docker Desktop with WSL integration). From the
+repository root:
 
 ```bash
-cp .env.example .env        # then set ENGINEER_PASSWORD in .env
+cp .env.example .env        # then set ENGINEER_PASSWORD (and optionally GEMINI_API_KEY)
 docker compose up -d --build
 ```
 
-Open **http://127.0.0.1:8700** and sign in as `engineer`. The first build compiles the
-native Rust modules and takes several minutes. Compose starts Gitea, OPA and Anvil,
-prepares accounts, the example repository and the on-chain registries automatically,
-then the Engineer console. Full guide (Italian): [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+Open **http://127.0.0.1:8700** and sign in. The first build compiles the native
+Rust modules and takes several minutes. Compose starts Gitea, OPA and Anvil,
+prepares accounts, the example repository and the on-chain registries, the
+Engineer console and the test Runner. Full guide (Italian):
+[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
-**Current status of the local application:** login, environment checks, repository
-selection/import, per-repository policy parameters and requirement drafts work.
-Planning with permission review, signed approval and agent execution are being
-wired into the console next; until then the full authority-only chain is exercised
-by the scripted native E2E described below.
+## How a session works
 
-**Start here:** [Current authority-only roadmap](docs/ACTIVE_AUTHORITY_ONLY_ROADMAP.md) and [implementation map](docs/IMPLEMENTATION_STATE.md). The 15 October Google ADK/Gemini experiments described in older documents are **historical**, not the current execution architecture.
+1. **Planning.** The console publishes the repository policy to OPA and issues a
+   read-only *preliminary Root* credential. The Planner reads the pinned commit
+   only through the Gateway (Rust VP verification + OPA + Gitea) and proposes
+   permissions (operation + resource URI) for the requirement.
+2. **Review.** The Engineer can only remove permissions, never add them, and
+   signs the selected subset with an Ed25519 key unlocked by the password.
+3. **Execution.** The preliminary Root is revoked and an *operational Root*
+   with exactly the signed permissions is issued. The Orchestrator delegates
+   one Task at a time, each with its own attenuated *Child* credential:
+   Backend/Frontend change files (read + compare-and-swap update on Gitea),
+   the Test agent reads the changed files and writes tests for the new
+   behaviour, then the project tests run in a throw-away Docker container.
+4. **Draft PR** only after a verified PASS of every project test phase on the
+   final commit. The Root is revoked at the end (or at once with *Stop*).
 
-## Canonical authority-only execution
+Planner/agent modes: **simulated** (free, no AI, marked comments only),
+**reference solution** (free, no AI, the known solution of the example
+requirement) and **Gemini** (paid, explicit consent per session, call and token
+limits, full per-call diagnostics).
 
-1. An independently authenticated **Software Engineer** uses the **Rust cryptographic Core directly** to issue a read-only preliminary Root. Orchestrator/ADK Planning explores the pinned Gitea revision through the Gateway.
-2. The Engineer reviews and **Ed25519-signs only the immutable permission scope**. The proposed task DAG is **not** an immutable, Engineer-signed execution plan. The preliminary Root is revoked before a distinct operational Root is issued.
-3. The **Planner/Executor** dynamically selects and revises operations under that scope. The current Account Suspension PoC has Backend, Frontend and Test agents via Google ADK/A2A; the signed Child delegations are attenuated and checked per task.
-4. The **Gateway directly uses Rust verification** and OPA. The task-local **private/stdio cryptographic MCP** handles signed Child DC and VP material; the historical shared HTTP MCP/worker path is **not** the canonical path.
-5. Gitea reads and HEAD/CAS updates are independently verified. The controlled Docker Runner and researcher-owned acceptance supply exact-revision evidence. Test failures can cause signed diagnostic reads and bounded new repairs **without expanding authority**.
-6. The owner may create a **Draft PR on disposable Gitea** only after a verified PASS. Separate Security CI and Human Gate remain independent; **no automatic merge**.
+## Where things are
 
-### Verified results, with boundaries
-
-- [Fast CI #42477209047](https://github.com/DarkGh0st03/delegation/actions/runs/42477209047) and [positive Security CI #42477209043](https://github.com/DarkGh0st03/delegation/actions/runs/42477209043) passed on the **same SHA** `bbb60fa09d88b0f2949a5c6452f340aedbc33f54`. The positive Security CI contains both a historical Runner regression and a full native Rust/Child/VP/MCP E2E.
-- [Native R385.19 #42478904754](https://github.com/DarkGh0st03/delegation/actions/runs/42478904754) and [Fast CI #42478904760](https://github.com/DarkGh0st03/delegation/actions/runs/42478904760) passed on SHA `8bf19fd59e042b7e4f189f9a543aa8933a169680`: real Docker **FAIL → 10 authenticated diagnostic reads and 10 CAS → PASS**, researcher acceptance and independent Draft PR checks, **0 paid model calls**.
-- The latest cleanup removed 69 superseded milestone reports and 7 obsolete milestone workflows plus their 7 trigger JSONs. Source tests, the native E2E, private cryptographic MCP and the specific negative Rust/EVM and stale-CAS regressions remain.
-- **Critical limit:** native recovery patches and decisions are **scripted**. These PASSes do **not** prove autonomous real-Gemini code generation, arbitrary repository support, actual GitHub protected-environment reviewer configuration, or Security CI status on the **same native Gitea PR**.
-
-## Essential source and CI
-
-| Boundary | Current entrypoint |
+| Component | Entry point |
 | --- | --- |
-| Engineer Root and direct Rust selection | `poc/packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts` |
-| Canonical owner bootstrap | `poc/apps/orchestrator/src/trusted-authority-only-owner-bootstrap.mjs` |
-| Dynamic ADK decision proposer | `poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs` |
-| Agent Cards and tools | `poc/packages/agent-runtime/src/cards.ts`, `adk-specialized-agents.ts` |
-| Private cryptographic MCP | `poc/mcp-shared/src/owner-private-*` |
-| Real Docker / Security CI | `.github/workflows/isolated-positive-security-ci.yml` |
-| Full native Rust/OPA/Gitea/MCP/A2A E2E | `.github/workflows/r38513-native-strict-full-recovery.yml` |
-| Manual Human Gate | `.github/workflows/human-approved-gitea-merge.yml` |
+| Engineer console (UI, sessions, Gemini limits) | `poc/engineer-console/src/` |
+| Review Host (Planning → signed review → Roots) | `poc/apps/orchestrator/src/trusted-authority-only-review-host.mjs` |
+| Operational assembly | `poc/apps/orchestrator/src/canonical-owner-deployment.mjs` |
+| Orchestrator Task decisions | `poc/packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs` |
+| Specialist agents (ADK/A2A) | `poc/packages/agent-runtime/src/` |
+| Gateway (prepare/execute, Rust verifier, OPA) | `poc/apps/gateway/src/` |
+| Rust core (credentials, accumulators, VP) | `src/`, `services/delegation-*-node/` |
+| OPA policy | `poc/opa/policy.rego` |
+| Test Runner | `poc/apps/test-runner-controller/`, `deploy/runner/start.mjs` |
+| Trust registries (EVM) | `blockchain/` |
 
-**Historical Engineer HTTP access is disabled by default** and additionally forbidden in native authority-only mode; old offline fixtures must opt in explicitly with `DELEGATION_LEGACY_ENGINEER_HTTP_FIXTURE=1`. No model may select this transport or the trusted signing authority.
+## Tests (no paid model calls)
 
-## Local, no-paid-model checks
+```bash
+npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+npm --prefix poc run console:test
+npm --prefix poc run gateway:test
+npm --prefix poc run agent-runtime:test
+npm --prefix poc run orchestrator-runtime:test
+npm --prefix poc run orchestrator:test
+npm --prefix poc run plan-contracts:test
+npm --prefix poc run runner:test
+npm --prefix poc run opa:test
+cargo test --locked
+```
 
-Run on the selected commit, with pinned dependencies available:
+The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
 
-- `npm --prefix poc ci --ignore-scripts --no-audit --no-fund`
-- `npm --prefix poc run check:scaffold`
-- `npm --prefix poc run gateway:test`
-- `npm --prefix poc run agent-runtime:test`
-- `npm --prefix poc run orchestrator-runtime:test`
-- `npm --prefix poc run audit:r6:references`
-- `cargo test --locked`
+## Declared limits
 
-**Never trigger a billable Gemini workflow without explicit cost approval. Never merge `main` automatically.** The Human Gate requires an independently authorized human.
+- The test Runner commands and the Test agent's writable test folders are those
+  of the example repository (`iam-console-poc`); `main` and the `feature/`
+  work-branch prefix are fixed.
+- The Engineer's Ed25519 key is held by the local `app` container and unlocked
+  by the password (not a personal hardware key).
+- The `runner` service mounts the host Docker socket (root-equivalent on the
+  host); it is isolated on the internal network with a read-only Gitea token.
+- Gemini limits are on calls and reported tokens, not on money: set a spending
+  limit in the Google project. Never run paid sessions without consent.
 
-### Historical, separately bounded research evidence
-
-The [15 October 2026 manual Gemini run #38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415) did succeed on the **older shared-MCP sequential architecture**, SHA `02c3395b9111a63ccc9f441ea2c91c81865d6673`. It does **not** validate the current authority-only execution. See [historical evidence](docs/LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-15.md), [historical security review](docs/GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md), and the git history of [older checkpoint](docs/CURRENT_CHECKPOINT.md). Do not re-enable the retired paid Shared MCP workflow as a substitute for the current architecture.
+Historical reports of earlier iterations are kept in [docs/archive](docs/archive/).

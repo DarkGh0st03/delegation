@@ -1,5 +1,7 @@
 # Controlled Docker Runner and trusted Security CI
 
+> **Nota (novembre 2026):** parti di questo documento descrivono iterazioni precedenti (prove su GitHub Actions, workflow e test di accettazione ora rimossi). Il flusso attuale è descritto nel [README principale](/README.md) e in [docs/LOCAL_SETUP.md](/docs/LOCAL_SETUP.md); i resoconti storici sono in [docs/archive](/docs/archive/).
+
 The Runner receives only a structured, authenticated operation from the Gateway: exact `repository`, `feature/account-suspension` branch, `commit_sha`, `request_id`, `profile=poc-default`. It does **not** accept agent-defined shell commands.
 
 ## Exact-SHA validation
@@ -19,7 +21,7 @@ When researcher acceptance is enabled (as it is in the canonical full E2E), it s
 
 `src/trusted-security-ci.ts` posts `pending`, then `success/failure/error` for the exact Gitea feature SHA under a separate CI identity. A passing Test Agent `run_tests` result is not a human review and not a merge.
 
-The coordinator creates a PR only after the Test Agent's checks. The merge gate requires a genuine human review on the exact SHA and independent trusted CI, as documented in `docs/human-approved-gitea-merge.md`.
+The coordinator creates a PR only after the Test Agent's checks. The merge gate requires a genuine human review on the exact SHA and independent trusted CI, as documented in `docs/archive/human-approved-gitea-merge.md`.
 
 ## Safe offline tests
 

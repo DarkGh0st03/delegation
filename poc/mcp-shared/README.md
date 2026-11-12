@@ -1,5 +1,7 @@
 # Delegation — cryptographic MCP boundary (R262)
 
+> **Nota (novembre 2026):** parti di questo documento descrivono iterazioni precedenti (prove su GitHub Actions, workflow e test di accettazione ora rimossi). Il flusso attuale è descritto nel [README principale](/README.md) e in [docs/LOCAL_SETUP.md](/docs/LOCAL_SETUP.md); i resoconti storici sono in [docs/archive](/docs/archive/).
+
 ## Canonical approved-plan architecture
 
 The approved signed DAG uses **task-local, in-process MCP**, not a

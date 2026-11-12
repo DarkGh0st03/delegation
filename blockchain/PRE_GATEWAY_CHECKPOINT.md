@@ -1,6 +1,6 @@
 # Pre-Gateway checkpoint
 
-> **Historical checkpoint:** this document records the trust layer before Gateway, OPA/Gitea and A2A integration. Those components are now implemented; see the [current architecture](../README.md) and [implementation map](../docs/IMPLEMENTATION_STATE.md). The trust details and validation commands below remain useful for the retained trust-layer regression. The final section preserves the original freeze decision rather than describing today's work plan.
+> **Historical checkpoint:** this document records the trust layer before Gateway, OPA/Gitea and A2A integration. Those components are now implemented; see the [current architecture](../README.md) and [implementation map](../docs/archive/IMPLEMENTATION_STATE.md). The trust details and validation commands below remain useful for the retained trust-layer regression. The final section preserves the original freeze decision rather than describing today's work plan.
 
 This document is the handoff point between the completed trust/blockchain work and the next thesis phase, the Cloud Access Gateway.
 
