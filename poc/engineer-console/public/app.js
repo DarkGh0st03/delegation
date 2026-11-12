@@ -335,6 +335,19 @@ async function showSession(id) {
   $("sd-stop").hidden = s.phase !== "executing";
   const log = $("sd-log"); log.replaceChildren();
   for (const entry of s.log) li(log, entry.at.slice(11, 19) + " — " + entry.text);
+  const calls = s.model_calls ?? [];
+  $("sd-gemini").hidden = !calls.length;
+  const gemRows = $("sd-gemini-rows"); gemRows.replaceChildren();
+  for (const c of calls) {
+    const tr = document.createElement("tr");
+    cell(tr, (c.at || "").slice(11, 19)); cell(tr, c.phase);
+    cell(tr, c.ok ? "ok" : (c.layer === "budget" ? "scartata (limite)" : "errore"), c.ok ? "allow" : "deny");
+    cell(tr, (c.ms / 1000).toFixed(1) + " s");
+    cell(tr, c.total_tokens != null ? c.input_tokens + " + " + c.output_tokens + " = " + c.total_tokens : "—");
+    cell(tr, c.finish || ""); cell(tr, (c.tools || []).join(", "));
+    cell(tr, c.error || c.preview || "");
+    gemRows.appendChild(tr);
+  }
   const rows = $("sd-gateway"); rows.replaceChildren();
   for (const d of s.gateway_decisions) {
     const tr = document.createElement("tr"); const r = describeResource(d.resource);

@@ -484,3 +484,52 @@ test("reference mode proposes update for existing files and create for new ones"
   assert.deepEqual(events[0].functionCall.args, {branch: "feature/s-1", path: "tests/e2e/new.spec.ts", content: "REF\n"});
   assert.match(events[1].text, /RIFERIMENTO/u);
 });
+
+test("Gemini preflight is free and explains key/model problems without leaking the key", async () => {
+  const {preflightGemini} = await import("../src/gemini-models.mjs");
+  const key = "AIza" + "x".repeat(35);
+  const reply = (status, body) => async (url, init) => {
+    assert.equal(init.headers["x-goog-api-key"], key, "key in a header, never in the URL");
+    assert.doesNotMatch(String(url), /AIza/u);
+    return new Response(body, {status});
+  };
+  assert.deepEqual(await preflightGemini({apiKey: key, model: "gemini-3.8-flash", fetchFn: reply(200, "{}")}),
+    {model: "gemini-3.8-flash"});
+  await assert.rejects(preflightGemini({apiKey: key, model: "gemini-3.8-flash",
+    fetchFn: reply(400, `{"error":"API key not valid ${key}"}`)}),
+    e => /rifiutata/u.test(e.message) && !e.message.includes(key));
+  await assert.rejects(preflightGemini({apiKey: key, model: "gemini-9", fetchFn: reply(404, "")}), /non esiste/u);
+  await assert.rejects(preflightGemini({apiKey: key, model: "gemini-3.8-flash",
+    fetchFn: async () => { throw Object.assign(Error("fetch failed"), {cause: {code: "ENOTFOUND"}}); }}),
+    /non raggiungibile.*ENOTFOUND/u);
+  await assert.rejects(preflightGemini({apiKey: "", model: "gemini-3.8-flash"}), /non configurata/u);
+});
+
+test("paid models are budgeted and every call (or discard) is recorded for the Engineer", async () => {
+  const {BaseLlm} = await import("@google/adk");
+  const {createSessionGeminiModels} = await import("../src/gemini-models.mjs");
+  const answers = [
+    {content: {role: "model", parts: [{text: "{\"ok\":true}"}]}, finishReason: "STOP",
+      usageMetadata: {promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120}},
+    {content: {role: "model", parts: [{text: "troncata"}]}, finishReason: "MAX_TOKENS",
+      usageMetadata: {promptTokenCount: 100, candidatesTokenCount: 50, totalTokenCount: 150}}];
+  class FakeGemini extends BaseLlm {
+    constructor() { super({model: "gemini-3.8-flash"}); }
+    async *generateContentAsync() { yield answers.shift(); }
+  }
+  const records = [];
+  const g = await createSessionGeminiModels({apiKey: "unused", model: "gemini-3.8-flash",
+    record: r => records.push(r), createProvider: () => new FakeGemini()});
+  const planner = g.planning();
+  assert.equal(planner.model, "gemini-3.8-flash", "model name kept: canonical timeouts depend on it");
+  const out = [];
+  for await (const r of planner.generateContentAsync({})) out.push(r);
+  assert.equal(out.length, 1);
+  assert.deepEqual([records[0].ok, records[0].total_tokens, records[0].finish, records[0].preview],
+    [true, 120, "STOP", "{\"ok\":true}"]);
+  // A truncated answer is observed, then DISCARDED by the canonical budget layer.
+  await assert.rejects(async () => { for await (const _ of planner.generateContentAsync({})); });
+  assert.equal(records[1].finish, "MAX_TOKENS");
+  assert.deepEqual([records[2].ok, records[2].layer], [false, "budget"]);
+  assert.equal(g.summary().calls_started, 2);
+});

@@ -14,6 +14,9 @@ import {join} from "node:path";
 import {readEnvFile} from "./env.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
+import {preflightGemini, createSessionGeminiModels} from "./gemini-models.mjs";
+
+const geminiModelName = () => process.env.GEMINI_MODEL || "gemini-3.8-flash";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from "../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
 import {ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT} from "../../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs";
 
@@ -46,6 +49,10 @@ export function friendlyExecutionError(error) {
     return "i test sono falliti per un problema dell'ambiente di test (ad esempio l'installazione " +
       "delle dipendenze senza rete), non per il codice. L'esecuzione si è fermata in sicurezza e la " +
       "Root è stata revocata. Dettagli: docker compose logs runner";
+  if (/private Gemini request budget NO-GO/u.test(text))
+    return "il limite di sicurezza su Gemini ha scartato una chiamata (budget esaurito, risposta " +
+      "troncata o bloccata, oppure errore di Google). La Root è stata revocata. Vedi la tabella " +
+      "\"Chiamate a Gemini\" della sessione";
   if (/PR forbidden without latest independently completed Test/u.test(text))
     return "i test non sono stati completati con successo, quindi la Draft PR non è stata " +
       "creata e la Root è stata revocata";
@@ -254,12 +261,8 @@ export class EngineerSessions {
           : "Modifiche generate dagli agenti entro i permessi firmati dall'Engineer.\n") +
           "Gli agenti non possono fare merge: la decisione resta umana."
       },
-      loadModelFactory: async () => {
-        if (scripted) return () => new ScriptedRootTaskModel({});
-        const {createGeminiAdkModel} = await import("../../packages/agent-runtime/src/gemini-adk-model.ts");
-        return () => createGeminiAdkModel({apiKey: process.env.GEMINI_API_KEY,
-          model: process.env.GEMINI_MODEL || "gemini-3.8-flash"});
-      }
+      // Placeholders only: every model is replaced below, per role.
+      loadModelFactory: async () => () => new ScriptedRootTaskModel({})
     });
 
     // Owner-side diagnostics: the Gateway hides provider errors from agents
@@ -305,8 +308,15 @@ export class EngineerSessions {
           agent_id: "orchestrator", depends_on: ["t99-test"], permissions: [plan.pullRequest],
           instruction: "Crea la Draft PR sul commit testato; non fare mai merge"});
       else delete operational.workflow.draftPullRequest;
-    } else if (!approved.some(p => p.operation === "create_pull_request")) {
-      delete operational.workflow.draftPullRequest;
+    } else {
+      if (!live.gemini) throw Error("Modelli Gemini della sessione non disponibili");
+      const m = live.gemini.execution(), w = operational.localWorkers.workers;
+      w.backend.adk.model = m.backend; w.frontend.adk.model = m.frontend; w.test.adk.model = m.test;
+      // One Orchestrator model: Branch proposal, every Task decision, PR proposal.
+      operational.workflow.createBranch.model = m.orchestrator;
+      operational.workflow.adaptive.model = m.orchestrator;
+      if (operational.workflow.draftPullRequest) operational.workflow.draftPullRequest.model = m.orchestrator;
+      if (!approved.some(p => p.operation === "create_pull_request")) delete operational.workflow.draftPullRequest;
     }
 
     // Live view of every Gateway decision of the agents (VP, Rust, OPA).
@@ -333,6 +343,10 @@ export class EngineerSessions {
       for (const event of events.slice(seen)) this.#recordDecision(session, event);
     }
     session.result = summarizeResult(result);
+    if (live.gemini) {
+      const g = live.gemini.summary();
+      this.#log(session, `Gemini: ${g.calls_started} chiamate, ${g.reported_tokens ?? g.reported_total_tokens ?? "?"} token riportati nella sessione`);
+    }
     if (result?.pr_created) {
       session.pull_request = await this.#gitea.pullRequestFor(session.repository.name, session.work_branch)
         .catch(() => null);
@@ -344,6 +358,16 @@ export class EngineerSessions {
     // Retire the operational Root now: nothing else may run under it.
     await this.#shutdown(session.id);
     this.#log(session, "Root operativa revocata a fine esecuzione");
+  }
+
+  #recordModelCall(session, entry) {
+    session.model_calls ??= [];
+    if (session.model_calls.length < 400) session.model_calls.push({at: new Date().toISOString(), ...entry});
+    if (!entry.ok) session.log.push({at: new Date().toISOString(),
+      text: `Gemini (${entry.phase}${entry.layer === "budget" ? ", limite di sicurezza" : ""}): ${entry.error}`});
+    else if (entry.finish && entry.finish !== "STOP") session.log.push({at: new Date().toISOString(),
+      text: `Gemini (${entry.phase}): risposta terminata con ${entry.finish} (verrà scartata)`});
+    this.#save(session);
   }
 
   #recordDecision(session, event) {
@@ -411,6 +435,7 @@ export class EngineerSessions {
     if (!live) return;
     this.#live.delete(id);
     clearInterval(live.auditTimer);
+    try { live.gemini?.cancel(); } catch { /* already fenced */ }
     try { await (live.handoff ?? live.host).close(); }
     finally { await new Promise(ok => live.gatewayServer.close(() => ok())); }
   }
@@ -453,6 +478,12 @@ export class EngineerSessions {
   }
 
   async #runPlanning(session, userRecord) {
+    // 0. Paid mode: free, read-only check of key and model before anything starts.
+    if (session.mode === "gemini") {
+      this.#log(session, `Controllo gratuito di chiave e modello Gemini (${geminiModelName()})...`);
+      await preflightGemini({apiKey: process.env.GEMINI_API_KEY, model: geminiModelName()});
+      this.#log(session, "Chiave e modello Gemini accettati da Google");
+    }
     const {owner, name} = session.repository;
     const repo = await this.#gitea.repositoryDetail(name);
     if (repo.default_branch !== "main")
@@ -559,11 +590,12 @@ export class EngineerSessions {
 
     // 5. Planning model: free scripted stand-in, or Gemini with consent.
     let model;
+    let gemini;
     if (session.mode === "gemini") {
-      const {createGeminiAdkModel} = await import("../../packages/agent-runtime/src/gemini-adk-model.ts");
-      model = createGeminiAdkModel({apiKey: process.env.GEMINI_API_KEY,
-        model: process.env.GEMINI_MODEL || "gemini-3.8-flash"});
-      this.#log(session, "Planner: Gemini (" + (process.env.GEMINI_MODEL || "gemini-3.8-flash") + ")");
+      gemini = await createSessionGeminiModels({apiKey: process.env.GEMINI_API_KEY,
+        model: geminiModelName(), record: entry => this.#recordModelCall(session, entry)});
+      model = gemini.planning();
+      this.#log(session, `Planner: Gemini (${geminiModelName()}), con limiti di chiamate e token per sessione`);
     } else if (session.mode === "reference") {
       model = new ScriptedPlannerModel({snapshotFiles: tree.files, requirement: session.requirement,
         referencePaths: Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES)});
@@ -636,9 +668,13 @@ export class EngineerSessions {
     };
     session.phase = "awaiting_review";
     this.#live.set(session.id, {host, gatewayServer, gatewayBaseUrl, revisions, checkpointStore,
-      snapshot, dirs, preliminaryRoot, operationalSessionStore, trustedAgentRegistry,
+      snapshot, dirs, preliminaryRoot, operationalSessionStore, trustedAgentRegistry, gemini,
       engineerKeyFile, engineerPublicPem});
     this.#log(session, `Proposta pronta: ${session.proposal.permissions.length} permessi da rivedere`);
+    if (gemini) {
+      const g = gemini.summary();
+      this.#log(session, `Gemini nel Planning: ${g.calls_started} chiamate, ${g.reported_total_tokens} token riportati`);
+    }
   }
 }
 

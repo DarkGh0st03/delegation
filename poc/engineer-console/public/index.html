@@ -148,6 +148,11 @@
           </p>
           <h4>Cronologia</h4>
           <ul id="sd-log"></ul>
+          <div id="sd-gemini" hidden>
+            <h4>Chiamate a Gemini (nessun prompt né chiave: solo dati di diagnostica)</h4>
+            <table><thead><tr><th>Ora</th><th>Fase / ruolo</th><th>Esito</th><th>Durata</th><th>Token</th><th>Fine</th><th>Strumenti</th><th>Estratto / errore</th></tr></thead>
+              <tbody id="sd-gemini-rows"></tbody></table>
+          </div>
           <h4>Decisioni del Gateway (verifica Rust + OPA)</h4>
           <table><thead><tr><th>Ora</th><th>Ruolo</th><th>Operazione</th><th>Risorsa</th><th>Esito</th><th>Motivo</th></tr></thead>
             <tbody id="sd-gateway"></tbody></table>

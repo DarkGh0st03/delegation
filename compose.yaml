@@ -166,6 +166,10 @@ services:
       OPA_URL: http://opa:8181
       ANVIL_URL: http://anvil:8545
       RUNNER_URL: http://runner:8095
+      # Paid Gemini (optional). Only this service receives the key; every
+      # session also needs the Engineer's explicit consent in the console.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
     volumes:
       - config:/config:ro
       - state:/state

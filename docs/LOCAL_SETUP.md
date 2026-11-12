@@ -136,6 +136,27 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
      codice generato da un modello.
    - *Gemini*: gli agenti scrivono il codice; la PR nasce solo se i test passano.
 
+### Prova con Gemini (a pagamento)
+
+1. Nel file `.env` imposta `GEMINI_API_KEY=` con la tua chiave (mai in chat né
+   in Git) e, se vuoi, `GEMINI_MODEL=` (predefinito `gemini-3.8-flash`). Poi
+   `docker compose down`, `docker compose build`, `docker compose up -d`.
+   La chiave arriva solo al servizio `app`.
+2. Nel Planning scegli **Gemini** e spunta il consenso ai costi. Prima di tutto
+   la console fa un **controllo gratuito** (sola lettura, nessun token) di
+   chiave e modello: se Google li rifiuta, la sessione si ferma subito.
+3. Limiti di sicurezza (gli stessi del codice canonico): chiamate e token per
+   fase e per ruolo, al massimo **160 chiamate e 1.000.000 di token riportati
+   per sessione**; ogni risposta troncata, bloccata o fuori budget viene
+   scartata e la Root revocata. **Non è un tetto in euro**: Google può
+   addebitare anche chiamate scartate o fallite, quindi imposta un limite di
+   spesa nel progetto Google.
+4. Diagnostica: nella sessione la tabella **"Chiamate a Gemini"** mostra per
+   ogni chiamata fase/ruolo, durata, token, motivo di fine, strumenti usati e
+   un estratto della risposta, oppure l'errore esatto di Google (la chiave è
+   sempre oscurata). Gli errori compaiono anche nella Cronologia e nella
+   colonna Motivo della pagina Esecuzione.
+
 Limiti attuali, dichiarati:
 
 - la chiave Ed25519 dell'Engineer è conservata dal container `app` (volume
