@@ -24,12 +24,16 @@ Engineer console and the test Runner. Full guide (Italian):
 
 ## How a session works
 
-1. **Planning.** The console publishes the repository policy to OPA and issues a
-   read-only *preliminary Root* credential. The Planner reads the pinned commit
+1. **Planning.** The console publishes the repository policy to OPA, pins the
+   repository's **project profile** (Runner image, ordered test phases, folders
+   where tests may be written) to the session and issues a read-only
+   *preliminary Root* credential. The Planner reads the pinned commit
    only through the Gateway (Rust VP verification + OPA + Gitea) and proposes
    permissions (operation + resource URI) for the requirement.
 2. **Review.** The Engineer can only remove permissions, never add them, and
-   signs the selected subset with an Ed25519 key unlocked by the password.
+   signs the selected subset with an Ed25519 key unlocked by the password. The
+   signed grant also binds the SHA-256 of the project profile: agents cannot
+   change what "the tests pass" means.
 3. **Execution.** The preliminary Root is revoked and an *operational Root*
    with exactly the signed permissions is issued. The Orchestrator delegates
    one Task at a time, each with its own attenuated *Child* credential. A
@@ -39,7 +43,7 @@ Engineer console and the test Runner. Full guide (Italian):
    and the write is admitted only after all of them, on a file read in the
    same Task. Backend/Frontend change application files; the Test agent
    reads the changed files and writes tests for the new behaviour; then the
-   project tests run in a throw-away Docker container.
+   phases of the signed project profile run in a throw-away Docker container.
 4. **Draft PR** only after a verified PASS of every project test phase on the
    final commit. The Root is revoked at the end (or at once with *Stop*).
 
@@ -91,9 +95,14 @@ The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
 
 ## Declared limits
 
-- The test Runner commands and the Test agent's writable test folders are those
-  of the example repository (`iam-console-poc`); `main` and the `feature/`
-  work-branch prefix are fixed.
+- Each repository has a **project profile** set by the Engineer on the Policy
+  page (Docker image, ordered test phases, test folders and suffixes). The
+  example repository gets its known profile; any other repository starts from
+  a plain npm template (`npm ci`, `npm test`) to be reviewed. The first phase
+  prepares the environment: a failure there is not repaired by the agents.
+- The base branch is the repository's default branch (e.g. `main` or
+  `master`); agents always work on `feature/<session>`, a namespace that is
+  fixed and protected by OPA.
 - The Engineer's Ed25519 key is held by the local `app` container and unlocked
   by the password (not a personal hardware key).
 - The `runner` service mounts the host Docker socket (root-equivalent on the

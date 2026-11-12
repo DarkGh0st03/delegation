@@ -7,6 +7,31 @@ Draft PR su Gitea.
 
 ---
 
+## 2026-11-12 — Sistema generico: seconda repository con Runner reale (sandbox)
+
+Verifica del profilo di progetto per repository su una repository diversa da
+`iam-console-poc`, creata solo per la prova: `thesis/greeter-lib`, branch base
+**`master`**, codice in `src/`, test in `test/`, nessuna dipendenza.
+
+| Voce | Valore |
+| --- | --- |
+| Ambiente | sandbox di sviluppo (Docker), stack completo, **Runner reale** |
+| Modalità | simulata (gratuita, nessuna IA) |
+| Profilo di test | modello npm: `npm ci`, poi `npm test`; test in `test/` |
+| Planning | letture su `master` autorizzate da Gateway (Rust + OPA) |
+| Esecuzione | Backend modifica `src/greeter.js`; il Test agent legge `src/greeter.js` e `test/greeter.test.js` e aggiorna il test (2 letture + 1 scrittura) |
+| Gateway | 9 decisioni, 0 negate |
+| Runner | container Docker usa e getta: `npm ci` PASS, `npm test` PASS (`ok 1 - greet says hello`) |
+| Risultato | Draft PR verso `master` |
+
+Prima di correggere lo script di test della repository di prova (`node --test
+test/` non è valido con Node 22) il Runner ha riportato un FAIL reale nella
+fase `tests`: nessuna PR, Root revocata. Nella stessa sandbox la regressione
+su `iam-console-poc` (modalità riferimento) ha dato lo stesso esito di prima con
+le 6 fasi del suo profilo.
+
+---
+
 ## 2026-11-12 — Prima esecuzione completa con Gemini (riuscita)
 
 È la prima volta che l'intero flusso arriva in fondo con un modello reale:
