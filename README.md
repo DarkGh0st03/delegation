@@ -48,6 +48,15 @@ Planner/agent modes: **simulated** (free, no AI, marked comments only),
 requirement) and **Gemini** (paid, explicit consent per session, call and token
 limits, full per-call diagnostics).
 
+## Latest successful run
+
+**2026-11-12, Gemini (`gemini-3.8-flash`)**: first complete run with a real
+model. The Account Suspension requirement went through Planning, Engineer
+signature (23 of 25 permissions), 13 Tasks with their own Child credentials (38
+Gateway authorizations, 0 denied), Runner **PASS** on the final commit and a
+Draft PR, in about 9 minutes, with 65 Gemini calls (206,388 tokens). Details and
+a review of the generated code: [docs/RUN_LOG.md](docs/RUN_LOG.md).
+
 ## Where things are
 
 | Component | Entry point |
