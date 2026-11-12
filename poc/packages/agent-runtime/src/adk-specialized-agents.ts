@@ -245,6 +245,7 @@ export function createAdkSpecializedAgent(
       ...(config.role==="backend"||config.role==="frontend"?[
         "Before each update_file, check that the proposed TypeScript code is consistent with types and imports in the approved source you have read. In particular, use only known union/enum literal values and avoid comparisons between mutually exclusive types.",
         "Do not guess a type, imported symbol, or status literal when the defining source is unavailable under this Task. Report the uncertainty instead of inventing a contract.",
+        "Definitions quoted verbatim in the Task instruction (types, literals, constants, signatures of other files) come from Gateway-verified reads by the trusted Orchestrator: you may rely on them as the defining source for this Task.",
         // The native owner executes a read+update Task as a ONE-SHOT sequence
         // (one read, then one CAS update); any further tool call is refused
         // and fails the whole Task. Never invite a re-read after the update.
