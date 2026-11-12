@@ -378,9 +378,19 @@ async function stopSession(id, msgId) {
 }
 
 // ---------- review dialog ----------
+// What the execution workflow cannot do without each repository grant.
+const WORKFLOW_GRANTS = [
+  ["create_branch", "senza create_branch l'esecuzione NON può partire (manca il branch di lavoro): rifiuta e rifai il Planning"],
+  ["run_tests", "senza run_tests i test non verranno eseguiti e la Draft PR non potrà essere creata"],
+  ["create_pull_request", "senza create_pull_request non verrà creata nessuna Draft PR"]
+];
+
 function updateCount() {
   const boxes = [...document.querySelectorAll("#rv-rows input")];
   const n = boxes.filter(b => b.checked).length;
+  const granted = new Set(boxes.filter(b => b.checked).map(b => b.dataset.operation));
+  const warnings = WORKFLOW_GRANTS.filter(([op]) => !granted.has(op)).map(([, text]) => "Attenzione: " + text + ".");
+  $("rv-warnings").textContent = warnings.join(" ");
   $("rv-count").textContent = "Selezionati " + n + " permessi su " + boxes.length;
   $("rv-approve").disabled = n === 0;
   for (const box of boxes) box.closest("tr").classList.toggle("denied", !box.checked);
@@ -403,7 +413,7 @@ function openReview(s) {
   for (const p of s.proposal.permissions) {
     const tr = document.createElement("tr"); const r = describeResource(p.resource);
     const td = document.createElement("td"); const box = document.createElement("input");
-    box.type = "checkbox"; box.checked = true; box.value = p.id;
+    box.type = "checkbox"; box.checked = true; box.value = p.id; box.dataset.operation = p.operation;
     box.addEventListener("change", updateCount);
     td.appendChild(box); tr.appendChild(td);
     cell(tr, p.operation); cell(tr, r.branch); cell(tr, r.path);
