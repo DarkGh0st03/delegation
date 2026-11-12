@@ -462,7 +462,7 @@ for(const kind of ['foreign-task','wrong-head','bad-digest','over-budget']){
   const model=new Decisions([candidate('test',0),inspect,repair]);
   await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
    model,hooks:f.hooks,maxSteps:3
-  }),/Task choice denied/u);
+  }),/Task choice denied|not bound to a signed read/u);
   assert.equal(model.calls,2);
   assert.deepEqual(f.done.map(x=>x.task_id),['task-1']);
   assert.equal(f.retired,true);
@@ -564,13 +564,12 @@ test('R383.0 Test agent reads its signed project test source before any failure,
  assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
 });
 
-for(const mode of ['missing-signed-root','missing-test-capability','non-project-test-file']){
+for(const mode of ['missing-signed-root','missing-test-capability','directory-scope']){
  test('R383.0 Test read cannot bypass '+mode,async()=>{
   const f=verifiedFailureFixture({failCount:0});
-  const target=mode==='non-project-test-file'?'apps/backend.ts':
-   'tests/backend/account.test.ts';
-  const readGrant={operation:'read_file',
-   resource:repo+'/branches/feature%2Faccount-suspension/files/'+target};
+  // The Test agent reads ONE exact signed file, never a whole directory.
+  const readGrant={operation:'read_file',resource:repo+'/branches/feature%2Faccount-suspension/'+
+   (mode==='directory-scope'?'directories/apps':'files/tests/backend/account.test.ts')};
   const original=f.hooks.readContext;
   f.hooks.readContext=async()=>{
    const ctx=await original();
@@ -616,13 +615,13 @@ test('R383.0 forged Test source observation cannot reach a later ADK decision',a
  ]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
   model,hooks:f.hooks,maxSteps:3
- }),/Task choice denied/u);
+ }),/not bound to a signed read of a completed Task/u);
  assert.equal(model.calls,1,'the forged source was rejected before a model retry');
  assert.deepEqual(f.done.map(p=>p.task_id),['task-0']);
  assert.equal(f.retired,true);
 });
 
-test('R377.0 Test read of a non-project source remains denied before any failure',async()=>{
+test('Test agent may read a signed application source to write tests for it',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
@@ -630,30 +629,30 @@ test('R377.0 Test read of a non-project source remains denied before any failure
   ctx.agents.test.capabilities.push('read_file');
   return ctx;
  };
- const model=new Decisions([candidate('test',0,[diagnosticRead()])]);
- await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
-  /Task choice denied/u);
- assert.equal(model.calls,1);
- assert.equal(f.done.length,0);
- assert.equal(f.retired,true);
+ const model=new Decisions([candidate('test',0,[diagnosticRead()]),candidate('test',1),
+  {action:'ready_for_pr',reason:'Current independent project Test passed'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:3});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.deepEqual(f.done.map(row=>row.permissions.map(p=>p.operation)),
+  [['read_file'],['run_tests']]);
+ assert.equal(f.retired,false);
 });
 test('R376.1 a Test-role read cannot replace signed run_tests authority',async()=>{
  const f=verifiedFailureFixture();
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
   const ctx=await original();
-  // Even when a trusted registry advertises the capability, the Test
-  // specialist cannot execute a recovery diagnosis disguised as a read.
   ctx.agents.test.capabilities.push('read_file');
   return ctx;
  };
+ // After a verified FAIL, reading a file is not a new Test PASS.
  const inspect=candidate('test',1,[diagnosticRead()]);
  inspect.task.depends_on=[];
- const model=new Decisions([candidate('test',0),inspect]);
- await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
-  /Task choice denied/u);
- assert.equal(model.calls,2);
- assert.equal(f.done.length,0);
+ const model=new Decisions([candidate('test',0),inspect,
+  {action:'ready_for_pr',reason:'the read proves nothing'}]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:3}),
+  /requires a new independently completed Test/u);
+ assert.equal(model.calls,3);
  assert.equal(f.retired,true);
 });
 test('R376.0 diagnostic read outside immutable Engineer root is denied',async()=>{

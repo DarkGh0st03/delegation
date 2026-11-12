@@ -11,7 +11,7 @@
  * Task against the Engineer-signed grant whatever these models answer.
  */
 import {BaseLlm} from "@google/adk";
-import {isProjectTestSource} from "../../packages/plan-contracts/src/gitea-permission-containment.mjs";
+import {isProjectTestSource, MAX_TASK_READS} from "../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import {MAX_ADAPTIVE_SOURCE_OBSERVATIONS} from "../../packages/plan-contracts/src/planning-limits.mjs";
 
 const SLASH = /^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/(.+)$/u;
@@ -46,7 +46,10 @@ export function simulatedMarker(path, sessionId) {
 
 /**
  * Pure plan from the APPROVED permissions only: one Task per file that has
- * both read_file and update_file, then one Test Task if run_tests is granted.
+ * both read_file and update_file (or create_file), then one Test Task if
+ * run_tests is granted. A Test Task that edits a test file also reads, in
+ * the same Task, the application files changed before it (N signed reads +
+ * ONE write, like a real specialist reading the code it tests).
  */
 export function simulatedExecutionPlan(approved, sessionId) {
   const byPath = new Map();
@@ -62,9 +65,11 @@ export function simulatedExecutionPlan(approved, sessionId) {
     byPath.set(path, entry);
   }
   // Order: (1) application files by Backend/Frontend, (2) the Test agent
-  // reads each changed application file, (3) the Test agent writes the test
-  // files, (4) one final run_tests. One Child DC per Task; at most 24.
-  const work = [], reads = [], tests = [];
+  // writes the test files, reading the changed application files in the same
+  // Task, (3) one final run_tests. One Child DC per Task; at most 24.
+  // A test file can only be CREATED in a single-effect Task: when no test is
+  // updated, the Test agent first reads the changed files in read-only Tasks.
+  const work = [], reads = [], tests = [], changed = [];
   for (const [path, entry] of [...byPath].sort(([a], [b]) => a.localeCompare(b))) {
     const role = roleForPath(path);
     const target = role === "test" ? tests : work;
@@ -75,15 +80,24 @@ export function simulatedExecutionPlan(approved, sessionId) {
       target.push({agent_id: role, path, op: "update",
         permissions: [pick(entry.read_file), pick(entry.update_file)],
         instruction: `Leggi e aggiorna ${path} (sessione ${sessionId})`});
-      if (role !== "test") reads.push({agent_id: "test", path, op: "read",
-        permissions: [pick(entry.read_file)],
-        instruction: `Leggi ${path}, modificato da ${role}, per scrivere i test sul comportamento nuovo`});
+      if (role !== "test") {
+        changed.push({path, read: entry.read_file});
+        reads.push({agent_id: "test", path, op: "read", permissions: [pick(entry.read_file)],
+          instruction: `Leggi ${path}, modificato da ${role}, per scrivere i test sul comportamento nuovo`});
+      }
     }
   }
+  const context = changed.slice(0, MAX_TASK_READS - 1);
+  for (const t of tests) if (t.op === "update" && context.length) {
+    t.reads = context.map(c => c.path);
+    t.permissions = [...context.map(c => pick(c.read)), ...t.permissions];
+    t.instruction = `Leggi ${t.reads.join(", ")} e aggiorna ${t.path} con i test del comportamento nuovo`;
+  }
+  const embedded = tests.some(t => t.reads);
   const room = 24 - work.length - tests.length - (runTests ? 1 : 0);
-  // Each read becomes a bounded source observation for the Orchestrator.
+  // Each read-only Task becomes a bounded source observation for the Orchestrator.
   const readable = Math.max(0, Math.min(room, MAX_ADAPTIVE_SOURCE_OBSERVATIONS));
-  const tasks = [...work, ...(tests.length ? reads.slice(0, readable) : []), ...tests]
+  const tasks = [...work, ...(tests.length && !embedded ? reads.slice(0, readable) : []), ...tests]
     .map((t, i) => ({task_id: `t${String(i + 1).padStart(2, "0")}-${t.agent_id}${t.op === "read" ? "-read" : ""}`, ...t}));
   if (runTests) tasks.push({task_id: "t99-test", agent_id: "test",
     permissions: [pick(runTests)], instruction: "Esegui i test del progetto sul commit attuale del branch"});
@@ -147,10 +161,9 @@ class Scripted extends BaseLlm {
   connect() { throw Error("Scripted model has no live connection"); }
 }
 
-/** One Task per assigned file: read_file -> update_file -> short report. */
 /**
- * One Task per assigned file. Update: read_file -> update_file -> report.
- * Create: create_file -> report. Content is the simulated marker appended to
+ * One Task per assigned file. Update: read_file of each context file, then of
+ * the edited file, -> update_file -> report. Create: create_file -> report. Content is the simulated marker appended to
  * what the Gateway returned, or the fixed REFERENCE content when given.
  */
 export class ScriptedWorkerModel extends Scripted {
@@ -159,6 +172,8 @@ export class ScriptedWorkerModel extends Scripted {
     super({model: contents ? `reference-${role}-no-ai` : `scripted-${role}-no-ai`});
     this.#branch = branch; this.#sessionId = sessionId; this.#contents = contents;
     this.#queue = files.map(f => typeof f === "string" ? {path: f, op: "update"} : f);
+    // Context files first, the edited file last: its content is the last read.
+    for (const f of this.#queue) f.readOrder = [...(f.reads ?? []), f.path];
   }
   #content(path, previous) {
     if (this.#contents) {
@@ -190,8 +205,12 @@ export class ScriptedWorkerModel extends Scripted {
       yield say(`Creato ${path} (${label}).`);
       return;
     }
-    if (turn === 1) { yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path}); return; }
-    if (turn === 2) {
+    const reads = item.readOrder;
+    if (turn <= reads.length) {
+      yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path: reads[turn - 1]});
+      return;
+    }
+    if (turn === reads.length + 1) {
       const previous = lastReadContent(request);
       if (typeof previous !== "string") throw Error("Scripted worker: read result not found for " + path);
       yield call(`update-${this.calls}`, "update_file", {branch: this.#branch, path, content: this.#content(path, previous)});

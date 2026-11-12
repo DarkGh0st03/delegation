@@ -232,7 +232,7 @@ export function createAdkSpecializedAgent(
       "Approved writable existing files:",...list(writable),"",
       "Approved creatable files:",...list(creatable),"",
       "Read and write are independent permissions: never assume either from the other.",
-      "Each granted operation may be used exactly ONCE in this Task (one read_file, one update_file, one create_file or one run_tests). After the write or the test run, call no more tools and reply only with a short report: repeated or extra tool calls are refused and make the Task fail.",
+      "Each granted operation may be used exactly ONCE in this Task: read EVERY approved readable file once (in any order; they are the file to edit and the files it depends on), then make the single write (update_file or create_file) or the single run_tests. After the write or the test run, call no more tools and reply only with a short report: repeated, extra or out-of-order tool calls are refused and make the Task fail.",
       "Before every update_file, first call read_file for that exact existing path in this same Task.",
       "Use the content returned by that successful read to construct the full replacement. A read from a previous Task is not evidence for this Task.",
       "If that read is not authorized, fails, or the source is unavailable, do not attempt to write; report the limitation.",
@@ -245,7 +245,6 @@ export function createAdkSpecializedAgent(
       ...(config.role==="backend"||config.role==="frontend"?[
         "Before each update_file, check that the proposed TypeScript code is consistent with types and imports in the approved source you have read. In particular, use only known union/enum literal values and avoid comparisons between mutually exclusive types.",
         "Do not guess a type, imported symbol, or status literal when the defining source is unavailable under this Task. Report the uncertainty instead of inventing a contract.",
-        "Definitions quoted verbatim in the Task instruction (types, literals, constants, signatures of other files) come from Gateway-verified reads by the trusted Orchestrator: you may rely on them as the defining source for this Task.",
         // The native owner executes a read+update Task as a ONE-SHOT sequence
         // (one read, then one CAS update); any further tool call is refused
         // and fails the whole Task. Never invite a re-read after the update.

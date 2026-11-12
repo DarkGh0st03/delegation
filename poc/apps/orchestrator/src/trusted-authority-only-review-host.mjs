@@ -46,7 +46,7 @@ import {AuthenticatedGiteaMutationCompletionObserver}
 import {AuthenticatedGiteaReadCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
-import {isTestAgentReadGrant,isProjectTestCreateGrant,isProjectTestSource,
+import {isTestAgentReadGrant,readUpdateGrantShape,isProjectTestCreateGrant,isProjectTestSource,
  isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
@@ -909,8 +909,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         const staged=await executionHandle.stageTask({task:{task_id:choice.task_id,epoch:context.nextEpoch,
          agent_id:choice.agent_id,depends_on:[...choice.depends_on],permissions:[...choice.permissions]},
          runtimeTaskId,childParameters});
-        // Model-selected read + CAS uses the existing typed native two-effect
-        // Gateway journal, never a blind one-shot update.
+        // Model-selected reads + CAS use the typed native Gateway journal
+        // (each granted read, then the update), never a blind one-shot update.
         const mixed=choice.permissions.some(p=>p.operation==='read_file')&&
          choice.permissions.some(p=>p.operation==='update_file');
         const stager=mixed
@@ -1339,12 +1339,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          dispatchAttempts.has(input.runtimeTaskId))
        deny('native sequential staging requires enrolled unspent update Task');
       const row=operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id);
-      const reads=row.permissions.filter(p=>p.operation==='read_file');
-      const updates=row.permissions.filter(p=>p.operation==='update_file');
-      if(row.agent_id!==pin.agent_id||row.permissions.length!==2||
-         reads.length!==1||updates.length!==1||
-         reads[0].resource!==updates[0].resource)
-       deny('native sequential staging requires exact same-file read and update grants');
+      // One edited file plus its signed context reads (shared shape rule).
+      if(row.agent_id!==pin.agent_id||!readUpdateGrantShape(row.permissions))
+       deny('native sequential staging requires one edited file with its signed reads');
       // Consume owner's one-shot slot BEFORE awaiting journal admission.
       const flight=TrustedAuthorityOnlySequentialReadUpdateStager.begin({
        store:nativeEffectBinding.store,admissions:gateway,

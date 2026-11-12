@@ -1,4 +1,4 @@
-import {isProjectTestSource} from "../../plan-contracts/src/gitea-permission-containment.mjs";
+import {isProjectTestSource,MAX_TASK_READS} from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R320: trusted host-only, per-Task ADK/A2A -> Gateway effect binding.
  *
@@ -51,6 +51,22 @@ interface Entry {
  mixedPhase:"read_ready"|"read_pending"|"read_attested"|
   "update_pending"|"finished"|"failed";
  mixedRequest?:string;
+ /** Reads granted by the signed Task (edited file + its context files). */
+ plannedReads:number;
+ attestedReads:number;
+}
+/** Exact read+update hints: 1..MAX_TASK_READS distinct reads that include the
+ * edited file, plus ONE update of that file; nothing else. */
+function readUpdateHints(hints:readonly {operation?:unknown;path?:unknown}[],
+  path:string):number|null{
+ const reads=hints.filter(r=>r?.operation==="read_file").map(r=>r.path);
+ const updates=hints.filter(r=>r?.operation==="update_file");
+ if(reads.length<1||reads.length>MAX_TASK_READS||
+    reads.length+1!==hints.length||updates.length!==1||
+    updates[0]?.path!==path||!reads.includes(path)||
+    reads.some(x=>typeof x!=="string")||new Set(reads).size!==reads.length)
+  return null;
+ return reads.length;
 }
 export class TrustedEffectStagingTaskRegistry {
  readonly #entries=new Map<string,Entry>();
@@ -101,7 +117,7 @@ export class TrustedEffectStagingTaskRegistry {
     ...(input.path!==undefined?{path:input.path}:{})
    }),
    stager:input.effectStager,state:"ready",attempted:false,
-   mixedPhase:"read_ready"
+   mixedPhase:"read_ready",plannedReads:0,attestedReads:0
   });
  }
 
@@ -125,11 +141,10 @@ export class TrustedEffectStagingTaskRegistry {
      context.delegation_evidence?.presenter_id!==p.presenterId||
      !Array.isArray(hints)||
      (p.operation==="read_then_update"
-       ? hints.length!==2||(p.role==="test"&&sub.approved_run_tests!==false)||
-         !hints.some(row=>row?.operation==="read_file"&&row.path===p.path)||
-         !hints.some(row=>row?.operation==="update_file"&&row.path===p.path)||
+       ? readUpdateHints(hints,p.path!)===null||sub.approved_run_tests!==false||
          !Array.isArray(sub.relevant_paths)||
-         sub.relevant_paths.length!==1||sub.relevant_paths[0]!==p.path
+         sub.relevant_paths.length!==readUpdateHints(hints,p.path!)||
+         !hints.every(row=>sub.relevant_paths.includes(row.path))
        : p.operation==="create_file"
        ? hints.length!==1||
          hints[0]?.operation!=="create_file"||
@@ -143,6 +158,7 @@ export class TrustedEffectStagingTaskRegistry {
          !sub.relevant_paths.includes(p.path!)
        : sub.approved_run_tests!==true))
    deny("A2A identity/operation differs from trusted owner Task pins");
+  if(p.operation==="read_then_update")b.plannedReads=readUpdateHints(hints,p.path!)!;
   return Object.freeze({
    stagedTool:p.operation,
    stage:async(requestId:string):Promise<unknown>=>{
@@ -154,7 +170,8 @@ export class TrustedEffectStagingTaskRegistry {
       if(phase!=="read_ready"&&phase!=="read_attested")
        deny("mixed effect out of sequence or previous evidence missing");
       // Burn the phase BEFORE any asynchronous authenticated owner call.
-      b.mixedPhase=phase==="read_ready"?"read_pending":"update_pending";
+      // Reads first (each attested), then the single update.
+      b.mixedPhase=b.attestedReads<b.plannedReads?"read_pending":"update_pending";
       b.mixedRequest=requestId;
       if(typeof requestId!=="string"||!ID.test(requestId)){
        b.mixedPhase="failed";deny("malformed mixed request ID");
@@ -187,6 +204,7 @@ export class TrustedEffectStagingTaskRegistry {
     const phase=b.mixedPhase;
     b.mixedPhase="failed"; // ambiguous observer receipt is terminal
     await b.stager.attest(requestId,tool);
+    if(phase==="read_pending")b.attestedReads+=1;
     b.mixedPhase=phase==="read_pending"?"read_attested":"finished";
    }
   });

@@ -1,6 +1,9 @@
 /**
- * R359.4 owner-private read->CAS update coordinator.
- * A typed native Child already granted BOTH permissions for the same file.
+ * R359.4 owner-private reads->CAS update coordinator.
+ * A typed native Child grants ONE update_file plus N read_file permissions
+ * (the edited file and its signed context files). Every granted read is
+ * staged, executed and independently attested once, one at a time; only
+ * then the single CAS update of a file read in this same Task.
  * Owner-held shared Prepare store and exact Gitea HEAD are mandatory.
  * This object has NO HTTP/A2A/MCP endpoint and never authorizes provider I/O.
  */
@@ -21,6 +24,8 @@ function deny(reason:string):never{
 }
 export class TrustedAuthorityOnlySequentialReadUpdateStager{
  readonly stagedTool="read_then_update" as const;
+ /** Signed reads before the update, from the durable effect manifest. */
+ get plannedReads():number{return this.#plannedReads;}
  readonly #store:InMemoryRequestStore;
  readonly #admissions:TrustedAuthorityOnlyGatewayAdmissions;
  readonly #mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
@@ -29,9 +34,13 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
  readonly #runtimeTaskId:string;
  readonly #head:string;
  #state:State="read_ready";
- #readRequestId?:string;
+ /** Reads planned by the durable manifest (N) and already attested. */
+ readonly #plannedReads:number;
+ #attestedReads=0;
+ #readRequestIds=new Set<string>();
+ #pendingReadRequestId?:string;
  #updateRequestId?:string;
- #path?:string;
+ #readPaths=new Set<string>();
  #noChange?:ReturnType<TrustedAuthorityOnlyGatewayAdmissions["fenceTrustedSequentialTaskBeforeWrite"]>;
  private constructor(opts:{
   store:InMemoryRequestStore;
@@ -39,7 +48,9 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
   mutationObserver:AuthenticatedGiteaMutationCompletionObserver;
   planTaskId:string;runtimeTaskId:string;expectedHeadSha:string;
+  plannedReads:number;
  }){
+  this.#plannedReads=opts.plannedReads;
   this.#store=opts.store;this.#admissions=opts.admissions;
   this.#mutation=opts.mutation;this.#observer=opts.mutationObserver;
   this.#planTaskId=opts.planTaskId;this.#runtimeTaskId=opts.runtimeTaskId;
@@ -63,10 +74,13 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   const started=await opts.admissions.beginTrustedSequentialReadUpdateTask(
    opts.planTaskId,opts.runtimeTaskId,opts.expectedHeadSha);
   if(started.status!=="sequential_read_update_manifest_reserved_staged"||
-     started.task_id!==opts.planTaskId||started.total_effects!==2||
+     started.task_id!==opts.planTaskId||
+     !Number.isSafeInteger(started.total_effects)||
+     started.total_effects<2||started.total_effects>16||
      started.gateway_execution_authorized!==false)
    deny("original immutable read/update manifest is not durably reserved");
-  return new TrustedAuthorityOnlySequentialReadUpdateStager(opts);
+  return new TrustedAuthorityOnlySequentialReadUpdateStager({
+   ...opts,plannedReads:started.total_effects-1});
  }
  /** Native private owner stager identity, never derived from an A2A claim. */
  static isNativeForOwner(value:unknown,
@@ -82,15 +96,17 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   * checking the Gateway, so a late update cannot race the fence.
   */
  fenceBeforeWrite(){
-  if(this.#state!=="read_verified")
+  // After at least one attested read and before any update attempt.
+  if((this.#state!=="read_verified"&&this.#state!=="read_ready")||
+     this.#attestedReads<1)
    deny("pre-write fence requires an independently attested read and no update attempt");
   this.#state="failed";
   return this.#admissions.fenceTrustedSequentialTaskBeforeWrite(
    this.#planTaskId,this.#runtimeTaskId);
  }
  async reportNoChange(requestId:string):Promise<void>{
-  if(requestId!==this.#readRequestId)
-   deny("no-change report must match the original read request");
+  if(!this.#readRequestIds.has(requestId)||requestId===this.#pendingReadRequestId)
+   deny("no-change report must match an attested original read request");
   this.#noChange=this.fenceBeforeWrite();
  }
  getReportedNoChange(){return this.#noChange;}
@@ -117,27 +133,32 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
      typeof record.request.arguments.path!=="string")
    deny("read/update Prepare lacks original Task, path or expected HEAD");
   const tool=record.request.tool;
+  const path=record.request.arguments.path;
   if(phase==="read_ready"){
-   if(tool!=="read_file")deny("first typed effect must read the existing file");
+   // Every granted read comes first, each file once, one at a time.
+   if(tool!=="read_file")
+    deny("all granted reads (edited file included) must precede the update");
+   if(this.#readPaths.has(path))deny("a granted file may be read only once per Task");
    const result=await this.#admissions.stageTrustedSequentialReadEffect(record);
    if(result.status!=="sequential_read_effect_reserved_staged"||
-      result.sequence!==1||result.task_id!==this.#planTaskId||
+      result.sequence!==this.#attestedReads+1||result.task_id!==this.#planTaskId||
       result.gateway_execution_authorized!==false)
     deny("owner read flight was not durably staged");
-   this.#path=record.request.arguments.path;
-   this.#readRequestId=requestId;
+   this.#readPaths.add(path);
+   this.#readRequestIds.add(requestId);
+   this.#pendingReadRequestId=requestId;
    this.#state="read_pending";
    return result;
   }
-  if(tool!=="update_file"||record.request.arguments.path!==this.#path)
-   deny("mutation must target the exact independently read file");
+  if(tool!=="update_file"||!this.#readPaths.has(path))
+   deny("mutation must target a file independently read in this Task");
   const intent=await this.#mutation.stageUpdate(record,this.#head);
   if(intent.status!=="gitea_update_intent_reserved_without_execution"||
      intent.provider_write_authorized!==false)
    deny("native Gitea CAS intent not reserved");
   const result=await this.#admissions.stageTrustedSequentialMutationEffect(record);
   if(result.status!=="sequential_mutation_effect_reserved_staged"||
-     result.sequence!==2||result.task_id!==this.#planTaskId||
+     result.sequence!==this.#plannedReads+1||result.task_id!==this.#planTaskId||
      result.gateway_execution_authorized!==false)
    deny("second native mutation flight not chained to read evidence");
   this.#updateRequestId=requestId;
@@ -146,16 +167,19 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
  }
  /** Only AFTER actual Gateway read, Rust VP, OPA and MAC source publication. */
  async attestRead(requestId:string):Promise<void>{
-  if(this.#state!=="read_pending"||requestId!==this.#readRequestId)
+  if(this.#state!=="read_pending"||requestId!==this.#pendingReadRequestId)
    deny("unverified, foreign or duplicate source read");
   this.#state="failed";
   const result=await this.#admissions.attestTrustedSequentialReadEffect(
    this.#planTaskId,this.#runtimeTaskId);
   if(result.status!=="sequential_read_effect_attested_staged"||
-     result.sequence!==1||result.task_id!==this.#planTaskId||
+     result.sequence!==this.#attestedReads+1||result.task_id!==this.#planTaskId||
      result.gateway_execution_authorized!==false)
-   deny("original first read not independently attested");
-  this.#state="read_verified";
+   deny("original read not independently attested in sequence");
+  this.#attestedReads=result.sequence;
+  this.#pendingReadRequestId=undefined;
+  // More granted reads may follow; the update needs ALL of them attested.
+  this.#state=this.#attestedReads===this.#plannedReads?"read_verified":"read_ready";
  }
  /** Only AFTER actual Gateway CAS; independent mutation observer seals it. */
  async attestMutation(requestId:string):Promise<void>{
@@ -165,13 +189,13 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   const result=await this.#admissions.attestTrustedSequentialMutationEffect(
    this.#planTaskId,this.#runtimeTaskId,this.#observer.toTrustedObserver());
   if(result.status!=="sequential_mutation_effect_attested_staged"||
-     result.sequence!==2||result.task_id!==this.#planTaskId||
+     result.sequence!==this.#plannedReads+1||result.task_id!==this.#planTaskId||
      result.gateway_execution_authorized!==false)
    deny("original CAS mutation not independently attested");
   const complete=await this.#admissions.finalizeTrustedSequentialReadTask(
    this.#planTaskId,this.#runtimeTaskId);
   if(complete.status!=="sequential_read_task_complete_staged"||
-     complete.total_effects!==2||complete.task_id!==this.#planTaskId||
+     complete.total_effects!==this.#plannedReads+1||complete.task_id!==this.#planTaskId||
      complete.gateway_execution_authorized!==false)
    deny("mixed Task final evidence not durably sealed");
   this.#state="finalized";

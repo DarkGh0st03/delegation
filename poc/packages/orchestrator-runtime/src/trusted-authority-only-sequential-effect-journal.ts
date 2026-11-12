@@ -23,9 +23,10 @@ function deny(reason:string):never{
 }
 export type TrustedSequentialManifest=TrustedTaskFenceBase&{
  readonly total_effects:number;
- /** R359 opt-in: a single authenticated read followed by one CAS update.
-  * Never derived from A2A/model arguments or considered a new grant. */
- readonly effect_plan?:readonly ["read_file","update_file"];
+ /** Opt-in typed plan: N >= 1 authenticated reads (the edited file and
+  * its signed context files, each once) followed by ONE CAS update. Derived
+  * only from the signed Task grant, never from A2A/model arguments. */
+ readonly effect_plan?:readonly ("read_file"|"update_file")[];
 };
 export type TrustedSequentialFlight=TrustedTaskFlight&{
  readonly sequence:number;readonly total_effects:number;
@@ -56,6 +57,12 @@ function baseValid(x:TrustedTaskFenceBase):boolean{
 function sameBase(a:TrustedTaskFenceBase,b:TrustedTaskFenceBase){
  return BASE.every(k=>a[k]===b[k]);
 }
+/** N reads then exactly one final update, matching the declared total. */
+export function isReadUpdatePlan(plan:unknown,total:number):boolean{
+ return Array.isArray(plan)&&plan.length===total&&total>=2&&total<=16&&
+  plan.at(-1)==="update_file"&&
+  plan.slice(0,-1).every(op=>op==="read_file");
+}
 function ensureManifest(m:TrustedSequentialManifest,withFinal=false){
  const typed=Object.hasOwn(m??{},"effect_plan");
  if(!exact(m,[...BASE,"total_effects",
@@ -63,9 +70,7 @@ function ensureManifest(m:TrustedSequentialManifest,withFinal=false){
       ...(withFinal?["latest_evidence_sha256"]:[])])||!baseValid(m)||
     !Number.isSafeInteger(m.total_effects)||m.total_effects<2||
     m.total_effects>32||
-    (typed&&(m.total_effects!==2||!Array.isArray(m.effect_plan)||
-      m.effect_plan.length!==2||m.effect_plan[0]!=="read_file"||
-      m.effect_plan[1]!=="update_file")))
+    (typed&&!isReadUpdatePlan(m.effect_plan,m.total_effects)))
    deny("invalid pinned Task manifest or effect count");
 }
 function ensureFlight(f:TrustedSequentialFlight,withEvidence=false){

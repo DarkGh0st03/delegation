@@ -121,13 +121,54 @@ export function isProjectTestCreateGrant(permissions,profile=IAM_CONSOLE_PROJECT
  const file=scope(permissions[0].resource);
  return file?.kind==="files"&&isProjectTestSource(file.path.join("/"),profile);
 }
+/** Most files one edit Task may read (the edited file plus its context). */
+export const MAX_TASK_READS=15;
+/**
+ * Shape of a native "reads + one update" Task grant: exactly ONE update_file
+ * of one exact file, plus 1..MAX_TASK_READS read_file of DISTINCT exact files
+ * that include the edited one (its dependencies and context), nothing else.
+ * Every read and the update remain separate, durably recorded, Rust/OPA
+ * verified effects; this only describes the signed Task grant SHAPE.
+ * Returns {edit, reads} (resources) or null.
+ */
+export function readUpdateGrantShape(permissions) {
+ if(!Array.isArray(permissions)||permissions.length<2||
+    permissions.length>MAX_TASK_READS+1)return null;
+ const updates=permissions.filter(p=>p?.operation==="update_file");
+ const reads=permissions.filter(p=>p?.operation==="read_file");
+ if(updates.length!==1||reads.length+1!==permissions.length)return null;
+ if([...reads,updates[0]].some(p=>typeof p.resource!=="string"||
+    scope(p.resource)?.kind!=="files"))return null;
+ const readSet=new Set(reads.map(p=>p.resource));
+ if(readSet.size!==reads.length||!readSet.has(updates[0].resource))return null;
+ return Object.freeze({edit:updates[0].resource,reads:Object.freeze([...readSet])});
+}
+/** Path of an exact file ResourceURI (no decoding beyond the canonical form). */
+export function exactFilePath(resource) {
+ const file=scope(resource);
+ return file?.kind==="files"?file.path.join("/"):undefined;
+}
+/** True when a signed read_file grant of `permissions` covers the repository
+ * `path` (exact file, or a directory grant that contains it). */
+export function readGrantsCoverPath(permissions,path) {
+ if(!Array.isArray(permissions)||typeof path!=="string"||!path)return false;
+ const parts=path.split("/");
+ if(parts.some(x=>!x||x==="."||x===".."))return false;
+ return permissions.some(p=>{
+  if(p?.operation!=="read_file")return false;
+  const a=scope(p.resource);
+  if(a?.kind==="files")return a.path.join("/")===path;
+  return a?.kind==="directories"&&parts.length>a.path.length&&
+   a.path.every((v,i)=>v===parts[i]);
+ });
+}
+/** Test may EDIT only a project test source; it may READ any signed file
+ * (application code it tests) in the same Task. */
 export function isProjectTestRepairGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
- if(!Array.isArray(permissions))return false;
- const read=permissions.find(p=>p.operation==="read_file");
- const update=permissions.find(p=>p.operation==="update_file");
- if(permissions.length!==2||!read||read.resource!==update?.resource)return false;
- const file=scope(read.resource);
- return file?.kind==="files"&&isProjectTestSource(file.path.join("/"),profile);
+ const shape=readUpdateGrantShape(permissions);
+ const edited=shape&&scope(shape.edit);
+ return !!edited&&edited.kind==="files"&&
+  isProjectTestSource(edited.path.join("/"),profile);
 }
 export function giteaPermissionCovers(parent,required) {
  if(!parent||!required||typeof parent!=="object"||

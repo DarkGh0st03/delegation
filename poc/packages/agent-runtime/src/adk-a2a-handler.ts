@@ -332,7 +332,14 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // keep the compatibility behavior and Gateway remains authoritative.
     const mayRunTests=context.role==="test"&&
       (!signedTask||context.subtask.approved_run_tests===true);
-    const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
+    // The configured turn limits were set for a Task with one read and one
+    // write. Each further signed context read costs exactly one more model
+    // turn (every grant is single-use), so the Task gets one turn per extra
+    // read, never more: the session call budget still bounds the total.
+    const signedReads=signedTask
+      ?context.subtask.approved_file_permissions!.filter(p=>p.operation==="read_file").length:0;
+    const taskTurnLimit=Math.min(100,turnLimit+Math.max(0,signedReads-1));
+    const model = new BoundedModel(config.model, taskTurnLimit, maxModelCallMs, signal,
       (durationMs, inputTokens, outputTokens, thinkingTokens, turn, responseShape) => {
         process.stdout.write(JSON.stringify({
           event:"adk_llm_timing",role:context.role,turn,

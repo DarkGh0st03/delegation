@@ -50,3 +50,38 @@ test("R299 file grant, unknown operation or malformed input never create implici
  assert.equal(covers(p("directories/apps/backend","delete_file"),p("files/apps/backend/u.ts","delete_file")),false);
  assert.equal(covers({resource:"not-a-uri",operation:"read_file"},p("files/apps/backend/u.ts")),false);
 });
+
+test("read+update grant shape: N distinct exact reads including the edited file, then ONE update",async()=>{
+ const {readUpdateGrantShape,MAX_TASK_READS}=await import("../src/gitea-permission-containment.mjs");
+ const base="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fx/files/";
+ const p=(operation,path)=>({operation,resource:base+path});
+ const edit="apps/backend/src/a.ts",dep="apps/backend/src/b.ts";
+ const ok=readUpdateGrantShape([p("read_file",edit),p("read_file",dep),p("update_file",edit)]);
+ assert.equal(ok.edit,base+edit);
+ assert.deepEqual([...ok.reads].sort(),[base+edit,base+dep].sort());
+ assert.ok(readUpdateGrantShape([p("read_file",edit),p("update_file",edit)]));
+ for(const bad of [
+  [p("read_file",dep),p("update_file",edit)],
+  [p("read_file",edit),p("read_file",edit),p("update_file",edit)],
+  [p("read_file",edit),p("update_file",edit),p("update_file",dep)],
+  [p("read_file",edit),p("create_file",dep),p("update_file",edit)],
+  [p("read_file",edit),p("run_tests",edit),p("update_file",edit)],
+  [p("update_file",edit)],
+  [p("read_file",edit)],
+  [{operation:"read_file",resource:base.replace("/files/","/tree")},p("read_file",edit),p("update_file",edit)],
+  [p("read_file",edit),...Array.from({length:MAX_TASK_READS},(_,i)=>p("read_file",`d/${i}.ts`)),p("update_file",edit)]
+ ])assert.equal(readUpdateGrantShape(bad),null,JSON.stringify(bad.map(x=>x.operation)));
+});
+
+test("readGrantsCoverPath: exact file or containing directory read grants only",async()=>{
+ const {readGrantsCoverPath}=await import("../src/gitea-permission-containment.mjs");
+ const base="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fx/";
+ const read=r=>({operation:"read_file",resource:base+r});
+ assert.equal(readGrantsCoverPath([read("files/apps/a.ts")],"apps/a.ts"),true);
+ assert.equal(readGrantsCoverPath([read("directories/apps")],"apps/sub/a.ts"),true);
+ assert.equal(readGrantsCoverPath([read("files/apps/a.ts")],"apps/b.ts"),false);
+ assert.equal(readGrantsCoverPath([read("directories/apps")],"appsx/a.ts"),false);
+ assert.equal(readGrantsCoverPath([read("directories/apps")],"apps/../secret.ts"),false);
+ assert.equal(readGrantsCoverPath([{operation:"update_file",resource:base+"files/apps/a.ts"}],"apps/a.ts"),false);
+ assert.equal(readGrantsCoverPath(undefined,"apps/a.ts"),false);
+});

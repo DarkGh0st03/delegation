@@ -28,6 +28,9 @@ export interface TrustedEffectStagingPort {
   /** Owner-only independent native evidence confirmation, never model data. */
   attest?(requestId:string,tool:"read_file"|"update_file"):Promise<void>;
   reportNoChange?(requestId:string):Promise<void>;
+  /** read_then_update only: number of signed reads before the single update,
+   * as fixed by the owner's durable effect manifest (never model data). */
+  readonly plannedReads?:number;
 }
 
 export interface GatewayControlledToolClientConfig {

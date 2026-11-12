@@ -2,6 +2,7 @@
  * module creates no authority, signs nothing, and trusts no A2A completion. */
 import {BaseLlm} from '@google/adk';
 import {TrustedAuthorityOnlyAdkDecisionProposer} from './trusted-authority-only-adk-decision-proposer.mjs';
+import {readUpdateGrantShape,readGrantsCoverPath} from '../../plan-contracts/src/gitea-permission-containment.mjs';
 // An Engineer-signed source change may span several individually verified
 // file Tasks; each keeps its own native Child, same-file read/CAS journal and
 // exact original root permissions. At most 24 Child-consuming Tasks plus
@@ -19,10 +20,17 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     (requireVerifiedRepairDiagnostic&&typeof hooks.verifyRepairDiagnostic!=='function')||
     (signal!==undefined&&!(signal instanceof AbortSignal)))deny('invalid original owner loop configuration');
  let executed=0,retestRequired=false;
+ // Signed permissions of every Task completed in this loop. A source
+ // observation shown to the model must come from a file that its Task was
+ // signed to read: the file content is evidence only for that Task's grant.
+ const completedGrants=new Map();
  try{
   for(let step=0;step<maxSteps;step++){
    signal?.throwIfAborted();
    const before=structuredClone(await hooks.readContext());
+   for(const o of before.executionProgress?.source_observations??[])
+    if(!readGrantsCoverPath(completedGrants.get(o?.task_id),o?.path))
+     deny('source observation is not bound to a signed read of a completed Task');
    await hooks.beforeDecision();
    const decide=()=>new TrustedAuthorityOnlyAdkDecisionProposer({
     ...before,model,decisionKind:'adaptive'
@@ -98,10 +106,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
        !isFileSpecialist(decision.task.agent_id)||
        !before.agents?.[decision.task.agent_id]?.capabilities?.includes('read_file')||
        !before.agents?.[decision.task.agent_id]?.capabilities?.includes('update_file')||
-       decision.task.permissions.length!==2||
-       !decision.task.permissions.some(p=>p.operation==='read_file')||
-       !decision.task.permissions.some(p=>p.operation==='update_file')||
-       decision.task.permissions[0].resource!==decision.task.permissions[1].resource||
+       !readUpdateGrantShape(decision.task.permissions)||
        observed.agent_id!==decision.task.agent_id||observed.task_id!==decision.task.task_id||
        observed.read_revision!==before.executionProgress.current_head_sha||
        !/^[a-f0-9]{64}$/u.test(observed.read_evidence_sha256)||
@@ -182,6 +187,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     deny('completed Task changed the authenticated failure history');
    if(decision.task.agent_id==='test'&&decision.task.permissions.some(p=>p.operation==='run_tests'))
     retestRequired=false;
+   completedGrants.set(decision.task.task_id,structuredClone(decision.task.permissions));
    executed++;
   }
   deny('bounded decision budget exhausted without verified PR readiness');

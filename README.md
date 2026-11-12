@@ -32,10 +32,14 @@ Engineer console and the test Runner. Full guide (Italian):
    signs the selected subset with an Ed25519 key unlocked by the password.
 3. **Execution.** The preliminary Root is revoked and an *operational Root*
    with exactly the signed permissions is issued. The Orchestrator delegates
-   one Task at a time, each with its own attenuated *Child* credential:
-   Backend/Frontend change files (read + compare-and-swap update on Gitea),
-   the Test agent reads the changed files and writes tests for the new
-   behaviour, then the project tests run in a throw-away Docker container.
+   one Task at a time, each with its own attenuated *Child* credential. A
+   Task may hold several signed **reads** (the file it edits and the files
+   that file depends on, at most 15) and **one write** (compare-and-swap
+   update on Gitea); every read is a separate verified, journaled effect,
+   and the write is admitted only after all of them, on a file read in the
+   same Task. Backend/Frontend change application files; the Test agent
+   reads the changed files and writes tests for the new behaviour; then the
+   project tests run in a throw-away Docker container.
 4. **Draft PR** only after a verified PASS of every project test phase on the
    final commit. The Root is revoked at the end (or at once with *Stop*).
 

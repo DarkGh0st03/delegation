@@ -291,7 +291,7 @@ export class EngineerSessions {
 
     if (scripted) {
       const files = role => plan.tasks.filter(t => t.agent_id === role && t.path)
-        .map(t => ({path: t.path, op: t.op}));
+        .map(t => ({path: t.path, op: t.op, ...(t.reads ? {reads: t.reads} : {})}));
       const contents = reference ? ACCOUNT_SUSPENSION_REFERENCE_FILES : undefined;
       const w = operational.localWorkers.workers, branch = session.work_branch;
       const common = {branch, sessionId: session.id, contents};

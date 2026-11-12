@@ -351,3 +351,64 @@ test("R437 extra specialist cannot impersonate Test or Orchestrator or skip exac
  assert.equal(f.calls.length,0);
  assert.throws(()=>registry.selectFor(wrong),/already dispatched/u);
 });
+
+test("multi-read Task: every granted read is attested before the single update",async()=>{
+ const f=pins(),calls:string[]=[];
+ const reg=new TrustedEffectStagingTaskRegistry();
+ reg.bindTask({...f.binding,operation:"read_then_update",
+  effectStager:{stagedTool:"read_then_update",async stage(id){
+   calls.push("stage:"+id);return {provider_write_authorized:false};
+  },async attest(id,tool){calls.push("attest:"+tool+":"+id);}}
+ });
+ const dep="apps/backend/src/users/types.ts";
+ const ctx:AgentTaskContext={...context(),subtask:{...context().subtask,
+  relevant_paths:[path,dep],
+  approved_file_permissions:[{path,operation:"read_file"},
+   {path:dep,operation:"read_file"},{path,operation:"update_file"}]}};
+ const port=reg.selectFor(ctx);
+ await port.stage("r1");
+ await port.attest!("r1","read_file");
+ await port.stage("r2");
+ // The second stage is still a read: claiming an update is refused.
+ await assert.rejects(port.attest!("r2","update_file"),/cannot attest/u);
+ await assert.rejects(port.stage("r3"),/out of sequence/u);
+});
+test("multi-read Task: the update is the effect after the last granted read",async()=>{
+ const f=pins(),calls:string[]=[];
+ const reg=new TrustedEffectStagingTaskRegistry();
+ reg.bindTask({...f.binding,operation:"read_then_update",
+  effectStager:{stagedTool:"read_then_update",async stage(id){
+   calls.push("stage:"+id);return {provider_write_authorized:false};
+  },async attest(id,tool){calls.push("attest:"+tool+":"+id);}}
+ });
+ const dep="apps/backend/src/users/types.ts";
+ const ctx:AgentTaskContext={...context(),subtask:{...context().subtask,
+  relevant_paths:[path,dep],
+  approved_file_permissions:[{path,operation:"read_file"},
+   {path:dep,operation:"read_file"},{path,operation:"update_file"}]}};
+ const port=reg.selectFor(ctx);
+ for(const id of ["r1","r2"]){await port.stage(id);await port.attest!(id,"read_file");}
+ await port.stage("u1");
+ await port.attest!("u1","update_file");
+ assert.deepEqual(calls,["stage:r1","attest:read_file:r1","stage:r2",
+  "attest:read_file:r2","stage:u1","attest:update_file:u1"]);
+ await assert.rejects(port.stage("again"),/out of sequence/u);
+});
+test("multi-read Task rejects forged hints: duplicate reads, foreign update, missing edited-file read",()=>{
+ const dep="apps/backend/src/users/types.ts";
+ for(const hints of [
+  [{path:dep,operation:"read_file"},{path,operation:"update_file"}],
+  [{path,operation:"read_file"},{path,operation:"read_file"},{path,operation:"update_file"}],
+  [{path,operation:"read_file"},{path:dep,operation:"read_file"},{path:dep,operation:"update_file"}],
+  [{path,operation:"read_file"},{path:dep,operation:"read_file"},
+   {path,operation:"update_file"},{path:dep,operation:"update_file"}]
+ ]){
+  const f=pins(),reg=new TrustedEffectStagingTaskRegistry();
+  reg.bindTask({...f.binding,operation:"read_then_update",
+   effectStager:{stagedTool:"read_then_update",async stage(){},async attest(){}}});
+  const ctx:AgentTaskContext={...context(),subtask:{...context().subtask,
+   relevant_paths:[...new Set(hints.map(h=>h.path))],
+   approved_file_permissions:hints as AgentTaskContext["subtask"]["approved_file_permissions"]}};
+  assert.throws(()=>reg.selectFor(ctx),/differs from trusted owner/u);
+ }
+});

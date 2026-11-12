@@ -251,7 +251,7 @@ test("R359.5 two authenticated Unix IPC stages require separate independent evid
  const calls:string[]=[];
  try{
   const mixed={...pins,operation:"read_then_update" as const};
-  x.owner.bindTask(runtime,{stagedTool:"read_then_update",
+  x.owner.bindTask(runtime,{stagedTool:"read_then_update",plannedReads:1,
    async stage(requestId){calls.push("stage:"+requestId);},
    async attest(requestId,tool){calls.push("attest:"+tool+":"+requestId);}
   });
@@ -274,11 +274,40 @@ test("R359.5 two authenticated Unix IPC stages require separate independent evid
  }finally{await x.close();}
 });
 
+test("multi-read Task over authenticated Unix IPC: every signed read attested, then ONE update",async()=>{
+ const x=await fixtures();
+ const calls:string[]=[];
+ try{
+  const dep="apps/backend/src/users/types.ts";
+  // The read count comes from the owner's durable manifest, never from A2A.
+  assert.throws(()=>x.owner.bindTask(runtime,{stagedTool:"read_then_update",
+   async stage(){},async attest(){}}),/read count/u);
+  x.owner.bindTask(runtime,{stagedTool:"read_then_update",plannedReads:2,
+   async stage(requestId){calls.push("stage:"+requestId);},
+   async attest(requestId,tool){calls.push("attest:"+tool+":"+requestId);}
+  });
+  await x.client.bindTask({...pins,operation:"read_then_update" as const});
+  const ctx:AgentTaskContext={...task(),subtask:{...task().subtask,relevant_paths:[path,dep],
+   approved_file_permissions:[{path:dep,operation:"read_file"},{path,operation:"read_file"},
+    {path,operation:"update_file"}]}};
+  const port=x.agent.selectFor(ctx);
+  await port.stage("r1");await port.attest!("r1","read_file");
+  await port.stage("r2");
+  // Owner side refuses to treat the second read as the update.
+  await assert.rejects(x.remote.attest(runtime,"r2","update_file"),/operation denied/u);
+  await port.attest!("r2","read_file");
+  await port.stage("u1");await port.attest!("u1","update_file");
+  assert.deepEqual(calls,["stage:r1","attest:read_file:r1","stage:r2","attest:read_file:r2",
+   "stage:u1","attest:update_file:u1"]);
+  await assert.rejects(x.remote.stage(runtime,"again"),/operation denied/u);
+ }finally{await x.close();}
+});
+
 test("R377.8 role-authenticated no-change uses the original read and closes staging",async()=>{
  const x=await fixtures("backend");
  try{
   const calls:string[]=[];
-  x.owner.bindTask(runtime,{stagedTool:"read_then_update",
+  x.owner.bindTask(runtime,{stagedTool:"read_then_update",plannedReads:1,
    async stage(id){calls.push("stage:"+id);},
    async attest(id){calls.push("attest:"+id);},
    async reportNoChange(id){calls.push("no_change:"+id);}

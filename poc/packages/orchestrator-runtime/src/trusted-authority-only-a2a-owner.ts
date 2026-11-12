@@ -42,7 +42,7 @@ import type {
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant}
+import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,readUpdateGrantShape}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 const ROLES=["backend","frontend","test"] as const;
 function deny(reason:string):never{
@@ -208,17 +208,15 @@ export class TrustedAuthorityOnlyA2AOwner {
   }
   if(effects!==1||filePermissions.length>32)
    deny("Task needs one native read, mutation or Runner effect");
-  const typedMixed=filePermissions.length===2&&
-    filePermissions.some(p=>p.operation==="read_file")&&
-    filePermissions.some(p=>p.operation==="update_file")&&
-    filePermissions[0]?.path===filePermissions[1]?.path;
+  // One exact edited file plus its signed context reads (shared shape rule).
+  const typedMixed=!!readUpdateGrantShape(row.permissions);
   const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
   const signedTestRead=role==="test"&&!hasRunner&&!typedMixed&&
     isTestAgentReadGrant(row.permissions);
   const signedTestCreate=role==="test"&&!hasRunner&&!typedMixed&&
     isProjectTestCreateGrant(row.permissions);
-  // R383.1: the native Task/Child must map to precisely one provider
-  // operation, or the existing two-step read -> CAS of ONE exact file.
+  // R383.1: the native Task/Child maps to precisely one provider operation,
+  // or to N reads (edited file + signed context) followed by ONE CAS update.
   // A spare grant in the signed Task must not be leaked as another
   // approved file permission to an A2A specialist. Multi-file changes
   // are separate, serial, individually observed Child Tasks.
@@ -249,7 +247,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   if(typedMixed&&
      (input.effectStager.stagedTool!=="read_then_update"||
       typeof input.effectStager.attest!=="function"))
-   deny("same-file read/update Task requires owner-controlled mixed staging");
+   deny("reads + update Task requires owner-controlled mixed staging");
   if(!typedMixed&&input.effectStager.stagedTool==="read_then_update")
    deny("mixed staging cannot replace an ordinary Task grant");
   const paths=[...new Set(filePermissions.map(x=>x.path))];

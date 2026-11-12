@@ -537,8 +537,8 @@ test("paid models are budgeted and every call (or discard) is recorded for the E
   assert.equal(g.summary().calls_started, 2);
 });
 
-test("free modes: app work, then Test reads the changed app files, then Test writes tests, then run_tests", async () => {
-  const {simulatedExecutionPlan} = await import("../src/scripted-execution-models.mjs");
+test("free modes: app work, then ONE Test Task reads the changed app files and edits the test, then run_tests", async () => {
+  const {simulatedExecutionPlan, ScriptedWorkerModel} = await import("../src/scripted-execution-models.mjs");
   const base = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1";
   const rw = path => [{operation: "read_file", resource: `${base}/files/${path}`},
     {operation: "update_file", resource: `${base}/files/${path}`}];
@@ -547,11 +547,38 @@ test("free modes: app work, then Test reads the changed app files, then Test wri
   assert.deepEqual(plan.tasks.map(t => [t.task_id, t.op ?? "run", t.path ?? null]), [
     ["t01-backend", "update", "apps/backend/src/a.ts"],
     ["t02-frontend", "update", "apps/frontend/src/B.tsx"],
-    ["t03-test-read", "read", "apps/backend/src/a.ts"],
-    ["t04-test-read", "read", "apps/frontend/src/B.tsx"],
-    ["t05-test", "update", "tests/backend/a.test.ts"],
+    ["t03-test", "update", "tests/backend/a.test.ts"],
     ["t99-test", "run", null]]);
-  assert.deepEqual(plan.tasks[2].permissions.map(p => p.operation), ["read_file"]);
+  // N signed reads (changed app files + the edited test) and ONE write.
+  assert.deepEqual(plan.tasks[2].permissions.map(p => [p.operation, p.resource.split("/files/")[1]]), [
+    ["read_file", "apps/backend/src/a.ts"], ["read_file", "apps/frontend/src/B.tsx"],
+    ["read_file", "tests/backend/a.test.ts"], ["update_file", "tests/backend/a.test.ts"]]);
+  // The worker reads every context file once, the edited file last, then writes.
+  const t = plan.tasks[2];
+  const worker = new ScriptedWorkerModel({role: "test", branch: "feature/s-1", sessionId: "s-1",
+    files: [{path: t.path, op: t.op, reads: t.reads}]});
+  const calls = [];
+  const reply = content => ({contents: [{parts: [{functionResponse: {name: "read_file",
+    response: {result: JSON.stringify({content})}}}]}]});
+  for (let i = 0; i < 5; i++) for await (const e of worker.generateContentAsync(reply("old test\n")))
+    calls.push(e.content.parts[0].functionCall ?? {text: e.content.parts[0].text});
+  assert.deepEqual(calls.slice(0, 4).map(c => [c.name, c.args?.path]), [
+    ["read_file", "apps/backend/src/a.ts"], ["read_file", "apps/frontend/src/B.tsx"],
+    ["read_file", "tests/backend/a.test.ts"], ["update_file", "tests/backend/a.test.ts"]]);
+  assert.match(calls[3].args.content, /^old test\n\/\/ \[delegation s-1\]/u);
+  assert.match(calls[4].text, /Aggiornato tests\/backend\/a\.test\.ts/u);
+});
+
+test("free modes: when tests are only CREATED, the Test agent reads changed files in read-only Tasks first", async () => {
+  const {simulatedExecutionPlan} = await import("../src/scripted-execution-models.mjs");
+  const base = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1";
+  const plan = simulatedExecutionPlan([
+    {operation: "read_file", resource: `${base}/files/apps/backend/src/a.ts`},
+    {operation: "update_file", resource: `${base}/files/apps/backend/src/a.ts`},
+    {operation: "create_file", resource: `${base}/files/tests/backend/a.test.ts`},
+    {operation: "run_tests", resource: base}], "s-1");
+  assert.deepEqual(plan.tasks.map(t => [t.task_id, t.op ?? "run"]), [
+    ["t01-backend", "update"], ["t02-test-read", "read"], ["t03-test", "create"], ["t99-test", "run"]]);
 });
 
 test("budgeted Gemini accepts a proposed write on the session branch, never on another", async () => {

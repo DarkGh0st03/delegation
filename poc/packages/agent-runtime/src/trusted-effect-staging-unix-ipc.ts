@@ -16,7 +16,7 @@ import {assertTrustedOriginalScopedEffectDirectory,
  from "./trusted-effect-staging-scoped-linux.ts";
 import {TrustedEffectStagingTaskRegistry,
  type TrustedEffectTaskOwnerPins} from "./trusted-effect-staging-task-registry.ts";
-import {isProjectTestSource}
+import {isProjectTestSource,MAX_TASK_READS}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import type {TrustedEffectStagingPort} from "./gateway-tool-client.ts";
 
@@ -271,7 +271,9 @@ export class TrustedOwnerEffectStagingRegistry{
   port:TrustedEffectStagingPort;used:boolean;role?:Role;
   mixedPhase:"read_ready"|"read_pending"|"read_attested"|
    "update_pending"|"finished"|"failed";
-  mixedRequest?:string
+  mixedRequest?:string;
+  /** Signed reads (from the owner's manifest) that precede the one update. */
+  plannedReads:number;attestedReads:number
  }>();
  #retired=false;
  bindTask(runtimeTaskId:string,stager:TrustedEffectStagingPort,role?:Role):void{
@@ -280,11 +282,14 @@ export class TrustedOwnerEffectStagingRegistry{
      (role!==undefined&&!trustedPrivateRole(role))||
      this.#entries.has(runtimeTaskId))
    deny("owner staging requires unique pre-approved Task and concrete port");
-  if(stager.stagedTool==="read_then_update"&&
-     typeof stager.attest!=="function")
-   deny("mixed owner Task lacks independent attestation port");
+  const mixed=stager.stagedTool==="read_then_update";
+  if(mixed&&(typeof stager.attest!=="function"||
+     !Number.isSafeInteger(stager.plannedReads)||
+     stager.plannedReads!<1||stager.plannedReads!>MAX_TASK_READS))
+   deny("mixed owner Task lacks independent attestation port or read count");
   this.#entries.set(runtimeTaskId,{port:stager,used:false,
-   mixedPhase:"read_ready",...(role?{role}:{})});
+   mixedPhase:"read_ready",plannedReads:mixed?stager.plannedReads!:0,attestedReads:0,
+   ...(role?{role}:{})});
  }
  async stage(runtimeTaskId:string,requestId:string,expectedRole?:Role):Promise<void>{
   const e=this.#entries.get(runtimeTaskId);
@@ -301,8 +306,8 @@ export class TrustedOwnerEffectStagingRegistry{
   // Reject a cross-role HMAC stage WITHOUT consuming the real Task's
   // one-shot staging slot. Only a correct role can reserve the provider.
   if(e.port.stagedTool==="read_then_update"){
-   const phase=e.mixedPhase;
-   e.mixedPhase=phase==="read_ready"?"read_pending":"update_pending";
+   // Every signed read is attested before the single update is staged.
+   e.mixedPhase=e.attestedReads<e.plannedReads?"read_pending":"update_pending";
    e.mixedRequest=requestId;
    try{await e.port.stage(requestId);}
    catch(error){e.mixedPhase="failed";throw error;}
@@ -326,6 +331,7 @@ export class TrustedOwnerEffectStagingRegistry{
   const phase=e.mixedPhase;
   e.mixedPhase="failed"; // no repeated attestation after ambiguous outcomes
   await e.port.attest(requestId,tool);
+  if(phase==="read_pending")e.attestedReads+=1;
   e.mixedPhase=phase==="read_pending"?"read_attested":"finished";
  }
  async reportNoChange(runtimeTaskId:string,requestId:string,expectedRole?:Role):Promise<void>{

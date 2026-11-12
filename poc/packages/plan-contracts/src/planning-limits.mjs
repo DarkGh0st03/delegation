@@ -13,8 +13,6 @@ export const MAX_ENGINEER_REVIEW_MS = 20 * 60 * 1000;
 export const TRUSTED_PLANNING_HANDOFF_MARGIN_MS = 2 * 60 * 1000;
 /** Verified read observations (each at most 4096 characters of source) that
  * the Owner passes to the Orchestrator's Task decisions in one session. Bounds
- * the decision context (and cost) while letting specialists receive the
- * definitions their edits depend on and the Test agent read the changed
- * application files before writing tests. 12 excerpts stay well inside the
- * per-decision token ceiling of the paid budget (48k per call). */
-export const MAX_ADAPTIVE_SOURCE_OBSERVATIONS = 12;
+ * the decision context (and cost). Specialists read the files an edit depends
+ * on themselves, inside the edit Task (see readUpdateGrantShape). */
+export const MAX_ADAPTIVE_SOURCE_OBSERVATIONS = 8;

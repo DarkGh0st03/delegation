@@ -26,7 +26,7 @@ import type {TrustedOwnerEffectStagingRegistry,
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 type AgentBinder=Awaited<ReturnType<typeof connectTrustedEffectAgentBindingClient>>;
-import {isProjectTestRepairGrant,isProjectTestCreateGrant}
+import {isProjectTestRepairGrant,readUpdateGrantShape,isProjectTestCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 type Role="backend"|"frontend"|"test";
 const ROLES=["backend","frontend","test"] as const;
@@ -154,9 +154,10 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    deny("one supported Task provider-effect grant required");
   const effect=effects[0]!;
   const reads=row.permissions.filter(p=>p.operation==="read_file");
-  const typedMixed=reads.length===1&&writes.length===1&&
-    row.permissions.length===2&&effect.operation==="update_file"&&
-    reads[0]?.resource===effect.resource;
+  // One edited file plus its signed context reads (shared shape rule).
+  const shape=readUpdateGrantShape(row.permissions);
+  const typedMixed=!!shape&&reads.length>=1&&writes.length===1&&
+    effect.operation==="update_file"&&shape.edit===effect.resource;
   if(row.agent_id==="test"&&effect.operation==="update_file"&&
      !isProjectTestRepairGrant(row.permissions))
    deny("Test update requires an exact project test repair grant");

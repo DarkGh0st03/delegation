@@ -62,7 +62,7 @@ async function fixture(){
 }
 test("R359.4 owner must attest the first read before any CAS preflight",async()=>{
  const f=await fixture();
- await assert.rejects(f.stager.stage("update"),/first typed effect must read/u);
+ await assert.rejects(f.stager.stage("update"),/must precede the update/u);
  assert.deepEqual(f.calls,["begin"]);
  await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
 });
@@ -94,7 +94,7 @@ test("R359.4 changed pinned HEAD denies read before any trusted provider operati
 test("R359.4 update on a different file cannot use earlier read evidence",async()=>{
  const f=await fixture();await f.stager.stage("read");await f.stager.attestRead("read");
  const changed=f.store.get("update")!;changed.request.arguments.path="other.ts";
- await assert.rejects(f.stager.stage("update"),/exact independently read file/u);
+ await assert.rejects(f.stager.stage("update"),/independently read in this Task/u);
  assert.deepEqual(f.calls,["begin","stage_read","attest_read"]);
 });
 
@@ -141,4 +141,75 @@ test("R377.8 no-change signal binds the exact read request to the Gateway fence"
  assert.equal(f.stager.getReportedNoChange()?.read_revision,head);
  await assert.rejects(f.stager.stage("update"),/terminated owner effect/u);
  assert.deepEqual(f.calls,["begin","stage_read","attest_read","fence"]);
+});
+
+// Signed Task: read a context file + read and update the edited file.
+async function multiReadFixture(){
+ const calls:string[]=[];
+ const store=new InMemoryRequestStore();
+ const context="packages/shared/src/account-status.ts";
+ const put=(id:string,tool:"read_file"|"update_file",p:string)=>store.put({request_id:id,task_id:runtime,
+  request:{tool,arguments:{branch:"feature/s-1",path:p,
+   ...(tool==="update_file"?{content:"const a=true;"}:{})}},
+  pinned_revision:head,consumed:false,expires_at_ms:Date.now()+60_000} as never);
+ put("read-context","read_file",context);put("read-edited","read_file",path);
+ put("read-again","read_file",context);put("update","update_file",path);
+ put("update-context","update_file",context);
+ let seq=0;
+ const admissions=Object.assign(Object.create(Admissions.prototype),{
+  async beginTrustedSequentialReadUpdateTask(){calls.push("begin");return {
+   status:"sequential_read_update_manifest_reserved_staged",
+   task_id:task,total_effects:3,gateway_execution_authorized:false};},
+  async stageTrustedSequentialReadEffect(){calls.push("stage_read");return {
+   status:"sequential_read_effect_reserved_staged",sequence:seq+1,
+   task_id:task,gateway_execution_authorized:false};},
+  async attestTrustedSequentialReadEffect(){calls.push("attest_read");seq++;return {
+   status:"sequential_read_effect_attested_staged",sequence:seq,
+   task_id:task,gateway_execution_authorized:false};},
+  async stageTrustedSequentialMutationEffect(){calls.push("stage_update");return {
+   status:"sequential_mutation_effect_reserved_staged",sequence:seq+1,
+   task_id:task,gateway_execution_authorized:false};},
+  async attestTrustedSequentialMutationEffect(){calls.push("attest_update");seq++;return {
+   status:"sequential_mutation_effect_attested_staged",sequence:seq,
+   task_id:task,gateway_execution_authorized:false};},
+  async finalizeTrustedSequentialReadTask(){calls.push("finalize");return {
+   status:"sequential_read_task_complete_staged",total_effects:3,
+   task_id:task,gateway_execution_authorized:false};}
+ }) as Admissions;
+ const mutation=Object.assign(Object.create(Mutation.prototype),{
+  isForAdmissions:(gate:unknown)=>gate===admissions,
+  async stageUpdate(){calls.push("cas_preflight");return {
+   status:"gitea_update_intent_reserved_without_execution",provider_write_authorized:false};}
+ }) as Mutation;
+ const observer=Object.assign(Object.create(Observer.prototype),{toTrustedObserver:()=>({})}) as Observer;
+ const stager=await Stager.begin({store,admissions,mutation,mutationObserver:observer,
+  planTaskId:task,runtimeTaskId:runtime,expectedHeadSha:head});
+ return {calls,stager};
+}
+test("multi-read Task: every granted read once, in any order, then one CAS update",async()=>{
+ const f=await multiReadFixture();
+ await f.stager.stage("read-context");await f.stager.attestRead("read-context");
+ // The update needs ALL granted reads first.
+ await assert.rejects(f.stager.stage("update"),/must precede the update/u);
+});
+test("multi-read Task completes with context read, edited read, update",async()=>{
+ const f=await multiReadFixture();
+ await f.stager.stage("read-context");await f.stager.attestRead("read-context");
+ await f.stager.stage("read-edited");await f.stager.attestRead("read-edited");
+ await f.stager.stage("update");await f.stager.attestMutation("update");
+ assert.deepEqual(f.calls,["begin","stage_read","attest_read","stage_read","attest_read",
+  "cas_preflight","stage_update","attest_update","finalize"]);
+});
+test("multi-read Task refuses a repeated read of the same file",async()=>{
+ const f=await multiReadFixture();
+ await f.stager.stage("read-context");await f.stager.attestRead("read-context");
+ await assert.rejects(f.stager.stage("read-again"),/read only once per Task/u);
+});
+test("multi-read Task refuses reads after all granted reads and a second write path",async()=>{
+ const f=await multiReadFixture();
+ await f.stager.stage("read-context");await f.stager.attestRead("read-context");
+ await f.stager.stage("read-edited");await f.stager.attestRead("read-edited");
+ // Stager allows only files read in this Task; the Gateway then requires the
+ // signed update_file grant, which exists for the edited file only.
+ await assert.rejects(f.stager.stage("read-again"),/independently read in this Task|out-of-order/u);
 });
