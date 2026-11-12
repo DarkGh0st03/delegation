@@ -13,13 +13,33 @@
 import {BaseLlm} from "@google/adk";
 
 const KEY_PATTERN = /AIza[0-9A-Za-z_-]{20,}/gu;
+
+/** The only model the whole paid path has been validated with: the canonical
+ * Orchestrator decisions apply their 180 s timeout and LOW thinking ONLY to
+ * this exact name, and the settings below were tuned for it. */
+export const VALIDATED_GEMINI_MODEL = "gemini-3.8-flash";
+
+/** Per-role ADK settings of the previous real Gemini pilots (same values as
+ * the disposable live model set): turns per Task, time per call, output cap,
+ * LOW thinking. Without them the defaults are 8 turns and 60 s per call,
+ * too little for a specialist that rewrites a whole file. */
+export const GEMINI_WORKER_SETTINGS = Object.freeze({
+  backend: {maxModelTurns: 20, maxModelCallMs: 180000,
+    generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}},
+  frontend: {maxModelTurns: 14, maxModelCallMs: 180000,
+    generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}},
+  test: {maxModelTurns: 10, maxModelCallMs: 180000,
+    generateContentConfig: {maxOutputTokens: 12288, thinkingConfig: {thinkingLevel: "LOW"}}}
+});
 export const scrub = text => String(text ?? "").replace(KEY_PATTERN, "[CHIAVE-OSCURATA]")
   .replace(/[\r\n\t]+/gu, " ").slice(0, 400);
 
 /** Free, read-only check of key and model (no tokens, no generation). */
 export async function preflightGemini({apiKey, model, fetchFn = fetch}) {
   if (!apiKey) throw Error("GEMINI_API_KEY non configurata nel file .env");
-  if (!/^gemini-[a-z0-9.-]+$/u.test(model)) throw Error(`Nome del modello Gemini non valido: ${model}`);
+  if (model !== VALIDATED_GEMINI_MODEL)
+    throw Error(`Modello "${model}" non supportato: il percorso a pagamento è validato solo con ` +
+      `${VALIDATED_GEMINI_MODEL}. Correggi GEMINI_MODEL nel file .env`);
   let response;
   try {
     response = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${model}`, {

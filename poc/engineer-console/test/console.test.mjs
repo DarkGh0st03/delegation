@@ -498,7 +498,10 @@ test("Gemini preflight is free and explains key/model problems without leaking t
   await assert.rejects(preflightGemini({apiKey: key, model: "gemini-3.8-flash",
     fetchFn: reply(400, `{"error":"API key not valid ${key}"}`)}),
     e => /rifiutata/u.test(e.message) && !e.message.includes(key));
-  await assert.rejects(preflightGemini({apiKey: key, model: "gemini-9", fetchFn: reply(404, "")}), /non esiste/u);
+  await assert.rejects(preflightGemini({apiKey: key, model: "gemini-3.8-flash", fetchFn: reply(404, "")}), /non esiste/u);
+  // Only the validated model is accepted, before any network call.
+  await assert.rejects(preflightGemini({apiKey: key, model: "gemini-9",
+    fetchFn: async () => { throw Error("must not be called"); }}), /non supportato/u);
   await assert.rejects(preflightGemini({apiKey: key, model: "gemini-3.8-flash",
     fetchFn: async () => { throw Object.assign(Error("fetch failed"), {cause: {code: "ENOTFOUND"}}); }}),
     /non raggiungibile.*ENOTFOUND/u);

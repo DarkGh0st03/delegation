@@ -15,7 +15,7 @@ import {readEnvFile} from "./env.mjs";
 import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../packages/plan-contracts/src/planning-limits.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
-import {preflightGemini, createSessionGeminiModels} from "./gemini-models.mjs";
+import {preflightGemini, createSessionGeminiModels, GEMINI_WORKER_SETTINGS} from "./gemini-models.mjs";
 
 const geminiModelName = () => process.env.GEMINI_MODEL || "gemini-3.8-flash";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from "../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
@@ -247,7 +247,9 @@ export class EngineerSessions {
         workerTokens: Object.fromEntries(roles.map(role =>
           [role, secret(role + ".token", local[`ADAPTER_CALLER_${role.toUpperCase()}`])])),
         workerPorts, rootIndex: session.operational_status_index, childIndices,
-        executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: 1},
+        // Paid runs may repair after up to two verified test failures (as in the
+        // earlier real pilots); free runs stop at the first one.
+        executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: scripted ? 1 : 2},
         ...(createEnabled ? {enableNativeCreateFile: true} : {}),
         draftTitle: (reference ? "[RIFERIMENTO] " : scripted ? "[SIMULATA] " : "") + session.requirement.slice(0, 120),
         draftBody: `Sessione ${session.id}, requisito approvato dall'Engineer.\n\n` +
@@ -309,7 +311,8 @@ export class EngineerSessions {
     } else {
       if (!live.gemini) throw Error("Modelli Gemini della sessione non disponibili");
       const m = live.gemini.execution(), w = operational.localWorkers.workers;
-      w.backend.adk.model = m.backend; w.frontend.adk.model = m.frontend; w.test.adk.model = m.test;
+      for (const role of ["backend", "frontend", "test"])
+        w[role].adk = {...w[role].adk, model: m[role], ...GEMINI_WORKER_SETTINGS[role]};
       // One Orchestrator model: Branch proposal, every Task decision, PR proposal.
       operational.workflow.createBranch.model = m.orchestrator;
       operational.workflow.adaptive.model = m.orchestrator;
@@ -649,7 +652,7 @@ export class EngineerSessions {
         receiptDirectory: dirs.approvals,
         passwordSaltHex: userRecord.salt, passwordScryptHex: userRecord.hash},
       planner: session.mode === "gemini"
-        ? {model, planId: session.id, maxModelTurns: 24, maxProposalRevisions: 1,
+        ? {model, planId: session.id, maxModelTurns: 24, maxProposalRevisions: 2,
            thinkingLevel: "LOW", maxModelCallMs: 180000, maxOutputTokens: 12288, maxPlanningMs: 600000}
         : {model, planId: session.id, maxModelTurns: 3, maxProposalRevisions: 0},
       trustedAgentRegistry,
