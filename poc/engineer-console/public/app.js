@@ -339,7 +339,7 @@ async function showSession(id) {
     cell(tr, (d.at || "").slice(11, 19)); cell(tr, d.agent); cell(tr, d.tool);
     cell(tr, (r.branch ? r.branch + ": " : "") + r.path);
     cell(tr, d.decision === "allow" ? "consentita" : "negata", d.decision === "allow" ? "allow" : "deny");
-    cell(tr, d.reason || "");
+    cell(tr, (d.reason || "") + (d.detail ? " — " + d.detail : ""));
     rows.appendChild(tr);
   }
   sessionCache = s;
@@ -450,6 +450,10 @@ async function loadExecution() {
     const allowed = s.gateway_decisions.filter(d => d.decision === "allow").length;
     cell(tr, allowed + " consentite, " + (s.gateway_decisions.length - allowed) + " negate");
     showPullRequest(cell(tr, ""), s.pull_request);
+    // Why it stopped, without opening the session.
+    const why = s.error || s.result?.reason ||
+      [...s.log].reverse().find(l => /Runner|Gateway:/u.test(l.text))?.text || "";
+    cell(tr, why, s.phase === "failed" ? "error" : "");
     rows.appendChild(tr);
   }
   if (!shown.length) { const tr = document.createElement("tr"); cell(tr, ""); cell(tr, "Nessuna esecuzione: approva prima una proposta."); rows.appendChild(tr); }

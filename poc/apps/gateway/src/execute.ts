@@ -105,6 +105,12 @@ function elapsed(start: number, durationNow: () => number): number {
   return Math.max(0, durationNow() - start);
 }
 
+
+/** Bounded single-line message for the OWNER audit sink only. */
+function providerErrorDetail(error: unknown): string {
+  const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return text.replace(/[\r\n\t]+/gu, " ").slice(0, 300);
+}
 export interface ExecuteDependencies {
   store: InMemoryRequestStore;
   audit: AuditSink;
@@ -570,7 +576,8 @@ export async function executeAuthorization(
       ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
       ...(record.approved_plan_digest
         ? {approved_plan_digest:record.approved_plan_digest} : {}),
-      provider
+      provider,
+      provider_error_detail: providerErrorDetail(error)
     };
 
     if (error instanceof ProviderNotFoundError) {

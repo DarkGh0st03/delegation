@@ -314,9 +314,12 @@ export class EngineerSessions {
 
   #recordDecision(session, event) {
     if (event.event !== "authorization_executed" && event.event !== "authorization_denied") return;
+    const detail = typeof event.provider_error_detail === "string" ? event.provider_error_detail : null;
     session.gateway_decisions.push({at: event.timestamp, agent: event.agent_role,
       tool: event.tool, resource: event.resource_uri, decision: event.decision,
-      reason: event.reason ?? null, verification_ms: event.verification_ms, opa_ms: event.opa_ms});
+      reason: event.reason ?? null, detail, verification_ms: event.verification_ms, opa_ms: event.opa_ms});
+    if (detail) session.log.push({at: new Date().toISOString(),
+      text: `Gateway: ${event.tool} di ${event.agent_role} non riuscito: ${detail}`});
   }
 
   async #signViaApprovalServer(server, password, permissionIds) {

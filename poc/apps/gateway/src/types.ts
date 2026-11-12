@@ -149,6 +149,9 @@ export interface ExecuteAuditEvent {
   policy_version?: string;
   provider_ms: number;
   provider_result: "success" | "error" | "not_called";
+  /** Owner-side audit only (never returned to agents): bounded, single-line
+   * reason of a provider failure, so the operator can see why it failed. */
+  provider_error_detail?: string;
   total_ms: number;
   vp_size_bytes: number;
   chain_depth?: number;
