@@ -149,6 +149,19 @@ export class EngineerSessions {
     this.#log(session, "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati");
     this.#runExecution(session, live).catch(error => {
       if (live.stopRequested) return; // the Engineer's stop records the outcome
+      // Simulated agents only add comments: when every project phase passed
+      // and only the researcher acceptance failed, that is the expected end.
+      if (session.mode === "scripted" && session.log.some(l =>
+          /Esito del Runner: FAIL \(prima fase fallita: researcher_acceptance\)/u.test(l.text))) {
+        session.phase = "completed";
+        session.result = {status: "simulated_acceptance_failed", pr_created: false, executed_tasks: null,
+          adaptive_status: null, reason: "Esito atteso della modalità simulata: tutte le fasi dei test del " +
+            "progetto sono passate, i test di accettazione no (il requisito non è implementato). " +
+            "Nessuna Draft PR; Root revocata."};
+        this.#log(session, "Completata (simulazione): " + session.result.reason);
+        this.#shutdown(session.id).catch(() => {});
+        return;
+      }
       session.phase = "failed";
       // The canonical launcher's last error can hide the first cause (e.g.
       // "PR forbidden" after a failed test): show the recorded cause too.
