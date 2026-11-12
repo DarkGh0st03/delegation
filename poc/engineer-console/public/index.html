@@ -114,6 +114,9 @@
             <legend>Planner</legend>
             <label class="inline"><input type="radio" name="mode" value="scripted" checked>
               Simulato (gratuito, nessuna IA: sceglie i file confrontando le parole del requisito con i percorsi)</label>
+            <label class="inline"><input type="radio" name="mode" value="reference">
+              Soluzione di riferimento (gratuita, nessuna IA: gli agenti scrivono la soluzione nota del ricercatore;
+              solo iam-console-poc, requisito di sospensione degli account)</label>
             <label class="inline"><input type="radio" name="mode" value="gemini" id="mode-gemini">
               Gemini (a pagamento) <span id="gemini-state" class="hint"></span></label>
             <label class="inline" id="gemini-consent-row" hidden><input type="checkbox" name="gemini_consent">

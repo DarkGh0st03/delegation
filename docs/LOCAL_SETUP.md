@@ -127,6 +127,13 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
      commento marcato `SIMULATA`, così si vede tutta la catena di autorizzazione
      su un diff reale. Il requisito non è implementato: i test di accettazione
      falliscono e **non si crea nessuna PR**. È l'esito corretto e atteso.
+   - *Soluzione di riferimento*: gratuita e senza IA, solo per `iam-console-poc`
+     al commit di base. Il Planner propone gli 11 file della soluzione nota del
+     ricercatore (10 da aggiornare, 1 test e2e da creare) e gli agenti la
+     scrivono attraverso tutta la catena di autorizzazione. I test di
+     accettazione passano e nasce una **Draft PR reale**, etichettata
+     `[RIFERIMENTO]`: serve a mostrare il percorso completo senza costi, non è
+     codice generato da un modello.
    - *Gemini*: gli agenti scrivono il codice; la PR nasce solo se i test passano.
 
 Limiti attuali, dichiarati:

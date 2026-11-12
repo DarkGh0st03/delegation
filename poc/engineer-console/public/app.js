@@ -322,7 +322,9 @@ async function showSession(id) {
   $("sd-phase").className = s.phase === "failed" ? "fail" : (s.phase === "completed" ? "ok" : "");
   $("sd-repo").textContent = s.repository.owner + "/" + s.repository.name + " @ " + s.base_sha.slice(0, 12);
   $("sd-branch").textContent = s.work_branch;
-  $("sd-mode").textContent = s.mode === "gemini" ? "Gemini" : "Simulato (nessuna IA: le modifiche sono solo commenti marcati)";
+  $("sd-mode").textContent = {gemini: "Gemini",
+    reference: "Soluzione di riferimento del ricercatore (nessuna IA)",
+    scripted: "Simulato (nessuna IA: le modifiche sono solo commenti marcati)"}[s.mode] ?? s.mode;
   $("sd-approved").textContent = s.approval ? s.approval.permission_count + " su " + s.proposal.permissions.length : "—";
   const r = s.result;
   $("sd-result").textContent = r ? (r.pr_created ? "Draft PR creata" : "Nessuna PR") +
@@ -376,7 +378,8 @@ function openReview(s) {
   $("rv-repo").textContent = s.repository.owner + "/" + s.repository.name;
   $("rv-branch").textContent = s.work_branch;
   $("rv-simulated").textContent = s.mode === "scripted"
-    ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso." : "";
+    ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso."
+    : s.mode === "reference" ? "Proposta della SOLUZIONE DI RIFERIMENTO: file della soluzione nota, nessuna IA." : "";
   const a = $("rv-assumptions"), u = $("rv-uncertainties");
   a.replaceChildren(); u.replaceChildren();
   for (const t of s.proposal.assumptions) li(a, t);

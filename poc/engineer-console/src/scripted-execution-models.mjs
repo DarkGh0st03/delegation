@@ -11,6 +11,7 @@
  * Task against the Engineer-signed grant whatever these models answer.
  */
 import {BaseLlm} from "@google/adk";
+import {isProjectTestSource} from "../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 
 const SLASH = /^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/(.+)$/u;
 
@@ -20,9 +21,15 @@ export function permissionPath(resource) {
   return m ? m[1].split("/").map(decodeURIComponent).join("/") : undefined;
 }
 
-/** Fixed role routing for the simulated run (the Engineer sees it in the UI). */
+/**
+ * Fixed role routing for the free modes. The Test role may edit only the
+ * project test sources of the canonical profile (same function the owner
+ * uses to admit Tasks); other test-like files (e.g. e2e specs) belong to a
+ * file specialist.
+ */
 export function roleForPath(path) {
-  if (/^(tests?|e2e|spec)\//u.test(path) || /\.(test|spec)\.[a-z]+$/u.test(path)) return "test";
+  if (isProjectTestSource(path)) return "test";
+  if (/^(tests?|e2e)\//u.test(path) || /\.spec\.[a-z]+$/u.test(path)) return "frontend";
   if (/(^|\/)(frontend|client|web|ui)\//u.test(path) || /\.(tsx|jsx|vue|svelte|css|scss|html)$/u.test(path))
     return "frontend";
   return "backend";
@@ -48,18 +55,22 @@ export function simulatedExecutionPlan(approved, sessionId) {
     else if (p.operation === "create_branch") branch = p;
     else if (p.operation === "create_pull_request") pullRequest = p;
     const path = permissionPath(p.resource);
-    if (!path || !["read_file", "update_file"].includes(p.operation)) continue;
+    if (!path || !["read_file", "update_file", "create_file"].includes(p.operation)) continue;
     const entry = byPath.get(path) ?? {};
     entry[p.operation] = p;
     byPath.set(path, entry);
   }
   const tasks = [];
   for (const [path, entry] of [...byPath].sort(([a], [b]) => a.localeCompare(b))) {
-    if (!entry.read_file || !entry.update_file) continue;
     const role = roleForPath(path);
-    tasks.push({task_id: `t${String(tasks.length + 1).padStart(2, "0")}-${role}`, agent_id: role,
-      path, permissions: [pick(entry.read_file), pick(entry.update_file)],
-      instruction: `Leggi ${path} e aggiungi il commento SIMULATO della sessione ${sessionId}`});
+    const id = `t${String(tasks.length + 1).padStart(2, "0")}-${role}`;
+    if (entry.create_file)
+      tasks.push({task_id: id, agent_id: role, path, op: "create",
+        permissions: [pick(entry.create_file)], instruction: `Crea ${path}`});
+    else if (entry.read_file && entry.update_file)
+      tasks.push({task_id: id, agent_id: role, path, op: "update",
+        permissions: [pick(entry.read_file), pick(entry.update_file)],
+        instruction: `Leggi e aggiorna ${path} (sessione ${sessionId})`});
   }
   if (runTests) tasks.push({task_id: "t99-test", agent_id: "test",
     permissions: [pick(runTests)], instruction: "Esegui i test del progetto sul commit attuale del branch"});
@@ -124,28 +135,51 @@ class Scripted extends BaseLlm {
 }
 
 /** One Task per assigned file: read_file -> update_file -> short report. */
+/**
+ * One Task per assigned file. Update: read_file -> update_file -> report.
+ * Create: create_file -> report. Content is the simulated marker appended to
+ * what the Gateway returned, or the fixed REFERENCE content when given.
+ */
 export class ScriptedWorkerModel extends Scripted {
-  #branch; #queue; #sessionId; #turn = 0;
-  constructor({role, branch, files, sessionId}) {
-    super({model: `scripted-${role}-no-ai`});
-    this.#branch = branch; this.#queue = [...files]; this.#sessionId = sessionId;
+  #branch; #queue; #sessionId; #contents; #turn = 0;
+  constructor({role, branch, files, sessionId, contents}) {
+    super({model: contents ? `reference-${role}-no-ai` : `scripted-${role}-no-ai`});
+    this.#branch = branch; this.#sessionId = sessionId; this.#contents = contents;
+    this.#queue = files.map(f => typeof f === "string" ? {path: f, op: "update"} : f);
+  }
+  #content(path, previous) {
+    if (this.#contents) {
+      if (typeof this.#contents[path] !== "string") throw Error("No reference content for " + path);
+      return this.#contents[path];
+    }
+    return previous + (previous.endsWith("\n") || !previous ? "" : "\n") +
+      simulatedMarker(path, this.#sessionId) + "\n";
   }
   async *generateContentAsync(request) {
     this.calls++;
-    const path = this.#queue[0];
-    if (!path) { yield say("Nessun file assegnato a questo ruolo."); return; }
-    const turn = ++this.#turn;
+    const item = this.#queue[0];
+    if (!item) { yield say("Nessun file assegnato a questo ruolo."); return; }
+    const {path, op} = item, turn = ++this.#turn;
+    const label = this.#contents ? "soluzione di RIFERIMENTO" : "modifica SIMULATA";
+    if (op === "create") {
+      if (turn === 1) {
+        yield call(`create-${this.calls}`, "create_file",
+          {branch: this.#branch, path, content: this.#content(path, "")});
+        return;
+      }
+      this.#queue.shift(); this.#turn = 0;
+      yield say(`Creato ${path} (${label}).`);
+      return;
+    }
     if (turn === 1) { yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path}); return; }
     if (turn === 2) {
       const previous = lastReadContent(request);
       if (typeof previous !== "string") throw Error("Scripted worker: read result not found for " + path);
-      const content = previous + (previous.endsWith("\n") || !previous ? "" : "\n") +
-        simulatedMarker(path, this.#sessionId) + "\n";
-      yield call(`update-${this.calls}`, "update_file", {branch: this.#branch, path, content});
+      yield call(`update-${this.calls}`, "update_file", {branch: this.#branch, path, content: this.#content(path, previous)});
       return;
     }
     this.#queue.shift(); this.#turn = 0;
-    yield say(`Aggiornato ${path} (modifica SIMULATA).`);
+    yield say(`Aggiornato ${path} (${label}).`);
   }
 }
 

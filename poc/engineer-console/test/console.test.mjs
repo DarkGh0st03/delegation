@@ -412,7 +412,9 @@ test("simulated execution plans only from APPROVED permissions, one Task per rea
     ["t99-test", "test", null]]);
   assert.equal(plan.pullRequest, undefined, "no PR permission approved, none planned");
   assert.deepEqual(plan.tasks[0].permissions.map(p => p.operation), ["read_file", "update_file"]);
-  assert.equal(roleForPath("tests/e2e/x.spec.ts"), "test");
+  assert.equal(roleForPath("tests/backend/x.test.ts"), "test");
+  // The Test role may not create/update e2e specs: a file specialist does.
+  assert.equal(roleForPath("tests/e2e/x.spec.ts"), "frontend");
   assert.match(simulatedMarker("a.css", "s-1"), /^\/\* .*SIMULATA.* \*\/$/u);
   assert.match(simulatedMarker("a.ts", "s-1"), /^\/\/ \[delegation s-1\]/u);
   // The worker rewrites what the Gateway actually returned.
@@ -459,4 +461,26 @@ test("scripted planner understands Italian requirements against English paths", 
   assert.deepEqual(selectPlanningFiles(["apps/backend/src/users/user.service.ts", "docs/x.ts",
     "packages/shared/src/account-status.ts"], "Sospendere e riattivare un account utente"),
   ["apps/backend/src/users/user.service.ts", "packages/shared/src/account-status.ts"]);
+});
+
+test("reference mode proposes update for existing files and create for new ones", async () => {
+  const {referenceProposal} = await import("../src/scripted-planner-model.mjs");
+  const {simulatedExecutionPlan, ScriptedWorkerModel} = await import("../src/scripted-execution-models.mjs");
+  const p = referenceProposal(["a/old.ts", "tests/e2e/new.spec.ts"], ["a/old.ts"]);
+  assert.deepEqual(p.requested_permissions.filter(x => x.path).map(x => [x.operation, x.path]), [
+    ["read_file", "a/old.ts"], ["update_file", "a/old.ts"], ["create_file", "tests/e2e/new.spec.ts"]]);
+  assert.match(p.assumptions[0], /RIFERIMENTO/u);
+  const repo = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1/files/";
+  const plan = simulatedExecutionPlan([
+    {operation: "read_file", resource: repo + "a/old.ts"}, {operation: "update_file", resource: repo + "a/old.ts"},
+    {operation: "create_file", resource: repo + "tests/e2e/new.spec.ts"}], "s-1");
+  assert.deepEqual(plan.tasks.map(t => [t.agent_id, t.op, t.permissions.map(x => x.operation)]),
+    [["backend", "update", ["read_file", "update_file"]], ["frontend", "create", ["create_file"]]]);
+  // A create Task writes the reference content directly, then reports.
+  const worker = new ScriptedWorkerModel({role: "test", branch: "feature/s-1", sessionId: "s-1",
+    files: [{path: "tests/e2e/new.spec.ts", op: "create"}], contents: {"tests/e2e/new.spec.ts": "REF\n"}});
+  const events = [];
+  for (let i = 0; i < 2; i++) for await (const e of worker.generateContentAsync({})) events.push(e.content.parts[0]);
+  assert.deepEqual(events[0].functionCall.args, {branch: "feature/s-1", path: "tests/e2e/new.spec.ts", content: "REF\n"});
+  assert.match(events[1].text, /RIFERIMENTO/u);
 });
