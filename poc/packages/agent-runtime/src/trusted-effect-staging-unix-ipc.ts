@@ -492,7 +492,7 @@ export async function createTrustedEffectAgentBindingServer(config:{
      effectStager:{
       ...(pins.operation==="read_then_update"
        ?{stagedTool:"read_then_update" as const,
-         ...(pins.role!=="test"&&config.ownerStageClient.reportNoChange?{
+         ...(config.ownerStageClient.reportNoChange?{
           reportNoChange:(requestId:string)=>
            config.ownerStageClient.reportNoChange!(pins.runtimeTaskId,requestId)
          }:{}),

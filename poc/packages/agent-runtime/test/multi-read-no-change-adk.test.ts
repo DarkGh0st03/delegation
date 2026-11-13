@@ -86,3 +86,59 @@ test("several signed reads + an identical update end as an owner-fenced 'no chan
  // The model was told why its update was not performed.
  assert.match(JSON.stringify(model.requests.at(-1)),/no change is needed/u);
 });
+
+class ScriptedReadsOnly extends BaseLlm {
+ readonly requests:LlmRequest[]=[];
+ readonly paths:string[];
+ constructor(paths:string[]){super({model:"scripted-reads-only-no-api"});this.paths=paths;}
+ override async *generateContentAsync(req:LlmRequest):AsyncGenerator<LlmResponse,void>{
+  this.requests.push(req);
+  const path=this.paths[this.requests.length-1];
+  if(path)yield {content:{role:"model",parts:[{functionCall:{id:"r"+this.requests.length,
+   name:"read_file",args:{branch:BRANCH,path}}}]}};
+  else yield {content:{role:"model",parts:[{text:"No change needed: the test already checks the intended behaviour; the controller ignores the department filter."}]}};
+ }
+ override connect(_r:LlmRequest):Promise<BaseLlmConnection>{return Promise.reject(Error("offline"));}
+}
+
+test("Test agent: signed reads and no write end as an owner-fenced 'no change needed' (session s-7f5fb36e688c)",async()=>{
+ const TEST="tests/backend/user.routes.test.ts",SRC="apps/backend/src/users/user.controller.ts";
+ const files:Record<string,string>={[SRC]:"export function listUsers(){}\n",
+  [TEST]:"it('filters by department',()=>{});\n"};
+ const owner:string[]=[];
+ let next=0;
+ const registry=new TrustedEffectStagingTaskRegistry();
+ registry.bindTask({runtimeTaskId:RUNTIME,planTaskId:PLAN,role:"test",branch:BRANCH,
+  operation:"read_then_update",path:TEST,childCredentialId:CHILD,presenterId:"did:thesis:test-agent",
+  effectStager:{stagedTool:"read_then_update",plannedReads:2,
+   async stage(id:string){owner.push("stage:"+id);},
+   async attest(id:string,tool:"read_file"|"update_file"){owner.push("attest:"+tool+":"+id);},
+   async reportNoChange(id:string){owner.push("no_change:"+id);}}});
+ const model=new ScriptedReadsOnly([SRC,TEST]);
+ const handler=createAdkA2ATaskHandler({model,gatewayBaseUrl:"http://gateway.invalid",
+  adapterToken:"ADAPTER_SECRET",adapterBaseUrl:"http://signer.invalid",maxModelTurns:6,
+  scopeModelPaths:true,trustedEffectTaskRegistry:registry,
+  fetchFn:(async(url:unknown,options?:RequestInit)=>{
+   const u=String(url),body=JSON.parse(String(options?.body));
+   if(u.endsWith("/v1/authorization/prepare"))
+    return Response.json({request_id:"req-"+(++next),audience:"gateway",challenge:"ch",
+     expires_at:new Date(Date.now()+60000).toISOString(),
+     required_permission:{resource:"signed",operation:body.tool}},{status:201});
+   if(u.endsWith("/v1/presentations"))return Response.json({signed_vp:"VP"});
+   if(u.endsWith("/v1/authorization/execute")){
+    const path=next===1?SRC:TEST;
+    return Response.json({request_id:body.request_id,decision:"allow",
+     execution:{provider:"gitea",performed:true,tool:"read_file",branch:BRANCH,path,
+      revision:SHA,content:files[path]}});
+   }
+   throw Error("unexpected offline call "+u);
+  }) as typeof fetch});
+ await assert.rejects(handler({...context(),role:"test",
+  subtask:{...context().subtask,instruction:"Repair the failing route test",relevant_paths:[SRC,TEST],
+   approved_file_permissions:[{path:SRC,operation:"read_file"},{path:TEST,operation:"read_file"},
+    {path:TEST,operation:"update_file"}]},
+  delegation_evidence:{credential:"PRIVATE_CHILD",credential_id:CHILD,presenter_id:"did:thesis:test-agent"}}),
+  /ended after read without producing an update/u);
+ assert.deepEqual(owner,["stage:req-1","attest:read_file:req-1",
+  "stage:req-2","attest:read_file:req-2","no_change:req-2"]);
+});

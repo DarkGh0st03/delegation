@@ -115,16 +115,20 @@ test('R434 source excerpts require registered reader, authentic completed Task a
  ])assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer(invalid),
   /R351 authority-only model Task choice denied/u);
 });
-test('R434 no-change evidence requires registered non-Test role with read+update',()=>{
+test('R434 no-change evidence requires a registered specialist (Test included) with read+update',()=>{
  const stop={task_id:'read-but-unchanged',agent_id:'invoice',edited_path:'apps/invoice.ts',
   read_revision:'a'.repeat(40),read_evidence_sha256:'f'.repeat(64)};
  const cfg=config({action:'blocked',reason:'Stop'},{
   specialistNoChanges:[stop]
  });
  assert.doesNotThrow(()=>new TrustedAuthorityOnlyAdkDecisionProposer(cfg));
+ // The Test agent may find that a failing test already checks the intended
+ // behaviour (session s-7f5fb36e688c): the Orchestrator then repairs the code.
+ assert.doesNotThrow(()=>new TrustedAuthorityOnlyAdkDecisionProposer(
+  {...cfg,specialistNoChanges:[{...stop,agent_id:'test',edited_path:'tests/invoice.test.ts'}]}));
  for(const invalid of [
   {...cfg,agents:{invoice:{capabilities:['read_file']}}},
-  {...cfg,specialistNoChanges:[{...stop,agent_id:'test'}]},
+  {...cfg,specialistNoChanges:[{...stop,agent_id:'unregistered'}]},
   {...cfg,specialistNoChanges:[{...stop,agent_id:'orchestrator'}]},
   {...cfg,specialistNoChanges:[stop,stop]},
   {...cfg,specialistNoChanges:[]}

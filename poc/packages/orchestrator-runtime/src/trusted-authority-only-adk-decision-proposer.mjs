@@ -153,7 +153,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
        noChange.edited_path.split('/').some(x=>!x||x==='.'||x==='..')||
        !ID.test(noChange.task_id)||
        !Object.hasOwn(pins,noChange.agent_id)||
-       !isFileSpecialist(noChange.agent_id)||
+       noChange.agent_id==='orchestrator'||
        !pins[noChange.agent_id].includes('read_file')||
        !pins[noChange.agent_id].includes('update_file')||
        prior.some(p=>p.task_id===noChange.task_id)||
@@ -258,7 +258,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
-    'independently_verified_specialist_no_changes lists Tasks whose specialist read edited_path and reported that the file already satisfies the instruction (a legitimate outcome, possible several times). You supervise these claims: if the requirement is met, continue with the remaining work; if you judge that the file still needs a change, delegate a new edit with a more precise instruction. A new independently completed Test run is required before ready_for_pr.',
+    'independently_verified_specialist_no_changes lists Tasks whose specialist read edited_path and reported that the file already satisfies the instruction (a legitimate outcome, possible several times). You supervise these claims: if the requirement is met, continue with the remaining work; if you judge that the file still needs a change, delegate a new edit with a more precise instruction. When the Test agent reports that a failing test file needs no change, the test already checks the intended behaviour: repair the application file that the test exercises (Backend or Frontend) instead of the test. A new independently completed Test run is required before ready_for_pr.',
     'Do NOT delegate a read-only Task to read a file you are about to edit, or the files that edit depends on: put those reads in the edit Task itself (every extra Task costs a new Child credential and more model calls).',
     'A read_file-only investigation Task (exactly ONE read_file of ONE exact file inside the original Engineer scope, for Backend, Frontend or Test) is useful ONLY when no edit Task can carry the read: before a create_file Task (a CREATE Task has no reads) or to diagnose an independently verified Test failure. An independently signed read-only Child and original Engineer grant are mandatory; reading never proves a repair.',
     'Generic workflow for ANY requirement: (1) Backend and Frontend implement the requirement, one edited file per Task with read grants for its dependencies; (2) the Test specialist creates or updates project test sources under '+this.projectTestSourceProfile.roots.join(', ')+' (suffixes '+this.projectTestSourceProfile.suffixes.join(', ')+') that cover the NEW behaviour, with read grants for the changed application files in the same Task; (3) one final Test run_tests Task on the latest HEAD; (4) ready_for_pr only after an independently verified PASS.',

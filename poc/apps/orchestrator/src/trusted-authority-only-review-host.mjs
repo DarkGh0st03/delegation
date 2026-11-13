@@ -1579,7 +1579,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        }
        // A known provider boundary is useful for diagnosis even when the
        // specialist outcome is ambiguous. The same terminal policy applies.
-       if(sequential&&['backend','frontend'].includes(pin.agent_id)){
+       if(sequential&&['backend','frontend','test'].includes(pin.agent_id)){
         try{
          const reported=TrustedAuthorityOnlySequentialReadUpdateStager.prototype
           .getReportedNoChange.call(input.effectStager);

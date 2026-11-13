@@ -195,7 +195,7 @@ export class TrustedEffectStagingTaskRegistry {
      deny("malformed Gateway request ID");
     return b.stager.stage(requestId);
    },
-   ...(b.stager.reportNoChange&&p.role!=="test"?{
+   ...(b.stager.reportNoChange?{
     reportNoChange:async()=>{
      if(this.#retired||b.state!=="selected"||p.operation!=="read_then_update"||
         b.mixedPhase!=="read_attested"||!b.mixedRequest)
