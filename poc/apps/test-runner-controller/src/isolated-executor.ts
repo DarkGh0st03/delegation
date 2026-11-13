@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import {extractTypecheckLocations,extractTypecheckErrorCodes} from "./typecheck-diagnostics.ts";
+import {extractTypecheckLocations,extractTypecheckErrorCodes,extractTypecheckErrors,type TypecheckError} from "./typecheck-diagnostics.ts";
 import {extractVitestFailureFiles} from "./vitest-failure-files.ts";
 import {extractTestFailureMessages,type TestFailureMessage} from "./test-failure-messages.ts";
 import type {
@@ -280,6 +280,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     const phases: RunnerPhaseResult[] = [];
     let typecheckDiagnostics:ReturnType<typeof extractTypecheckLocations>=[];
     let typecheckErrorCodes:string[]=[];
+    let typecheckErrors:TypecheckError[]=[];
     let failingTestFiles:string[]=[];
     let projectE2eFailure:ReturnType<typeof extractProjectE2eFailureDiagnostic>=null;
     let acceptanceFailure:ReturnType<typeof extractAcceptanceFailureSummary>=null;
@@ -415,6 +416,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           if(fixed.phase==="typecheck"&&!result.timed_out){
             typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
             typecheckErrorCodes=extractTypecheckErrorCodes(result.stdout,result.stderr);
+            typecheckErrors=extractTypecheckErrors(result.stdout,result.stderr);
           }
           if(fixed.vitest&&!result.timed_out){
             failingTestFiles=extractVitestFailureFiles(result.stdout,result.stderr);
@@ -503,6 +505,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           ?{typecheck_diagnostics:typecheckDiagnostics}:{}),
         ...(typecheckErrorCodes.length>0
           ?{typecheck_error_codes:typecheckErrorCodes}:{}),
+        ...(typecheckErrors.length>0?{typecheck_errors:typecheckErrors}:{}),
         ...(failingTestFiles.length>0
           ?{failing_test_files:failingTestFiles}:{}),
         ...(testFailures.length>0?{test_failures:testFailures}:{}),

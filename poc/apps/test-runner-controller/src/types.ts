@@ -66,6 +66,8 @@ export interface RunnerRunResult {
   typecheck_diagnostics?: TypecheckLocation[];
   /** Fileless, source-free compiler error codes for diagnostics only. */
   typecheck_error_codes?: string[];
+  /** Compiler errors with their cleaned message (untrusted data). */
+  typecheck_errors?: import("./typecheck-diagnostics.ts").TypecheckError[];
   /** Vitest FAIL paths only; no assertion text. Filter through signed read grants. */
   failing_test_files?: string[];
   /** Failed tests of those files with their cleaned error message (untrusted data). */

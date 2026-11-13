@@ -97,3 +97,56 @@ export function extractTypecheckLocations(stdout:string,stderr:string):Typecheck
   }
   return candidates;
 }
+
+/** A compiler error with its message, as a developer reads it in CI.
+ * The message is produced by code agents wrote: UNTRUSTED DATA, bounded,
+ * one line, no source snippet; it grants nothing and is filtered again
+ * against the signed read scope before any model sees it. */
+export interface TypecheckError {
+  readonly file:string;readonly line:number;readonly code:string;readonly message:string;
+}
+const MAX_TYPECHECK_MESSAGE=300;
+// Every control and bidirectional character, newline included (one line).
+const UNSAFE=new RegExp("[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]","gu");
+export function cleanTypecheckMessage(raw:unknown):string{
+  if(typeof raw!=="string")return "";
+  const text=raw.slice(0,2000).replace(/\x1b\[[0-9;?]*[A-Za-z]/gu,"")
+    .replace(UNSAFE," ").replace(/\s+/gu," ").trim();
+  return text.length<=MAX_TYPECHECK_MESSAGE?text:text.slice(0,MAX_TYPECHECK_MESSAGE-1)+"…";
+}
+export function sanitizeTypecheckErrors(raw:unknown):TypecheckError[]{
+  if(!Array.isArray(raw)||raw.length>MAX_ITEMS)return [];
+  const out:TypecheckError[]=[];
+  for(const item of raw){
+    if(!item||typeof item!=="object"||Array.isArray(item))return [];
+    const x=item as Record<string,unknown>;
+    if(Object.keys(x).sort().join(",")!=="code,file,line,message"||
+       !permittedPath(x.file)||typeof x.code!=="string"||!CODE.test(x.code)||
+       typeof x.line!=="number"||!Number.isSafeInteger(x.line)||x.line<1||x.line>100000||
+       typeof x.message!=="string"||!x.message||cleanTypecheckMessage(x.message)!==x.message)
+      return [];
+    out.push(Object.freeze({file:x.file,line:x.line,code:x.code,message:x.message}));
+  }
+  return out;
+}
+/** Runner side: tsc error lines (plain or pretty) with their message. */
+export function extractTypecheckErrors(stdout:string,stderr:string):TypecheckError[]{
+  const lines=(stdout+"\n"+stderr).slice(0,100_000).replace(/\x1b\[[0-9;?]*[A-Za-z]/gu,"")
+    .split(/\r?\n/u).slice(0,1000);
+  const out:TypecheckError[]=[];
+  let workspaceRoot:string|null=null;
+  for(const line of lines){
+    const banner=BANNER.exec(line);
+    if(banner){workspaceRoot=WORKSPACE_ROOTS[banner[1]!]??null;continue;}
+    const m=/^([^\r\n]{1,181})\(([0-9]{1,6}),[0-9]{1,5}\): error (TS[0-9]{4,5}): (.*)$/u.exec(line)??
+      /^([^\r\n]{1,181}):([0-9]{1,6}):[0-9]{1,5} - error (TS[0-9]{4,5}): (.*)$/u.exec(line);
+    if(!m)continue;
+    const file=workspaceRoot!==null&&m[1]!.startsWith("src/")?workspaceRoot+"/"+m[1]:m[1]!;
+    const row={file,line:Number(m[2]),code:m[3]!,message:cleanTypecheckMessage(m[4])};
+    if(row.message&&sanitizeTypecheckErrors([row]).length){
+      out.push(Object.freeze(row));
+      if(out.length>=MAX_ITEMS)break;
+    }
+  }
+  return out;
+}

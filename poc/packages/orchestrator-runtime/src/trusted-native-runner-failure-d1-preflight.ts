@@ -46,6 +46,8 @@ type NativeVerifiedFailedTest=Readonly<{
  original_session_id:string;tested_commit_sha:string;
  failed_phase:string;source_evidence_sha256:string;
  typecheck_error_codes?:readonly string[];
+ /** Compiler errors with their message: untrusted data. */
+ typecheck_errors?:readonly Readonly<{file:string;line:number;code:string;message:string}>[];
  failing_test_files?:readonly string[];
  /** Failed tests of those files with their message: untrusted data. */
  test_failures?:readonly Readonly<{file:string;test:string;message:string}>[];
@@ -142,6 +144,10 @@ export async function observeTrustedNativeTestFailure(
    resource:canonicalFileUri(root.repository,root.branch,path),operation:"read_file"
   })));
  const testFailures=fail.test_failures?.filter(x=>failingTestFiles?.includes(x.file));
+ // Compiler errors only in files inside the signed read scope.
+ const typecheckErrors=fail.typecheck_errors?.filter(x=>
+  root.root_permissions.some(p=>giteaPermissionCovers(p,{
+   resource:canonicalFileUri(root.repository,root.branch,x.file),operation:"read_file"})));
  return Object.freeze({
   status:"native_test_failure_evidence_verified_only" as const,
   failed_task_id:intent.task_id,failed_runtime_task_id:intent.runtime_task_id,
@@ -151,6 +157,7 @@ export async function observeTrustedNativeTestFailure(
   source_evidence_sha256:fail.evidence_sha256,
   ...(fail.typecheck_error_codes?.length?
    {typecheck_error_codes:Object.freeze([...fail.typecheck_error_codes])}:{}),
+  ...(typecheckErrors?.length?{typecheck_errors:Object.freeze(typecheckErrors)}:{}),
   ...(failingTestFiles?.length?{failing_test_files:Object.freeze(failingTestFiles)}:{}),
   // Only messages of failing files inside the signed read scope.
   ...(testFailures?.length?{test_failures:Object.freeze(testFailures)}:{}),

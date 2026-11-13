@@ -49,6 +49,11 @@ async function freePort() {
 /** Plain-language reason for the canonical fail-closed stops. */
 export function friendlyExecutionError(error) {
   const text = String(error?.message ?? error);
+  const budget = /after the repair budget of (\d+) verified Test failures was used/u.exec(text);
+  if (budget)
+    return `i test non passano ancora dopo ${budget[1]} tentativi di riparazione, il limite della ` +
+      "sessione. La Root è stata revocata e nessuna Draft PR è stata creata. Nella Cronologia trovi " +
+      "gli errori dell'ultima esecuzione dei test";
   if (/not independently actionable/u.test(text))
     return "i test sono falliti per un problema dell'ambiente di test (ad esempio l'installazione " +
       "delle dipendenze senza rete), non per il codice. L'esecuzione si è fermata in sicurezza e la " +
@@ -79,8 +84,12 @@ export function friendlyExecutionError(error) {
  */
 export function failedTestLines(result) {
   const failures = Array.isArray(result?.test_failures) ? result.test_failures.slice(0, 8) : [];
-  return failures.map(f => "Test fallito: " + String(f.file) + " › " + String(f.test) + " — " +
-    String(f.message).split("\n").slice(0, 3).join(" · ").slice(0, 400));
+  const compiler = Array.isArray(result?.typecheck_errors) ? result.typecheck_errors.slice(0, 8) : [];
+  return [
+    ...compiler.map(e => "Errore di compilazione: " + String(e.file) + ":" + Number(e.line) + " " +
+      String(e.code) + " — " + String(e.message).slice(0, 300)),
+    ...failures.map(f => "Test fallito: " + String(f.file) + " › " + String(f.test) + " — " +
+      String(f.message).split("\n").slice(0, 3).join(" · ").slice(0, 400))];
 }
 
 function summarizeResult(result) {
@@ -263,7 +272,7 @@ export class EngineerSessions {
         baseBranch: session.base_branch ?? "main",
         // Paid runs may repair after up to two verified test failures (as in the
         // earlier real pilots); free runs stop at the first one.
-        executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: scripted ? 1 : 2},
+        executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: scripted ? 1 : 4},
         ...(createEnabled ? {enableNativeCreateFile: true} : {}),
         draftTitle: (reference ? "[RIFERIMENTO] " : scripted ? "[SIMULATA] " : "") + session.requirement.slice(0, 120),
         draftBody: `Sessione ${session.id}, requisito approvato dall'Engineer.\n\n` +

@@ -252,11 +252,13 @@ export function createAdkSpecializedAgent(
         // and fails the whole Task. Never invite a re-read after the update.
         "Write the final, complete content in that single update_file: there is no second chance to refine it in this Task."
       ]:[]),
+      "Never invent names, fields, records, routes or APIs: use only what the files you read in this Task show. If the definition you need was not granted, report it instead of guessing.",
       "Never claim a commit or successful test without a confirmed controlled tool result.",
       "If the approved Task cannot be completed within these exact grants, report the limitation.",
       ...(config.role==="test"?[
         "A failed run_tests ends THIS signed Test Task. Do not retry Docker or claim PASS within it. The trusted Orchestrator may admit a NEW Task with a fresh child under the original Rust root if its permission scope suffices; otherwise obtain a fresh Engineer approval.",
-        "TypeScript error locations do not grant file read or update permissions."
+        "TypeScript error locations do not grant file read or update permissions.",
+        "Tests must use the project's real data (the seeded records and fixtures you read) and the real request/response shapes. Keep existing test cases unchanged unless the requirement changes their behaviour: add new cases next to them."
       ]:[]),
       ...(config.role==="test"&&
           (config.trustedRunTestsAllowed===false||

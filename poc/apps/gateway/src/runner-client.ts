@@ -6,8 +6,8 @@ import {validateProjectProfile,projectProfileDigest,isRunnerPhaseName,testSource
   from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {isProjectTestSource} from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import type {RunnerProjectProfile} from "../../test-runner-controller/src/types.ts";
-import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
-  type TypecheckLocation}
+import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,sanitizeTypecheckErrors,
+  type TypecheckLocation,type TypecheckError}
   from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {sanitizeVitestFailureFiles}
   from "../../test-runner-controller/src/vitest-failure-files.ts";
@@ -56,6 +56,8 @@ export interface RunnerClientResult {
   log_reference?: string;
   typecheck_diagnostics?: TypecheckLocation[];
   typecheck_error_codes?: string[];
+  /** Compiler errors with their cleaned message (untrusted data). */
+  typecheck_errors?: TypecheckError[];
   failing_test_files?: string[];
   /** Failed tests of failing_test_files with their cleaned message (untrusted data). */
   test_failures?: TestFailureMessage[];
@@ -210,7 +212,7 @@ export class RunnerClient {
     // An authenticated controller must not report PASS while sending any
     // failure evidence (even an empty or malformed failure field).
     if(status==="pass"&&[
-      "acceptance_failure","typecheck_diagnostics","typecheck_error_codes",
+      "acceptance_failure","typecheck_diagnostics","typecheck_error_codes","typecheck_errors",
       "failing_test_files","test_failures","project_e2e_failure"
     ].some(key=>Object.hasOwn(body,key)&&body[key]!==null))
       throw new ProviderUnavailableError(
@@ -298,6 +300,11 @@ export class RunnerClient {
         ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files)
            .filter(path=>isProjectTestSource(path,testSourceProfileOf(this.#profile)))}: {})
     };
+    if(status==="fail"&&body.typecheck_errors!==undefined&&
+       parsePhases(body.phases).some(p=>p.phase==="typecheck"&&p.status==="fail")){
+      const errors=sanitizeTypecheckErrors(body.typecheck_errors);
+      if(errors.length)result.typecheck_errors=errors;
+    }
     // Messages only for failing files kept above; malformed input is dropped.
     if(result.failing_test_files?.length&&body.test_failures!==undefined){
       const messages=sanitizeTestFailureMessages(body.test_failures,result.failing_test_files);

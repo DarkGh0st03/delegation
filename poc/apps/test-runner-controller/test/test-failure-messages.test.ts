@@ -75,3 +75,18 @@ test("re-validation accepts only clean entries of failing files",()=>{
   "not an array"
  ])assert.deepEqual(sanitizeTestFailureMessages(bad,[FILE]),[]);
 });
+
+test("typecheck errors keep file, line, code and a one-line message", async()=>{
+ const {extractTypecheckErrors,sanitizeTypecheckErrors}=await import("../src/typecheck-diagnostics.ts");
+ const out="> @iam/backend@0.1.0 typecheck\n"+
+  "src/users/user.service.ts(41,22): error TS2339: Property 'workEmail' does not exist on type 'UserSummary'.\n"+
+  "\x1b[96msrc/a.ts\x1b[0m:3:1 - error TS2304: Cannot find name 'x'.‮ hidden\n";
+ const errors=extractTypecheckErrors(out,"");
+ assert.deepEqual(errors,[
+  {file:"apps/backend/src/users/user.service.ts",line:41,code:"TS2339",
+   message:"Property 'workEmail' does not exist on type 'UserSummary'."},
+  {file:"apps/backend/src/a.ts",line:3,code:"TS2304",message:"Cannot find name 'x'. hidden"}]);
+ assert.deepEqual(sanitizeTypecheckErrors(errors),errors);
+ for(const bad of [[{...errors[0],message:"a\nb"}],[{...errors[0],file:"../x.ts"}],[{...errors[0],extra:1}]])
+  assert.deepEqual(sanitizeTypecheckErrors(bad),[]);
+});

@@ -845,6 +845,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         source_evidence_sha256:adaptiveVerifiedFailures.at(-1).source_evidence_sha256,
         ...(adaptiveVerifiedFailures.at(-1).typecheck_error_codes?.length?
          {typecheck_error_codes:[...adaptiveVerifiedFailures.at(-1).typecheck_error_codes]}:{}),
+        ...(adaptiveVerifiedFailures.at(-1).typecheck_errors?.length?
+         {typecheck_errors:adaptiveVerifiedFailures.at(-1).typecheck_errors}:{}),
         ...(adaptiveVerifiedFailures.at(-1).failing_test_files?.length?
          {failing_test_files:adaptiveVerifiedFailures.at(-1).failing_test_files}:{}),
         ...(adaptiveVerifiedFailures.at(-1).test_failures?.length?
@@ -1587,6 +1589,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          adaptiveVerifiedFailures.push(verified);
          return verified;
         }catch(observeError){failure=observeError;}
+       }else if(adaptiveLoopAttempted&&input.d1Candidate===undefined&&
+          pin.agent_id==='test'&&pin.operation==='run_tests'&&
+          adaptiveVerifiedFailures.length>=adaptiveMaxVerifiedFailures){
+        // The Test run did not pass and no repair attempt is left: say so,
+        // instead of reporting a generic incomplete A2A Task.
+        failure=Error('Test run did not pass after the repair budget of '+
+         adaptiveMaxVerifiedFailures+' verified Test failures was used: '+(error?.message??error));
        }
        // A known provider boundary is useful for diagnosis even when the
        // specialist outcome is ambiguous. The same terminal policy applies.

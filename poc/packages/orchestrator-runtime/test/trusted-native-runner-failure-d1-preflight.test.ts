@@ -210,6 +210,8 @@ test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>
    {resource:uri+"/directories/tests/backend/accounts",operation:"read_file"}]},
   expected:{...expected,first_failed_phase:"backend_tests",
    failing_test_files:[allowed,hidden],
+   typecheck_errors:[{file:allowed,line:3,code:"TS2339",message:"Property 'x' does not exist"},
+    {file:hidden,line:4,code:"TS2304",message:"outside the signed reads"}],
    test_failures:[{file:allowed,test:"t1",message:"expected 1 to be 2"},
     {file:hidden,test:"t2",message:"outside the signed reads"}]}
  } as never);
@@ -217,6 +219,7 @@ test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>
  assert.deepEqual(proof.failing_test_files,[allowed]);
  // Messages follow the same signed read scope as the failing files.
  assert.deepEqual(proof.test_failures,[{file:allowed,test:"t1",message:"expected 1 to be 2"}]);
+ assert.deepEqual(proof.typecheck_errors,[{file:allowed,line:3,code:"TS2339",message:"Property 'x' does not exist"}]);
  assert.equal(proof.recovery_authorized,false);
 });
 

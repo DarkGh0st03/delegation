@@ -258,7 +258,10 @@ test("fixed pipeline stops after a failing phase and marks later phases skipped"
   assert.deepEqual(result.typecheck_diagnostics,[{
     path:"apps/backend/src/users/user.ts",line:23,column:7,code:"TS2304"
   }]);
-  assert.ok(!JSON.stringify(result).includes("PRIVATE_CODE"));
+  // The compiler message reaches the repair loop as bounded untrusted data.
+  assert.deepEqual(result.typecheck_errors,[{
+    file:"apps/backend/src/users/user.ts",line:23,code:"TS2304",message:"PRIVATE_CODE"
+  }]);
   assert.equal(execCount, 2);
 });
 

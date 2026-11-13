@@ -7,6 +7,29 @@ Draft PR su Gitea.
 
 ---
 
+## 2026-11-13 — Ricerca e filtro utenti con Gemini: tre cicli di riparazione
+
+Sessione `s-1b2385a2d0fb`. 16 Task, 44 autorizzazioni del Gateway, nessuna
+negata; un Backend ha concluso "nessuna modifica necessaria" e la sessione è
+proseguita. Tre esecuzioni dei test, tutte FAIL, con i messaggi d'errore
+visibili nella Cronologia:
+1. `backend_tests`: i test nuovi usavano utenti inventati ("Alice Admin",
+   "Alice Reed") invece dei dati reali ("Alice Romano"); il filtro per reparto
+   restituiva una lista vuota.
+2. `backend_tests`: dopo la correzione dei test restavano filtri vuoti e un
+   test esistente (modifica del profilo, 404) era stato rotto dal Test agent.
+3. `typecheck`: il Backend aveva usato campi inesistenti (`workEmail`); senza
+   messaggi del compilatore e con il limite di 2 riparazioni già esaurito, la
+   sessione si è fermata con un messaggio fuorviante.
+
+Correzioni: messaggi del compilatore (file, riga, codice, messaggio) fino
+all'Orchestratore e nella Cronologia; limite di riparazioni portato a 4 e
+messaggio esplicito quando si esaurisce; istruzioni a Planner, Orchestratore e
+agenti di leggere e usare i dati reali (seed, contratti) e di non toccare i
+test esistenti che il requisito non cambia.
+
+---
+
 ## 2026-11-13 — Ricerca e filtro utenti con Gemini: test nuovo scritto "alla cieca"
 
 Sessione `s-6268042fdca1`. 10 Task completati (Backend 5, uno dei quali

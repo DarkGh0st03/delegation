@@ -679,3 +679,12 @@ test("simulated Orchestrator: depends on the last COMPLETED Task and reads the f
   // The prompt mentions independent_runner_failure, but no FAIL field exists.
   assert.equal((await ask(["branch", "t01-backend", "t03-frontend", "t99-test"])).action, "ready_for_pr");
 });
+
+test("console explains an exhausted repair budget and shows compiler errors", async () => {
+  const {friendlyExecutionError, failedTestLines} = await import("../src/sessions.mjs");
+  assert.match(friendlyExecutionError(Error("Test run did not pass after the repair budget of 4 verified Test failures was used: x")),
+    /dopo 4 tentativi di riparazione/u);
+  assert.deepEqual(failedTestLines({typecheck_errors: [{file: "apps/backend/src/a.ts", line: 3, code: "TS2339",
+    message: "Property 'workEmail' does not exist on type 'UserSummary'."}]}),
+    ["Errore di compilazione: apps/backend/src/a.ts:3 TS2339 — Property 'workEmail' does not exist on type 'UserSummary'."]);
+});

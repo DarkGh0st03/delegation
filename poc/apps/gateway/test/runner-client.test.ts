@@ -196,6 +196,21 @@ test("RunnerClient carries failed test messages only for kept failing files",asy
   await assert.rejects(pass.run(request),/contradictory failure evidence/u);
 });
 
+test("RunnerClient carries compiler error messages only for a failed typecheck",async()=>{
+  const error={file:"apps/backend/src/users/user.service.ts",line:41,code:"TS2339",
+    message:"Property 'workEmail' does not exist on type 'UserSummary'."};
+  const run=(phase:string)=>new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify({request_id:request.request_id,
+      repository:request.repository,branch:request.branch,tested_commit_sha:request.commit_sha,
+      runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
+      phases:[{phase,status:"fail"}],project_tests:{status:"fail",phases:[{phase,status:"fail"}]},
+      researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"},
+      typecheck_errors:[error]}),{status:200})}).run(request);
+  assert.deepEqual((await run("typecheck")).typecheck_errors,[error]);
+  assert.equal((await run("backend_tests")).typecheck_errors,undefined);
+});
+
 test("RunnerClient carries only valid fileless TypeScript codes",async()=>{
   const secret="PRIVATE_COMPILER_MESSAGE";
   const fixture={request_id:request.request_id,repository:request.repository,

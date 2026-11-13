@@ -13,7 +13,7 @@ import {GiteaClient} from "./gitea-client.ts";
 import {sanitizeVitestFailureFiles} from "../../test-runner-controller/src/vitest-failure-files.ts";
 import {sanitizeTestFailureMessages,type TestFailureMessage}
  from "../../test-runner-controller/src/test-failure-messages.ts";
-import {sanitizeTypecheckErrorCodes}
+import {sanitizeTypecheckErrorCodes,sanitizeTypecheckErrors,type TypecheckError}
  from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {RunnerClient,type RunnerClientRequest,type RunnerClientResult}
  from "./runner-client.ts";
@@ -63,6 +63,7 @@ interface FailReceipt{
  readonly tested_commit_sha:string;readonly first_failed_phase:string;
  readonly environment_phase:string;
  readonly typecheck_error_codes?:readonly string[];
+ readonly typecheck_errors?:readonly TypecheckError[];
  readonly failing_test_files?:readonly string[];
  readonly test_failures?:readonly TestFailureMessage[];
  readonly acceptance_failure?:RunnerClientResult["acceptance_failure"];
@@ -130,7 +131,10 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
  const phase=v.first_failed_phase;
  const files=v.failing_test_files;
  const messages=v.test_failures;
- if(Object.keys(v).filter(k=>!["typecheck_error_codes","acceptance_failure","failing_test_files","test_failures"].includes(k)).sort().join(",")!==FIELDS||
+ if(Object.keys(v).filter(k=>!["typecheck_error_codes","typecheck_errors","acceptance_failure","failing_test_files","test_failures"].includes(k)).sort().join(",")!==FIELDS||
+    (Object.hasOwn(v,"typecheck_errors")&&
+     (v.first_failed_phase!=="typecheck"||!Array.isArray(v.typecheck_errors)||!v.typecheck_errors.length||
+      JSON.stringify(sanitizeTypecheckErrors(v.typecheck_errors))!==JSON.stringify(v.typecheck_errors)))||
     (Object.hasOwn(v,"test_failures")&&
      (!Array.isArray(files)||!Array.isArray(messages)||!messages.length||
       JSON.stringify(sanitizeTestFailureMessages(messages,files as string[]))!==JSON.stringify(messages)))||
@@ -223,6 +227,9 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
   const now=this.#now();
   if(!Number.isSafeInteger(now)||now<=0)
    fail("invalid owner time");
+  // Compiler errors with their message: untrusted data, bounded.
+  const typecheckErrors=stage.first_failed_phase==="typecheck"&&result.typecheck_errors?.length
+   ?sanitizeTypecheckErrors(result.typecheck_errors):[];
   // Failed test names and messages: untrusted data, bounded, per failing file.
   const testFailures=stage.first_failed_phase!=="researcher_acceptance"&&
    result.failing_test_files?.length&&result.test_failures?.length
@@ -235,6 +242,7 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
    first_failed_phase:stage.first_failed_phase,
    ...(stage.first_failed_phase==="typecheck"&&result.typecheck_error_codes?.length?
     {typecheck_error_codes:sanitizeTypecheckErrorCodes(result.typecheck_error_codes)}:{}),
+   ...(typecheckErrors.length?{typecheck_errors:typecheckErrors}:{}),
    ...(stage.first_failed_phase==="researcher_acceptance"&&result.acceptance_failure?
     {acceptance_failure:result.acceptance_failure}:{}),
    ...(stage.first_failed_phase!=="researcher_acceptance"&&
@@ -280,6 +288,7 @@ export class AuthenticatedRunnerFailureObserver{
   status:"owner_authenticated_runner_failure_observed_staged";
   tested_commit_sha:string;first_failed_phase:string;environment_phase:string;
   typecheck_error_codes?:readonly string[];
+  typecheck_errors?:readonly TypecheckError[];
   failing_test_files?:readonly string[];
   test_failures?:readonly TestFailureMessage[];
   acceptance_failure?:RunnerClientResult["acceptance_failure"];
@@ -308,6 +317,7 @@ export class AuthenticatedRunnerFailureObserver{
    environment_phase:v.environment_phase,
    ...(v.typecheck_error_codes?.length?
     {typecheck_error_codes:Object.freeze([...v.typecheck_error_codes])}:{}),
+   ...(v.typecheck_errors?.length?{typecheck_errors:Object.freeze(v.typecheck_errors.map(x=>Object.freeze({...x})))}:{}),
    ...(v.acceptance_failure?{acceptance_failure:safeAcceptanceFailureSummary(v.acceptance_failure)!}:{}),
    ...(v.failing_test_files?.length?{failing_test_files:Object.freeze([...v.failing_test_files])}:{}),
    ...(v.test_failures?.length?{test_failures:Object.freeze(v.test_failures.map(x=>Object.freeze({...x})))}:{}),

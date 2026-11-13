@@ -151,3 +151,21 @@ test('a single dependency written as a string is the same one-element list (sess
  await assert.rejects(proposer('task-99').propose(),/R351 authority-only model Task choice denied/u);
  await assert.rejects(proposer(11).propose(),/R351 authority-only model Task choice denied/u);
 });
+
+test('the Orchestrator sees typecheck errors with their message; malformed ones are refused',async()=>{
+ const err={file:'apps/invoice.ts',line:3,code:'TS2339',message:"Property 'workEmail' does not exist on type 'UserSummary'."};
+ const failure=extra=>({failed_phase:'typecheck',source_evidence_sha256:'e'.repeat(64),
+  typecheck_error_codes:['TS2339'],...extra});
+ const history=[{failed_task_id:'t-run',failed_phase:'typecheck',source_evidence_sha256:'e'.repeat(64),
+  tested_commit_sha:'a'.repeat(40)}];
+ const cfg=config({action:'blocked',reason:'Stop'},{verifiedFailure:failure({typecheck_errors:[err]}),
+  verifiedFailureHistory:history});
+ const seen=[],original=cfg.model.generateContentAsync.bind(cfg.model);
+ cfg.model.generateContentAsync=async function*(request){seen.push(request);yield* original(request);};
+ await new TrustedAuthorityOnlyAdkDecisionProposer(cfg).propose();
+ assert.match(JSON.stringify(seen),/typecheck_errors/u);
+ assert.match(JSON.stringify(seen),/workEmail/u);
+ for(const bad of [[{...err,message:'a\nb'}],[{...err,extra:1}]])
+  assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer({...cfg,
+   verifiedFailure:failure({typecheck_errors:bad})}),/R351 authority-only model Task choice denied/u);
+});
