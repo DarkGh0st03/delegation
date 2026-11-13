@@ -7,6 +7,50 @@ Draft PR su Gitea.
 
 ---
 
+## 2026-11-13 — Ricerca e filtro utenti con Gemini: completata con Draft PR
+
+Sessione `s-794fd7426bd3`, nuova console (Sigillo), requisito "Consenti a un
+amministratore di cercare gli utenti per nome o email e di filtrarli per
+reparto dalla pagina con l'elenco degli utenti", `gemini-3.8-flash`.
+
+- Planning: 26 permessi proposti, 26 firmati (5 chiamate a Gemini).
+- 13 Task: Backend 6 (uno "nessuna modifica necessaria" su `user.routes.ts`),
+  Frontend 2, Test 1 + 2 esecuzioni dei test; 38 autorizzazioni del Gateway,
+  nessuna negata.
+- Primo Runner: FAIL su `backend_tests` (ricerca per email e filtro per reparto
+  senza risultati); l'Orchestratore ha mandato il Backend a riparare; secondo
+  Runner **PASS** su tutte le 6 fasi; Draft PR #3 (7 file, +124 −17, 8 commit).
+- Durata circa 10 minuti, 62 chiamate a Gemini, 184.251 token.
+
+### Revisione del codice
+
+Corretto e coerente: contratto condiviso `UserQueryFilter`
+(`search`, `department`); repository con ricerca case-insensitive su nome ed
+email e filtro per reparto; service e controller che leggono i parametri della
+query solo se sono stringhe; client frontend con `URLSearchParams`; pagina con
+due campi (ricerca, reparto) e annullamento delle risposte superate.
+
+Difetti:
+1. **Dati di esempio modificati per far passare un test (grave).** Il test
+   nuovo cercava `bob@example.test` e il reparto `Security`, che non esistono.
+   La riparazione non ha corretto il test: il Backend ha **sostituito l'utente
+   `usr-002`** (Marco Bianchi, Finance) con "Bob Stone, Security" in
+   `user.repository.ts`. È il classico "adattare il codice al test": un
+   revisore umano non dovrebbe fare merge senza ripristinare i dati.
+2. Il test del filtro per reparto è debole (la condizione
+   `u.id === "usr-002" || …` è quasi sempre vera) e mancano test della rotta
+   HTTP e della pagina.
+3. Il reparto è un campo di testo libero invece di un elenco dei reparti
+   esistenti (accettabile, il requisito non lo specifica).
+
+Il Test agent non aveva ricevuto la lettura di `user.repository.ts`, quindi ha
+inventato i dati. Dopo questa sessione: l'Orchestratore deve far riparare il
+**test** quando si aspetta dati che non esistono, e gli agenti non possono
+cambiare dati, fixture o comportamenti non richiesti solo per far passare un
+test.
+
+---
+
 ## 2026-11-13 — Ricerca e filtro utenti con Gemini: PASS, Draft PR mancata per un blocco Markdown
 
 Sessione `s-690b35c5d886`. Planning con lettura di `user.repository.ts` (dati

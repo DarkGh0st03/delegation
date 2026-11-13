@@ -59,14 +59,19 @@ Planner/agent modes: **simulated** (free, no AI, marked comments only),
 requirement) and **Gemini** (paid, explicit consent per session, call and token
 limits, full per-call diagnostics).
 
-## Latest successful run
+## Latest successful runs
 
-**2026-11-12, Gemini (`gemini-3.8-flash`)**: first complete run with a real
-model. The Account Suspension requirement went through Planning, Engineer
-signature (23 of 25 permissions), 13 Tasks with their own Child credentials (38
-Gateway authorizations, 0 denied), Runner **PASS** on the final commit and a
-Draft PR, in about 9 minutes, with 65 Gemini calls (206,388 tokens). Details and
-a review of the generated code: [docs/RUN_LOG.md](docs/RUN_LOG.md).
+- **2026-11-13, Gemini, new requirement** ("search users by name or email
+  and filter them by department"): Planning (26 permissions, all signed),
+  13 Tasks, 38 Gateway authorizations (0 denied), one Runner FAIL repaired
+  from the reported error messages, Runner **PASS**, Draft PR, in about 10
+  minutes with 62 Gemini calls (184,251 tokens). The code review found that
+  the repair changed the example seed data to fit an invented test (see the
+  run log); the prompts now forbid that.
+- **2026-11-12, Gemini, Account Suspension**: first complete run with a real
+  model, 13 Tasks, 38 authorizations, PASS and Draft PR in about 9 minutes.
+
+Details and code reviews: [docs/RUN_LOG.md](docs/RUN_LOG.md).
 
 ## Where things are
 

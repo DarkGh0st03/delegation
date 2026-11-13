@@ -253,6 +253,7 @@ export function createAdkSpecializedAgent(
         "Write the final, complete content in that single update_file: there is no second chance to refine it in this Task."
       ]:[]),
       "Never invent names, fields, records, routes or APIs: use only what the files you read in this Task show. If the definition you need was not granted, report it instead of guessing.",
+      "Never change existing data, seed records, fixtures or behaviour that the requirement does not ask to change just to make a test pass: if a test expects data or behaviour the application does not have, the test is wrong; report it.",
       "Never claim a commit or successful test without a confirmed controlled tool result.",
       "If the approved Task cannot be completed within these exact grants, report the limitation.",
       ...(config.role==="test"?[
