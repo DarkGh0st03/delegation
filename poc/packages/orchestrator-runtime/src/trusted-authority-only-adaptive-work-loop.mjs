@@ -9,7 +9,6 @@ import {isRunnerPhaseName} from '../../plan-contracts/src/project-profile.mjs';
 // exact original root permissions. At most 24 Child-consuming Tasks plus
 // one terminal (no-Child) decision; 25 is the hard owner-only turn ceiling.
 const deny=s=>{throw Error('Authority-only adaptive work loop: '+s);};
-const isFileSpecialist=role=>role!=='orchestrator'&&role!=='test';
 export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false,
  projectTestSourceProfile}){
  if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>25||
@@ -110,7 +109,8 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     // A specialist may verify "no change needed" any number of times; each
     // outcome is owner-attested and the Orchestrator supervises the next step.
     if(!observed||
-       !isFileSpecialist(decision.task.agent_id)||
+       // Backend/Frontend, or the Test agent on a test file it may repair.
+       decision.task.agent_id==='orchestrator'||
        !before.agents?.[decision.task.agent_id]?.capabilities?.includes('read_file')||
        !before.agents?.[decision.task.agent_id]?.capabilities?.includes('update_file')||
        !readUpdateGrantShape(decision.task.permissions)||

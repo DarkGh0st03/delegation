@@ -47,6 +47,7 @@ import {AuthenticatedGiteaReadCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
 import {isTestAgentReadGrant,readUpdateGrantShape,isProjectTestCreateGrant,isProjectTestSource,
+ readCreateGrantShape,isProjectTestReadCreateGrant,
  isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE,exactFilePath}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
@@ -924,10 +925,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         const staged=await executionHandle.stageTask({task:{task_id:choice.task_id,epoch:context.nextEpoch,
          agent_id:choice.agent_id,depends_on:[...choice.depends_on],permissions:[...choice.permissions]},
          runtimeTaskId,childParameters});
-        // Model-selected reads + CAS use the typed native Gateway journal
-        // (each granted read, then the update), never a blind one-shot update.
+        // Model-selected reads + one write use the typed native Gateway
+        // journal (each granted read, then the CAS update or the create).
         const mixed=choice.permissions.some(p=>p.operation==='read_file')&&
-         choice.permissions.some(p=>p.operation==='update_file');
+         choice.permissions.some(p=>p.operation==='update_file'||p.operation==='create_file');
         const stager=mixed
          ?await executionHandle.createEnrolledNativeSequentialReadUpdateStager({
           runtimeTaskId,expectedHeadSha:context.executionProgress.current_head_sha})
@@ -1349,19 +1350,27 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          !/^[a-f0-9]{40}$/u.test(input.expectedHeadSha))
        deny('native sequential staging requires original mutation observer, live owner and HEAD');
       const pin=stagedTaskIds.get(input.runtimeTaskId);
-      if(!pin||pin.operation!=='update_file'||
+      if(!pin||(pin.operation!=='update_file'&&pin.operation!=='create_file')||
          issuedEffectStagers.has(input.runtimeTaskId)||
          dispatchAttempts.has(input.runtimeTaskId))
-       deny('native sequential staging requires enrolled unspent update Task');
+       deny('native sequential staging requires enrolled unspent write Task');
       const row=operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id);
-      // One edited file plus its signed context reads (shared shape rule).
-      if(row.agent_id!==pin.agent_id||!readUpdateGrantShape(row.permissions))
-       deny('native sequential staging requires one edited file with its signed reads');
+      // Signed reads, then ONE write: the update of one of the files read,
+      // or the create of a new file (shared shape rules).
+      const create=pin.operation==='create_file';
+      if(row.agent_id!==pin.agent_id||
+         !(create?readCreateGrantShape(row.permissions):readUpdateGrantShape(row.permissions)))
+       deny('native sequential staging requires one written file with its signed reads');
+      if(create&&(!nativeEffectBinding.create||!nativeEffectBinding.createObserver||
+         !(['backend','frontend'].includes(pin.agent_id)||
+          (pin.agent_id==='test'&&isProjectTestReadCreateGrant(row.permissions,projectTestSourceProfile)))))
+       deny('reads + create Task has no native CREATE preflight/observer or allowed role');
       // Consume owner's one-shot slot BEFORE awaiting journal admission.
       const flight=TrustedAuthorityOnlySequentialReadUpdateStager.begin({
        store:nativeEffectBinding.store,admissions:gateway,
        mutation:nativeEffectBinding.mutation,
        mutationObserver:nativeEffectBinding.mutationObserver,
+       ...(create?{createPreflight:nativeEffectBinding.create}:{}),
        planTaskId:pin.task_id,runtimeTaskId:input.runtimeTaskId,
        expectedHeadSha:input.expectedHeadSha
       });
@@ -1401,7 +1410,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
         input.effectStager,gateway,input.taskId,input.runtimeTaskId,
         snapshot.repository.owner+'/'+snapshot.repository.repository,branch);
-      const sequential=pin?.operation==='update_file'&&
+      const sequential=(pin?.operation==='update_file'||pin?.operation==='create_file')&&
        TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
         input.effectStager,gateway,input.taskId,input.runtimeTaskId);
       // A signed one-effect read can support initial investigation or

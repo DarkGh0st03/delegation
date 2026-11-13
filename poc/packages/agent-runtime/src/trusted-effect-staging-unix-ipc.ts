@@ -257,14 +257,17 @@ function validPins(value:unknown,expectedRole:Role|undefined,testSources:unknown
     !trustedPrivateRole(v.role)||
      (!LEGACY_ROLES.includes(v.role as (typeof LEGACY_ROLES)[number])&&
        v.role!==expectedRole)||
-    !["read_file","update_file","create_file","run_tests","read_then_update"].includes(v.operation as string)||
-     (v.operation==="create_file"&&v.role==="test"&&
+    !["read_file","update_file","create_file","run_tests","read_then_update","read_then_create"].includes(v.operation as string)||
+     ((v.operation==="create_file"||v.operation==="read_then_create")&&v.role==="test"&&
        (typeof v.path!=="string"||!isProjectTestSource(v.path,testSources))))
   return false;
  return v.operation==="run_tests" ? !("path" in v)
   :typeof v.path==="string";
 }
 
+/** Mixed Task: signed reads, then the one write fixed by the owner stager. */
+const isMixed=(tool:unknown)=>tool==="read_then_update"||tool==="read_then_create";
+const finalWrite=(tool:unknown)=>tool==="read_then_create"?"create_file":"update_file";
 /** Kept in the privileged owner process. Cannot be created by A2A payload. */
 export class TrustedOwnerEffectStagingRegistry{
  readonly #entries=new Map<string,{
@@ -282,7 +285,7 @@ export class TrustedOwnerEffectStagingRegistry{
      (role!==undefined&&!trustedPrivateRole(role))||
      this.#entries.has(runtimeTaskId))
    deny("owner staging requires unique pre-approved Task and concrete port");
-  const mixed=stager.stagedTool==="read_then_update";
+  const mixed=isMixed(stager.stagedTool);
   if(mixed&&(typeof stager.attest!=="function"||
      !Number.isSafeInteger(stager.plannedReads)||
      stager.plannedReads!<1||stager.plannedReads!>MAX_TASK_READS))
@@ -294,7 +297,7 @@ export class TrustedOwnerEffectStagingRegistry{
  async stage(runtimeTaskId:string,requestId:string,expectedRole?:Role):Promise<void>{
   const e=this.#entries.get(runtimeTaskId);
   if(this.#retired||!e||
-     (e.port.stagedTool==="read_then_update"
+     (isMixed(e.port.stagedTool)
        ? e.mixedPhase!=="read_ready"&&e.mixedPhase!=="read_attested"
        : e.used)||
      (expectedRole!==undefined
@@ -305,8 +308,8 @@ export class TrustedOwnerEffectStagingRegistry{
    deny("unknown, consumed or malformed owner staging request (including wrong role)");
   // Reject a cross-role HMAC stage WITHOUT consuming the real Task's
   // one-shot staging slot. Only a correct role can reserve the provider.
-  if(e.port.stagedTool==="read_then_update"){
-   // Every signed read is attested before the single update is staged.
+  if(isMixed(e.port.stagedTool)){
+   // Every signed read is attested before the single write is staged.
    e.mixedPhase=e.attestedReads<e.plannedReads?"read_pending":"update_pending";
    e.mixedRequest=requestId;
    try{await e.port.stage(requestId);}
@@ -317,16 +320,16 @@ export class TrustedOwnerEffectStagingRegistry{
   }
  }
  async attest(runtimeTaskId:string,requestId:string,
-  tool:"read_file"|"update_file",expectedRole?:Role):Promise<void>{
+  tool:"read_file"|"update_file"|"create_file",expectedRole?:Role):Promise<void>{
   const e=this.#entries.get(runtimeTaskId);
-  if(this.#retired||!e||e.port.stagedTool!=="read_then_update"||
+  if(this.#retired||!e||!isMixed(e.port.stagedTool)||
      typeof e.port.attest!=="function"||
      (expectedRole!==undefined?e.role!==expectedRole:
       e.role!==undefined&&!LEGACY_ROLES.includes(
        e.role as (typeof LEGACY_ROLES)[number]))||
      !REQUEST.test(requestId)||e.mixedRequest!==requestId||
      (e.mixedPhase!=="read_pending"&&e.mixedPhase!=="update_pending")||
-     tool!==(e.mixedPhase==="read_pending"?"read_file":"update_file"))
+     tool!==(e.mixedPhase==="read_pending"?"read_file":finalWrite(e.port.stagedTool)))
    deny("mixed native effect is not ready for independent attestation");
   const phase=e.mixedPhase;
   e.mixedPhase="failed"; // no repeated attestation after ambiguous outcomes
@@ -336,7 +339,7 @@ export class TrustedOwnerEffectStagingRegistry{
  }
  async reportNoChange(runtimeTaskId:string,requestId:string,expectedRole?:Role):Promise<void>{
   const e=this.#entries.get(runtimeTaskId);
-  if(this.#retired||!e||!expectedRole||expectedRole==="test"||e.role!==expectedRole||
+  if(this.#retired||!e||!expectedRole||e.role!==expectedRole||
      e.port.stagedTool!=="read_then_update"||e.mixedPhase!=="read_attested"||
      e.mixedRequest!==requestId||typeof e.port.reportNoChange!=="function")
    deny("no-change report requires the role-authenticated original attested read");
@@ -386,7 +389,7 @@ export async function createTrustedOwnerEffectStagingServer(config:{
     return {ok:true,status:"owner_intent_reserved_not_executed"};
    }
    if(exactKeys(v,"action,request_id,runtime_task_id,tool")&&
-      v.action==="attest"&&(v.tool==="read_file"||v.tool==="update_file")){
+      v.action==="attest"&&(v.tool==="read_file"||v.tool==="update_file"||v.tool==="create_file")){
     await config.registry.attest(v.runtime_task_id,v.request_id,v.tool,
      config.expectedRole);
     return {ok:true,status:"owner_native_effect_independently_attested"};
@@ -427,9 +430,9 @@ export async function connectTrustedOwnerEffectStagingClient(
     deny("missing authenticated no-change acknowledgement");
   },
   async attest(runtimeTaskId:string,requestId:string,
-   tool:"read_file"|"update_file"):Promise<void>{
+   tool:"read_file"|"update_file"|"create_file"):Promise<void>{
    if(!DISPATCH.test(runtimeTaskId)||!REQUEST.test(requestId)||
-      !["read_file","update_file"].includes(tool))
+      !["read_file","update_file","create_file"].includes(tool))
     deny("malformed agent attestation or Gateway request ID");
    const v=await channel.send({action:"attest",runtime_task_id:runtimeTaskId,
     request_id:requestId,tool});
@@ -485,7 +488,7 @@ export async function createTrustedEffectAgentBindingServer(config:{
     if(config.expectedPresenterDid!==undefined&&
        pins.presenterId!==config.expectedPresenterDid)
      deny("signed Child presenter differs from original native signer DID");
-    if(pins.operation==="read_then_update"&&
+    if(isMixed(pins.operation)&&
        typeof config.ownerStageClient.attest!=="function")
      deny("mixed Task needs original private independent attestation channel");
     config.registry.bindTask({...pins,
@@ -496,7 +499,14 @@ export async function createTrustedEffectAgentBindingServer(config:{
           reportNoChange:(requestId:string)=>
            config.ownerStageClient.reportNoChange!(pins.runtimeTaskId,requestId)
          }:{}),
-         attest:async(requestId:string,tool:"read_file"|"update_file")=>{
+         attest:async(requestId:string,tool:"read_file"|"update_file"|"create_file")=>{
+          await config.ownerStageClient.attest!(pins.runtimeTaskId,requestId,tool);
+         }}:{}),
+      // Reads of signed context files, then ONE create (no no-change report:
+      // a new file that is not needed is simply a failed Task).
+      ...(pins.operation==="read_then_create"
+       ?{stagedTool:"read_then_create" as const,
+         attest:async(requestId:string,tool:"read_file"|"update_file"|"create_file")=>{
           await config.ownerStageClient.attest!(pins.runtimeTaskId,requestId,tool);
          }}:{}),
       ...(pins.operation==="create_file"?{

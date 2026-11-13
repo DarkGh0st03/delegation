@@ -585,7 +585,7 @@ test("free modes: app work, then ONE Test Task reads the changed app files and e
   assert.match(calls[4].text, /Aggiornato tests\/backend\/a\.test\.ts/u);
 });
 
-test("free modes: when tests are only CREATED, the Test agent reads changed files in read-only Tasks first", async () => {
+test("free modes: a CREATED test reads the changed files in the same Task (reads + one create)", async () => {
   const {simulatedExecutionPlan} = await import("../src/scripted-execution-models.mjs");
   const base = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1";
   const plan = simulatedExecutionPlan([
@@ -594,7 +594,9 @@ test("free modes: when tests are only CREATED, the Test agent reads changed file
     {operation: "create_file", resource: `${base}/files/tests/backend/a.test.ts`},
     {operation: "run_tests", resource: base}], "s-1");
   assert.deepEqual(plan.tasks.map(t => [t.task_id, t.op ?? "run"]), [
-    ["t01-backend", "update"], ["t02-test-read", "read"], ["t03-test", "create"], ["t99-test", "run"]]);
+    ["t01-backend", "update"], ["t02-test", "create"], ["t99-test", "run"]]);
+  assert.deepEqual(plan.tasks[1].reads, ["apps/backend/src/a.ts"]);
+  assert.deepEqual(plan.tasks[1].permissions.map(p => p.operation), ["read_file", "create_file"]);
 });
 
 test("budgeted Gemini accepts a proposed write on the session branch, never on another", async () => {

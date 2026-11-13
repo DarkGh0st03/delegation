@@ -145,6 +145,43 @@ export function readUpdateGrantShape(permissions) {
  if(readSet.size!==reads.length||!readSet.has(updates[0].resource))return null;
  return Object.freeze({edit:updates[0].resource,reads:Object.freeze([...readSet])});
 }
+/**
+ * Shape of a native "reads + one create" Task grant: exactly ONE create_file
+ * of one exact NEW file, plus 1..MAX_TASK_READS read_file of DISTINCT exact
+ * EXISTING files it is written from (e.g. the component a new test covers),
+ * nothing else. The new file is never among the reads. Every read and the
+ * create (with its absence proof) remain separate, durably recorded,
+ * Rust/OPA verified effects; this only describes the signed grant SHAPE.
+ * Returns {create, reads} (resources) or null.
+ */
+export function readCreateGrantShape(permissions) {
+ if(!Array.isArray(permissions)||permissions.length<2||
+    permissions.length>MAX_TASK_READS+1)return null;
+ const creates=permissions.filter(p=>p?.operation==="create_file");
+ const reads=permissions.filter(p=>p?.operation==="read_file");
+ if(creates.length!==1||reads.length+1!==permissions.length)return null;
+ if([...reads,creates[0]].some(p=>typeof p.resource!=="string"||
+    scope(p.resource)?.kind!=="files"))return null;
+ const readSet=new Set(reads.map(p=>p.resource));
+ if(readSet.size!==reads.length||readSet.has(creates[0].resource))return null;
+ return Object.freeze({create:creates[0].resource,reads:Object.freeze([...readSet])});
+}
+/** Reads + one write (update of a read file, or create of a new file):
+ * {write, operation, reads} or null. */
+export function readWriteGrantShape(permissions) {
+ const update=readUpdateGrantShape(permissions);
+ if(update)return Object.freeze({write:update.edit,operation:"update_file",reads:update.reads});
+ const create=readCreateGrantShape(permissions);
+ return create?Object.freeze({write:create.create,operation:"create_file",reads:create.reads}):null;
+}
+/** Test may CREATE only a project test source; it may READ any signed file
+ * (the application code the new test covers) in the same Task. */
+export function isProjectTestReadCreateGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+ const shape=readCreateGrantShape(permissions);
+ const created=shape&&scope(shape.create);
+ return !!created&&created.kind==="files"&&
+  isProjectTestSource(created.path.join("/"),profile);
+}
 /** Path of an exact file ResourceURI (no decoding beyond the canonical form). */
 export function exactFilePath(resource) {
  const file=scope(resource);

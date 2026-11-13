@@ -47,7 +47,7 @@ async function fixture(){
   TrustedAuthorityOnlyGatewayAdmissions.prototype),{
   async beginTrustedSequentialReadUpdateTask(){events.push("manifest");
    return {status:"sequential_read_update_manifest_reserved_staged",
-    task_id:task,total_effects:2,gateway_execution_authorized:false};},
+    task_id:task,total_effects:2,write_operation:"update_file",gateway_execution_authorized:false};},
   async stageTrustedSequentialReadEffect(){events.push("reserve_read");
    return {status:"sequential_read_effect_reserved_staged",task_id:task,
     sequence:1,gateway_execution_authorized:false};},

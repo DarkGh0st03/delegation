@@ -15,8 +15,10 @@ const file=path=>root+"/files/"+path;
 const edit="apps/backend/src/users/account.ts",dep="apps/backend/src/users/types.ts";
 const testFile="tests/backend/account.test.ts";
 const p=(operation,path)=>({operation,resource:file(path)});
+const newTest="tests/frontend/AccountPage.test.tsx",page="apps/frontend/src/pages/AccountPage.tsx";
 const rootPermissions=[p("read_file",edit),p("update_file",edit),p("read_file",dep),
- p("read_file",testFile),p("update_file",testFile),{operation:"run_tests",resource:root}];
+ p("read_file",testFile),p("update_file",testFile),{operation:"run_tests",resource:root},
+ p("read_file",page),p("create_file",newTest),p("create_file","apps/backend/src/users/new.ts")];
 class OneChoice extends BaseLlm{
  constructor(choice){super({model:"multi-read-zero-cost-adk"});this.choice=choice;this.calls=0;}
  async *generateContentAsync(request){
@@ -29,9 +31,9 @@ const decision=(agent_id,permissions)=>({action:"delegate",task:{task_id:"t-"+ag
  agent_id,depends_on:["root-branch"],permissions,instruction:"Implement the change in the edited file"}});
 const config=choice=>({model:new OneChoice(choice),requirement:"Add account suspension",branch,
  rootPermissions,agents:{orchestrator:{capabilities:["create_branch"]},
-  backend:{capabilities:["read_file","update_file"]},
+  backend:{capabilities:["read_file","update_file","create_file"]},
   frontend:{capabilities:["read_file","update_file"]},
-  test:{capabilities:["read_file","update_file","run_tests"]}},
+  test:{capabilities:["read_file","update_file","create_file","run_tests"]}},
  previousTasks:[{task_id:"root-branch",agent_id:"orchestrator"}],nextEpoch:2,
  decisionKind:"adaptive",
  executionProgress:{current_head_sha:"a".repeat(40),completed_work:[{task_id:"root-branch",
@@ -65,7 +67,25 @@ test("the Orchestrator is told to put dependency reads in the edit Task, not in 
  await new Proposer(cfg).propose();
  const text=JSON.stringify(cfg.model.request);
  assert.match(text,/Do NOT delegate a read-only Task to read a file you are about to edit/u);
- assert.match(text,/useful ONLY when no edit Task can carry the read/u);
+ assert.match(text,/never before an edit or a create, whose Task carries its own reads/u);
+ assert.match(text,/To CREATE a new file, delegate ONE Task with create_file of that file PLUS read_file/u);
  assert.doesNotMatch(text,/before development, before writing tests, or after a verified failure/u,
   "the old advice that invited superfluous investigation Tasks is gone");
+});
+
+test("a new test file is created in ONE Task with reads of the code it covers (session s-6268042fdca1)",async()=>{
+ const out=await new Proposer(config(decision("test",
+  [p("read_file",page),p("read_file",dep),p("create_file",newTest)]))).propose();
+ assert.deepEqual(out.task.permissions.map(x=>x.operation).sort(),["create_file","read_file","read_file"]);
+ // Backend may also create a new application file from the files it reads.
+ await new Proposer(config(decision("backend",
+  [p("read_file",dep),p("create_file","apps/backend/src/users/new.ts")]))).propose();
+});
+test("reads + create: one create only, never of a file read, Test only for test sources",async()=>{
+ for(const choice of [
+  decision("test",[p("read_file",page),p("create_file",newTest),p("update_file",testFile)]),
+  decision("test",[p("read_file",page),p("create_file","apps/backend/src/users/new.ts")]),
+  decision("test",[p("read_file",page),p("create_file",newTest),{operation:"run_tests",resource:root}])
+ ])await assert.rejects(new Proposer(config(choice)).propose(),undefined,
+   JSON.stringify(choice.task.permissions));
 });

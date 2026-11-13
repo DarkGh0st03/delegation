@@ -28,8 +28,9 @@ export const GEMINI_WORKER_SETTINGS = Object.freeze({
     generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}},
   frontend: {maxModelTurns: 14, maxModelCallMs: 180000,
     generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}},
+  // Test writes whole test files too (thinking tokens count in the cap).
   test: {maxModelTurns: 10, maxModelCallMs: 180000,
-    generateContentConfig: {maxOutputTokens: 12288, thinkingConfig: {thinkingLevel: "LOW"}}}
+    generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}}
 });
 export const scrub = text => String(text ?? "").replace(KEY_PATTERN, "[CHIAVE-OSCURATA]")
   .replace(/[\r\n\t]+/gu, " ").slice(0, 400);

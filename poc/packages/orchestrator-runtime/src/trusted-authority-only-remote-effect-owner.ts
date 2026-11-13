@@ -26,7 +26,8 @@ import type {TrustedOwnerEffectStagingRegistry,
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 type AgentBinder=Awaited<ReturnType<typeof connectTrustedEffectAgentBindingClient>>;
-import {isProjectTestRepairGrant,readUpdateGrantShape,isProjectTestCreateGrant}
+import {isProjectTestRepairGrant,readUpdateGrantShape,isProjectTestCreateGrant,
+ readCreateGrantShape,isProjectTestReadCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 type Role="backend"|"frontend"|"test";
 const ROLES=["backend","frontend","test"] as const;
@@ -158,10 +159,21 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   const shape=readUpdateGrantShape(row.permissions);
   const typedMixed=!!shape&&reads.length>=1&&writes.length===1&&
     effect.operation==="update_file"&&shape.edit===effect.resource;
+  // Reads of existing signed files, then the create of ONE new file.
+  const createShape=readCreateGrantShape(row.permissions);
+  const typedMixedCreate=!!createShape&&reads.length>=1&&writes.length===1&&
+    effect.operation==="create_file"&&createShape.create===effect.resource;
   if(row.agent_id==="test"&&effect.operation==="update_file"&&
      !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
    deny("Test update requires an exact project test repair grant");
-  if(effect.operation==="create_file"){
+  if(effect.operation==="create_file"&&typedMixedCreate){
+   if(!(["backend","frontend"].includes(row.agent_id)||
+         (row.agent_id==="test"&&isProjectTestReadCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile)))||
+      !TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
+       effectStager,this.#gateway,taskId,runtimeTaskId)||
+      effectStager.stagedTool!=="read_then_create")
+    deny("reads + create Task requires the original native owner read/write stager");
+  }else if(effect.operation==="create_file"){
    if(!(["backend","frontend"].includes(row.agent_id)||
          (row.agent_id==="test"&&isProjectTestCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile)))||
       row.permissions.length!==1||
@@ -176,7 +188,8 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    if(!TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
        effectStager,this.#gateway,taskId,runtimeTaskId))
     deny("mixed Task requires original native owner read/update stager");
-  }else if(effectStager.stagedTool==="read_then_update"){
+  }else if(!typedMixedCreate&&(effectStager.stagedTool==="read_then_update"||
+     effectStager.stagedTool==="read_then_create")){
    deny("mixed owner stager cannot replace ordinary signed Task");
   }
   const branch=root.branch;
@@ -208,6 +221,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    role:row.agent_id,
    childCredentialId:issued.credential_id,presenterId:row.agent_did,
    branch,operation:typedMixed?"read_then_update" as const:
+    typedMixedCreate?"read_then_create" as const:
     effect.operation as "read_file"|"update_file"|"create_file"|"run_tests",
    ...(path!==undefined?{path}:{})
   };

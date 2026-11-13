@@ -47,9 +47,9 @@ export function simulatedMarker(path, sessionId) {
 /**
  * Pure plan from the APPROVED permissions only: one Task per file that has
  * both read_file and update_file (or create_file), then one Test Task if
- * run_tests is granted. A Test Task that edits a test file also reads, in
- * the same Task, the application files changed before it (N signed reads +
- * ONE write, like a real specialist reading the code it tests).
+ * run_tests is granted. A Test Task that edits OR creates a test file also
+ * reads, in the same Task, the application files changed before it (N signed
+ * reads + ONE write, like a real specialist reading the code it tests).
  */
 export function simulatedExecutionPlan(approved, sessionId, testSources) {
   const byPath = new Map();
@@ -67,8 +67,8 @@ export function simulatedExecutionPlan(approved, sessionId, testSources) {
   // Order: (1) application files by Backend/Frontend, (2) the Test agent
   // writes the test files, reading the changed application files in the same
   // Task, (3) one final run_tests. One Child DC per Task; at most 24.
-  // A test file can only be CREATED in a single-effect Task: when no test is
-  // updated, the Test agent first reads the changed files in read-only Tasks.
+  // Read-only Tasks of the changed files are planned only when no test Task
+  // can carry those reads (no granted read of the changed files).
   const work = [], reads = [], tests = [], changed = [];
   for (const [path, entry] of [...byPath].sort(([a], [b]) => a.localeCompare(b))) {
     const role = roleForPath(path, testSources);
@@ -88,10 +88,11 @@ export function simulatedExecutionPlan(approved, sessionId, testSources) {
     }
   }
   const context = changed.slice(0, MAX_TASK_READS - 1);
-  for (const t of tests) if (t.op === "update" && context.length) {
+  for (const t of tests) if ((t.op === "update" || t.op === "create") && context.length) {
     t.reads = context.map(c => c.path);
     t.permissions = [...context.map(c => pick(c.read)), ...t.permissions];
-    t.instruction = `Leggi ${t.reads.join(", ")} e aggiorna ${t.path} con i test del comportamento nuovo`;
+    t.instruction = `Leggi ${t.reads.join(", ")} e ${t.op === "create" ? "crea" : "aggiorna"} ` +
+      `${t.path} con i test del comportamento nuovo`;
   }
   const embedded = tests.some(t => t.reads);
   const room = 24 - work.length - tests.length - (runTests ? 1 : 0);
@@ -173,7 +174,9 @@ export class ScriptedWorkerModel extends Scripted {
     this.#branch = branch; this.#sessionId = sessionId; this.#contents = contents;
     this.#queue = files.map(f => typeof f === "string" ? {path: f, op: "update"} : f);
     // Context files first, the edited file last: its content is the last read.
-    for (const f of this.#queue) f.readOrder = [...(f.reads ?? []), f.path];
+    // A new file is not read (it does not exist yet): only its context.
+    for (const f of this.#queue)
+      f.readOrder = f.op === "create" ? [...(f.reads ?? [])] : [...(f.reads ?? []), f.path];
   }
   #content(path, previous) {
     if (this.#contents) {
@@ -196,7 +199,12 @@ export class ScriptedWorkerModel extends Scripted {
       return;
     }
     if (op === "create") {
-      if (turn === 1) {
+      const reads = item.readOrder;
+      if (turn <= reads.length) {
+        yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path: reads[turn - 1]});
+        return;
+      }
+      if (turn === reads.length + 1) {
         yield call(`create-${this.calls}`, "create_file",
           {branch: this.#branch, path, content: this.#content(path, "")});
         return;

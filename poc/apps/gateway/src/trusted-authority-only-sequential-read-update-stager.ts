@@ -1,9 +1,11 @@
 /**
- * R359.4 owner-private reads->CAS update coordinator.
- * A typed native Child grants ONE update_file plus N read_file permissions
- * (the edited file and its signed context files). Every granted read is
+ * R359.4 owner-private reads->single write coordinator.
+ * A typed native Child grants N read_file permissions plus ONE write: the
+ * CAS update_file of a file read in this Task (the edited file and its
+ * signed context files), or the create_file of a NEW file written from the
+ * files read (e.g. a new test for a component). Every granted read is
  * staged, executed and independently attested once, one at a time; only
- * then the single CAS update of a file read in this same Task.
+ * then the single write (a create also proves absence at the pinned HEAD).
  * Owner-held shared Prepare store and exact Gitea HEAD are mandatory.
  * This object has NO HTTP/A2A/MCP endpoint and never authorizes provider I/O.
  */
@@ -14,6 +16,8 @@ import {TrustedAuthorityOnlyGiteaMutationPreflight}
  from "./trusted-authority-only-mutation-preflight.ts";
 import {AuthenticatedGiteaMutationCompletionObserver}
  from "./trusted-authority-only-gitea-mutation-evidence.ts";
+import {TrustedAuthorityOnlyGiteaCreatePreflight}
+ from "./trusted-authority-only-create-preflight.ts";
 
 const SHA40=/^[a-f0-9]{40}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -23,13 +27,18 @@ function deny(reason:string):never{
  throw Error("Authority-only sequential read/update owner NO-GO: "+reason);
 }
 export class TrustedAuthorityOnlySequentialReadUpdateStager{
- readonly stagedTool="read_then_update" as const;
+ /** Reads then the write fixed by the signed grant (durable manifest). */
+ get stagedTool():"read_then_update"|"read_then_create"{
+  return this.#write==="create_file"?"read_then_create":"read_then_update";
+ }
  /** Signed reads before the update, from the durable effect manifest. */
  get plannedReads():number{return this.#plannedReads;}
  readonly #store:InMemoryRequestStore;
  readonly #admissions:TrustedAuthorityOnlyGatewayAdmissions;
  readonly #mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
  readonly #observer:AuthenticatedGiteaMutationCompletionObserver;
+ readonly #create?:TrustedAuthorityOnlyGiteaCreatePreflight;
+ readonly #write:"update_file"|"create_file";
  readonly #planTaskId:string;
  readonly #runtimeTaskId:string;
  readonly #head:string;
@@ -47,10 +56,12 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
   mutationObserver:AuthenticatedGiteaMutationCompletionObserver;
+  createPreflight?:TrustedAuthorityOnlyGiteaCreatePreflight;
   planTaskId:string;runtimeTaskId:string;expectedHeadSha:string;
-  plannedReads:number;
+  plannedReads:number;write:"update_file"|"create_file";
  }){
   this.#plannedReads=opts.plannedReads;
+  this.#write=opts.write;this.#create=opts.createPreflight;
   this.#store=opts.store;this.#admissions=opts.admissions;
   this.#mutation=opts.mutation;this.#observer=opts.mutationObserver;
   this.#planTaskId=opts.planTaskId;this.#runtimeTaskId=opts.runtimeTaskId;
@@ -61,6 +72,8 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
   mutationObserver:AuthenticatedGiteaMutationCompletionObserver;
+  /** Owner CREATE preflight (absence proof); required for reads + create. */
+  createPreflight?:TrustedAuthorityOnlyGiteaCreatePreflight;
   planTaskId:string;runtimeTaskId:string;expectedHeadSha:string;
  }):Promise<TrustedAuthorityOnlySequentialReadUpdateStager>{
   if(!(opts?.store instanceof InMemoryRequestStore)||
@@ -68,6 +81,8 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
      !(opts.mutation instanceof TrustedAuthorityOnlyGiteaMutationPreflight)||
      !(opts.mutationObserver instanceof AuthenticatedGiteaMutationCompletionObserver)||
      !opts.mutation.isForAdmissions(opts.admissions)||
+     (opts.createPreflight!==undefined&&
+      !(opts.createPreflight instanceof TrustedAuthorityOnlyGiteaCreatePreflight))||
      !ID.test(opts.planTaskId)||!ID.test(opts.runtimeTaskId)||
      !SHA40.test(opts.expectedHeadSha))
    deny("same trusted owner, exact native Task and pinned HEAD required");
@@ -77,10 +92,12 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
      started.task_id!==opts.planTaskId||
      !Number.isSafeInteger(started.total_effects)||
      started.total_effects<2||started.total_effects>16||
+     (started.write_operation!=="update_file"&&started.write_operation!=="create_file")||
+     (started.write_operation==="create_file"&&!opts.createPreflight)||
      started.gateway_execution_authorized!==false)
-   deny("original immutable read/update manifest is not durably reserved");
+   deny("original immutable read/write manifest is not durably reserved");
   return new TrustedAuthorityOnlySequentialReadUpdateStager({
-   ...opts,plannedReads:started.total_effects-1});
+   ...opts,plannedReads:started.total_effects-1,write:started.write_operation});
  }
  /** Native private owner stager identity, never derived from an A2A claim. */
  static isNativeForOwner(value:unknown,
@@ -111,9 +128,9 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
  }
  getReportedNoChange(){return this.#noChange;}
  /** Native IPC acknowledgement is independently verified, not a PASS flag. */
- async attest(requestId:string,tool:"read_file"|"update_file"):Promise<void>{
+ async attest(requestId:string,tool:"read_file"|"update_file"|"create_file"):Promise<void>{
   if(tool==="read_file")return this.attestRead(requestId);
-  if(tool==="update_file")return this.attestMutation(requestId);
+  if(tool===this.#write)return this.attestMutation(requestId);
   deny("unknown native mixed effect operation");
  }
  /** Called only between Gateway Prepare and signed VP, never from the model. */
@@ -137,7 +154,7 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
   if(phase==="read_ready"){
    // Every granted read comes first, each file once, one at a time.
    if(tool!=="read_file")
-    deny("all granted reads (edited file included) must precede the update");
+    deny("all granted reads must precede the write");
    if(this.#readPaths.has(path))deny("a granted file may be read only once per Task");
    const result=await this.#admissions.stageTrustedSequentialReadEffect(record);
    if(result.status!=="sequential_read_effect_reserved_staged"||
@@ -150,12 +167,25 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
    this.#state="read_pending";
    return result;
   }
-  if(tool!=="update_file"||!this.#readPaths.has(path))
-   deny("mutation must target a file independently read in this Task");
-  const intent=await this.#mutation.stageUpdate(record,this.#head);
-  if(intent.status!=="gitea_update_intent_reserved_without_execution"||
-     intent.provider_write_authorized!==false)
-   deny("native Gitea CAS intent not reserved");
+  if(tool!==this.#write)deny("final effect differs from the signed Task write");
+  if(tool==="update_file"){
+   if(!this.#readPaths.has(path))
+    deny("mutation must target a file independently read in this Task");
+   const intent=await this.#mutation.stageUpdate(record,this.#head);
+   if(intent.status!=="gitea_update_intent_reserved_without_execution"||
+      intent.provider_write_authorized!==false)
+    deny("native Gitea CAS intent not reserved");
+  }else{
+   // A NEW file: never one of the files read, absent at the pinned HEAD.
+   if(this.#readPaths.has(path)||!this.#create)
+    deny("create must target a new file, not one read in this Task");
+   const staged=await this.#create.stageCreate(record,this.#head);
+   if(staged.status!=="gitea_create_intent_reserved_without_execution"||
+      staged.provider_write_authorized!==false||
+      staged.intent.expected_head_sha!==this.#head||
+      staged.intent.request_id!==requestId)
+    deny("native Gitea CREATE intent not reserved at the pinned HEAD");
+  }
   const result=await this.#admissions.stageTrustedSequentialMutationEffect(record);
   if(result.status!=="sequential_mutation_effect_reserved_staged"||
      result.sequence!==this.#plannedReads+1||result.task_id!==this.#planTaskId||

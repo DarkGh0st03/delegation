@@ -23,15 +23,16 @@ function deny(reason:string):never{
 }
 export type TrustedSequentialManifest=TrustedTaskFenceBase&{
  readonly total_effects:number;
- /** Opt-in typed plan: N >= 1 authenticated reads (the edited file and
-  * its signed context files, each once) followed by ONE CAS update. Derived
-  * only from the signed Task grant, never from A2A/model arguments. */
- readonly effect_plan?:readonly ("read_file"|"update_file")[];
+ /** Opt-in typed plan: N >= 1 authenticated reads (each signed file once)
+  * followed by ONE write: a CAS update of a file read in the Task, or the
+  * create of a new file. Derived only from the signed Task grant, never
+  * from A2A/model arguments. */
+ readonly effect_plan?:readonly ("read_file"|"update_file"|"create_file")[];
 };
 export type TrustedSequentialFlight=TrustedTaskFlight&{
  readonly sequence:number;readonly total_effects:number;
  readonly previous_evidence_sha256:string|null;
- readonly operation?:"read_file"|"update_file";
+ readonly operation?:"read_file"|"update_file"|"create_file";
 };
 export type TrustedSequentialEvidence=TrustedSequentialFlight&{
  readonly evidence_sha256:string;readonly completed_at_ms:number;
@@ -57,10 +58,11 @@ function baseValid(x:TrustedTaskFenceBase):boolean{
 function sameBase(a:TrustedTaskFenceBase,b:TrustedTaskFenceBase){
  return BASE.every(k=>a[k]===b[k]);
 }
-/** N reads then exactly one final update, matching the declared total. */
+/** N reads then exactly one final write (update or create), matching the
+ * declared total. */
 export function isReadUpdatePlan(plan:unknown,total:number):boolean{
  return Array.isArray(plan)&&plan.length===total&&total>=2&&total<=16&&
-  plan.at(-1)==="update_file"&&
+  (plan.at(-1)==="update_file"||plan.at(-1)==="create_file")&&
   plan.slice(0,-1).every(op=>op==="read_file");
 }
 function ensureManifest(m:TrustedSequentialManifest,withFinal=false){
@@ -79,7 +81,7 @@ function ensureFlight(f:TrustedSequentialFlight,withEvidence=false){
      ...(Object.hasOwn(f??{},"operation")?["operation"]:[]),
      ...(withEvidence?["evidence_sha256","completed_at_ms"]:[])])||
     (f.operation!==undefined&&f.operation!=="read_file"&&
-     f.operation!=="update_file")||
+     f.operation!=="update_file"&&f.operation!=="create_file")||
     !baseValid(f)||!ID.test(f.request_id)||!SHA.test(f.request_fingerprint)||
     !Number.isSafeInteger(f.sequence)||f.sequence<1||
     f.sequence>f.total_effects||
@@ -217,8 +219,8 @@ export class DurableAuthorityOnlySequentialEffectJournal{
   await this.#manifest(f,true);
   const stem=this.#stem(f.session_id,f.task_id);
   const last=await this.#read(stem+"."+f.total_effects+".evidence.json");
-  if(f.effect_plan!==undefined&&last.operation!=="update_file")
-   deny("typed Task cannot finalize without final verified CAS update");
+  if(f.effect_plan!==undefined&&last.operation!==f.effect_plan.at(-1))
+   deny("typed Task cannot finalize without its final verified write");
   if(last.schema!==1||last.kind!=="evidence"||
      last.sequence!==f.total_effects||
      last.total_effects!==f.total_effects||

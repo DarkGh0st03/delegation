@@ -1,4 +1,5 @@
 import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,readUpdateGrantShape,exactFilePath,isProjectTestCreateGrant,isProjectTestSource,
+ readCreateGrantShape,readWriteGrantShape,isProjectTestReadCreateGrant,
  isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
@@ -332,6 +333,16 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
 
+ /** Reads + one write (update of a read file, or create of a new file) of a
+  * mixed Task, for a role allowed to make that write; null otherwise. */
+ #mixedShape(row:RegisteredAuthorityOnlyTask){
+  const shape=readWriteGrantShape(row.permissions);
+  if(!shape)return null;
+  return ["backend","frontend"].includes(row.agent_id)||
+   (row.agent_id==="test"&&(shape.operation==="update_file"
+    ?isProjectTestRepairGrant(row.permissions,this.#testSources)
+    :isProjectTestReadCreateGrant(row.permissions,this.#testSources)))?shape:null;
+ }
  #now():number{
   const now=this.#nowMs();
   if(!Number.isSafeInteger(now)||now<0)deny("trusted Gateway clock invalid");
@@ -977,7 +988,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   expectedHeadSha:string):
  Promise<Readonly<{
   status:"sequential_read_update_manifest_reserved_staged";
-  task_id:string;total_effects:2;gateway_execution_authorized:false
+  task_id:string;total_effects:number;write_operation:"update_file"|"create_file";
+  gateway_execution_authorized:false
  }>>{
   const root=this.#live(),journal=this.#sequentialEffectJournal;
   if(!journal||!SHA40.test(expectedHeadSha)||
@@ -988,12 +1000,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("mixed Task requires quiescent owner and durable proof dependencies");
   const bound=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
   const permissions=bound?.row.permissions;
-  // One exact edited file plus its signed context files: every granted read
-  // is planned once, then the single CAS update (see readUpdateGrantShape).
-  const shape=readUpdateGrantShape(permissions);
+  // Signed context files, each read once, then the single write: the CAS
+  // update of one of them, or the create of a new file (readWriteGrantShape).
+  const shape=bound&&Array.isArray(permissions)?this.#mixedShape(bound.row):null;
   if(!bound||!child||bound.row.task_id!==taskId||!shape||
-     (!["backend","frontend"].includes(bound.row.agent_id)&&
-      !(bound.row.agent_id==="test"&&isProjectTestRepairGrant(bound.row.permissions,this.#testSources)))||
      bound.row.root_credential_id!==root.root_credential_id||
      bound.row.authority_digest!==root.authority_digest||
      child.agent_did!==bound.row.agent_did||
@@ -1009,7 +1019,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    task_id:taskId,runtime_task_id:runtimeTaskId,epoch:bound.row.epoch,
    credential_id:child.credential_id,total_effects:shape.reads.length+1,
    effect_plan:Object.freeze([...shape.reads.map(()=>"read_file" as const),
-    "update_file" as const])
+    shape.operation])
   });
   this.#flightInFlight=true;
   try{
@@ -1020,7 +1030,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    this.#sequential.set(taskId,{manifest,completed:0,latest_evidence_sha256:null,
     pinnedHead:expectedHeadSha,readPaths:new Set()});
    return Object.freeze({status:"sequential_read_update_manifest_reserved_staged",
-    task_id:taskId,total_effects:manifest.total_effects,gateway_execution_authorized:false});
+    task_id:taskId,total_effects:manifest.total_effects,
+    write_operation:shape.operation,gateway_execution_authorized:false});
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#flightInFlight=false;}
  }
@@ -1119,23 +1130,28 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  }>>{
   const root=this.#live(),journal=this.#sequentialEffectJournal;
   if(!journal||this.#flightInFlight||this.#completionInFlight||
-     !record||record.consumed!==false||record.request.tool!=="update_file")
-   deny("mixed second effect requires fresh owner-prepared update");
-  const binding=this.assertTrustedGiteaUpdateIntentBinding(record);
+     !record||record.consumed!==false||
+     (record.request.tool!=="update_file"&&record.request.tool!=="create_file"))
+   deny("mixed final effect requires fresh owner-prepared update or create");
+  const create=record.request.tool==="create_file";
+  const binding=create?this.assertTrustedGiteaCreateIntentBinding(record):
+   this.assertTrustedGiteaUpdateIntentBinding(record);
   const state=this.#sequential.get(binding.task_id);
   const child=this.#enrolledChildren.get(record.task_id);
   const reads=state?plannedReads(state.manifest):0;
   if(!state||!child||reads<1||state.completed!==reads||state.active||
+     state.manifest.effect_plan?.at(-1)!==record.request.tool||
      !SHA64.test(state.latest_evidence_sha256??"")||
      !SHA40.test(state.readRevision??"")||
      record.pinned_revision!==state.readRevision||
      record.pinned_revision!==state.pinnedHead||
      typeof record.request.arguments.path!=="string"||
-     state.readPaths?.has(record.request.arguments.path)!==true||
+     // An update targets a file read in this Task; a create, a new file.
+     state.readPaths?.has(record.request.arguments.path)!==!create||
      child.credential_id!==state.manifest.credential_id||
      child.root_credential_id!==root.root_credential_id||
      this.#completed.has(binding.task_id)||this.#flights.has(binding.task_id))
-   deny("mixed update not chained to the independently verified read");
+   deny("mixed write not chained to the independently verified reads");
   const canonical=this.preflightCanonicalRequest({
    task_id:record.task_id,agent_role:record.agent_role,
    tool:record.request.tool,arguments:record.request.arguments
@@ -1144,7 +1160,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("mixed update differs from original native CAS permission");
   const {effect_plan:_plan,...base}=state.manifest;
   const next:TrustedSequentialFlight=Object.freeze({
-   ...base,sequence:reads+1,operation:"update_file" as const,
+   ...base,sequence:reads+1,operation:record.request.tool as "update_file"|"create_file",
    request_id:record.request_id,
    request_fingerprint:record.request_fingerprint,
    previous_evidence_sha256:state.latest_evidence_sha256
@@ -1249,7 +1265,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      plannedReads(state.manifest)<1||
      state.completed!==plannedReads(state.manifest)||
      !SHA64.test(state.latest_evidence_sha256??"")||
-     active.operation!=="update_file"||active.sequence!==state.completed+1||
+     (active.operation!=="update_file"&&active.operation!=="create_file")||
+     active.operation!==state.manifest.effect_plan?.at(-1)||
+     active.sequence!==state.completed+1||
      active.previous_evidence_sha256!==state.latest_evidence_sha256||
      active.runtime_task_id!==runtimeTaskId||
      active.root_credential_id!==root.root_credential_id||
@@ -1263,9 +1281,14 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const expected:TrustedCompletionExpectation=Object.freeze({
    ...flight,agent_did:bound.row.agent_did
   });
+  // A CREATE is proven by its own receipt (absence at the pinned HEAD), read
+  // by the owner's completion observer, which selects the CREATE observer.
+  const finalObserver=active.operation==="create_file"?this.#completionObserver:observer;
+  if(!(finalObserver instanceof TrustedAuthorityOnlyCompletionObserver))
+   deny("mixed CREATE requires the owner completion observer");
   this.#completionInFlight=true;
   try{
-   const observed=await observer.observe(expected);
+   const observed=await finalObserver.observe(expected);
    assertObservedCompletion(expected,observed,this.#now());
    await journal.reserveEvidence({
     ...active,evidence_sha256:observed.evidence_sha256,
@@ -1276,7 +1299,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
     deny("Child expired while sealing verified mixed CAS");
    state.completed=active.sequence;
    state.latest_evidence_sha256=observed.evidence_sha256;
-   this.#mutationObservations.set(taskId,Object.freeze({
+   (active.operation==="create_file"?this.#createObservations:
+     this.#mutationObservations).set(taskId,Object.freeze({
     expectation:Object.freeze({...expected}),
     evidence_sha256:observed.evidence_sha256
    }));
@@ -1358,11 +1382,20 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const bound=this.#tasks.get(runtimeTaskId);
   const child=this.#enrolledChildren.get(runtimeTaskId);
   const observed=this.#createObservations.get(taskId);
-  const evidence=this.#completionEvidence.get(taskId);
   const grant=bound?.row.permissions;
-  if(!bound||!child||!observed||!evidence||
-     grant?.length!==1||grant[0]?.operation!=="create_file"||
-     this.#sequential.has(taskId)||
+  const sequential=this.#sequential.get(taskId);
+  const single=grant?.length===1&&grant[0]?.operation==="create_file"&&!sequential;
+  // Reads + create: every effect sealed, the last one being the CREATE.
+  const mixed=!!readCreateGrantShape(grant)&&!!sequential&&
+   sequential.manifest.effect_plan?.at(-1)==="create_file"&&
+   sequential.completed===sequential.manifest.total_effects&&
+   sequential.manifest.runtime_task_id===runtimeTaskId&&
+   sequential.latest_evidence_sha256===observed?.evidence_sha256&&
+   !sequential.active&&!this.#flights.has(taskId);
+  const evidence=single?this.#completionEvidence.get(taskId):
+   mixed?sequential!.latest_evidence_sha256??undefined:undefined;
+  const createGrant=grant?.find(p=>p.operation==="create_file");
+  if(!bound||!child||!observed||!evidence||!createGrant||!(single||mixed)||
      !this.#completed.has(taskId)||
      observed.evidence_sha256!==evidence||
      bound.row.task_id!==taskId||
@@ -1388,7 +1421,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   return Object.freeze({
    status:"gateway_completed_create_observation_binding_only" as const,
    task_id:taskId,runtime_task_id:runtimeTaskId,
-   permission_resource:grant[0].resource,
+   permission_resource:createGrant.resource,
    evidence_sha256:evidence,
    expectation:observed.expectation
   });
@@ -1440,7 +1473,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const state=this.#sequential.get(taskId);
   if(this.#flightInFlight||this.#completionInFlight||this.#bindingInFlight||
      this.#enrollmentInFlight||!bound||!child||!state||
-     bound.row.task_id!==taskId||!["backend","frontend"].includes(bound.row.agent_id)||
+     bound.row.task_id!==taskId||
+     // Backend/Frontend, or the Test agent on a project test source it was
+     // granted to write (it may find that the test is already right).
+     !this.#mixedShape(bound.row)||
      state.manifest.runtime_task_id!==runtimeTaskId||
      state.manifest.session_id!==root.session_id||
      state.manifest.root_credential_id!==root.root_credential_id||
@@ -1949,15 +1985,31 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const bound=this.#tasks.get(record.task_id);
   const child=this.#enrolledChildren.get(record.task_id);
   const taskId=bound?.row.task_id;
-  if(!bound||!child||!taskId||
+  const sequential=taskId?this.#sequential.get(taskId):undefined;
+  const perms=bound?.row.permissions??[];
+  // A single create, or the final create of a reads + create Task once
+  // EVERY signed read is attested at the same pinned HEAD.
+  const single=perms.length===1&&perms[0]?.operation==="create_file"&&!sequential;
+  const shape=readCreateGrantShape(perms);
+  const readsAttested=!!shape&&!!sequential&&
+    sequential.manifest.effect_plan?.at(-1)==="create_file"&&
+    plannedReads(sequential.manifest)===shape.reads.length&&
+    sequential.completed===plannedReads(sequential.manifest)&&!sequential.active&&
+    SHA64.test(sequential.latest_evidence_sha256??"")&&
+    SHA40.test(sequential.readRevision??"")&&
+    record.pinned_revision===sequential.readRevision&&
+    typeof record.request.arguments.path==="string"&&
+    sequential.readPaths?.has(record.request.arguments.path)===false;
+  const createGrant=perms.find(p=>p?.operation==="create_file");
+  if(!bound||!child||!taskId||!createGrant||
      !(["backend","frontend"].includes(bound.row.agent_id)||
        (bound.row.agent_id==="test"&&
-        isProjectTestCreateGrant(bound.row.permissions,this.#testSources)))||
+        (isProjectTestCreateGrant(perms,this.#testSources)||
+         isProjectTestReadCreateGrant(perms,this.#testSources))))||
      bound.row.agent_id!==record.agent_role||
-     bound.row.permissions.length!==1||
-     bound.row.permissions[0].operation!=="create_file"||
+     !(single||readsAttested)||
      bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
-     this.#flights.has(taskId)||this.#sequential.has(taskId)||
+     this.#flights.has(taskId)||
      this.#completed.has(taskId)||
      record.authority_only_plan_task_id!==taskId||
      record.authority_only_agent_did!==bound.row.agent_did||
@@ -1978,7 +2030,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   })).digest("hex");
   const content=record.request.arguments.content;
   if(pair(p.required_permission)!==pair(record.required_permission)||
-     pair(bound.row.permissions[0])!==pair(p.required_permission)||
+     pair(createGrant)!==pair(p.required_permission)||
      record.request_fingerprint!==fingerprint||
      typeof content!=="string"||
      Buffer.byteLength(content,"utf8")<1||
@@ -2018,12 +2070,16 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   record:PreparedRequestRecord,verified:VerifiedDelegation
  ):Readonly<TrustedCompletionExpectation>{
   const bound=record&&this.#tasks.get(record.task_id);
-  if(!bound||record.request.tool!=="create_file"||
+  const perms=bound?.row.permissions??[];
+  // The single create grant, or the create of a reads + create grant.
+  const createGrant=perms.length===1?perms[0]:
+   readCreateGrantShape(perms)?perms.find(p=>p.operation==="create_file"):undefined;
+  if(!bound||record.request.tool!=="create_file"||!createGrant||
      !(["backend","frontend"].includes(bound.row.agent_id)||
        (bound.row.agent_id==="test"&&
-        isProjectTestCreateGrant(bound.row.permissions,this.#testSources)))||
-     bound.row.permissions.length!==1||
-     pair(bound.row.permissions[0])!==pair(record.required_permission)||
+        (isProjectTestCreateGrant(perms,this.#testSources)||
+         isProjectTestReadCreateGrant(perms,this.#testSources))))||
+     pair(createGrant)!==pair(record.required_permission)||
      record.required_permission.operation!=="create_file"||
      !verified||!Array.isArray(verified.permissions)||
      verified.permissions.length!==1||
@@ -2074,11 +2130,11 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      child.epoch!==bound.row.epoch||
      this.#now()>=Date.parse(child.expires_at)||
      bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
-     (this.#sequential.has(taskId)&&!(tool==="update_file"&&
+     (this.#sequential.has(taskId)&&!((tool==="update_file"||tool==="create_file")&&
        plannedReads(this.#sequential.get(taskId)!.manifest)>=1&&
        this.#sequential.get(taskId)?.completed===plannedReads(this.#sequential.get(taskId)!.manifest)&&
        this.#sequential.get(taskId)?.active?.sequence===this.#sequential.get(taskId)!.completed+1&&
-       this.#sequential.get(taskId)?.active?.operation==="update_file"))||
+       this.#sequential.get(taskId)?.active?.operation===tool))||
      this.#completed.has(taskId))
    deny("verified native mutation Child or Task authority differs");
   const flight=this.#flights.get(taskId);

@@ -24,7 +24,7 @@ async function fixture(){
  const admissions=Object.assign(Object.create(Admissions.prototype),{
   async beginTrustedSequentialReadUpdateTask(){calls.push("begin");return {
    status:"sequential_read_update_manifest_reserved_staged",
-   task_id:task,total_effects:2,gateway_execution_authorized:false};},
+   task_id:task,total_effects:2,write_operation:"update_file",gateway_execution_authorized:false};},
   async stageTrustedSequentialReadEffect(){calls.push("stage_read");return {
    status:"sequential_read_effect_reserved_staged",sequence:1,
    task_id:task,gateway_execution_authorized:false};},
@@ -62,7 +62,7 @@ async function fixture(){
 }
 test("R359.4 owner must attest the first read before any CAS preflight",async()=>{
  const f=await fixture();
- await assert.rejects(f.stager.stage("update"),/must precede the update/u);
+ await assert.rejects(f.stager.stage("update"),/must precede the write/u);
  assert.deepEqual(f.calls,["begin"]);
  await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
 });
@@ -159,7 +159,7 @@ async function multiReadFixture(){
  const admissions=Object.assign(Object.create(Admissions.prototype),{
   async beginTrustedSequentialReadUpdateTask(){calls.push("begin");return {
    status:"sequential_read_update_manifest_reserved_staged",
-   task_id:task,total_effects:3,gateway_execution_authorized:false};},
+   task_id:task,total_effects:3,write_operation:"update_file",gateway_execution_authorized:false};},
   async stageTrustedSequentialReadEffect(){calls.push("stage_read");return {
    status:"sequential_read_effect_reserved_staged",sequence:seq+1,
    task_id:task,gateway_execution_authorized:false};},
@@ -190,7 +190,7 @@ test("multi-read Task: every granted read once, in any order, then one CAS updat
  const f=await multiReadFixture();
  await f.stager.stage("read-context");await f.stager.attestRead("read-context");
  // The update needs ALL granted reads first.
- await assert.rejects(f.stager.stage("update"),/must precede the update/u);
+ await assert.rejects(f.stager.stage("update"),/must precede the write/u);
 });
 test("multi-read Task completes with context read, edited read, update",async()=>{
  const f=await multiReadFixture();
@@ -211,5 +211,5 @@ test("multi-read Task refuses reads after all granted reads and a second write p
  await f.stager.stage("read-edited");await f.stager.attestRead("read-edited");
  // Stager allows only files read in this Task; the Gateway then requires the
  // signed update_file grant, which exists for the edited file only.
- await assert.rejects(f.stager.stage("read-again"),/independently read in this Task|out-of-order/u);
+ await assert.rejects(f.stager.stage("read-again"),/independently read in this Task|out-of-order|differs from the signed Task write/u);
 });

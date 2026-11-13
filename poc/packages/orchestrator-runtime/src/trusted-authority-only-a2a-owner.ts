@@ -42,7 +42,8 @@ import type {
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,readUpdateGrantShape}
+import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,readUpdateGrantShape,
+ readCreateGrantShape,isProjectTestReadCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 const ROLES=["backend","frontend","test"] as const;
 function deny(reason:string):never{
@@ -210,11 +211,15 @@ export class TrustedAuthorityOnlyA2AOwner {
    deny("Task needs one native read, mutation or Runner effect");
   // One exact edited file plus its signed context reads (shared shape rule).
   const typedMixed=!!readUpdateGrantShape(row.permissions);
+  // Reads of existing signed files, then the create of ONE new file.
+  const typedMixedCreate=!!readCreateGrantShape(row.permissions);
   const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
-  const signedTestRead=role==="test"&&!hasRunner&&!typedMixed&&
+  const signedTestRead=role==="test"&&!hasRunner&&!typedMixed&&!typedMixedCreate&&
     isTestAgentReadGrant(row.permissions);
-  const signedTestCreate=role==="test"&&!hasRunner&&!typedMixed&&
+  const signedTestCreate=role==="test"&&!hasRunner&&!typedMixed&&!typedMixedCreate&&
     isProjectTestCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile);
+  const signedTestReadCreate=role==="test"&&!hasRunner&&typedMixedCreate&&
+    isProjectTestReadCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile);
   // R383.1: the native Task/Child maps to precisely one provider operation,
   // or to N reads (edited file + signed context) followed by ONE CAS update.
   // A spare grant in the signed Task must not be leaked as another
@@ -222,7 +227,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   // are separate, serial, individually observed Child Tasks.
   if((hasRunner&&(row.permissions.length!==1||
       filePermissions.length!==0))||
-     (!hasRunner&&!typedMixed&&
+     (!hasRunner&&!typedMixed&&!typedMixedCreate&&
       (row.permissions.length!==1||filePermissions.length!==1)))
    deny("native A2A Task cannot combine unrelated read/write/Runner grants");
   // Read-only investigation by the Test Agent: ONE exact Engineer-signed
@@ -232,12 +237,17 @@ export class TrustedAuthorityOnlyA2AOwner {
      filePermissions[0].operation==="read_file"&&!signedTestRead)
    deny("Test read requires one exact Engineer-signed file");
   if(role==="test"&&filePermissions.some(p=>p.operation==="create_file")&&
-     !signedTestCreate)
+     !signedTestCreate&&!signedTestReadCreate)
    deny("Test CREATE requires one exact signed project-test source");
   if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&
      !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
    deny("Test update requires an exact project test repair grant");
-  if(filePermissions.some(p=>p.operation==="create_file")&&
+  if(typedMixedCreate&&
+     (!(["backend","frontend"].includes(role)||signedTestReadCreate)||
+      input.effectStager.stagedTool!=="read_then_create"||
+      typeof input.effectStager.attest!=="function"))
+   deny("reads + create Task requires owner-controlled mixed staging");
+  if(!typedMixedCreate&&filePermissions.some(p=>p.operation==="create_file")&&
      (filePermissions.length!==1||
       !(["backend","frontend"].includes(role)||signedTestCreate)||
       !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
@@ -248,7 +258,8 @@ export class TrustedAuthorityOnlyA2AOwner {
      (input.effectStager.stagedTool!=="read_then_update"||
       typeof input.effectStager.attest!=="function"))
    deny("reads + update Task requires owner-controlled mixed staging");
-  if(!typedMixed&&input.effectStager.stagedTool==="read_then_update")
+  if((!typedMixed&&input.effectStager.stagedTool==="read_then_update")||
+     (!typedMixedCreate&&input.effectStager.stagedTool==="read_then_create"))
    deny("mixed staging cannot replace an ordinary Task grant");
   const paths=[...new Set(filePermissions.map(x=>x.path))];
   const subtask:DeterministicSubtask=Object.freeze({
@@ -301,7 +312,7 @@ export class TrustedAuthorityOnlyA2AOwner {
      task.artifacts[0].parts[0].content.value,role,{
       expectedBranch:branch,
       // A2A Test FAIL is data for D1, not an independent PASS.
-      requireTestPass:false,requireTestNotRun:role==="test"&&(typedMixed||signedTestRead||signedTestCreate)
+      requireTestPass:false,requireTestNotRun:role==="test"&&(typedMixed||typedMixedCreate||signedTestRead||signedTestCreate)
      }
     );
     if(signedTestRead&&(artifact.files_modified.length||
@@ -314,6 +325,15 @@ export class TrustedAuthorityOnlyA2AOwner {
         artifact.errors.length!==0||
         artifact.test_outcome!=="not_run"))
      deny("signed Test CREATE cannot claim unrelated files or Runner PASS");
+    // Reads + create: exactly the one signed new file, nothing modified.
+    const createdPath=filePermissions.find(p=>p.operation==="create_file")?.path;
+    if(typedMixedCreate&&
+       (artifact.files_modified.length!==0||
+        artifact.files_created.length!==1||
+        artifact.files_created[0]!==createdPath||
+        artifact.errors.length!==0||
+        (role==="test"&&artifact.test_outcome!=="not_run")))
+     deny("reads + create Task cannot claim unrelated files or Runner PASS");
     // No A2A status/Artifact can unlock the next dependent Task.
     // Only the separately injected real Gateway completion observer
     // can attest the protected provider/Runner effect.
@@ -324,7 +344,7 @@ export class TrustedAuthorityOnlyA2AOwner {
      provider_completion_attested:false as const
     });
     this.#reported.set(input.runtimeTaskId,report);
-    if(typedMixed)this.#mixedReports.add(input.runtimeTaskId);
+    if(typedMixed||typedMixedCreate)this.#mixedReports.add(input.runtimeTaskId);
     if(signedTestRead)this.#testReadReports.add(input.runtimeTaskId);
     if(signedTestCreate)this.#testCreateReports.add(input.runtimeTaskId);
     return report;

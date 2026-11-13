@@ -25,13 +25,13 @@ export type SpecializedToolName = (typeof SPECIALIZED_TOOL_NAMES)[number];
 export interface TrustedEffectStagingPort {
   stage(requestId:string):Promise<unknown>;
   /** Optional exact read-only effect pin from the authenticated Task registry. */
-  stagedTool?:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update";
+  stagedTool?:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update"|"read_then_create";
   /** Owner-only independent native evidence confirmation, never model data. */
-  attest?(requestId:string,tool:"read_file"|"update_file"):Promise<void>;
+  attest?(requestId:string,tool:"read_file"|"update_file"|"create_file"):Promise<void>;
   reportNoChange?(requestId:string):Promise<void>;
   /** Test-source rule of the project profile, from the owner Task registry. */
   readonly projectTestSourceProfile?:unknown;
-  /** read_then_update only: number of signed reads before the single update,
+  /** read_then_update/read_then_create: signed reads before the single write,
    * as fixed by the owner's durable effect manifest (never model data). */
   readonly plannedReads?:number;
 }
@@ -162,6 +162,8 @@ export class GatewayControlledToolClient {
     // native one-shot MCP presentation used by the original A2A Task must
     // be installed before Prepare. No unsigned/legacy presenter fallback.
     const ownerCreate=this.#trustedEffectStager?.stagedTool==="create_file";
+    // Reads of the signed context files, then ONE create of a new file.
+    const mixedCreate=this.#trustedEffectStager?.stagedTool==="read_then_create";
     // R391: Test CREATE is not an application-source capability. It needs
     // the original native single-effect stager AND an exact test source,
     // independently bound to the signed Task by Gateway/Rust/OPA.
@@ -173,13 +175,16 @@ export class GatewayControlledToolClient {
        tool!=="read_file"&&tool!=="update_file")
       throw new ControlledToolError("authorization_denied",
         "Mixed native Task supports only exact read_file and update_file");
+    if(mixedCreate&&tool!=="read_file"&&tool!=="create_file")
+      throw new ControlledToolError("authorization_denied",
+        "Mixed native Task supports only exact read_file and create_file");
     if(ownerCreate&&tool!=="create_file")
       throw new ControlledToolError("authorization_denied",
         "Signed CREATE Task cannot invoke a different repository operation");
     if(tool==="create_file"&&
        (process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"||
         this.#trustedEffectStager!==undefined)&&
-       (!ownerCreate||
+       (!(ownerCreate||mixedCreate)||
         !nativeCreateRoleAllowed||
         !this.#cryptoPresentation||
         process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
@@ -249,12 +254,12 @@ export class GatewayControlledToolClient {
     // A read in an update Task is NOT silently converted into a second flight.
     const mixed=this.#trustedEffectStager?.stagedTool==="read_then_update";
     const ownerRead=tool==="read_file"&&
-      (this.#trustedEffectStager?.stagedTool==="read_file"||mixed);
+      (this.#trustedEffectStager?.stagedTool==="read_file"||mixed||mixedCreate);
     const ownerWrite=(tool==="update_file"||tool==="run_tests")&&
       (this.#trustedEffectStager?.stagedTool===undefined||
        this.#trustedEffectStager?.stagedTool===tool||
        (mixed&&tool==="update_file"));
-    const ownerNativeCreate=tool==="create_file"&&ownerCreate;
+    const ownerNativeCreate=tool==="create_file"&&(ownerCreate||mixedCreate);
     if(this.#trustedEffectStager&&(ownerRead||ownerWrite||ownerNativeCreate)){
       try{
         await this.#trustedEffectStager.stage(prepared.request_id);
@@ -386,7 +391,7 @@ export class GatewayControlledToolClient {
     // exact native Gitea result, then ask the authenticated owner to
     // INDEPENDENTLY inspect the original provider receipt and seal it.
     // If this fails, the one-use owner slot remains terminally consumed.
-    if(mixed){
+    if(mixed||mixedCreate){
       const observed=execution!==null&&typeof execution==="object"
         ? execution as Record<string,unknown>:null;
       const revision=tool==="read_file"?observed?.revision:observed?.commit_sha;
@@ -399,7 +404,7 @@ export class GatewayControlledToolClient {
           "Mixed native effect lacks exact Gitea execution receipt");
       try{
         await this.#trustedEffectStager.attest(prepared.request_id,tool as
-          "read_file"|"update_file");
+          "read_file"|"update_file"|"create_file");
       }catch{
         throw new ControlledToolError("tool_unavailable",
           "Trusted independent effect attestation failed");

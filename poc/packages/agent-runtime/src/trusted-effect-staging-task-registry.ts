@@ -37,7 +37,7 @@ export interface TrustedEffectTaskOwnerPins {
   childCredentialId:string;
   presenterId:string;
   branch:string;
-  operation:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update";
+  operation:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update"|"read_then_create";
   /** Required for a pinned read or update; never model provided. */
   path?:string;
   /** Owner-side gateway stager, permanently bound to its original request store. */
@@ -69,6 +69,22 @@ function readUpdateHints(hints:readonly {operation?:unknown;path?:unknown}[],
   return null;
  return reads.length;
 }
+/** Exact read+create hints: 1..MAX_TASK_READS distinct reads of EXISTING
+ * files (the new file is not among them), plus ONE create; nothing else. */
+function readCreateHints(hints:readonly {operation?:unknown;path?:unknown}[],
+  path:string):number|null{
+ const reads=hints.filter(r=>r?.operation==="read_file").map(r=>r.path);
+ const creates=hints.filter(r=>r?.operation==="create_file");
+ if(reads.length<1||reads.length>MAX_TASK_READS||
+    reads.length+1!==hints.length||creates.length!==1||
+    creates[0]?.path!==path||reads.includes(path)||
+    reads.some(x=>typeof x!=="string")||new Set(reads).size!==reads.length)
+  return null;
+ return reads.length;
+}
+/** Mixed Task: signed reads, then the one write fixed by the owner pins. */
+const MIXED=new Set(["read_then_update","read_then_create"]);
+const finalWrite=(operation:string)=>operation==="read_then_create"?"create_file":"update_file";
 export class TrustedEffectStagingTaskRegistry {
  readonly #entries=new Map<string,Entry>();
  #retired=false;
@@ -89,18 +105,18 @@ export class TrustedEffectStagingTaskRegistry {
      !ID.test(input.planTaskId)||!ID.test(input.childCredentialId)||
      !DID.test(input.presenterId)||
      !trustedFileRole(input.role)||
-     !["read_file","update_file","create_file","run_tests","read_then_update"].includes(input.operation)||
+     !["read_file","update_file","create_file","run_tests","read_then_update","read_then_create"].includes(input.operation)||
       (input.operation==="create_file"&&
        (input.effectStager.stagedTool!=="create_file"||
         (input.role==="test"&&!isProjectTestSource(input.path,this.#testSources))))||
      typeof input.effectStager?.stage!=="function"||
-     (input.operation==="read_then_update"&&
-      (input.effectStager.stagedTool!=="read_then_update"||
+     (MIXED.has(input.operation)&&
+      (input.effectStager.stagedTool!==input.operation||
        typeof input.effectStager.attest!=="function")))
    deny("exact trusted owner Task/Child and one-shot effect port required");
   try{validatePrivateApprovedBranch(input.branch);}
   catch{deny("invalid owner-pinned feature branch");}
-  if(["update_file","create_file","read_file","read_then_update"].includes(input.operation)){
+  if(["update_file","create_file","read_file","read_then_update","read_then_create"].includes(input.operation)){
    if(typeof input.path!=="string"||!PATH.test(input.path)||
       input.path.startsWith("/")||input.path.includes("//")||
       input.path.split("/").some(p=>p==="."||p===".."||!p))
@@ -111,8 +127,8 @@ export class TrustedEffectStagingTaskRegistry {
   }
   if(input.role==="test"&&
      (input.operation==="update_file"||
-      (input.operation==="read_then_update"&&!isProjectTestSource(input.path,this.#testSources))))
-   deny("Test updates require an exact project test source read/update binding");
+      (MIXED.has(input.operation)&&!isProjectTestSource(input.path,this.#testSources))))
+   deny("Test writes require an exact project test source binding");
   if(this.#entries.has(input.runtimeTaskId)||
      [...this.#entries.values()].some(b=>
        b.pins.planTaskId===input.planTaskId||
@@ -155,6 +171,11 @@ export class TrustedEffectStagingTaskRegistry {
          !Array.isArray(sub.relevant_paths)||
          sub.relevant_paths.length!==readUpdateHints(hints,p.path!)||
          !hints.every(row=>sub.relevant_paths.includes(row.path))
+       : p.operation==="read_then_create"
+       ? readCreateHints(hints,p.path!)===null||sub.approved_run_tests!==false||
+         !Array.isArray(sub.relevant_paths)||
+         sub.relevant_paths.length!==hints.length||
+         !hints.every(row=>sub.relevant_paths.includes(row.path))
        : p.operation==="create_file"
        ? hints.length!==1||
          hints[0]?.operation!=="create_file"||
@@ -169,19 +190,20 @@ export class TrustedEffectStagingTaskRegistry {
        : sub.approved_run_tests!==true))
    deny("A2A identity/operation differs from trusted owner Task pins");
   if(p.operation==="read_then_update")b.plannedReads=readUpdateHints(hints,p.path!)!;
+  if(p.operation==="read_then_create")b.plannedReads=readCreateHints(hints,p.path!)!;
   return Object.freeze({
    stagedTool:p.operation,
    projectTestSourceProfile:this.#testSources,
    stage:async(requestId:string):Promise<unknown>=>{
     if(this.#retired||b.state!=="selected"||
-       (p.operation!=="read_then_update"&&b.attempted))
+       (!MIXED.has(p.operation)&&b.attempted))
      deny("one-shot owner effect already consumed or retired");
-    if(p.operation==="read_then_update"){
+    if(MIXED.has(p.operation)){
       const phase=b.mixedPhase;
       if(phase!=="read_ready"&&phase!=="read_attested")
        deny("mixed effect out of sequence or previous evidence missing");
       // Burn the phase BEFORE any asynchronous authenticated owner call.
-      // Reads first (each attested), then the single update.
+      // Reads first (each attested), then the single write.
       b.mixedPhase=b.attestedReads<b.plannedReads?"read_pending":"update_pending";
       b.mixedRequest=requestId;
       if(typeof requestId!=="string"||!ID.test(requestId)){
@@ -204,12 +226,12 @@ export class TrustedEffectStagingTaskRegistry {
      await b.stager.reportNoChange!(b.mixedRequest);
     }
    }:{}),
-   attest:async(requestId:string,tool:"read_file"|"update_file"):Promise<void>=>{
+   attest:async(requestId:string,tool:"read_file"|"update_file"|"create_file"):Promise<void>=>{
     if(this.#retired||b.state!=="selected"||
-       p.operation!=="read_then_update"||
+       !MIXED.has(p.operation)||
        (b.mixedPhase!=="read_pending"&&b.mixedPhase!=="update_pending")||
        !ID.test(requestId)||requestId!==b.mixedRequest||
-       tool!==(b.mixedPhase==="read_pending"?"read_file":"update_file")||
+       tool!==(b.mixedPhase==="read_pending"?"read_file":finalWrite(p.operation))||
        typeof b.stager.attest!=="function")
      deny("mixed native effect cannot attest out of order or without request");
     const phase=b.mixedPhase;
