@@ -101,6 +101,9 @@ pub struct CallerRecord {
     token: String,
     identity_id: String,
     capabilities: Vec<CallerCapability>,
+    /// Public identity only (DID): no token, no capability, no signing key
+    /// in this runtime. Used by a per-role wallet to know the other roles.
+    public_only: bool,
 }
 
 impl CallerRecord {
@@ -137,7 +140,30 @@ impl CallerRecord {
             token,
             identity_id,
             capabilities,
+            public_only: false,
         })
+    }
+
+    /// A role known to this runtime only by its public DID. It cannot be
+    /// authenticated (no token) and this runtime holds no key for it.
+    pub fn public_identity(role: CallerRole, identity_id: String) -> Result<Self, String> {
+        if identity_id.trim().is_empty() || !identity_id.starts_with("did:") {
+            return Err(String::from("Public identity must be a DID"));
+        }
+        if role == CallerRole::Gateway {
+            return Err(String::from("The Gateway is not a delegated identity"));
+        }
+        Ok(Self {
+            role,
+            token: String::new(),
+            identity_id,
+            capabilities: Vec::new(),
+            public_only: true,
+        })
+    }
+
+    pub fn is_public_only(&self) -> bool {
+        self.public_only
     }
 
     pub fn role(&self) -> CallerRole {
@@ -181,7 +207,7 @@ impl CallerRegistry {
         let mut identities = HashSet::new();
 
         for record in records {
-            if by_token.contains_key(&record.token) {
+            if !record.public_only && by_token.contains_key(&record.token) {
                 return Err(String::from("Adapter caller tokens must be unique"));
             }
             if by_role.contains_key(&record.role) {
@@ -191,7 +217,9 @@ impl CallerRegistry {
                 return Err(String::from("Adapter caller identities must be distinct"));
             }
 
-            by_token.insert(record.token.clone(), record.clone());
+            if !record.public_only {
+                by_token.insert(record.token.clone(), record.clone());
+            }
             by_role.insert(record.role, record);
         }
 
@@ -225,6 +253,21 @@ impl CallerRegistry {
         }
         roles.extend(additional);
         Ok(roles)
+    }
+
+    /// Roles whose signing identity THIS runtime holds: every managed role
+    /// that is not public-only. A per-role wallet holds exactly one.
+    pub fn signing_identity_roles(&self) -> Result<Vec<CallerRole>, String> {
+        Ok(self
+            .managed_identity_roles()?
+            .into_iter()
+            .filter(|role| {
+                self.by_role
+                    .get(role)
+                    .map(|record| !record.public_only)
+                    .unwrap_or(false)
+            })
+            .collect())
     }
 
     pub fn authenticate(&self, token: &str) -> Result<&CallerRecord, String> {

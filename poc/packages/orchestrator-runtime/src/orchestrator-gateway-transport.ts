@@ -3,6 +3,7 @@
  * Never handed to ADK and never re-exported by the canonical runtime index.
  * Source encapsulation does not replace native Rust DC/VP and OPA policy.
  */
+import {roleWalletSocket} from "../../agent-runtime/src/native-crypto-ipc.ts";
 import {createNativeOrchestratorPresentation} from "./native-orchestrator-presentation.ts";
 import {giteaPermissionCovers}
   from "../../plan-contracts/src/gitea-permission-containment.mjs";
@@ -128,7 +129,8 @@ export class OrchestratorGatewayTransport {
       Object.freeze({operation:g.operation,resource:g.resource})));
     // Canonical trusted-owner path shares the SAME Rust issuer as Engineer,
     // Child DC and Agent VP. Bad socket configuration fails closed.
-    const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+    // The Orchestrator signs its Planning VPs in its OWN wallet.
+    const socketPath=roleWalletSocket("orchestrator");
     if(socketPath!==undefined){
       if(!socketPath.startsWith("/")||socketPath.length>100||
          socketPath.trim()!==socketPath)

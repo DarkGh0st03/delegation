@@ -38,7 +38,9 @@ pub struct EvmAdapterConfig {
     pub did_registry_address: String,
     pub enterprise_trust_registry_address: String,
     pub issuer_registry_address: String,
-    pub governance_private_key: String,
+    /// Platform administration key (enterprise admission). Present only in
+    /// the Engineer core; a per-role wallet never receives it.
+    pub governance_private_key: Option<String>,
     pub identity_private_keys: HashMap<CallerRole, String>,
     pub did_resolver_script: String,
     pub did_publisher_script: String,
@@ -55,7 +57,9 @@ impl EvmAdapterConfig {
             .ok_or_else(|| format!("Missing EVM identity private key for {role:?}"))
     }
 
-    fn from_env(additional: &[CallerRole]) -> Result<Self, String> {
+    fn from_env(additional: &[CallerRole], signing_role: Option<CallerRole>) -> Result<Self, String> {
+        // EVM account keys: only for the identities this runtime signs for.
+        let signs = |role: CallerRole| signing_role.is_none() || signing_role == Some(role);
         let chain_id = required("CHAIN_ID")?
             .parse::<u64>()
             .map_err(|err| format!("Invalid CHAIN_ID [{err}]"))?;
@@ -71,11 +75,16 @@ impl EvmAdapterConfig {
             (CallerRole::Frontend, "ADAPTER_EVM_PRIVATE_KEY_FRONTEND"),
             (CallerRole::Test, "ADAPTER_EVM_PRIVATE_KEY_TEST"),
         ] {
-            identity_private_keys.insert(role, required(name)?);
+            if signs(role) {
+                identity_private_keys.insert(role, required(name)?);
+            }
         }
         for role in additional {
-            let key = "ADAPTER_EVM_PRIVATE_KEY_".to_owned() + &role.as_str().to_ascii_uppercase();
-            identity_private_keys.insert(*role, required(&key)?);
+            if signs(*role) {
+                let key =
+                    "ADAPTER_EVM_PRIVATE_KEY_".to_owned() + &role.as_str().to_ascii_uppercase();
+                identity_private_keys.insert(*role, required(&key)?);
+            }
         }
 
         Ok(Self {
@@ -84,7 +93,12 @@ impl EvmAdapterConfig {
             did_registry_address: required("DID_REGISTRY_ADDRESS")?,
             enterprise_trust_registry_address: required("ENTERPRISE_TRUST_REGISTRY_ADDRESS")?,
             issuer_registry_address: required("ISSUER_REGISTRY_ADDRESS")?,
-            governance_private_key: required("GOVERNANCE_PRIVATE_KEY")?,
+            // Platform administration: the shared runtime and the Engineer
+            // core only. A per-role wallet never receives this key.
+            governance_private_key: match signing_role {
+                None | Some(CallerRole::Engineer) => Some(required("GOVERNANCE_PRIVATE_KEY")?),
+                Some(_) => None,
+            },
             identity_private_keys,
             did_resolver_script: env::var("ADAPTER_DID_RESOLVER_SCRIPT")
                 .unwrap_or_else(|_| String::from("blockchain/did-client/resolve-did-json.mjs")),
@@ -124,16 +138,52 @@ impl AdapterConfig {
         let gateway_id = env::var("ADAPTER_ID_GATEWAY")
             .unwrap_or_else(|_| String::from("urn:thesis:service:gateway"));
 
+        // Which role this runtime SIGNS for. Unset: the historical shared
+        // runtime holding every identity. "engineer": the Engineer core
+        // (Roots, revocation, Gateway inspection). Any other role: a per-role
+        // wallet holding only that identity. Other roles are then known only
+        // by their public DID: no token, no capability, no key.
+        let signing_role = match env::var("ADAPTER_SIGNING_ROLE") {
+            Ok(name) if !name.trim().is_empty() => {
+                let role = CallerRole::from_name(name.trim())?;
+                if role == CallerRole::Gateway {
+                    return Err(String::from("The Gateway never signs delegations"));
+                }
+                Some(role)
+            }
+            _ => None,
+        };
+        let holds = |role: CallerRole| match signing_role {
+            None => true,
+            Some(CallerRole::Engineer) => {
+                role == CallerRole::Engineer || role == CallerRole::Gateway
+            }
+            Some(own) => role == own,
+        };
+        let entry = |role: CallerRole,
+                     token_env: &str,
+                     identity: String,
+                     capabilities: Vec<CallerCapability>|
+         -> Result<Option<CallerRecord>, String> {
+            if holds(role) {
+                CallerRecord::new(role, required(token_env)?, identity, capabilities).map(Some)
+            } else if role == CallerRole::Gateway {
+                Ok(None)
+            } else {
+                CallerRecord::public_identity(role, identity).map(Some)
+            }
+        };
+
         let mut records = vec![
-            CallerRecord::new(
+            entry(
                 CallerRole::Engineer,
-                required("ADAPTER_CALLER_ENGINEER")?,
+                "ADAPTER_CALLER_ENGINEER",
                 engineer_id,
                 vec![CallerCapability::IssueRoot, CallerCapability::ManageStatus],
             )?,
-            CallerRecord::new(
+            entry(
                 CallerRole::Orchestrator,
-                required("ADAPTER_CALLER_ORCHESTRATOR")?,
+                "ADAPTER_CALLER_ORCHESTRATOR",
                 orchestrator_id,
                 vec![
                     CallerCapability::IssueChild,
@@ -141,31 +191,34 @@ impl AdapterConfig {
                     CallerCapability::CreatePresentation,
                 ],
             )?,
-            CallerRecord::new(
+            entry(
                 CallerRole::Backend,
-                required("ADAPTER_CALLER_BACKEND")?,
+                "ADAPTER_CALLER_BACKEND",
                 backend_id,
                 vec![CallerCapability::CreatePresentation],
             )?,
-            CallerRecord::new(
+            entry(
                 CallerRole::Frontend,
-                required("ADAPTER_CALLER_FRONTEND")?,
+                "ADAPTER_CALLER_FRONTEND",
                 frontend_id,
                 vec![CallerCapability::CreatePresentation],
             )?,
-            CallerRecord::new(
+            entry(
                 CallerRole::Test,
-                required("ADAPTER_CALLER_TEST")?,
+                "ADAPTER_CALLER_TEST",
                 test_id,
                 vec![CallerCapability::CreatePresentation],
             )?,
-            CallerRecord::new(
+            entry(
                 CallerRole::Gateway,
-                required("ADAPTER_CALLER_GATEWAY")?,
+                "ADAPTER_CALLER_GATEWAY",
                 gateway_id,
                 vec![CallerCapability::VerifyPresentation],
             )?,
-        ];
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
         for role in &additional {
             let suffix = role.as_str().to_ascii_uppercase();
@@ -175,17 +228,19 @@ impl AdapterConfig {
                     "Additional specialist needs a provisioned DID",
                 ));
             }
-            records.push(CallerRecord::new(
+            if let Some(record) = entry(
                 *role,
-                required(&format!("ADAPTER_CALLER_{suffix}"))?,
+                &format!("ADAPTER_CALLER_{suffix}"),
                 identity,
                 vec![CallerCapability::CreatePresentation],
-            )?);
+            )? {
+                records.push(record);
+            }
         }
         let trust_profile = AdapterTrustProfile::from_env()?;
         let evm = match trust_profile {
             AdapterTrustProfile::InMemory => None,
-            AdapterTrustProfile::Evm => Some(EvmAdapterConfig::from_env(&additional)?),
+            AdapterTrustProfile::Evm => Some(EvmAdapterConfig::from_env(&additional, signing_role)?),
         };
 
         Ok(Self {

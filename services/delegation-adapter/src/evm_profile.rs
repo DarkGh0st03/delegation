@@ -139,7 +139,7 @@ impl EvmAdapterProfile {
         // reader can use this same directory without issuer or signing keys.
         if let Some(root) = &config.public_artifact_dir {
             let shared = Rc::new(FilePublicArtifactStore::<Curve>::new(root)?);
-            for role in callers.managed_identity_roles()? {
+            for role in callers.signing_identity_roles()? {
                 let issuer_id = callers.identity_for_role(role)?;
                 let material = issuance_store.get_accumulator_data_at_version(issuer_id, 1)?;
                 shared.publish_accumulator(issuer_id, 1, &material)?;
@@ -163,7 +163,7 @@ impl EvmAdapterProfile {
         ));
         let verification_keys: VerificationKeyProviderRef = did_keys.clone();
 
-        for role in callers.managed_identity_roles()? {
+        for role in callers.signing_identity_roles()? {
             verification_keys.get_verification_key(callers.identity_for_role(role)?)?;
         }
 
@@ -427,7 +427,7 @@ impl EvmAdapterProfile {
         issuance_store: Rc<InMemoryTrustStore<Curve>>,
         issuers: &HashMap<CallerRole, DelegationIssuer<Curve>>,
     ) -> Result<(), String> {
-        let identities = callers.managed_identity_roles()?
+        let identities = callers.signing_identity_roles()?
             .iter()
             .map(|role| {
                 let identity = callers.identity_for_role(*role)?.to_string();
@@ -474,19 +474,27 @@ impl EvmAdapterProfile {
             })
             .collect::<Result<Vec<_>, String>>()?;
 
-        let addresses = planned
-            .iter()
-            .map(|(_, _, address, _, _)| *address)
-            .collect::<Vec<_>>();
-        let engineer = did_address(callers.identity_for_role(CallerRole::Engineer)?)?;
+        // Enterprise admission is a platform-administration act: only the
+        // runtime holding the governance key (the Engineer core) admits EVERY
+        // managed identity, including roles it knows only by public DID. A
+        // per-role wallet has no governance key and only publishes its own
+        // DID key and accumulator, after the platform admitted it.
+        if let Some(governance_private_key) = &self.config.governance_private_key {
+            let addresses = callers
+                .managed_identity_roles()?
+                .iter()
+                .map(|role| did_address(callers.identity_for_role(*role)?))
+                .collect::<Result<Vec<_>, String>>()?;
+            let engineer = did_address(callers.identity_for_role(CallerRole::Engineer)?)?;
 
-        self.runtime.block_on(ensure_enterprise_state(
-            &self.config.rpc_url,
-            &self.config.enterprise_trust_registry_address,
-            &self.config.governance_private_key,
-            &addresses,
-            engineer,
-        ))?;
+            self.runtime.block_on(ensure_enterprise_state(
+                &self.config.rpc_url,
+                &self.config.enterprise_trust_registry_address,
+                governance_private_key,
+                &addresses,
+                engineer,
+            ))?;
+        }
 
         for (role, identity, address, commitment, version) in planned {
             let issuer = issuers

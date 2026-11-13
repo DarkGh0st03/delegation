@@ -72,6 +72,7 @@ a review of the generated code: [docs/RUN_LOG.md](docs/RUN_LOG.md).
 | Specialist agents (ADK/A2A) | `poc/packages/agent-runtime/src/` |
 | Gateway (prepare/execute, Rust verifier, OPA) | `poc/apps/gateway/src/` |
 | Rust core (credentials, accumulators, VP) | `src/`, `services/delegation-*-node/` |
+| Per-role MCP wallets (one signing key each) | `poc/engineer-console/src/role-wallet.mjs`, `services/delegation-adapter/src/config.rs` |
 | OPA policy | `poc/opa/policy.rego` |
 | Test Runner | `poc/apps/test-runner-controller/`, `deploy/runner/start.mjs` |
 | Trust registries (EVM) | `blockchain/` |
@@ -103,6 +104,17 @@ The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
 - The base branch is the repository's default branch (e.g. `main` or
   `master`); agents always work on `feature/<session>`, a namespace that is
   fixed and protected by OPA.
+- **One MCP-wallet per role.** The Orchestrator and each agent (Backend,
+  Frontend, Test) have their own wallet process: the Rust delegation library
+  plus ONLY that role's signing key, generated inside the wallet (only its
+  public key is published on-chain). Agents and the Orchestrator send their
+  parameters (their credential, the Gateway challenge) to their own wallet and
+  receive the signed VP or Child DC; a wallet refuses a credential that is
+  not delegated to its identity. The Engineer core keeps Roots, revocation and
+  the platform governance key. In this local deployment the wallets are
+  separate processes in the same container, started by the console with
+  their EVM account key; in production each would run with the agent's own
+  secret store.
 - The Engineer's Ed25519 key is held by the local `app` container and unlocked
   by the password (not a personal hardware key).
 - The `runner` service mounts the host Docker socket (root-equivalent on the

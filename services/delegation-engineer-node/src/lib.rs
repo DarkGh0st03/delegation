@@ -169,6 +169,41 @@ pub fn start_engineer_core() -> Result<()> {
     }
 }
 
+/// Start a per-role WALLET in this (separate) process: a Rust runtime that
+/// holds the signing identity of exactly one role (generated in memory, its
+/// public key published on-chain) and serves only that role's delegated
+/// operations (Child DC issuance for the Orchestrator, VPs) on a private
+/// socket. It never receives the Engineer, governance or other roles' keys.
+#[napi(js_name = "start_role_wallet")]
+pub fn start_role_wallet() -> Result<()> {
+    let _guard = START_LOCK.lock().map_err(|_| denied())?;
+    if OWNER.get().is_some() {
+        return Err(denied());
+    }
+    let role = env::var("ADAPTER_SIGNING_ROLE").map_err(|_| denied())?;
+    if matches!(role.trim(), "" | "engineer" | "gateway") {
+        return Err(denied());
+    }
+    let socket_path = env::var("DELEGATION_WALLET_SOCKET").map_err(|_| denied())?;
+    if socket_path.is_empty() {
+        return Err(denied());
+    }
+    let config = AdapterConfig::from_env().map_err(|_| denied())?;
+    if config.callers.signing_identity_roles().map_err(|_| denied())?.len() != 1 {
+        return Err(denied());
+    }
+    let (tx, rx) = mpsc::channel::<OwnerCommand>();
+    let (ready_tx, ready_rx) = mpsc::channel();
+    thread::Builder::new()
+        .name("delegation-role-wallet".to_owned())
+        .spawn(move || run_owned_runtime(config, socket_path, rx, ready_tx))
+        .map_err(|_| denied())?;
+    match ready_rx.recv_timeout(OWNER_START_TIMEOUT) {
+        Ok(Ok(())) => OWNER.set(tx).map_err(|_| denied()),
+        _ => Err(denied()),
+    }
+}
+
 pub struct EngineerCommandTask {
     token: String,
     operation: OwnerOperation,

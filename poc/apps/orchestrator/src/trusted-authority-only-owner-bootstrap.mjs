@@ -8,6 +8,7 @@
  * Native Rust and authenticated Gateway connections are built ONLY here,
  * after all local data has been verified. No API model calls or Root issue.
  */
+import {roleWalletSocket} from "../../../packages/agent-runtime/src/native-crypto-ipc.ts";
 import {constants} from "node:fs";
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
@@ -553,7 +554,8 @@ export async function createProtectedCanonicalOperationalProvision(
        workflow.draftPullRequest.baseBranch!==workflow.createBranch.baseBranch))))
   deny();
  const repository=authority.snapshot?.repository;
- const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ // The Orchestrator's own WALLET (only its key): Child DCs and its VPs.
+ const socketPath=roleWalletSocket("orchestrator");
  if(!path(socketPath)||socketPath.length>100)deny();
  await dirOwned(journalDirectory);
  const directories=["gateway-tasks","issuer-children","gateway-children",

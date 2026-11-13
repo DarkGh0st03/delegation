@@ -273,24 +273,40 @@ test("Gitea 422 on import becomes an actionable message", async (t) => {
   assert.match((await r.json()).error, /indirizzo di clonazione/u);
 });
 
-test("native environment maps every role identity and refuses missing configuration", async () => {
-  const {nativeEnvironment} = await import("../src/trusted-core.mjs");
+test("each native process gets only its own secrets: Engineer core and one wallet per role", async () => {
+  const {nativeEnvironment, walletEnvironment, WALLET_ROLES} = await import("../src/trusted-core.mjs");
   const local = {ANVIL_DEPLOYER_PRIVATE_KEY: "0x" + "a".repeat(64), ADAPTER_CALLER_GATEWAY: "g"};
   for (const role of ["ENGINEER", "ORCHESTRATOR", "BACKEND", "FRONTEND", "TEST"]) {
-    local[`ROLE_EVM_PRIVATE_KEY_${role}`] = "0x" + role.length.toString(16).padStart(64, "0");
+    local[`ROLE_EVM_PRIVATE_KEY_${role}`] = "0x" + role.length.toString(16).padStart(64, "0") + role;
     local[`ROLE_DID_${role}`] = "did:ethr:0x7a69:0x" + role.length.toString(16).padStart(40, "0");
     local[`ADAPTER_CALLER_${role}`] = "token-" + role;
   }
   const trust = {DID_REGISTRY_ADDRESS: "0x1", ENTERPRISE_TRUST_REGISTRY_ADDRESS: "0x2",
     ISSUER_REGISTRY_ADDRESS: "0x3"};
-  const env = nativeEnvironment({local, trust, anvilUrl: "http://anvil:8545"});
-  assert.equal(env.ENGINEER_CORE_NATIVE_MODE, "1");
-  assert.equal(env.ADAPTER_TRUST_PROFILE, "evm");
-  assert.equal(env.ADAPTER_ID_BACKEND, local.ROLE_DID_BACKEND);
-  assert.equal(env.ADAPTER_EVM_PRIVATE_KEY_TEST, local.ROLE_EVM_PRIVATE_KEY_TEST);
-  assert.equal(env.GOVERNANCE_PRIVATE_KEY, local.ANVIL_DEPLOYER_PRIVATE_KEY);
-  assert.equal(env.CORE_RUST_DID_REGISTRY_ADDRESS, "0x1");
-  assert.ok(env.ADAPTER_ENGINEER_NATIVE_SOCKET.length <= 100);
+  const secretsIn = env => Object.entries(local)
+    .filter(([key]) => key.startsWith("ROLE_EVM_PRIVATE_KEY_") || key.startsWith("ADAPTER_CALLER_") ||
+      key === "ANVIL_DEPLOYER_PRIVATE_KEY")
+    .filter(([, value]) => Object.values(env).includes(value)).map(([key]) => key).sort();
+
+  // Engineer core: Engineer key, governance key, Engineer and Gateway tokens only.
+  const core = nativeEnvironment({local, trust, anvilUrl: "http://anvil:8545"});
+  assert.equal(core.ADAPTER_SIGNING_ROLE, "engineer");
+  assert.equal(core.ENGINEER_CORE_NATIVE_MODE, "1");
+  assert.deepEqual(secretsIn(core), ["ADAPTER_CALLER_ENGINEER", "ADAPTER_CALLER_GATEWAY",
+    "ANVIL_DEPLOYER_PRIVATE_KEY", "ROLE_EVM_PRIVATE_KEY_ENGINEER"]);
+  assert.equal(core.ADAPTER_ID_BACKEND, local.ROLE_DID_BACKEND, "other roles are known by public DID");
+  assert.ok(core.ADAPTER_ENGINEER_NATIVE_SOCKET.length <= 100);
+  for (const role of WALLET_ROLES) assert.match(core[`DELEGATION_WALLET_SOCKET_${role}`], /wallet-/u);
+
+  // Each wallet: ONLY its own EVM key and token; no governance key.
+  for (const role of WALLET_ROLES) {
+    const wallet = walletEnvironment({local, trust, anvilUrl: "http://anvil:8545", role});
+    assert.equal(wallet.ADAPTER_SIGNING_ROLE, role.toLowerCase());
+    assert.deepEqual(secretsIn(wallet), [`ADAPTER_CALLER_${role}`, `ROLE_EVM_PRIVATE_KEY_${role}`]);
+    assert.equal(wallet.DELEGATION_WALLET_SOCKET, core[`DELEGATION_WALLET_SOCKET_${role}`]);
+    assert.equal(wallet.GOVERNANCE_PRIVATE_KEY, undefined);
+  }
+  assert.throws(() => walletEnvironment({local, trust, anvilUrl: "x", role: "ENGINEER"}), /wallet non valido/u);
   const {ROLE_DID_TEST: _drop, ...incomplete} = local;
   assert.throws(() => nativeEnvironment({local: incomplete, trust, anvilUrl: "x"}), /ROLE_DID_TEST/u);
 });

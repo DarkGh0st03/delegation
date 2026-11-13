@@ -15,7 +15,7 @@ export async function invokeNativeCryptoWire(
     !token||typeof token!=="string"||token.length>8192||
     !Number.isSafeInteger(timeout)||timeout<1||timeout>120000)
   throw Error("Native Rust cryptographic transport unavailable");
- if(!["issue_child","create_presentation","read_issued_root",
+ if(!["issue_child","create_presentation","store_credential","read_issued_root",
        "read_credential_status"].includes(operation))
   throw Error("Native Rust cryptographic transport unavailable");
  const request=JSON.stringify({token,operation,body});

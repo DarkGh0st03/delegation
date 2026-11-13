@@ -89,10 +89,16 @@ export class DelegationEvidenceHandler {
     if(this.#nativeSocketPath){
       let issued:unknown;
       try{
+        // The agent's own Child DC travels as DATA to its wallet, which
+        // holds only this agent's key and no shared credential store.
+        let credential:unknown;
+        try{credential=JSON.parse(this.#evidence.credential);}catch{credential=undefined;}
         const args={
           credential_id:this.#evidence.credential_id,
           disclosed_permissions:[prepared.required_permission],
-          audience:prepared.audience,challenge:prepared.challenge
+          audience:prepared.audience,challenge:prepared.challenge,
+          ...(credential&&typeof credential==="object"&&!Array.isArray(credential)&&
+            (credential as {id?:unknown}).id===this.#evidence.credential_id?{credential}:{})
         };
         // The original A2A Task's signed Child and Gateway challenge are
         // fixed by the trusted handler before this host-selected transport.

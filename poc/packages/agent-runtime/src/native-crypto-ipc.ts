@@ -8,8 +8,20 @@ import {invokeNativeCryptoWire}
 
 export async function invokeNativeCrypto(
  config:{socketPath:string;token:string;timeoutMs?:number},
- operation:"issue_child"|"create_presentation"|"read_issued_root"|"read_credential_status",
+ operation:"issue_child"|"create_presentation"|"store_credential"|"read_issued_root"|"read_credential_status",
  body:unknown
 ):Promise<unknown>{
  return invokeNativeCryptoWire(config,operation,body);
+}
+
+/**
+ * Socket of the per-role WALLET holding only that role's signing key
+ * (DELEGATION_WALLET_SOCKET_<ROLE>, set by the trusted owner when it starts
+ * the wallets). Without per-role wallets (historical/offline setups) the
+ * shared native runtime socket is used.
+ */
+export function roleWalletSocket(role:string):string|undefined{
+ if(typeof role!=="string"||!/^[a-z][a-z0-9_-]{0,23}$/u.test(role))return undefined;
+ const own=process.env["DELEGATION_WALLET_SOCKET_"+role.toUpperCase().replace(/-/gu,"_")];
+ return own??process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
 }

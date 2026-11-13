@@ -63,6 +63,18 @@ pub struct CreatePresentationRequest {
     pub disclosed_permissions: Vec<Permission>,
     pub audience: String,
     pub challenge: String,
+    /// Optional: the holder's own credential, passed as DATA to its wallet
+    /// (a wallet does not share a credential store with other identities).
+    #[serde(default)]
+    pub credential: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoreCredentialRequest {
+    /// A credential delegated TO the calling identity (e.g. the Root
+    /// delivered by the Engineer to the Orchestrator's wallet).
+    pub credential: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -245,7 +257,9 @@ impl CryptoRuntime {
     ) -> Result<HashMap<CallerRole, DelegationIssuer<Curve>>, String> {
         let mut issuers = HashMap::new();
 
-        for role in callers.managed_identity_roles()? {
+        // Only the roles this runtime signs for: all of them in the
+        // historical shared runtime, exactly one in a per-role wallet.
+        for role in callers.signing_identity_roles()? {
             let identity = callers.identity_for_role(role)?.to_string();
             let mut issuer = DelegationIssuer::<Curve>::new(identity.clone())?;
 
@@ -262,12 +276,26 @@ impl CryptoRuntime {
         Ok(issuers)
     }
 
+    /// The Engineer is the trust anchor in every runtime. A per-role wallet
+    /// knows it only by public DID (no key), so register the identity first.
+    fn anchor_engineer(
+        trust_store: &Rc<InMemoryTrustStore<Curve>>,
+        callers: &CallerRegistry,
+    ) -> Result<(), String> {
+        let engineer = callers.identity_for_role(CallerRole::Engineer)?;
+        if !callers.signing_identity_roles()?.contains(&CallerRole::Engineer) {
+            let publisher: TrustPublisherRef<Curve> = trust_store.clone();
+            publisher.register_identity(engineer.to_string())?;
+        }
+        trust_store.set_trust_anchor(engineer, true)
+    }
+
     fn new_in_memory(callers: &CallerRegistry) -> Result<Self, String> {
         let trust_store = Rc::new(InMemoryTrustStore::<Curve>::new());
         let trust_publisher: TrustPublisherRef<Curve> = trust_store.clone();
         let issuers = Self::initialize_issuers(callers, trust_publisher)?;
 
-        trust_store.set_trust_anchor(callers.identity_for_role(CallerRole::Engineer)?, true)?;
+        Self::anchor_engineer(&trust_store, callers)?;
 
         let status_resolver = Rc::new(AdapterStatusResolver::default());
         let status_ref: StatusListResolverRef = status_resolver.clone();
@@ -288,7 +316,7 @@ impl CryptoRuntime {
         let trust_publisher: TrustPublisherRef<Curve> = trust_store.clone();
         let issuers = Self::initialize_issuers(callers, trust_publisher)?;
 
-        trust_store.set_trust_anchor(callers.identity_for_role(CallerRole::Engineer)?, true)?;
+        Self::anchor_engineer(&trust_store, callers)?;
 
         let (evm_profile, verifier) =
             EvmAdapterProfile::initialize(config, callers, trust_store.clone(), &issuers)?;
@@ -673,11 +701,22 @@ impl CryptoRuntime {
     ) -> Result<SignedPresentationResponse, String> {
         require_capability(caller, CallerCapability::CreatePresentation)?;
 
-        let credential = self
-            .credentials
-            .get(&request.credential_id)
-            .cloned()
-            .ok_or_else(|| format!("Credential {} is not available", request.credential_id))?;
+        let credential = match &request.credential {
+            Some(raw) => {
+                let credential = parse_credential(raw)?;
+                if credential.id() != &request.credential_id {
+                    return Err(String::from("Supplied credential differs from credential_id"));
+                }
+                credential
+            }
+            None => self
+                .credentials
+                .get(&request.credential_id)
+                .cloned()
+                .ok_or_else(|| {
+                    format!("Credential {} is not available", request.credential_id)
+                })?,
+        };
 
         let issuer = self
             .issuers
@@ -770,6 +809,31 @@ impl CryptoRuntime {
             .verify_verifiable_presentation(context, request.signed_vp)
     }
 
+    /// Keep a credential delegated TO the authenticated caller in this
+    /// runtime (the caller's own wallet). A credential of another identity
+    /// is refused; storing the same id twice must be byte-identical.
+    pub fn store_credential(
+        &mut self,
+        caller: &CallerRecord,
+        request: StoreCredentialRequest,
+    ) -> Result<String, String> {
+        if caller.is_public_only() || caller.role() == CallerRole::Gateway {
+            return Err(String::from("Only a delegated identity may store its credential"));
+        }
+        let credential = parse_credential(&request.credential)?;
+        if credential.credential().delegatee_id() != caller.identity_id() {
+            return Err(String::from("Credential is not delegated to the calling identity"));
+        }
+        let id = credential.id().clone();
+        if let Some(existing) = self.credentials.get(&id) {
+            let same = serde_json::to_string(existing).map_err(|_| String::from("serialization"))?
+                == serde_json::to_string(&credential).map_err(|_| String::from("serialization"))?;
+            return if same { Ok(id) } else { Err(format!("Credential id {id} already exists")) };
+        }
+        self.credentials.insert(id.clone(), credential);
+        Ok(id)
+    }
+
     fn ensure_credential_id_available(&self, credential_id: &str) -> Result<(), String> {
         if self.credentials.contains_key(credential_id) {
             Err(format!("Credential id {credential_id} already exists"))
@@ -777,6 +841,12 @@ impl CryptoRuntime {
             Ok(())
         }
     }
+}
+
+fn parse_credential(
+    raw: &serde_json::Value,
+) -> Result<VerifiableCredential<DelegationCredential>, String> {
+    serde_json::from_value(raw.clone()).map_err(|_| String::from("Malformed delegation credential"))
 }
 
 fn require_capability(caller: &CallerRecord, capability: CallerCapability) -> Result<(), String> {
@@ -1152,6 +1222,7 @@ mod tests {
                     disclosed_permissions: perms.clone(),
                     audience: String::from("urn:thesis:gateway:root-repair"),
                     challenge: String::from("r129-independent-gateway-random-challenge"),
+                    credential: None,
                 },
             )
             .unwrap();
@@ -1236,6 +1307,7 @@ mod tests {
                     disclosed_permissions: vec![permission(Operation::ReadFile)],
                     audience: String::from("cloud-access-gateway"),
                     challenge: String::from("challenge-1"),
+                    credential: None,
                 },
             )
             .unwrap();
@@ -1313,6 +1385,7 @@ mod tests {
                 disclosed_permissions: vec![permission(Operation::ReadFile)],
                 audience: String::from("cloud-access-gateway"),
                 challenge: String::from("r456-unique-gateway-challenge"),
+                credential: None,
             },
         )?;
         let gateway = registry.record_for_role(CallerRole::Gateway)?;
@@ -1375,6 +1448,7 @@ mod tests {
                         disclosed_permissions: vec![permission(Operation::ReadFile)],
                         audience: String::from("cloud-access-gateway"),
                         challenge: String::from("r456-stolen-role-token"),
+                        credential: None,
                     },
                 )
                 .is_err()
@@ -1454,6 +1528,7 @@ mod tests {
                 ],
                 audience: String::from("cloud-access-gateway"),
                 challenge: String::from("challenge-adapter-multi"),
+                credential: None,
             },
         )?;
         let request = VerifyMultiplePresentationRequest {
@@ -1559,6 +1634,7 @@ mod tests {
                     disclosed_permissions: vec![permission(Operation::ReadFile)],
                     audience: String::from("cloud-access-gateway"),
                     challenge: String::from("challenge-2"),
+                    credential: None,
                 },
             )
             .expect_err("frontend must not sign as backend");
@@ -1649,6 +1725,7 @@ mod tests {
                 disclosed_permissions: vec![permission(Operation::CreateFile)],
                 audience: String::from("cloud-access-gateway"),
                 challenge: String::from("challenge-reordered-subset"),
+                credential: None,
             },
         )?;
 
@@ -1699,6 +1776,7 @@ mod tests {
                 disclosed_permissions: vec![permission(Operation::ReadFile)],
                 audience: String::from("cloud-access-gateway"),
                 challenge: String::from("challenge-revocation-lifecycle"),
+                credential: None,
             },
         )?;
 
@@ -1780,6 +1858,7 @@ mod tests {
                 disclosed_permissions: vec![permission(Operation::ReadFile)],
                 audience: String::from("cloud-access-gateway"),
                 challenge: String::from("challenge-suspension-lifecycle"),
+                credential: None,
             },
         )?;
 
@@ -1840,5 +1919,174 @@ mod tests {
         )?;
 
         Ok(())
+    }
+
+
+    /// A per-role wallet: one full identity, every other role public-only.
+    fn wallet_callers(own: CallerRole, token: &str) -> CallerRegistry {
+        let did = |role: CallerRole| match role {
+            CallerRole::Engineer => "did:thesis:engineer",
+            CallerRole::Orchestrator => "did:thesis:orchestrator",
+            CallerRole::Backend => "did:thesis:backend",
+            CallerRole::Frontend => "did:thesis:frontend",
+            CallerRole::Test => "did:thesis:test",
+            _ => unreachable!(),
+        };
+        let roles = [
+            CallerRole::Engineer,
+            CallerRole::Orchestrator,
+            CallerRole::Backend,
+            CallerRole::Frontend,
+            CallerRole::Test,
+        ];
+        CallerRegistry::new(
+            roles
+                .iter()
+                .map(|role| {
+                    if *role == own {
+                        let caps = if own == CallerRole::Orchestrator {
+                            vec![
+                                CallerCapability::IssueChild,
+                                CallerCapability::ManageStatus,
+                                CallerCapability::CreatePresentation,
+                            ]
+                        } else {
+                            vec![CallerCapability::CreatePresentation]
+                        };
+                        CallerRecord::new(*role, token.to_string(), did(*role).to_string(), caps)
+                            .unwrap()
+                    } else {
+                        CallerRecord::public_identity(*role, did(*role).to_string()).unwrap()
+                    }
+                })
+                .collect(),
+        )
+        .unwrap()
+    }
+
+    /// Root + Child for the Frontend, issued by the historical shared runtime.
+    fn frontend_child_json() -> serde_json::Value {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry).unwrap();
+        let root = issue_root(&mut runtime, &registry);
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
+        let child = runtime
+            .issue_child(
+                orchestrator,
+                &registry,
+                IssueChildRequest {
+                    parent_credential_id: root.id().clone(),
+                    credential_id: String::from("urn:credential:wallet-frontend-child"),
+                    delegatee: CallerRole::Frontend,
+                    valid_from: String::from("2026-10-30T00:00:00Z"),
+                    validity_seconds: 600,
+                    credential_status: status(404),
+                    permissions: vec![permission(Operation::ReadFile)],
+                },
+            )
+            .unwrap();
+        serde_json::to_value(&child).unwrap()
+    }
+
+    fn request_with(credential: serde_json::Value) -> CreatePresentationRequest {
+        CreatePresentationRequest {
+            credential_id: String::from("urn:credential:wallet-frontend-child"),
+            disclosed_permissions: vec![permission(Operation::ReadFile)],
+            audience: String::from("urn:thesis:gateway"),
+            challenge: String::from("wallet-challenge"),
+            credential: Some(credential),
+        }
+    }
+
+    #[test]
+    fn wallet_registry_holds_exactly_one_signing_identity() {
+        let wallet = wallet_callers(CallerRole::Backend, "backend-wallet-token");
+        assert_eq!(wallet.signing_identity_roles().unwrap(), vec![CallerRole::Backend]);
+        // Public identities can never authenticate, not even with an empty token.
+        assert!(wallet.authenticate("").is_err());
+        assert!(wallet.authenticate("frontend-token").is_err());
+        assert_eq!(
+            wallet.identity_for_role(CallerRole::Frontend).unwrap(),
+            "did:thesis:frontend"
+        );
+        let runtime = CryptoRuntime::new(&wallet).unwrap();
+        assert_eq!(runtime.issuers.len(), 1, "the wallet holds only its own signing key");
+        assert!(runtime.issuers.contains_key(&CallerRole::Backend));
+    }
+
+    #[test]
+    fn wallet_signs_its_own_credential_passed_as_data() {
+        let wallet = wallet_callers(CallerRole::Frontend, "frontend-wallet-token");
+        let mut runtime = CryptoRuntime::new(&wallet).unwrap();
+        let frontend = wallet.authenticate("frontend-wallet-token").unwrap();
+        let signed = runtime
+            .create_presentation(frontend, request_with(frontend_child_json()))
+            .unwrap();
+        assert!(!signed.signed_vp.is_empty());
+        assert!(runtime.credentials.is_empty(), "a passed credential is not retained");
+        // The supplied credential must be the one named by credential_id.
+        let mut renamed = request_with(frontend_child_json());
+        renamed.credential_id = String::from("urn:credential:other");
+        assert!(runtime.create_presentation(frontend, renamed).is_err());
+    }
+
+    #[test]
+    fn test_agent_wallet_cannot_present_or_store_the_frontend_credential() {
+        // The attack: the Test agent obtained a copy of the Frontend's Child.
+        let wallet = wallet_callers(CallerRole::Test, "test-wallet-token");
+        let mut runtime = CryptoRuntime::new(&wallet).unwrap();
+        let test = wallet.authenticate("test-wallet-token").unwrap();
+        let error = match runtime.create_presentation(test, request_with(frontend_child_json())) {
+            Ok(_) => panic!("the Test wallet signed a VP for the Frontend credential"),
+            Err(error) => error,
+        };
+        assert!(error.contains("Cannot present credential delegated to"), "{error}");
+        let stored = runtime.store_credential(
+            test,
+            StoreCredentialRequest {
+                credential: frontend_child_json(),
+            },
+        );
+        assert!(stored.unwrap_err().contains("not delegated to the calling identity"));
+        // And the Test wallet has no Frontend key to sign with in the first place.
+        assert!(!runtime.issuers.contains_key(&CallerRole::Frontend));
+    }
+
+    #[test]
+    fn orchestrator_wallet_issues_children_from_the_root_delivered_to_it() {
+        // The Engineer core issues the Root; it is then DELIVERED to the
+        // Orchestrator's wallet, which issues the Child with its own key.
+        let shared = callers();
+        let mut engineer_core = CryptoRuntime::new(&shared).unwrap();
+        let root = issue_root(&mut engineer_core, &shared);
+        let wallet = wallet_callers(CallerRole::Orchestrator, "orchestrator-wallet-token");
+        let mut runtime = CryptoRuntime::new(&wallet).unwrap();
+        let orchestrator = wallet.authenticate("orchestrator-wallet-token").unwrap();
+        let root_json = serde_json::to_value(&root).unwrap();
+        let id = runtime
+            .store_credential(orchestrator, StoreCredentialRequest { credential: root_json.clone() })
+            .unwrap();
+        assert_eq!(&id, root.id());
+        // Delivering the same Root again is idempotent; a different one with
+        // the same id is refused.
+        assert!(runtime
+            .store_credential(orchestrator, StoreCredentialRequest { credential: root_json })
+            .is_ok());
+        let child = runtime
+            .issue_child(
+                orchestrator,
+                &wallet,
+                IssueChildRequest {
+                    parent_credential_id: root.id().clone(),
+                    credential_id: String::from("urn:credential:wallet-child"),
+                    delegatee: CallerRole::Backend,
+                    valid_from: String::from("2026-10-30T00:00:00Z"),
+                    validity_seconds: 600,
+                    credential_status: status(505),
+                    permissions: vec![permission(Operation::ReadFile)],
+                },
+            )
+            .unwrap();
+        assert_eq!(child.credential().delegatee_id(), "did:thesis:backend");
     }
 }

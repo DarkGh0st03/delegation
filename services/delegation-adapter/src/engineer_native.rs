@@ -15,7 +15,7 @@ use crate::auth::CallerRole;
 use crate::config::AdapterConfig;
 use crate::crypto::{
     CreatePresentationRequest, CryptoRuntime, IssueChildRequest, IssueRootRequest,
-    ReadCredentialStatusRequest, UpdateCredentialStatusRequest,
+    ReadCredentialStatusRequest, StoreCredentialRequest, UpdateCredentialStatusRequest,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -194,6 +194,21 @@ impl NativeEngineerSocket {
                         serde_json::to_value(observation)
                             .map_err(|_| String::from("serialization unavailable"))
                     })
+            }
+            "store_credential"
+                if matches!(
+                    caller.role(),
+                    CallerRole::Orchestrator
+                        | CallerRole::Backend
+                        | CallerRole::Frontend
+                        | CallerRole::Test
+                        | CallerRole::Additional(_)
+                ) =>
+            {
+                serde_json::from_value::<StoreCredentialRequest>(req.body)
+                    .map_err(|_| String::from("invalid request"))
+                    .and_then(|input| crypto.store_credential(caller, input))
+                    .map(|id| json!({"credential_id": id}))
             }
             "create_presentation"
                 if matches!(

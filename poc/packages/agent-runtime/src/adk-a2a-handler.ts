@@ -6,6 +6,7 @@ import {
   type LlmRequest,
   type LlmResponse
 } from "@google/adk";
+import {roleWalletSocket} from "./native-crypto-ipc.ts";
 import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
@@ -357,10 +358,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       adapterBaseUrl: config.adapterBaseUrl,
       adapterToken: config.adapterToken,
       evidence: context.delegation_evidence,
-      // R204: trusted signed Tasks use native Rust issuance when the
-      // shared CryptoRuntime socket is mounted. Native failure is terminal.
-      ...(context.trusted_gateway_task_id&&process.env.ADAPTER_ENGINEER_NATIVE_SOCKET
-        ?{nativeSocketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET}:{}),
+      // R204: trusted signed Tasks sign their VP natively, in the WALLET of
+      // this agent's role (only its own key). Native failure is terminal.
+      ...(context.trusted_gateway_task_id&&roleWalletSocket(context.role)
+        ?{nativeSocketPath:roleWalletSocket(context.role)!}:{}),
       ...(config.nativePresentationTransport==="mcp-stdio"
         ?{nativePresentationTransport:"mcp-stdio" as const}:{}),
       ...(signal ? {signal} : {}),

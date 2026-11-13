@@ -15,7 +15,7 @@ import type {CredentialStatusInput,IssuedDelegationCredential}
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import {createOwnerPrivateChildMcpSession}
   from "../../../mcp-shared/src/owner-private-child-mcp.ts";
-import {invokeNativeCrypto} from "../../agent-runtime/src/native-crypto-ipc.ts";
+import {invokeNativeCrypto,roleWalletSocket} from "../../agent-runtime/src/native-crypto-ipc.ts";
 import {createOwnerPrivateNativeCryptoMcpSession}
  from "../../../mcp-shared/src/owner-private-native-crypto-stdio.mjs";
 
@@ -130,7 +130,8 @@ export function createNativeRustChildCryptographyPort(
 export function createOwnerPrivateMcpChildCryptographyPort(
  config:RustAdapterChildPortConfig
 ):TrustedChildCryptographyPort{
- const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ // Child DCs are issued in the Orchestrator's OWN wallet.
+ const socketPath=roleWalletSocket("orchestrator");
  if(!socketPath&&process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
   throw Error("Canonical signed Child DC requires native Rust issuer socket");
  const rust=socketPath
