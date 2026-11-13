@@ -7,6 +7,19 @@ Draft PR su Gitea.
 
 ---
 
+## 2026-11-13 — Ricerca e filtro utenti con Gemini: PASS, Draft PR mancata per un blocco Markdown
+
+Sessione `s-690b35c5d886`. Planning con lettura di `user.repository.ts` (dati
+di esempio), 11 Task, 38 autorizzazioni del Gateway, nessuna negata. Primo
+Runner: FAIL su `backend_tests` (un test si aspettava "Alice Adams"); il Test
+agent ha riletto i dati reali in `user.repository.ts` e corretto il test;
+secondo Runner: **PASS** su tutte le 6 fasi. La proposta della Draft PR è
+arrivata dentro un blocco Markdown (` ```json ... ``` `) e la validazione
+l'ha rifiutata. Corretto dopo la sessione: un unico blocco ` ```json ` attorno
+al valore viene tolto prima della stessa validazione di sempre.
+
+---
+
 ## 2026-11-13 — Ricerca e filtro utenti con Gemini: tre cicli di riparazione
 
 Sessione `s-1b2385a2d0fb`. 16 Task, 44 autorizzazioni del Gateway, nessuna

@@ -169,3 +169,24 @@ test('the Orchestrator sees typecheck errors with their message; malformed ones 
   assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer({...cfg,
    verifiedFailure:failure({typecheck_errors:bad})}),/R351 authority-only model Task choice denied/u);
 });
+
+class RawText extends BaseLlm {
+ constructor(text){super({model:'raw-text-zero-cost'});this.text=text;}
+ async *generateContentAsync(){yield {content:{role:'model',parts:[{text:this.text}]}};}
+ connect(){throw Error('offline');}
+}
+test('a choice wrapped in ONE Markdown JSON fence is the same choice (session s-690b35c5d886)',async()=>{
+ const repo='gitea://gitea.local/thesis/iam-console-poc';
+ const pr={resource:repo,operation:'create_pull_request'};
+ const json=JSON.stringify({task_id:'task-create-pr-1',agent_id:'orchestrator',depends_on:['task-run-tests-2'],
+  permissions:[pr],instruction:'Open the Draft PR for the tested commit'},null,2);
+ const proposer=text=>new TrustedAuthorityOnlyAdkDecisionProposer({model:new RawText(text),
+  requirement:'Search users',branch:'feature/account-suspension',rootPermissions:[pr],
+  agents:{orchestrator:{capabilities:['create_pull_request']},test:{capabilities:['run_tests']}},
+  previousTasks:[{task_id:'task-run-tests-2',agent_id:'test'}],nextEpoch:2,decisionKind:'pull_request'});
+ for(const text of ['```json\n'+json+'\n```','```\n'+json+'\n```',json])
+  assert.equal((await proposer(text).propose()).task_id,'task-create-pr-1');
+ // Anything else around the value is still refused.
+ for(const text of ['Here it is:\n```json\n'+json+'\n```','```json\n'+json+'\n```\nDone.','```json\n'+json+'\n```\n```json\n{}\n```'])
+  await assert.rejects(proposer(text).propose(),/R351 authority-only model Task choice denied/u);
+});

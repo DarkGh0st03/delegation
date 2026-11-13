@@ -270,6 +270,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     this.decisionKind==='adaptive'?'Return JSON only using the action schema above.':
      'Return JSON only with exactly task_id,agent_id,depends_on,permissions,instruction.',
     'depends_on is always a JSON array of task IDs (e.g. ["task-3"]; [] for none).',
+    'Reply with the JSON value only: no Markdown code fence, no text before or after it.',
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
@@ -340,6 +341,12 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   }
   if(failed||deadline.aborted||model.calls!==1||!text||text.length>16000)fail();
   let raw;
+  // One JSON value, optionally wrapped in a single Markdown code fence
+  // (session s-690b35c5d886: the PR proposal came as ```json ... ```).
+  // Only the exact surrounding fence is removed; the value is then
+  // validated exactly as any other choice.
+  const fenced=/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```$/u.exec(text);
+  if(fenced)text=fenced[1].trim();
   try{raw=JSON.parse(text);}catch{fail();}
   if(this.decisionKind==='adaptive'){
    if(exact(raw,['action','reason'])&&['ready_for_pr','blocked'].includes(raw.action)&&
