@@ -24,6 +24,25 @@ import {AuthenticatedGiteaCreateCompletionObserver}
 
 const roles=["backend","frontend","test"];
 function deny(){throw Error("Protected canonical deployment configuration denied");}
+
+/** Default lifetime of a Task's Child DC, and the minimum left to do work. */
+export const CHILD_VALIDITY_SECONDS=1200;
+const MIN_CHILD_SECONDS=60,CLOCK_MARGIN_SECONDS=30;
+/**
+ * Validity of a new Child: the default, but never beyond `notAfter` (the
+ * earlier of the operational Root and the signed approval expiry), with a
+ * margin for clock skew. Too little time left ends the session clearly
+ * instead of issuing a Child the issuer would reject.
+ */
+export function childValiditySeconds(notAfter,nowMs=Date.now()){
+ const end=Date.parse(notAfter);
+ if(typeof notAfter!=="string"||!Number.isFinite(end))deny();
+ const left=Math.floor((end-nowMs)/1000)-CLOCK_MARGIN_SECONDS;
+ if(left<MIN_CHILD_SECONDS)
+  throw Error("La Root operativa sta per scadere: nessun nuovo Task può essere delegato. "+
+   "Avvia una nuova sessione (la durata dell'approvazione firmata è limitata).");
+ return Math.min(CHILD_VALIDITY_SECONDS,left);
+}
 function exact(value,keys){
  return !!value&&typeof value==="object"&&!Array.isArray(value)&&
   Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
@@ -198,14 +217,15 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
    adaptive:{model:model(),maxSteps:executionBudget.maxDecisions,
     maxVerifiedFailures:executionBudget.maxVerifiedFailures,
     ...(requireVerifiedRepairDiagnostic?{requireVerifiedRepairDiagnostic:true}:{}),
-    async nextChildParameters(){
+    async nextChildParameters(task){
+    const validity_seconds=childValiditySeconds(task?.not_after);
     const index=c.childIndices[nextIndex++];
     if(index===undefined)deny();
     const credential_id="urn:operational-child:"+randomUUID();
     await persistStatusIndexReservation(reservationDirectory,list,index,{
      version:1,session_id:pins.snapshot.session_id,credential_id,status_list:list,index
     });
-    return {credential_id,valid_from:new Date().toISOString(),validity_seconds:1200,
+    return {credential_id,valid_from:new Date().toISOString(),validity_seconds,
      credential_status:{type:"BitstringStatusListEntry",statusPurpose:"revocation",
       statusListCredential:list,statusListIndex:index}};
    }},

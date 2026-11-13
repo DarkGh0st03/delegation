@@ -908,7 +908,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        },
        executeTask:async(choice,context)=>{
         if(!a2aOwner||a2aOwner.phase==='failed_closed')deny('adaptive work requires original protected A2A owner');
-        const childParameters=await input.nextChildParameters(Object.freeze({epoch:context.nextEpoch,agent_id:choice.agent_id}));
+        // A Child never outlives its parent: the owner sizes its validity
+        // within the live operational Root and the signed approval.
+        const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+        const notAfter=new Date(Math.min(Date.parse(live.root_expires_at),
+         Date.parse(live.expires_at))).toISOString();
+        const childParameters=await input.nextChildParameters(Object.freeze({
+         epoch:context.nextEpoch,agent_id:choice.agent_id,not_after:notAfter}));
         input.signal?.throwIfAborted();
         const current=await readContext();
         if(JSON.stringify(current)!==JSON.stringify(context))deny('adaptive Task context changed before staging');
