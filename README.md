@@ -16,7 +16,8 @@ cp .env.example .env        # then set ENGINEER_PASSWORD (and optionally GEMINI_
 docker compose up -d --build
 ```
 
-Open **http://127.0.0.1:8700** and sign in. The first build compiles the native
+Open **http://127.0.0.1:8700** and sign in to **Sigillo** (the console; name
+and "Ardesia Labs" brand are fictional). The first build compiles the native
 Rust modules and takes several minutes. Compose starts Gitea, OPA and Anvil,
 prepares accounts, the example repository and the on-chain registries, the
 Engineer console and the test Runner. Full guide (Italian):
@@ -102,11 +103,11 @@ The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
 
 ## Declared limits
 
-- Each repository has a **project profile** set by the Engineer on the Policy
-  page (Docker image, ordered test phases, test folders and suffixes). The
-  example repository gets its known profile; any other repository starts from
-  a plain npm template (`npm ci`, `npm test`) to be reviewed. The first phase
-  prepares the environment: a failure there is not repaired by the agents.
+- Each repository has a **project profile** (Docker image, ordered test
+  phases, test folders and suffixes), bound to the Engineer's signature. It is
+  not edited in the console: the example repository gets its known profile,
+  any other repository a plain npm template (`npm ci`, `npm test`). The first
+  phase prepares the environment: a failure there is not repaired by the agents.
 - The base branch is the repository's default branch (e.g. `main` or
   `master`); agents always work on `feature/<session>`, a namespace that is
   fixed and protected by OPA.

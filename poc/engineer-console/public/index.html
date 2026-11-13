@@ -3,219 +3,251 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Delegation Console</title>
+  <title>Sigillo · Ardesia Labs</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header>
-    <strong>Delegation · Console del Software Engineer</strong>
-    <span id="whoami"></span>
-    <button id="logout" hidden>Esci</button>
-  </header>
+  <!-- Reusable logo: a seal (the Engineer's signature) around a delegation tree. -->
+  <svg class="sprite" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#22d3ee"/>
+      </linearGradient>
+      <symbol id="logo" viewBox="0 0 48 48">
+        <path d="M24 3l17 7v12c0 11-7.4 19.6-17 23C14.4 41.6 7 33 7 22V10z" fill="url(#g-brand)"/>
+        <path d="M24 8.5l12.5 5.2V22c0 8.3-5.3 15-12.5 18-7.2-3-12.5-9.7-12.5-18v-8.3z" fill="#0b1020" opacity=".28"/>
+        <circle cx="24" cy="16" r="3.4" fill="#fff"/>
+        <circle cx="16.5" cy="29" r="2.8" fill="#fff"/><circle cx="24" cy="31" r="2.8" fill="#fff"/><circle cx="31.5" cy="29" r="2.8" fill="#fff"/>
+        <path d="M24 19.4v8.8M22.2 18.9l-4.6 7.6M25.8 18.9l4.6 7.6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.5h4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path fill="currentColor" d="M3.4 20.4l17.4-7.5a1 1 0 0 0 0-1.8L3.4 3.6a1 1 0 0 0-1.4 1.1L4 11l9 1-9 1-2 6.3a1 1 0 0 0 1.4 1.1z"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l8 3.5V11c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5.5z"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><path fill="currentColor" d="M14 3a7 7 0 0 0-6.6 9.3L2 17.7V22h4.3l1-1v-2h2v-2h2l1.4-1.4A7 7 0 1 0 14 3zm2.5 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></symbol>
+      <symbol id="i-branch" viewBox="0 0 24 24"><path fill="currentColor" d="M7 3a3 3 0 0 0-1 5.8v6.4A3 3 0 1 0 8 15.2V13c0-1.1.9-2 2-2h4a4 4 0 0 0 4-4v-.2A3 3 0 1 0 16 6.8V7a2 2 0 0 1-2 2h-4c-.7 0-1.4.2-2 .5V8.8A3 3 0 0 0 7 3z"/></symbol>
+      <symbol id="i-pr" viewBox="0 0 24 24"><path fill="currentColor" d="M6 3a3 3 0 0 0-1 5.8v6.4A3 3 0 1 0 7 15.2V8.8A3 3 0 0 0 6 3zm12 12.2V9a4 4 0 0 0-4-4h-1.6l1.3-1.3-1.4-1.4L8.6 6l3.7 3.7 1.4-1.4L12.4 7H14a2 2 0 0 1 2 2v6.2a3 3 0 1 0 2 0z"/></symbol>
+    </defs>
+  </svg>
 
-  <main>
-    <!-- Login -->
-    <section id="login-view" hidden>
-      <h1>Accesso Engineer</h1>
-      <form id="login-form">
-        <label>Username <input name="username" autocomplete="username" required></label>
-        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-        <button type="submit">Accedi</button>
+  <!-- ============ Login ============ -->
+  <div id="login-view" class="login" hidden>
+    <section class="login-brand">
+      <div class="brand-mark"><svg class="logo-xl"><use href="#logo"/></svg>
+        <div><strong>Sigillo</strong><span>by Ardesia Labs</span></div></div>
+      <h1>Autorità delegata e verificabile per i tuoi agenti di sviluppo.</h1>
+      <p>Descrivi il requisito, firma solo i permessi che vuoi concedere e guarda gli agenti
+        lavorare: ogni operazione è verificata, ogni credenziale è revocabile, il merge resta tuo.</p>
+      <ul class="feature-list">
+        <li><svg><use href="#i-key"/></svg><span><b>Firma dell'Engineer</b> sui soli permessi approvati</span></li>
+        <li><svg><use href="#i-shield"/></svg><span><b>Gateway</b> con verifica crittografica e policy OPA</span></li>
+        <li><svg><use href="#i-pr"/></svg><span><b>Draft PR</b> solo dopo test superati</span></li>
+      </ul>
+    </section>
+    <section class="login-panel">
+      <form id="login-form" class="login-card">
+        <svg class="logo-md"><use href="#logo"/></svg>
+        <h2>Accedi</h2>
+        <p class="muted">Console del Software Engineer</p>
+        <label class="field"><span>Username</span>
+          <input name="username" autocomplete="username" required></label>
+        <label class="field"><span>Password</span>
+          <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit" class="btn primary block">Entra</button>
+        <p class="msg error" id="login-error"></p>
       </form>
-      <p class="error" id="login-error"></p>
+      <p class="login-foot">© Ardesia Labs · ambiente locale</p>
     </section>
+  </div>
 
-    <!-- Application -->
-    <section id="app-view" hidden>
-      <nav>
-        <button data-tab="env" class="active">1 · Ambiente</button>
-        <button data-tab="repo">2 · Repository</button>
-        <button data-tab="policy">3 · Policy</button>
-        <button data-tab="request">4 · Requisito</button>
-        <button data-tab="planning">5 · Planning e permessi</button>
-        <button data-tab="execution">6 · Esecuzione</button>
-      </nav>
-
-      <div class="tab" id="tab-env">
-        <h2>Stato dell'ambiente</h2>
-        <p>Prima di iniziare una sessione tutti i controlli devono essere verdi.</p>
-        <button id="env-refresh">Ricontrolla</button>
-        <table><thead><tr><th>Componente</th><th>Stato</th><th>Dettaglio / cosa fare</th></tr></thead>
-          <tbody id="env-rows"></tbody></table>
+  <!-- ============ Application ============ -->
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <a href="#/" class="brand"><svg class="logo-sm"><use href="#logo"/></svg>
+        <strong>Sigillo</strong><span class="brand-sub">Ardesia Labs</span></a>
+      <div class="topbar-right">
+        <button id="open-settings" class="icon-btn" type="button" title="Impostazioni e stato dell'ambiente">
+          <svg><use href="#i-gear"/></svg><span id="env-dot" class="dot"></span></button>
+        <span class="user-chip"><span class="avatar" id="avatar">E</span><span id="whoami"></span></span>
+        <button id="logout" class="btn ghost-dark" type="button">Esci</button>
       </div>
+    </header>
 
-      <div class="tab" id="tab-repo" hidden>
-        <h2>Repository in Gitea</h2>
-        <p>Organizzazione: <code id="repo-org"></code>. Seleziona la repository su cui lavoreranno gli agenti.</p>
-        <table><thead><tr><th></th><th>Nome</th><th>Branch principale</th><th>Aggiornata</th></tr></thead>
-          <tbody id="repo-rows"></tbody></table>
-        <h3>Importa una repository pubblica da GitHub</h3>
-        <form id="import-form">
-          <label>URL https <input name="clone_url" placeholder="https://github.com/utente/progetto.git" required></label>
-          <label>Nome in Gitea <input name="name" placeholder="progetto" required></label>
-          <button type="submit">Importa</button>
-        </form>
-        <p class="hint">L'import protegge automaticamente il branch principale (nessun push diretto, merge solo con approvazione).</p>
-        <p id="import-msg"></p>
-        <div id="repo-detail" hidden>
-          <h3>Repository selezionata</h3>
-          <dl>
-            <dt>Nome</dt><dd id="sel-name"></dd>
-            <dt>Branch principale</dt><dd id="sel-branch"></dd>
-            <dt>Commit attuale</dt><dd><code id="sel-sha"></code></dd>
-            <dt>Branch protetti in Gitea</dt><dd id="sel-protected"></dd>
-          </dl>
+    <main>
+      <!-- ---------- Home ---------- -->
+      <section id="home-view" hidden>
+        <div class="hero">
+          <h1>Cosa vuoi realizzare oggi<span id="hello-name"></span>?</h1>
+          <p>Scegli la repository, controlla la policy e descrivi il requisito. Il resto lo segui in diretta.</p>
         </div>
-      </div>
 
-      <div class="tab" id="tab-policy" hidden>
-        <h2>Policy della repository</h2>
-        <p id="policy-none">Seleziona prima una repository.</p>
-        <form id="policy-form" hidden>
-          <p>Sorgente: <strong id="policy-source"></strong></p>
-          <label>Branch protetti (uno per riga; deve includere il principale)
-            <textarea name="protected_branches" rows="3"></textarea></label>
-          <label>Prefisso dei branch di lavoro degli agenti (per ora fisso: ogni sessione lavora su <code>feature/&lt;sessione&gt;</code>)
-            <input name="work_branch_prefix" readonly></label>
-          <label>Percorsi che gli agenti non possono modificare (uno per riga, es. <code>.github/</code>; la lettura resta consentita)
-            <textarea name="forbidden_path_prefixes" rows="4"></textarea></label>
-          <fieldset>
-            <legend>Profilo di test: che cosa significa «i test passano»</legend>
-            <p class="hint">Il Runner esegue queste fasi, in ordine, in un container Docker usa e getta
-              sul commit finale; la Draft PR si crea solo se passano tutte. La prima fase prepara
-              l'ambiente (es. installazione): un suo errore non viene fatto riparare agli agenti.
-              L'impronta del profilo entra nella firma dell'Engineer: gli agenti non possono cambiarlo.</p>
-            <label>Immagine Docker (con versione esplicita, es. <code>node:22.15.0-bookworm</code>)
-              <input name="profile_image"></label>
-            <label>Fasi (JSON: elenco di <code>{"name": ..., "command": ...}</code>;
-              <code>"failure_report": "vitest"</code> se il comando termina con un'invocazione di Vitest
-              (es. <code>npx vitest run tests/backend</code>): il Runner aggiunge il report JSON e
-              riporta test falliti e messaggi d'errore)
-              <textarea name="profile_phases" rows="8" spellcheck="false"></textarea></label>
-            <label>Cartelle dei test (una per riga): solo qui il Test agent può scrivere
-              <textarea name="profile_test_roots" rows="2"></textarea></label>
-            <label>Suffissi dei file di test (uno per riga, es. <code>.test.ts</code>)
-              <textarea name="profile_test_suffixes" rows="2"></textarea></label>
-          </fieldset>
-          <label class="inline"><input type="checkbox" name="allow_pull_request"> Consenti la creazione di una Draft PR</label>
-          <p class="hint">Fisso: gli agenti non possono mai fare merge. Il merge resta una decisione umana.</p>
-          <button type="submit">Salva policy</button>
-          <button type="button" id="policy-reset">Ripristina predefinita</button>
-        </form>
-        <p id="policy-msg"></p>
-        <p class="hint">Salvando, la policy viene pubblicata su OPA e applicata dal Gateway a ogni operazione degli agenti su questa repository.</p>
-      </div>
+        <div class="home-grid">
+          <article class="card">
+            <div class="card-head">
+              <div><h2>Repository</h2><p class="muted small" id="repo-org"></p></div>
+            </div>
+            <form id="import-form" class="import-row">
+              <input name="clone_url" placeholder="https://github.com/utente/progetto.git" required>
+              <input name="name" placeholder="nome in Gitea" required>
+              <button type="submit" class="btn secondary">Importa</button>
+            </form>
+            <p class="msg" id="import-msg"></p>
+            <div class="table-wrap">
+              <table class="table selectable">
+                <thead><tr><th>Repository</th><th>Branch</th><th>Policy</th><th>Aggiornata</th><th></th></tr></thead>
+                <tbody id="repo-rows"></tbody>
+              </table>
+            </div>
+          </article>
 
-      <div class="tab" id="tab-request" hidden>
-        <h2>Requisito per l'Orchestrator</h2>
-        <p id="request-none">Seleziona prima una repository.</p>
-        <form id="request-form" hidden>
-          <p>Repository: <strong id="request-repo"></strong></p>
-          <label>Cosa deve fare il sistema? (linguaggio naturale)
-            <textarea name="requirement" rows="6" placeholder="Es.: Consenti a un amministratore di sospendere e riattivare un account utente dall'interfaccia di amministrazione."></textarea></label>
-          <button type="submit">Salva richiesta</button>
-        </form>
-        <p id="request-msg"></p>
-        <h3>Richieste salvate</h3>
-        <table><thead><tr><th>Data</th><th>Repository</th><th>Commit base</th><th>Requisito</th><th>Stato</th></tr></thead>
-          <tbody id="request-rows"></tbody></table>
-      </div>
+          <article class="card">
+            <div class="card-head"><h2>Sessioni recenti</h2></div>
+            <ul id="session-list" class="session-list"></ul>
+          </article>
+        </div>
 
-      <div class="tab" id="tab-planning" hidden>
-        <h2>Planning e revisione dei permessi</h2>
-        <p>L'Orchestrator riceve una credenziale di <strong>sola lettura</strong> (Root preliminare), legge la repository
-          tramite il Gateway e propone i permessi necessari. Tu decidi quali concedere: puoi solo toglierne, mai aggiungerne.</p>
-        <form id="plan-form">
-          <label>Richiesta <select name="request" id="plan-request" required></select></label>
-          <fieldset>
-            <legend>Planner</legend>
-            <label class="inline"><input type="radio" name="mode" value="scripted" checked>
-              Simulato (gratuito, nessuna IA: sceglie i file confrontando le parole del requisito con i percorsi)</label>
-            <label class="inline"><input type="radio" name="mode" value="reference">
-              Soluzione di riferimento (gratuita, nessuna IA: gli agenti scrivono la soluzione nota del ricercatore;
-              solo iam-console-poc, requisito di sospensione degli account)</label>
-            <label class="inline"><input type="radio" name="mode" value="gemini" id="mode-gemini">
-              Gemini (a pagamento) <span id="gemini-state" class="hint"></span></label>
-            <label class="inline" id="gemini-consent-row" hidden><input type="checkbox" name="gemini_consent">
-              Confermo che questa sessione può consumare crediti API di Gemini</label>
-          </fieldset>
-          <button type="submit">Avvia Planning</button>
-        </form>
-        <p id="plan-msg"></p>
-
-        <h3>Sessioni</h3>
-        <table><thead><tr><th></th><th>Avviata</th><th>Repository</th><th>Requisito</th><th>Stato</th></tr></thead>
-          <tbody id="session-rows"></tbody></table>
-
-        <div id="session-detail" hidden>
-          <h3>Sessione <code id="sd-id"></code></h3>
-          <dl>
-            <dt>Stato</dt><dd id="sd-phase"></dd>
-            <dt>Repository / commit</dt><dd id="sd-repo"></dd>
-            <dt>Branch di lavoro</dt><dd><code id="sd-branch"></code></dd>
-            <dt>Planner / agenti</dt><dd id="sd-mode"></dd>
-            <dt>Permessi firmati</dt><dd id="sd-approved"></dd>
-            <dt>Esito</dt><dd id="sd-result"></dd>
-            <dt>Draft PR</dt><dd id="sd-pr"></dd>
-          </dl>
-          <p class="error" id="sd-error"></p>
-          <p>
-            <button id="sd-review" hidden>Rivedi e approva i permessi</button>
-            <button id="sd-stop" hidden>Interrompi (revoca la Root)</button>
-          </p>
-          <h4>Cronologia</h4>
-          <ul id="sd-log"></ul>
-          <div id="sd-gemini" hidden>
-            <h4>Chiamate a Gemini (nessun prompt né chiave: solo dati di diagnostica)</h4>
-            <table><thead><tr><th>Ora</th><th>Fase / ruolo</th><th>Esito</th><th>Durata</th><th>Token</th><th>Fine</th><th>Strumenti</th><th>Estratto / errore</th></tr></thead>
-              <tbody id="sd-gemini-rows"></tbody></table>
+        <form id="composer" class="composer">
+          <div class="composer-context">
+            <span class="chip" id="ctx-repo"><svg><use href="#i-branch"/></svg><span>Seleziona una repository</span></span>
+            <button type="button" class="chip action" id="ctx-policy" disabled>
+              <svg><use href="#i-shield"/></svg><span>Configura policy</span></button>
           </div>
-          <h4>Decisioni del Gateway (verifica Rust + OPA)</h4>
-          <table><thead><tr><th>Ora</th><th>Ruolo</th><th>Operazione</th><th>Risorsa</th><th>Esito</th><th>Motivo</th></tr></thead>
-            <tbody id="sd-gateway"></tbody></table>
-        </div>
-      </div>
+          <textarea id="prompt" rows="3" maxlength="4000"
+            placeholder="Descrivi il requisito in linguaggio naturale, es.: Consenti a un amministratore di cercare gli utenti per nome o email."></textarea>
+          <div class="composer-bar">
+            <div class="segmented" role="radiogroup" aria-label="Modalità">
+              <label><input type="radio" name="mode" value="scripted" checked><span>Simulato</span></label>
+              <label><input type="radio" name="mode" value="reference"><span>Riferimento</span></label>
+              <label id="mode-gemini-label"><input type="radio" name="mode" value="gemini" id="mode-gemini"><span>Gemini</span></label>
+            </div>
+            <label class="consent" id="gemini-consent-row" hidden>
+              <input type="checkbox" id="gemini-consent"> Consento l'uso di crediti Gemini</label>
+            <button class="send" type="submit" id="send" title="Avvia il Planning"><svg><use href="#i-send"/></svg></button>
+          </div>
+          <p class="mode-hint" id="mode-hint"></p>
+          <p class="msg" id="composer-msg"></p>
+        </form>
+      </section>
 
-      <div class="tab" id="tab-execution" hidden>
-        <h2>Esecuzione</h2>
-        <p>Dopo la tua firma l'Orchestrator riceve la Root operativa (solo i permessi firmati) e delega un Task alla volta
-          agli agenti Backend, Frontend e Test, ognuno con una propria Child DC. Ogni operazione passa dal Gateway
-          (verifica Rust della VP + OPA); i test girano in un container Docker usa e getta; alla fine si crea una
-          <strong>Draft PR</strong>. Il merge resta sempre a te. Lo stop revoca subito la Root.</p>
-        <table><thead><tr><th></th><th>Sessione</th><th>Repository</th><th>Stato</th><th>Operazioni del Gateway</th><th>Draft PR</th><th>Motivo</th></tr></thead>
-          <tbody id="exec-rows"></tbody></table>
-        <p id="exec-msg"></p>
+      <!-- ---------- Session (live) ---------- -->
+      <section id="session-view" hidden>
+        <a href="#/" class="back">← Home</a>
+        <div class="card session-head">
+          <div class="session-title">
+            <span class="badge" id="sv-status"></span>
+            <h1 id="sv-requirement"></h1>
+            <p class="meta" id="sv-meta"></p>
+          </div>
+          <div class="session-actions">
+            <button id="sv-review" class="btn primary" type="button" hidden>Rivedi i permessi</button>
+            <button id="sv-stop" class="btn danger" type="button" hidden>Interrompi e revoca</button>
+          </div>
+        </div>
+
+        <ol class="stepper" id="sv-steps"></ol>
+        <div id="sv-banner" class="banner" hidden></div>
+
+        <div class="session-grid">
+          <article class="card feed-card">
+            <div class="card-head">
+              <h2>Attività in tempo reale</h2>
+              <label class="follow"><input type="checkbox" id="sv-follow" checked> segui</label>
+            </div>
+            <ol id="sv-feed" class="feed"></ol>
+          </article>
+          <aside class="side">
+            <article class="card pr-card" id="sv-pr" hidden></article>
+            <article class="card">
+              <h2>Riepilogo</h2>
+              <dl class="stats" id="sv-stats"></dl>
+            </article>
+          </aside>
+        </div>
+
+        <details class="card details" id="sv-gemini-box" hidden>
+          <summary>Chiamate a Gemini <span class="muted small">(solo diagnostica: nessun prompt, nessuna chiave)</span></summary>
+          <div class="table-wrap">
+            <table class="table compact"><thead><tr><th>Ora</th><th>Fase / ruolo</th><th>Esito</th><th>Durata</th><th>Token</th><th>Fine</th><th>Strumenti</th><th>Estratto / errore</th></tr></thead>
+              <tbody id="sv-gemini"></tbody></table>
+          </div>
+        </details>
+        <details class="card details">
+          <summary>Decisioni del Gateway <span class="muted small">(verifica Rust della VP + OPA)</span></summary>
+          <div class="table-wrap">
+            <table class="table compact"><thead><tr><th>Ora</th><th>Ruolo</th><th>Operazione</th><th>Risorsa</th><th>Esito</th><th>Motivo</th></tr></thead>
+              <tbody id="sv-gateway"></tbody></table>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <!-- ============ Settings (environment) ============ -->
+  <dialog id="settings-dialog" class="modal">
+    <div class="modal-head"><h2>Impostazioni · stato dell'ambiente</h2>
+      <button type="button" class="icon-btn light" data-close>✕</button></div>
+    <p class="muted">Prima di avviare una sessione tutti i componenti devono essere pronti.</p>
+    <ul class="checks" id="env-rows"></ul>
+    <div class="modal-foot"><button type="button" class="btn secondary" id="env-refresh">Ricontrolla</button></div>
+  </dialog>
+
+  <!-- ============ Policy ============ -->
+  <dialog id="policy-dialog" class="modal">
+    <form id="policy-form">
+      <div class="modal-head"><h2>Policy · <span id="policy-repo"></span></h2>
+        <button type="button" class="icon-btn light" data-close>✕</button></div>
+      <p class="muted">Regole che OPA applica, tramite il Gateway, a ogni operazione degli agenti su questa repository.
+        Sorgente attuale: <strong id="policy-source"></strong>.</p>
+      <label class="field"><span>Branch protetti <em>(uno per riga; deve includere il principale)</em></span>
+        <textarea name="protected_branches" rows="3"></textarea></label>
+      <label class="field"><span>Percorsi che gli agenti non possono modificare <em>(uno per riga, es. <code>.github/</code>; la lettura resta consentita)</em></span>
+        <textarea name="forbidden_path_prefixes" rows="4"></textarea></label>
+      <label class="field"><span>Branch di lavoro degli agenti</span>
+        <input name="work_branch_prefix" readonly></label>
+      <label class="switch"><input type="checkbox" name="allow_pull_request"><span></span>
+        Consenti la creazione di una Draft PR</label>
+      <p class="note">Gli agenti non possono mai fare merge: il merge resta una tua decisione.</p>
+      <p class="msg" id="policy-msg"></p>
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" id="policy-reset">Ripristina</button>
+        <button type="submit" class="btn primary">Salva e applica</button>
       </div>
-    </section>
-  </main>
-  <dialog id="review-dialog">
-    <form method="dialog" id="review-form">
-      <h2>Revisione dei permessi</h2>
-      <p><strong id="rv-repo"></strong> — branch di lavoro <code id="rv-branch"></code></p>
-      <p class="hint" id="rv-simulated"></p>
-      <p><strong id="rv-expiry"></strong></p>
-      <h3>Profilo di test che firmi</h3>
-      <p class="hint" id="rv-profile-summary"></p>
-      <ol id="rv-profile-phases"></ol>
-      <h3>Ipotesi del Planner</h3><ul id="rv-assumptions"></ul>
-      <h3>Incertezze</h3><ul id="rv-uncertainties"></ul>
-      <h3>Permessi richiesti</h3>
-      <p class="hint">Togli la spunta ai permessi che non vuoi concedere. Non è possibile aggiungere permessi non proposti.
-        <button type="button" id="rv-all">Tutti</button> <button type="button" id="rv-none">Nessuno</button></p>
-      <table><thead><tr><th>Concedi</th><th>Operazione</th><th>Branch</th><th>Risorsa</th></tr></thead>
-        <tbody id="rv-rows"></tbody></table>
-      <p><strong id="rv-count"></strong></p>
-      <p class="error" id="rv-warnings"></p>
-      <label>Password dell'Engineer (conferma la firma Ed25519 dei permessi selezionati)
-        <input type="password" id="rv-password" autocomplete="current-password"></label>
-      <p class="error" id="rv-msg"></p>
-      <p>
-        <button type="button" id="rv-approve">Approva e firma</button>
-        <button type="button" id="rv-reject">Rifiuta la proposta (revoca la Root preliminare)</button>
-        <button type="button" id="rv-close">Chiudi senza decidere</button>
-      </p>
     </form>
   </dialog>
+
+  <!-- ============ Permission review ============ -->
+  <dialog id="review-dialog" class="modal wide">
+    <div class="modal-head"><h2>Vuoi approvare questi permessi?</h2>
+      <button type="button" class="icon-btn light" id="rv-close">✕</button></div>
+    <p class="muted"><strong id="rv-repo"></strong> · branch di lavoro <code id="rv-branch"></code></p>
+    <p class="note" id="rv-simulated" hidden></p>
+    <p class="expiry" id="rv-expiry"></p>
+    <details class="plain"><summary>Ipotesi e incertezze del Planner</summary>
+      <div class="two-col">
+        <div><h3>Ipotesi</h3><ul id="rv-assumptions"></ul></div>
+        <div><h3>Incertezze</h3><ul id="rv-uncertainties"></ul></div>
+      </div>
+    </details>
+    <div class="review-tools">
+      <span id="rv-count" class="strong"></span>
+      <span class="muted small">Puoi solo togliere permessi, mai aggiungerne.</span>
+      <span class="grow"></span>
+      <button type="button" class="btn ghost small" id="rv-all">Tutti</button>
+      <button type="button" class="btn ghost small" id="rv-none">Nessuno</button>
+    </div>
+    <div class="table-wrap tall">
+      <table class="table"><thead><tr><th></th><th>Operazione</th><th>Risorsa</th></tr></thead>
+        <tbody id="rv-rows"></tbody></table>
+    </div>
+    <p class="msg warn" id="rv-warnings"></p>
+    <label class="field"><span>Password dell'Engineer <em>(conferma la firma Ed25519 dei permessi selezionati)</em></span>
+      <input type="password" id="rv-password" autocomplete="current-password"></label>
+    <p class="msg error" id="rv-msg"></p>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost danger-text" id="rv-reject">Rifiuta la proposta</button>
+      <button type="button" class="btn primary" id="rv-approve">Approva e firma</button>
+    </div>
+  </dialog>
+
   <script src="/app.js"></script>
 </body>
 </html>

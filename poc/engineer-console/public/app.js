@@ -1,12 +1,24 @@
-// Engineer console front-end. All dynamic text is inserted with textContent
-// (never innerHTML) so repository data cannot inject markup or scripts.
+// Sigillo (Ardesia Labs) — Engineer console front-end.
+// All dynamic text is inserted with textContent (never innerHTML), so
+// repository data, model output and errors cannot inject markup or scripts.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-let selectedRepo = null;
-let geminiAvailable = false;
-let currentSession = null;   // id of the session shown in the Planning tab
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+};
+
+let me = {username: null, gemini: false};
+let selectedRepo = null;          // {repository, policy, policy_source}
+let currentSession = null;        // id shown in the session view
+let sessionData = null;
 let pollTimer = null;
+let homeTimer = null;
+const reviewOffered = new Set();  // sessions whose approval pop-up was already shown
+let feedKeys = [];                // feed entries already rendered for currentSession
 
 async function api(method, path, body) {
   const response = await fetch(path, {
@@ -15,511 +27,592 @@ async function api(method, path, body) {
     ...(body ? {body: JSON.stringify(body)} : {})
   });
   const data = await response.json().catch(() => ({}));
-  if (response.status === 401 && path !== "/api/login") { showLogin(); }
+  if (response.status === 401 && path !== "/api/login") showLogin();
   if (!response.ok) throw new Error(data.error || ("HTTP " + response.status));
   return data;
 }
-
-function cell(row, text, className) {
-  const td = document.createElement("td");
-  td.textContent = text ?? "";
-  if (className) td.className = className;
-  row.appendChild(td);
-  return td;
+function message(id, text, kind) {
+  const node = $(id);
+  node.textContent = text || "";
+  node.className = "msg" + (kind ? " " + kind : "");
 }
+const lines = (text) => text.split("\n").map(s => s.trim()).filter(Boolean);
+const time = (iso) => (iso || "").slice(11, 19);
+const store = {
+  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch { /* private mode */ } }
+};
 
-function message(id, text, isError) {
-  const el = $(id);
-  el.textContent = text;
-  el.className = isError ? "error" : "hint";
-}
-
-function lines(text) {
-  return text.split("\n").map(s => s.trim()).filter(Boolean);
-}
-
-// ---------- login ----------
+// =====================================================================
+// Login
+// =====================================================================
 function showLogin() {
+  clearTimeout(pollTimer); clearTimeout(homeTimer);
   $("login-view").hidden = false; $("app-view").hidden = true;
-  $("logout").hidden = true; $("whoami").textContent = "";
+  for (const d of document.querySelectorAll("dialog[open]")) d.close();
 }
-
 async function showApp(username, gemini) {
-  geminiAvailable = !!gemini;
+  me = {username, gemini: !!gemini};
   $("login-view").hidden = true; $("app-view").hidden = false;
-  $("logout").hidden = false; $("whoami").textContent = "Engineer: " + username;
-  await loadHealth();
+  $("whoami").textContent = username;
+  $("avatar").textContent = (username || "?").slice(0, 1).toUpperCase();
+  $("hello-name").textContent = username ? ", " + username : "";
+  updateModeAvailability();
+  refreshEnvDot();
+  await route();
 }
-
 $("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
   try {
     const data = await api("POST", "/api/login",
       {username: form.get("username"), password: form.get("password")});
-    event.target.reset(); $("login-error").textContent = "";
-    const me = await api("GET", "/api/me");
-    await showApp(data.username, me.gemini_available);
-  } catch (error) { $("login-error").textContent = error.message; }
+    event.target.reset(); message("login-error", "");
+    const who = await api("GET", "/api/me");
+    await showApp(data.username, who.gemini_available);
+  } catch (error) { message("login-error", error.message, "error"); }
 });
-
 $("logout").addEventListener("click", async () => {
   await api("POST", "/api/logout").catch(() => {});
   showLogin();
 });
 
-// ---------- tabs ----------
-for (const button of document.querySelectorAll("nav button")) {
-  button.addEventListener("click", async () => {
-    for (const b of document.querySelectorAll("nav button")) b.classList.remove("active");
-    button.classList.add("active");
-    for (const tab of document.querySelectorAll(".tab")) tab.hidden = true;
-    $("tab-" + button.dataset.tab).hidden = false;
-    if (button.dataset.tab === "env") await loadHealth();
-    if (button.dataset.tab === "repo") await loadRepos();
-    if (button.dataset.tab === "policy") renderPolicy();
-    if (button.dataset.tab === "request") await loadRequests();
-    if (button.dataset.tab === "planning") await loadPlanning();
-    if (button.dataset.tab === "execution") await loadExecution();
-  });
+// =====================================================================
+// Routing: #/ (home) and #/session/<id> (live session)
+// =====================================================================
+async function route() {
+  if ($("app-view").hidden) return;
+  clearTimeout(pollTimer); clearTimeout(homeTimer);
+  const match = /^#\/session\/(s-[a-f0-9]{12})$/u.exec(location.hash);
+  $("home-view").hidden = !!match;
+  $("session-view").hidden = !match;
+  if (match) {
+    if (currentSession !== match[1]) { currentSession = match[1]; feedKeys = []; $("sv-feed").replaceChildren(); }
+    await loadSession();
+  } else {
+    currentSession = null;
+    await loadHome();
+  }
+  window.scrollTo({top: 0});
 }
+window.addEventListener("hashchange", route);
+for (const dialog of document.querySelectorAll("dialog"))
+  for (const button of dialog.querySelectorAll("[data-close]"))
+    button.addEventListener("click", () => dialog.close());
 
-// ---------- environment ----------
+// =====================================================================
+// Settings: environment status
+// =====================================================================
 async function loadHealth() {
   const rows = $("env-rows"); rows.replaceChildren();
   try {
     const data = await api("GET", "/api/health");
     for (const check of data.checks) {
-      const tr = document.createElement("tr");
-      cell(tr, check.label);
-      cell(tr, check.ok ? "OK" : "NON PRONTO", check.ok ? "ok" : "fail");
-      cell(tr, check.ok ? check.detail : (check.detail ? check.detail + " — " : "") + check.hint);
-      rows.appendChild(tr);
+      const li = el("li", check.ok ? "ok" : "fail");
+      li.appendChild(el("span", "c-ico"));
+      const body = el("div");
+      body.appendChild(el("div", "c-label", check.label + (check.ok ? "" : " · non pronto")));
+      body.appendChild(el("div", "c-detail",
+        check.ok ? check.detail : (check.detail ? check.detail + " — " : "") + (check.hint || "")));
+      li.appendChild(body); rows.appendChild(li);
     }
+    setEnvDot(data.checks.every(c => c.ok));
   } catch (error) {
-    const tr = document.createElement("tr"); cell(tr, "Errore"); cell(tr, error.message, "fail");
-    rows.appendChild(tr);
+    const li = el("li", "fail"); li.appendChild(el("span", "c-ico"));
+    li.appendChild(el("div", "c-label", error.message)); rows.appendChild(li);
+    setEnvDot(false);
   }
 }
+function setEnvDot(ok) { $("env-dot").className = "dot " + (ok ? "ok" : "fail"); }
+async function refreshEnvDot() {
+  try { const data = await api("GET", "/api/health"); setEnvDot(data.checks.every(c => c.ok)); }
+  catch { setEnvDot(false); }
+}
+$("open-settings").addEventListener("click", () => { $("settings-dialog").showModal(); loadHealth(); });
 $("env-refresh").addEventListener("click", loadHealth);
 
-// ---------- repositories ----------
+// =====================================================================
+// Home: repositories, sessions, composer
+// =====================================================================
+async function loadHome() {
+  await Promise.all([loadRepos(), loadSessionList()]);
+  const remembered = store.get("sigillo.repo");
+  if (!selectedRepo && remembered) await selectRepo(remembered, true);
+  renderContext();
+}
+
 async function loadRepos() {
   const rows = $("repo-rows"); rows.replaceChildren();
   try {
     const data = await api("GET", "/api/repos");
-    $("repo-org").textContent = data.org;
+    $("repo-org").textContent = "Organizzazione Gitea: " + data.org;
     for (const repo of data.repositories) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      const button = document.createElement("button");
-      button.textContent = "Seleziona";
-      button.addEventListener("click", () => selectRepo(repo.name));
-      td.appendChild(button); tr.appendChild(td);
-      cell(tr, repo.name); cell(tr, repo.default_branch); cell(tr, repo.updated_at);
+      const tr = el("tr");
+      if (selectedRepo?.repository.name === repo.name) tr.classList.add("selected");
+      const name = el("td");
+      name.appendChild(el("span", "repo-owner", (repo.owner || data.org) + " / "));
+      name.appendChild(el("span", "repo-name", repo.name));
+      tr.appendChild(name);
+      const branch = el("td"); branch.appendChild(el("span", "pill", repo.default_branch)); tr.appendChild(branch);
+      const policy = el("td");
+      const button = el("button", "btn ghost small", "Configura");
+      button.type = "button";
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        await selectRepo(repo.name); openPolicy();
+      });
+      policy.appendChild(button); tr.appendChild(policy);
+      tr.appendChild(el("td", "muted small", (repo.updated_at || "").slice(0, 10)));
+      const pick = el("td"); pick.appendChild(el("span", "pill brand",
+        selectedRepo?.repository.name === repo.name ? "Selezionata" : "Seleziona"));
+      tr.appendChild(pick);
+      tr.addEventListener("click", () => selectRepo(repo.name));
       rows.appendChild(tr);
     }
     if (!data.repositories.length) {
-      const tr = document.createElement("tr"); cell(tr, ""); cell(tr, "Nessuna repository: importane una.");
-      rows.appendChild(tr);
+      const tr = el("tr"); const td = el("td", "muted", "Nessuna repository: importane una da GitHub.");
+      td.colSpan = 5; tr.appendChild(td); rows.appendChild(tr);
     }
   } catch (error) {
-    const tr = document.createElement("tr"); cell(tr, ""); cell(tr, error.message, "fail");
-    rows.appendChild(tr);
+    const tr = el("tr"); const td = el("td", "deny", error.message); td.colSpan = 5;
+    tr.appendChild(td); rows.appendChild(tr);
   }
 }
 
-async function selectRepo(name) {
+async function selectRepo(name, quiet) {
   try {
     selectedRepo = await api("GET", "/api/repos/" + encodeURIComponent(name));
+    store.set("sigillo.repo", name);
+    if (!quiet) await loadRepos();
+    renderContext();
+  } catch (error) { if (!quiet) message("import-msg", error.message, "error"); }
+}
+
+function renderContext() {
+  const chip = $("ctx-repo"), label = chip.querySelector("span");
+  if (selectedRepo) {
     const r = selectedRepo.repository;
-    $("repo-detail").hidden = false;
-    $("sel-name").textContent = r.owner + "/" + r.name;
-    $("sel-branch").textContent = r.default_branch;
-    $("sel-sha").textContent = r.head_sha || "(repository vuota)";
-    $("sel-protected").textContent = r.protected_branches.join(", ") || "nessuno (attenzione)";
-  } catch (error) { message("import-msg", error.message, true); }
+    label.textContent = r.owner + "/" + r.name + " · " + r.default_branch +
+      (r.head_sha ? " @ " + r.head_sha.slice(0, 8) : "");
+    chip.classList.add("active");
+    $("ctx-policy").querySelector("span").textContent = "Policy " +
+      (selectedRepo.policy_source === "saved" ? "salvata" : "predefinita") + " · configura";
+  } else {
+    label.textContent = "Seleziona una repository";
+    chip.classList.remove("active");
+    $("ctx-policy").querySelector("span").textContent = "Configura policy";
+  }
+  $("ctx-policy").disabled = !selectedRepo;
+  updateSend();
 }
 
 $("import-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
-  message("import-msg", "Import in corso (può richiedere un minuto)...");
+  message("import-msg", "Import in corso (può richiedere un minuto)…");
   try {
     const data = await api("POST", "/api/repos/import",
       {clone_url: form.get("clone_url"), name: form.get("name")});
-    message("import-msg", "Importata: " + data.repository.owner + "/" + data.repository.name);
+    message("import-msg", "Importata: " + data.repository.owner + "/" + data.repository.name +
+      ". Il branch principale è protetto (nessun push diretto).", "ok");
     event.target.reset();
-    await loadRepos();
     await selectRepo(data.repository.name);
-  } catch (error) { message("import-msg", error.message, true); }
+  } catch (error) { message("import-msg", error.message, "error"); }
 });
 
-// ---------- policy ----------
-function renderPolicy() {
-  const has = !!selectedRepo;
-  $("policy-none").hidden = has; $("policy-form").hidden = !has;
-  if (!has) return;
-  const p = selectedRepo.policy, f = $("policy-form").elements;
-  const sources = {"default": "predefinita", "saved": "salvata"};
-  $("policy-source").textContent = sources[selectedRepo.policy_source] ??
-    "predefinita (quella salvata non era più valida)";
-  f.protected_branches.value = p.protected_branches.join("\n");
-  f.work_branch_prefix.value = p.work_branch_prefix;
-  f.forbidden_path_prefixes.value = p.forbidden_path_prefixes.join("\n");
-  f.profile_image.value = p.project_profile.image;
-  f.profile_phases.value = JSON.stringify(p.project_profile.phases, null, 2);
-  f.profile_test_roots.value = p.project_profile.test_sources.roots.join("\n");
-  f.profile_test_suffixes.value = p.project_profile.test_sources.suffixes.join("\n");
-  f.allow_pull_request.checked = p.allow_pull_request;
+// ---------- sessions list ----------
+const PHASES = {
+  planning: "Planning in corso",
+  awaiting_review: "In attesa della tua approvazione",
+  approving: "Firma in corso",
+  executing: "Esecuzione in corso",
+  completed: "Completata",
+  stopping: "Revoca in corso",
+  stopped: "Terminata",
+  failed: "Errore",
+  interrupted: "Interrotta (console riavviata)"
+};
+const BUSY = new Set(["planning", "approving", "executing", "stopping"]);
+const phaseClass = (p) => p === "completed" ? "ok" : p === "failed" ? "fail" :
+  p === "awaiting_review" ? "wait" : BUSY.has(p) ? "busy" : "";
+
+async function loadSessionList() {
+  const list = $("session-list"); list.replaceChildren();
+  const data = await api("GET", "/api/sessions").catch(() => ({sessions: []}));
+  for (const s of data.sessions.slice(0, 40)) {
+    const li = el("li");
+    li.appendChild(el("span", "s-dot " + phaseClass(s.phase)));
+    li.appendChild(el("span", "s-text", s.requirement));
+    li.appendChild(el("span", "s-meta", s.repository.name + " · " + (PHASES[s.phase] || s.phase) + " · " +
+      s.created_at.replace("T", " ").slice(5, 16) + (s.pull_request ? " · PR #" + s.pull_request.number : "")));
+    li.title = s.requirement;
+    li.addEventListener("click", () => { location.hash = "#/session/" + s.id; });
+    list.appendChild(li);
+  }
+  if (!data.sessions.length) list.appendChild(el("li", "empty", "Ancora nessuna sessione: scrivi il primo requisito qui sotto."));
+  if (data.sessions.some(s => BUSY.has(s.phase)) && !$("home-view").hidden)
+    homeTimer = setTimeout(loadSessionList, 4000);
 }
 
+// ---------- composer ----------
+const MODE_HINTS = {
+  scripted: "Simulato · gratuito, nessuna IA: il Planner sceglie i file per parole chiave e gli agenti scrivono solo commenti marcati. Utile per provare il flusso.",
+  reference: "Riferimento · gratuito, nessuna IA: gli agenti scrivono la soluzione nota del ricercatore (solo iam-console-poc, sospensione degli account).",
+  gemini: "Gemini · a pagamento: Planner, Orchestratore e agenti ragionano con il modello, con limiti di chiamate e token per sessione."
+};
+function currentMode() { return document.querySelector("input[name=mode]:checked")?.value || "scripted"; }
+function updateModeAvailability() {
+  $("mode-gemini").disabled = !me.gemini;
+  $("mode-gemini-label").title = me.gemini ? "" : "Non disponibile: GEMINI_API_KEY non configurata nel file .env";
+  if (!me.gemini && currentMode() === "gemini") document.querySelector("input[name=mode][value=scripted]").checked = true;
+  onModeChange();
+}
+function onModeChange() {
+  const mode = currentMode();
+  $("gemini-consent-row").hidden = mode !== "gemini";
+  $("mode-hint").textContent = MODE_HINTS[mode];
+  updateSend();
+}
+function updateSend() {
+  const text = $("prompt").value.trim();
+  $("send").disabled = !selectedRepo || text.length < 10 ||
+    (currentMode() === "gemini" && !$("gemini-consent").checked);
+}
+for (const radio of document.querySelectorAll("input[name=mode]")) radio.addEventListener("change", onModeChange);
+$("gemini-consent").addEventListener("change", updateSend);
+$("prompt").addEventListener("input", () => {
+  const t = $("prompt"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 260) + "px";
+  updateSend();
+});
+$("prompt").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) $("composer").requestSubmit();
+});
+$("ctx-policy").addEventListener("click", openPolicy);
+
+$("composer").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if ($("send").disabled) return;
+  $("send").disabled = true;
+  message("composer-msg", "Avvio del Planning…");
+  try {
+    const {request} = await api("POST", "/api/requests",
+      {repository: selectedRepo.repository.name, requirement: $("prompt").value});
+    const {session} = await api("POST", "/api/requests/" + request.id + "/planning",
+      {mode: currentMode(), gemini_consent: $("gemini-consent").checked});
+    $("prompt").value = ""; $("gemini-consent").checked = false; message("composer-msg", "");
+    location.hash = "#/session/" + session.id;
+  } catch (error) { message("composer-msg", error.message, "error"); updateSend(); }
+});
+
+// =====================================================================
+// Policy dialog (OPA rules only; the project test profile is kept as is)
+// =====================================================================
+function openPolicy() {
+  if (!selectedRepo) return;
+  const p = selectedRepo.policy, f = $("policy-form").elements, r = selectedRepo.repository;
+  $("policy-repo").textContent = r.owner + "/" + r.name;
+  $("policy-source").textContent = {default: "predefinita", saved: "salvata"}[selectedRepo.policy_source] ??
+    "predefinita (quella salvata non era più valida)";
+  f.protected_branches.value = p.protected_branches.join("\n");
+  f.forbidden_path_prefixes.value = p.forbidden_path_prefixes.join("\n");
+  f.work_branch_prefix.value = p.work_branch_prefix + "<sessione>";
+  f.allow_pull_request.checked = p.allow_pull_request;
+  message("policy-msg", "");
+  if (!$("policy-dialog").open) $("policy-dialog").showModal();
+}
 $("policy-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const f = event.target.elements, r = selectedRepo.repository;
+  const f = event.target.elements, r = selectedRepo.repository, p = selectedRepo.policy;
   try {
-    let phases;
-    try { phases = JSON.parse(f.profile_phases.value); }
-    catch { throw Error("Le fasi del profilo di test non sono JSON valido"); }
     selectedRepo = await api("PUT", "/api/repos/" + encodeURIComponent(r.name) + "/policy", {
-      version: 2, repository: {owner: r.owner, name: r.name}, base_branch: r.default_branch,
+      version: 2, repository: {owner: r.owner, name: r.name}, base_branch: p.base_branch ?? r.default_branch,
       protected_branches: lines(f.protected_branches.value),
-      work_branch_prefix: f.work_branch_prefix.value.trim(),
+      work_branch_prefix: p.work_branch_prefix,
       forbidden_path_prefixes: lines(f.forbidden_path_prefixes.value),
-      project_profile: {version: 1, image: f.profile_image.value.trim(), phases,
-        test_sources: {roots: lines(f.profile_test_roots.value),
-          suffixes: lines(f.profile_test_suffixes.value)}},
+      // Not edited here: kept exactly as the repository's current profile.
+      project_profile: p.project_profile,
       allow_pull_request: f.allow_pull_request.checked,
       agents_may_merge: false
     });
-    renderPolicy();
-    if (selectedRepo.opa_published) message("policy-msg", "Policy salvata e applicata da OPA.");
-    else message("policy-msg", "Policy salvata, ma NON applicata: " +
-      (selectedRepo.opa_error || "OPA non raggiungibile") + ". Ricontrolla la pagina Ambiente.", true);
-  } catch (error) { message("policy-msg", error.message, true); }
+    openPolicy(); renderContext();
+    if (selectedRepo.opa_published) message("policy-msg", "Policy salvata e applicata da OPA.", "ok");
+    else message("policy-msg", "Policy salvata ma NON applicata: " +
+      (selectedRepo.opa_error || "OPA non raggiungibile") + ". Controlla le Impostazioni.", "error");
+  } catch (error) { message("policy-msg", error.message, "error"); }
 });
-
 $("policy-reset").addEventListener("click", async () => {
-  if (selectedRepo) await selectRepo(selectedRepo.repository.name);
-  renderPolicy(); message("policy-msg", "Valori ricaricati (non ancora salvati).");
+  if (selectedRepo) await selectRepo(selectedRepo.repository.name, true);
+  openPolicy(); message("policy-msg", "Valori ricaricati (non ancora salvati).");
 });
 
-// ---------- requirement ----------
-async function loadRequests() {
-  const has = !!selectedRepo;
-  $("request-none").hidden = has; $("request-form").hidden = !has;
-  if (has) $("request-repo").textContent = selectedRepo.repository.owner + "/" + selectedRepo.repository.name;
-  const rows = $("request-rows"); rows.replaceChildren();
-  try {
-    const data = await api("GET", "/api/requests");
-    for (const r of data.requests) {
-      const tr = document.createElement("tr");
-      cell(tr, r.created_at); cell(tr, r.repository.owner + "/" + r.repository.name);
-      cell(tr, r.base_sha.slice(0, 12)); cell(tr, r.requirement); cell(tr, r.status);
-      rows.appendChild(tr);
-    }
-  } catch (error) { message("request-msg", error.message, true); }
-}
-
-$("request-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    await api("POST", "/api/requests", {
-      repository: selectedRepo.repository.name,
-      requirement: event.target.elements.requirement.value
-    });
-    event.target.reset(); message("request-msg", "Richiesta salvata.");
-    await loadRequests();
-  } catch (error) { message("request-msg", error.message, true); }
-});
-
-// ---------- planning ----------
-const PHASES = {
-  planning: "Planning in corso (Root preliminare di sola lettura)",
-  awaiting_review: "In attesa della tua revisione",
-  approving: "Firma in corso",
-  executing: "Esecuzione in corso (Root operativa attiva)",
-  completed: "Completata (Root revocata)",
-  stopping: "Revoca in corso",
-  stopped: "Terminata (Root revocata)",
-  failed: "Errore",
-  interrupted: "Non più attiva (console riavviata)"
-};
-const BUSY = new Set(["planning", "approving", "executing", "stopping"]);
+// =====================================================================
+// Session view: live activity, steps, approval pop-up, Draft PR
+// =====================================================================
+const MODES = {gemini: "Gemini", reference: "Soluzione di riferimento (nessuna IA)",
+  scripted: "Simulato (nessuna IA)"};
+const STEPS = ["Planning", "Approvazione", "Esecuzione", "Test", "Draft PR"];
 
 /** "gitea://gitea.local/o/r/branches/feature%2Fx/files/a/b.ts" -> {branch, path} */
 function describeResource(uri) {
   const m = /^gitea:\/\/[^/]+\/[^/]+\/[^/]+(?:\/branches\/([^/]+)(?:\/files\/(.+))?)?$/u.exec(uri || "");
   if (!m) return {branch: "", path: uri || ""};
   return {branch: m[1] ? decodeURIComponent(m[1]) : "",
-    path: m[2] ? m[2].split("/").map(decodeURIComponent).join("/") : (m[1] ? "(branch)" : "(repository)")};
+    path: m[2] ? m[2].split("/").map(decodeURIComponent).join("/") : (m[1] ? "intero branch" : "repository")};
 }
 
-function li(list, text) {
-  const item = document.createElement("li"); item.textContent = text; list.appendChild(item);
-}
-
-async function loadPlanning() {
-  $("mode-gemini").disabled = !geminiAvailable;
-  $("gemini-state").textContent = geminiAvailable ? "" : "— non disponibile: GEMINI_API_KEY non configurata";
-  const select = $("plan-request"); select.replaceChildren();
-  try {
-    const data = await api("GET", "/api/requests");
-    for (const r of data.requests) {
-      const option = document.createElement("option");
-      option.value = r.id;
-      option.textContent = r.repository.owner + "/" + r.repository.name + " @" + r.base_sha.slice(0, 8) +
-        " — " + r.requirement.slice(0, 90);
-      select.appendChild(option);
-    }
-    if (!data.requests.length) {
-      const option = document.createElement("option");
-      option.value = ""; option.textContent = "Nessuna richiesta: creane una nella pagina Requisito";
-      select.appendChild(option);
-    }
-  } catch (error) { message("plan-msg", error.message, true); }
-  await loadSessions();
-  if (currentSession) await showSession(currentSession);
-}
-
-async function loadSessions() {
-  const rows = $("session-rows"); rows.replaceChildren();
-  const data = await api("GET", "/api/sessions").catch(() => ({sessions: []}));
-  for (const s of data.sessions) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    const button = document.createElement("button");
-    button.textContent = "Apri";
-    button.addEventListener("click", () => showSession(s.id));
-    td.appendChild(button); tr.appendChild(td);
-    cell(tr, s.created_at.replace("T", " ").slice(0, 19));
-    cell(tr, s.repository.owner + "/" + s.repository.name);
-    cell(tr, s.requirement.slice(0, 80));
-    cell(tr, PHASES[s.phase] || s.phase, s.phase === "failed" ? "fail" : (s.phase === "completed" ? "ok" : ""));
-    rows.appendChild(tr);
-  }
-  return data.sessions;
-}
-
-$("plan-form").addEventListener("change", () => {
-  $("gemini-consent-row").hidden = $("plan-form").elements.mode.value !== "gemini";
-});
-
-$("plan-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const f = event.target.elements;
-  if (!f.request.value) return message("plan-msg", "Crea prima una richiesta.", true);
-  try {
-    const data = await api("POST", "/api/requests/" + f.request.value + "/planning",
-      {mode: f.mode.value, gemini_consent: f.gemini_consent.checked});
-    message("plan-msg", "Planning avviato.");
-    await loadSessions();
-    await showSession(data.session.id);
-  } catch (error) { message("plan-msg", error.message, true); }
-});
-
-async function showSession(id) {
+async function loadSession() {
   clearTimeout(pollTimer);
-  currentSession = id;
+  const id = currentSession;
   let s;
   try { s = (await api("GET", "/api/sessions/" + id)).session; }
-  catch (error) { message("plan-msg", error.message, true); return; }
-  $("session-detail").hidden = false;
-  $("sd-id").textContent = s.id;
-  $("sd-phase").textContent = PHASES[s.phase] || s.phase;
-  $("sd-phase").className = s.phase === "failed" ? "fail" : (s.phase === "completed" ? "ok" : "");
-  $("sd-repo").textContent = s.repository.owner + "/" + s.repository.name + " @ " + s.base_sha.slice(0, 12);
-  $("sd-branch").textContent = s.work_branch;
-  $("sd-mode").textContent = {gemini: "Gemini",
-    reference: "Soluzione di riferimento del ricercatore (nessuna IA)",
-    scripted: "Simulato (nessuna IA: le modifiche sono solo commenti marcati)"}[s.mode] ?? s.mode;
-  $("sd-approved").textContent = s.approval ? s.approval.permission_count + " su " + s.proposal.permissions.length : "—";
-  const r = s.result;
-  $("sd-result").textContent = r ? (r.pr_created ? "Draft PR creata" : "Nessuna PR") +
-    (r.executed_tasks != null ? " · " + r.executed_tasks + " Task eseguiti" : "") + (r.reason ? " · " + r.reason : "") : "—";
-  showPullRequest($("sd-pr"), s.pull_request);
-  $("sd-error").textContent = s.error || "";
-  $("sd-review").hidden = s.phase !== "awaiting_review";
-  $("sd-stop").hidden = s.phase !== "executing";
-  const log = $("sd-log"); log.replaceChildren();
-  for (const entry of s.log) li(log, entry.at.slice(11, 19) + " — " + entry.text);
-  const calls = s.model_calls ?? [];
-  $("sd-gemini").hidden = !calls.length;
-  const gemRows = $("sd-gemini-rows"); gemRows.replaceChildren();
-  for (const c of calls) {
-    const tr = document.createElement("tr");
-    cell(tr, (c.at || "").slice(11, 19)); cell(tr, c.phase);
-    cell(tr, c.ok ? "ok" : (c.layer === "budget" ? "scartata (limite)" : "errore"), c.ok ? "allow" : "deny");
-    cell(tr, (c.ms / 1000).toFixed(1) + " s");
-    cell(tr, c.total_tokens != null ? c.input_tokens + " + " + c.output_tokens + " = " + c.total_tokens : "—");
-    cell(tr, c.finish || ""); cell(tr, (c.tools || []).join(", "));
-    cell(tr, c.error || c.preview || "");
-    gemRows.appendChild(tr);
+  catch (error) {
+    $("sv-requirement").textContent = "Sessione non disponibile";
+    $("sv-meta").textContent = error.message; return;
   }
-  const rows = $("sd-gateway"); rows.replaceChildren();
-  for (const d of s.gateway_decisions) {
-    const tr = document.createElement("tr"); const r = describeResource(d.resource);
-    cell(tr, (d.at || "").slice(11, 19)); cell(tr, d.agent); cell(tr, d.tool);
-    cell(tr, (r.branch ? r.branch + ": " : "") + r.path);
-    cell(tr, d.decision === "allow" ? "consentita" : "negata", d.decision === "allow" ? "allow" : "deny");
-    cell(tr, (d.reason || "") + (d.detail ? " — " + d.detail : ""));
+  if (id !== currentSession) return;
+  sessionData = s;
+  renderHeader(s); renderSteps(s); renderBanner(s); renderFeed(s); renderStats(s); renderPr(s);
+  renderGemini(s); renderGateway(s);
+  if (s.phase === "awaiting_review" && !reviewOffered.has(s.id) && !$("review-dialog").open) {
+    reviewOffered.add(s.id); openReview(s);
+  }
+  if (BUSY.has(s.phase) || s.phase === "awaiting_review")
+    pollTimer = setTimeout(() => { if (currentSession === id && !$("session-view").hidden) loadSession(); }, 2000);
+}
+
+function renderHeader(s) {
+  const badge = $("sv-status");
+  badge.textContent = PHASES[s.phase] || s.phase;
+  badge.className = "badge " + phaseClass(s.phase);
+  $("sv-requirement").textContent = s.requirement;
+  const meta = $("sv-meta"); meta.replaceChildren();
+  meta.append(s.repository.owner + "/" + s.repository.name + " @ ");
+  meta.appendChild(el("code", "", s.base_sha.slice(0, 10)));
+  meta.append(" · branch ");
+  meta.appendChild(el("code", "", s.work_branch));
+  meta.append(" · " + (MODES[s.mode] || s.mode) + " · " + s.id);
+  $("sv-review").hidden = s.phase !== "awaiting_review";
+  $("sv-stop").hidden = s.phase !== "executing";
+}
+
+function reachedStep(s) {
+  if (s.pull_request) return 4;
+  if (s.log.some(l => /Test avviati nel Runner/u.test(l.text))) return 3;
+  if (s.approval) return 2;
+  if (s.proposal || s.phase === "awaiting_review") return 1;
+  return 0;
+}
+function renderSteps(s) {
+  const reached = reachedStep(s), list = $("sv-steps"); list.replaceChildren();
+  const ended = !BUSY.has(s.phase) && s.phase !== "awaiting_review";
+  STEPS.forEach((name, i) => {
+    let state = i < reached ? "done" : i === reached ? "active" : "";
+    if (i === reached && s.phase === "completed") state = "done";
+    if (i === reached && ended && s.phase !== "completed") state = "failed";
+    const li = el("li", "step " + state);
+    li.appendChild(el("span", "step-dot", state === "done" ? "✓" : state === "failed" ? "!" : String(i + 1)));
+    li.appendChild(el("span", "", name));
+    list.appendChild(li);
+  });
+}
+
+function renderBanner(s) {
+  const banner = $("sv-banner");
+  let text = "", kind = "";
+  if (s.phase === "failed") { text = s.error || "Esecuzione interrotta."; kind = "fail"; }
+  else if (s.phase === "completed") {
+    text = s.pull_request ? "Completata: la Draft PR è pronta per la tua revisione. Il merge resta una tua decisione."
+      : "Completata senza Draft PR" + (s.result?.reason ? ": " + s.result.reason : "."); kind = "ok";
+  } else if (s.phase === "awaiting_review") { text = "La proposta è pronta: approva o rifiuta i permessi richiesti."; kind = "wait"; }
+  else if (s.phase === "stopped") { text = "Sessione terminata: la Root è stata revocata."; kind = "wait"; }
+  else if (s.phase === "interrupted") { text = "La console è stata riavviata durante questa sessione."; kind = "wait"; }
+  banner.hidden = !text; banner.textContent = text; banner.className = "banner " + kind;
+}
+
+function classifyLog(text) {
+  if (/^Errore|non riuscito|FAIL|Test fallito|Errore di compilazione|scartata|NO-GO/u.test(text)) return "fail";
+  if (/PASS|Completata|Draft PR creata|registrata su|accettati/u.test(text)) return "ok";
+  if (/MAX_TOKENS|limite di sicurezza/u.test(text)) return "warn";
+  if (/Proposta pronta|Avvio dell'esecuzione|Test avviati|Root operativa|Agenti con|Agenti senza|Planner:/u.test(text)) return "milestone";
+  return "";
+}
+function feedEvents(s) {
+  const events = s.log.map((l, i) => ({key: "l" + i, at: l.at, kind: classifyLog(l.text), text: l.text}));
+  s.gateway_decisions.forEach((d, i) => {
+    const r = describeResource(d.resource);
+    const runnerFail = d.decision === "allow" && /provider_unavailable/u.test(d.reason || "");
+    events.push({key: "g" + i, at: d.at, kind: d.decision !== "allow" ? "fail denied" : runnerFail ? "warn gw" : "gw",
+      role: d.agent, op: d.tool, path: r.path,
+      verdict: d.decision !== "allow" ? "negata dal Gateway" : runnerFail ? "eseguita: test non superati" : "consentita"});
+  });
+  return events.sort((a, b) => (a.at || "").localeCompare(b.at || ""));
+}
+function renderFeed(s) {
+  const feed = $("sv-feed"), events = feedEvents(s);
+  // Append only new entries (events are time-ordered and append-only).
+  const known = new Set(feedKeys);
+  if (events.slice(0, feedKeys.length).some((e, i) => e.key !== feedKeys[i])) { feed.replaceChildren(); feedKeys = []; known.clear(); }
+  for (const e of events) {
+    if (known.has(e.key)) continue;
+    const li = el("li", e.kind);
+    li.appendChild(el("span", "t", time(e.at)));
+    li.appendChild(el("span", "ico"));
+    const txt = el("span", "txt");
+    if (e.op) {
+      txt.appendChild(el("span", "role " + e.role, e.role));
+      txt.appendChild(el("span", "op", e.op + " "));
+      txt.append(e.path + " — " + e.verdict);
+    } else txt.textContent = e.text;
+    li.appendChild(txt); feed.appendChild(li); feedKeys.push(e.key);
+  }
+  if ($("sv-follow").checked) feed.scrollTop = feed.scrollHeight;
+}
+
+function stat(dl, label, value, cls) {
+  const box = el("div"); box.appendChild(el("dt", "", label)); box.appendChild(el("dd", cls || "", value)); dl.appendChild(box);
+}
+function renderStats(s) {
+  const dl = $("sv-stats"); dl.replaceChildren();
+  const allowed = s.gateway_decisions.filter(d => d.decision === "allow").length;
+  const denied = s.gateway_decisions.length - allowed;
+  const calls = s.model_calls ?? [];
+  const tokens = calls.reduce((n, c) => n + (c.total_tokens || 0), 0);
+  const first = s.log[0]?.at, last = s.log.at(-1)?.at;
+  const minutes = first && last ? Math.max(0, Math.round((Date.parse(last) - Date.parse(first)) / 60000)) : 0;
+  stat(dl, "Consentite", allowed, "ok");
+  stat(dl, "Negate", denied, denied ? "fail" : "");
+  stat(dl, "Permessi firmati", s.approval ? s.approval.permission_count + "/" + s.proposal.permissions.length : "—");
+  stat(dl, "Durata", minutes + " min");
+  if (calls.length) { stat(dl, "Chiamate IA", calls.length); stat(dl, "Token", tokens.toLocaleString("it-IT")); }
+}
+function renderPr(s) {
+  const card = $("sv-pr"); card.replaceChildren();
+  card.hidden = !s.pull_request;
+  if (!s.pull_request) return;
+  const pr = s.pull_request;
+  const h = el("h2"); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use"); use.setAttribute("href", "#i-pr");
+  svg.appendChild(use); h.appendChild(svg); h.append("Draft PR #" + pr.number); card.appendChild(h);
+  card.appendChild(el("p", "", pr.title));
+  const a = el("a", "", "Apri in Gitea");
+  // Gitea is published on the local machine only.
+  try { a.href = "http://127.0.0.1:3000" + new URL(pr.url).pathname; } catch { a.href = "#"; }
+  a.target = "_blank"; a.rel = "noopener"; card.appendChild(a);
+}
+function renderGemini(s) {
+  const calls = s.model_calls ?? [];
+  $("sv-gemini-box").hidden = !calls.length;
+  const rows = $("sv-gemini"); rows.replaceChildren();
+  for (const c of calls) {
+    const tr = el("tr");
+    tr.appendChild(el("td", "", time(c.at))); tr.appendChild(el("td", "", c.phase));
+    tr.appendChild(el("td", c.ok ? "allow" : "deny", c.ok ? "ok" : (c.layer === "budget" ? "scartata (limite)" : "errore")));
+    tr.appendChild(el("td", "", (c.ms / 1000).toFixed(1) + " s"));
+    tr.appendChild(el("td", "", c.total_tokens != null ? c.input_tokens + " + " + c.output_tokens + " = " + c.total_tokens : "—"));
+    tr.appendChild(el("td", "", c.finish || "")); tr.appendChild(el("td", "", (c.tools || []).join(", ")));
+    tr.appendChild(el("td", "", c.error || c.preview || ""));
     rows.appendChild(tr);
   }
-  sessionCache = s;
-  if (BUSY.has(s.phase)) pollTimer = setTimeout(async () => {
-    if (currentSession === id && !$("tab-planning").hidden) { await showSession(id); await loadSessions(); }
-  }, 2500);
 }
-let sessionCache = null;
-
-$("sd-review").addEventListener("click", () => openReview(sessionCache));
-$("sd-stop").addEventListener("click", () => stopSession(currentSession, "plan-msg"));
-
-async function stopSession(id, msgId) {
-  if (!confirm("Revocare la Root di questa sessione? Gli agenti non potranno più operare.")) return;
-  try {
-    await api("POST", "/api/sessions/" + id + "/stop", {});
-    message(msgId, "Root revocata.");
-  } catch (error) { message(msgId, error.message, true); }
-  if (!$("tab-planning").hidden) { await loadSessions(); await showSession(id); }
-  if (!$("tab-execution").hidden) await loadExecution();
+function renderGateway(s) {
+  const rows = $("sv-gateway"); rows.replaceChildren();
+  for (const d of s.gateway_decisions) {
+    const tr = el("tr"), r = describeResource(d.resource);
+    tr.appendChild(el("td", "", time(d.at))); tr.appendChild(el("td", "", d.agent)); tr.appendChild(el("td", "", d.tool));
+    tr.appendChild(el("td", "", (r.branch ? r.branch + ": " : "") + r.path));
+    tr.appendChild(el("td", d.decision === "allow" ? "allow" : "deny", d.decision === "allow" ? "consentita" : "negata"));
+    tr.appendChild(el("td", "", (d.reason || "") + (d.detail ? " — " + d.detail : "")));
+    rows.appendChild(tr);
+  }
 }
 
-// ---------- review dialog ----------
-// What the execution workflow cannot do without each repository grant.
+$("sv-review").addEventListener("click", () => openReview(sessionData));
+$("sv-stop").addEventListener("click", async () => {
+  if (!confirm("Interrompere l'esecuzione? La Root viene revocata e gli agenti non potranno più operare.")) return;
+  try { await api("POST", "/api/sessions/" + currentSession + "/stop", {}); } catch (error) { alert(error.message); }
+  await loadSession();
+});
+
+// =====================================================================
+// Approval pop-up
+// =====================================================================
 const WORKFLOW_GRANTS = [
-  ["create_branch", "senza create_branch l'esecuzione NON può partire (manca il branch di lavoro): rifiuta e rifai il Planning"],
+  ["create_branch", "senza create_branch l'esecuzione non può partire (manca il branch di lavoro)"],
   ["run_tests", "senza run_tests i test non verranno eseguiti e la Draft PR non potrà essere creata"],
   ["create_pull_request", "senza create_pull_request non verrà creata nessuna Draft PR"]
 ];
-
 function updateCount() {
   const boxes = [...document.querySelectorAll("#rv-rows input")];
-  const n = boxes.filter(b => b.checked).length;
-  const granted = new Set(boxes.filter(b => b.checked).map(b => b.dataset.operation));
+  const chosen = boxes.filter(b => b.checked);
+  const granted = new Set(chosen.map(b => b.dataset.operation));
   const warnings = WORKFLOW_GRANTS.filter(([op]) => !granted.has(op)).map(([, text]) => "Attenzione: " + text + ".");
-  $("rv-warnings").textContent = warnings.join(" ");
-  $("rv-count").textContent = "Selezionati " + n + " permessi su " + boxes.length;
-  $("rv-approve").disabled = n === 0;
+  message("rv-warnings", warnings.join(" "), warnings.length ? "warn" : "");
+  $("rv-count").textContent = chosen.length + " di " + boxes.length + " permessi selezionati";
+  $("rv-approve").disabled = chosen.length === 0;
   for (const box of boxes) box.closest("tr").classList.toggle("denied", !box.checked);
 }
-
 function openReview(s) {
   if (!s || s.phase !== "awaiting_review") return;
   $("rv-repo").textContent = s.repository.owner + "/" + s.repository.name;
   $("rv-branch").textContent = s.work_branch;
   const until = s.proposal.expires_at ? new Date(s.proposal.expires_at) : null;
-  $("rv-expiry").textContent = until ? "Proposta firmabile fino alle " + until.toLocaleTimeString() +
-    " (mancano " + Math.max(0, Math.round((until - Date.now()) / 60000)) + " minuti). Dopo va rifatto il Planning." : "";
-  $("rv-simulated").textContent = s.mode === "scripted"
-    ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso."
-    : s.mode === "reference" ? "Proposta della SOLUZIONE DI RIFERIMENTO: file della soluzione nota, nessuna IA." : "";
-  const profile = s.project_profile;
-  $("rv-profile-summary").textContent = profile
-    ? `Immagine ${profile.image}; il Test agent scrive solo in ${profile.test_sources.roots.join(", ")} ` +
-      `(${profile.test_sources.suffixes.join(", ")}). Impronta ${s.project_profile_sha256.slice(0, 16)}…`
-    : "Profilo di test non disponibile";
-  const phasesList = $("rv-profile-phases"); phasesList.replaceChildren();
-  for (const p of profile?.phases ?? []) li(phasesList, `${p.name}: ${p.command}`);
-  const a = $("rv-assumptions"), u = $("rv-uncertainties");
-  a.replaceChildren(); u.replaceChildren();
-  for (const t of s.proposal.assumptions) li(a, t);
-  for (const t of s.proposal.uncertainties) li(u, t);
-  if (!s.proposal.assumptions.length) li(a, "(nessuna)");
-  if (!s.proposal.uncertainties.length) li(u, "(nessuna)");
+  $("rv-expiry").textContent = until ? "Firmabile fino alle " + until.toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"}) + " (mancano " +
+    Math.max(0, Math.round((until - Date.now()) / 60000)) + " minuti); dopo va rifatto il Planning." : "";
+  const note = s.mode === "scripted" ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso."
+    : s.mode === "reference" ? "Proposta della soluzione di riferimento: file della soluzione nota, nessuna IA." : "";
+  $("rv-simulated").hidden = !note; $("rv-simulated").textContent = note;
+  for (const [id, items] of [["rv-assumptions", s.proposal.assumptions], ["rv-uncertainties", s.proposal.uncertainties]]) {
+    const list = $(id); list.replaceChildren();
+    for (const t of items.length ? items : ["(nessuna)"]) list.appendChild(el("li", "", t));
+  }
   const rows = $("rv-rows"); rows.replaceChildren();
   for (const p of s.proposal.permissions) {
-    const tr = document.createElement("tr"); const r = describeResource(p.resource);
-    const td = document.createElement("td"); const box = document.createElement("input");
+    const tr = el("tr"), r = describeResource(p.resource);
+    const td = el("td"), box = el("input");
     box.type = "checkbox"; box.checked = true; box.value = p.id; box.dataset.operation = p.operation;
     box.addEventListener("change", updateCount);
     td.appendChild(box); tr.appendChild(td);
-    cell(tr, p.operation); cell(tr, r.branch); cell(tr, r.path);
+    const op = el("td"); op.appendChild(el("span", "op-badge " + p.operation, p.operation)); tr.appendChild(op);
+    tr.appendChild(el("td", "res-path", r.path));
+    tr.addEventListener("click", (event) => { if (event.target !== box) { box.checked = !box.checked; updateCount(); } });
     rows.appendChild(tr);
   }
-  $("rv-password").value = ""; $("rv-msg").textContent = "";
+  $("rv-password").value = ""; message("rv-msg", "");
   updateCount();
   $("review-dialog").showModal();
 }
-
-function setAll(value) {
-  for (const box of document.querySelectorAll("#rv-rows input")) box.checked = value;
-  updateCount();
-}
+function setAll(value) { for (const box of document.querySelectorAll("#rv-rows input")) box.checked = value; updateCount(); }
 $("rv-all").addEventListener("click", () => setAll(true));
 $("rv-none").addEventListener("click", () => setAll(false));
 $("rv-close").addEventListener("click", () => $("review-dialog").close());
-
 $("rv-approve").addEventListener("click", async () => {
   const ids = [...document.querySelectorAll("#rv-rows input")].filter(b => b.checked).map(b => b.value);
   const password = $("rv-password").value;
-  if (!password) { $("rv-msg").textContent = "Inserisci la password per firmare."; return; }
-  $("rv-approve").disabled = true; $("rv-msg").textContent = "Firma e attivazione della Root operativa...";
+  if (!password) { message("rv-msg", "Inserisci la password per firmare.", "error"); return; }
+  $("rv-approve").disabled = true; message("rv-msg", "Firma e attivazione della Root operativa…");
   try {
     await api("POST", "/api/sessions/" + currentSession + "/approve", {password, permission_ids: ids});
     $("review-dialog").close();
-    message("plan-msg", "Permessi firmati: l'esecuzione è partita (vedi Cronologia ed Esecuzione).");
-  } catch (error) { $("rv-msg").textContent = error.message; $("rv-approve").disabled = false; }
+  } catch (error) { message("rv-msg", error.message, "error"); $("rv-approve").disabled = false; }
   $("rv-password").value = "";
-  await loadSessions(); await showSession(currentSession);
+  await loadSession();
 });
-
 $("rv-reject").addEventListener("click", async () => {
   if (!confirm("Rifiutare la proposta? La Root preliminare viene revocata e la sessione termina.")) return;
   try {
     await api("POST", "/api/sessions/" + currentSession + "/stop", {});
     $("review-dialog").close();
-    message("plan-msg", "Proposta rifiutata: nessuna Root operativa emessa.");
-  } catch (error) { $("rv-msg").textContent = error.message; }
-  await loadSessions(); await showSession(currentSession);
+  } catch (error) { message("rv-msg", error.message, "error"); }
+  await loadSession();
 });
 
-// ---------- execution ----------
-async function loadExecution() {
-  const rows = $("exec-rows"); rows.replaceChildren();
-  const data = await api("GET", "/api/sessions").catch(() => ({sessions: []}));
-  const shown = data.sessions.filter(s => s.approval);
-  for (const s of shown) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    if (s.phase === "executing") {
-      const button = document.createElement("button");
-      button.textContent = "Interrompi (revoca la Root)";
-      button.addEventListener("click", () => stopSession(s.id, "exec-msg"));
-      td.appendChild(button);
-    }
-    tr.appendChild(td);
-    cell(tr, s.id); cell(tr, s.repository.owner + "/" + s.repository.name);
-    cell(tr, PHASES[s.phase] || s.phase, s.phase === "failed" ? "fail" : (s.phase === "completed" ? "ok" : ""));
-    const allowed = s.gateway_decisions.filter(d => d.decision === "allow").length;
-    cell(tr, allowed + " consentite, " + (s.gateway_decisions.length - allowed) + " negate");
-    showPullRequest(cell(tr, ""), s.pull_request);
-    // Why it stopped, without opening the session.
-    const why = s.error || s.result?.reason ||
-      [...s.log].reverse().find(l => /Runner|Gateway:/u.test(l.text))?.text || "";
-    cell(tr, why, s.phase === "failed" ? "error" : "");
-    rows.appendChild(tr);
-  }
-  if (!shown.length) { const tr = document.createElement("tr"); cell(tr, ""); cell(tr, "Nessuna esecuzione: approva prima una proposta."); rows.appendChild(tr); }
-  if (shown.some(s => BUSY.has(s.phase)))
-    setTimeout(() => { if (!$("tab-execution").hidden) loadExecution(); }, 3000);
-}
-
-function showPullRequest(target, pr) {
-  target.replaceChildren();
-  if (!pr) { target.textContent = "—"; return; }
-  const a = document.createElement("a");
-  // Gitea is published on the local machine only.
-  try { const u = new URL(pr.url); a.href = "http://127.0.0.1:3000" + u.pathname; } catch { a.href = "#"; }
-  a.target = "_blank"; a.rel = "noopener";
-  a.textContent = "#" + pr.number + " " + pr.title;
-  target.appendChild(a);
-}
-
-// ---------- bootstrap ----------
+// =====================================================================
+// Bootstrap
+// =====================================================================
 (async () => {
+  onModeChange();
   try {
-    const me = await api("GET", "/api/me");
-    if (me.username) await showApp(me.username, me.gemini_available); else showLogin();
+    const who = await api("GET", "/api/me");
+    if (who.username) await showApp(who.username, who.gemini_available); else showLogin();
   } catch { showLogin(); }
 })();

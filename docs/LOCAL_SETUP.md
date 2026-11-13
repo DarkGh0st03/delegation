@@ -84,15 +84,23 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
 
 ## Cosa fa oggi la console
 
-| Sezione | Stato |
+La console si chiama **Sigillo** (di "Ardesia Labs", nomi di fantasia) ed è
+una sola pagina principale più una pagina per ogni sessione:
+
+| Dove | Cosa c'è |
 |---|---|
-| Login Engineer | Password con hash scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
-| 1 · Ambiente | Gitea, OPA, Anvil, contratti, moduli Rust, avvio del core dell'Engineer (identità on-chain) e del verificatore del Gateway |
-| 2 · Repository | Elenco e import da URL https pubblico, con protezione del branch principale |
-| 3 · Policy | Parametri per repository pubblicati su OPA e applicati dal Gateway (branch protetti, branch di lavoro firmato, percorsi non modificabili, profilo dei test, Draft PR) |
-| 4 · Requisito | Richiesta salvata con la commit di base fissata |
-| 5 · Planning e permessi | Root preliminare di sola lettura, Planner (simulato gratuito o Gemini con consenso), letture tramite il Gateway reale, finestra di revisione dei permessi, firma Ed25519 con password, Root operativa |
-| 6 · Esecuzione | Dopo la firma: Root operativa, branch, Task degli agenti con Child DC, Gateway (Rust + OPA), test nel Runner Docker, Draft PR; stato, decisioni del Gateway, link alla PR e pulsante di stop |
+| Accesso | Password con hash scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
+| Home · Repository | Tabella delle repository (selezione con un clic) e import da URL https pubblico, con protezione del branch principale |
+| Home · Configura policy | Popup con le regole pubblicate su OPA e applicate dal Gateway: branch protetti, percorsi non modificabili, Draft PR consentita. Il branch di lavoro `feature/<sessione>` è fisso |
+| Home · Prompt | Campo di testo in stile chat per il requisito in linguaggio naturale, con la modalità: Simulato, Riferimento o Gemini (con consenso esplicito ai costi) |
+| Home · Sessioni recenti | Elenco delle sessioni con stato e numero della Draft PR |
+| Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519, scheda della Draft PR, riepilogo, chiamate a Gemini, pulsante di stop |
+| Impostazioni (ingranaggio) | Stato dell'ambiente: Gitea, OPA, Anvil, contratti, moduli Rust, core dell'Engineer e verificatore del Gateway. Il pallino sull'ingranaggio è verde quando è tutto pronto |
+
+Il profilo dei test (immagine Docker, fasi, cartelle dei test) non si modifica
+dalla console: per l'esempio è quello noto di `iam-console-poc`, per le altre
+repository un modello npm (`npm ci`, `npm test`); resta comunque legato alla
+firma dell'Engineer.
 
 ### Come funziona una sessione
 
@@ -159,7 +167,7 @@ e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
    ogni chiamata fase/ruolo, durata, token, motivo di fine, strumenti usati e
    un estratto della risposta, oppure l'errore esatto di Google (la chiave è
    sempre oscurata). Gli errori compaiono anche nella Cronologia e nella
-   colonna Motivo della pagina Esecuzione.
+   banner in cima alla pagina della sessione.
 
 Limiti attuali, dichiarati:
 
@@ -167,7 +175,7 @@ Limiti attuali, dichiarati:
   `config`) e sbloccata dalla password: è una firma *autenticata dalla
   password*, non da un dispositivo personale dell'Engineer;
 - branch principale `main` e prefisso `feature/` sono ancora fissi nel codice
-  canonico (la pagina Policy non permette altri prefissi);
+  canonico (il popup della policy non permette altri prefissi);
 - dopo un riavvio dell'app le sessioni precedenti risultano "Non più attive",
   perché la blockchain locale riparte da zero;
 - il Runner esegue i comandi di test del progetto `iam-console-poc` (`npm ci`,
