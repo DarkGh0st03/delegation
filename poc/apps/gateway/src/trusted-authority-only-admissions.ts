@@ -1743,19 +1743,19 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      (!typed?.manifest.effect_plan||!isProjectTestSource(request.request.arguments.path,this.#testSources)))
    deny("Test updates require an owner-pinned read/update Task for project test source");
   const readPin=this.#readPins.get(request.task_id);
+  // Every effect of a typed reads + write Task is pinned to the same HEAD.
+  const typedTool=tool==="read_file"||tool==="update_file"||tool==="create_file";
   const nativeHead=typed?.manifest.effect_plan!==undefined&&
-    typed.manifest.runtime_task_id===request.task_id&&
-    (tool==="read_file"||tool==="update_file")
+    typed.manifest.runtime_task_id===request.task_id&&typedTool
      ?typed.pinnedHead:
      tool==="read_file"&&readPin&&readPin.task_id===bound.row.task_id&&
      readPin.epoch===bound.row.epoch&&
      readPin.resource===required.resource&&
      readPin.credential_id===this.#enrolledChildren.get(request.task_id)?.credential_id
       ?readPin.expectedHeadSha:undefined;
-  if(typed?.manifest.effect_plan!==undefined&&
-     (tool==="read_file"||tool==="update_file")&&
+  if(typed?.manifest.effect_plan!==undefined&&typedTool&&
      !SHA40.test(nativeHead??""))
-   deny("native read/update Prepare lacks original owner-pinned HEAD");
+   deny("native reads + write Prepare lacks original owner-pinned HEAD");
   return Object.freeze({
    status:"gateway_permission_preflight_only",
    authority_digest:this.#digest!,runtime_task_id:request.task_id,

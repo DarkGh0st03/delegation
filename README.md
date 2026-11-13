@@ -37,11 +37,12 @@ Engineer console and the test Runner. Full guide (Italian):
 3. **Execution.** The preliminary Root is revoked and an *operational Root*
    with exactly the signed permissions is issued. The Orchestrator delegates
    one Task at a time, each with its own attenuated *Child* credential. A
-   Task may hold several signed **reads** (the file it edits and the files
-   that file depends on, at most 15) and **one write** (compare-and-swap
-   update on Gitea); every read is a separate verified, journaled effect,
-   and the write is admitted only after all of them, on a file read in the
-   same Task. Backend/Frontend change application files; the Test agent
+   Task may hold several signed **reads** (at most 15) and **one write**:
+   the compare-and-swap update of a file read in the same Task (with the
+   files it depends on), or the creation of a new file written from the
+   files read (e.g. a new test for a component, with proof that the file
+   did not exist). Every read is a separate verified, journaled effect, and
+   the write is admitted only after all of them, at the same pinned commit. Backend/Frontend change application files; the Test agent
    reads the changed files and writes tests for the new behaviour; then the
    phases of the signed project profile run in a throw-away Docker container.
    When a test phase fails, the Runner reports which tests failed and their

@@ -7,6 +7,30 @@ Draft PR su Gitea.
 
 ---
 
+## 2026-11-13 — Ricerca e filtro utenti con Gemini: test nuovo scritto "alla cieca"
+
+Sessione `s-6268042fdca1`. 10 Task completati (Backend 5, uno dei quali
+"nessuna modifica necessaria" su `user.routes.ts`, Frontend 2, Test 2), 34
+autorizzazioni del Gateway, nessuna negata. Il Task successivo chiedeva al
+Test agent di **creare** `tests/frontend/UserListPage.test.tsx`: un Task di
+creazione non poteva contenere letture, quindi l'agente non ha visto il
+componente e Gemini ha consumato tutto il budget di output cercando di
+indovinarne l'interfaccia (`MAX_TOKENS`, 96 s). Il limite di sicurezza ha
+scartato la risposta e la sessione si è fermata.
+
+Correzioni, verificate nella sandbox con la soluzione di riferimento e un
+Runner simulato (Draft PR creata, 53 decisioni del Gateway, tutte consentite):
+- un Task può ora contenere le letture firmate dei file esistenti e la
+  **creazione** di un file nuovo (il Test agent ha letto 7 file modificati e
+  poi creato il test e2e nello stesso Task);
+- il "nessuna modifica necessaria" del Test agent era ancora rifiutato in tre
+  punti (registro della IPC lato proprietario, recinto del Gateway, loop
+  adattivo): ora è accettato, verificato end-to-end con una patch temporanea
+  del modello simulato;
+- il limite di output del Test agent passa a 20480 token come gli altri.
+
+---
+
 ## 2026-11-13 — Ricerca e filtro utenti con Gemini: prima riparazione guidata dai messaggi d'errore
 
 Sessione `s-107efa00274b`, requisito in linguaggio naturale "Consenti a un

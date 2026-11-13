@@ -272,7 +272,11 @@ export class ScriptedDecisionModel extends Scripted {
     const tasks = this.#plan.tasks;
     if (this.#index < tasks.length) {
       const task = tasks[this.#index];
-      const previous = this.#index ? tasks[this.#index - 1].task_id : this.#branchTaskId;
+      // Depend on the last Task the owner reports as completed (a verified
+      // "no change needed" Task is not completed, so it is skipped).
+      const done = completedTaskIds(request);
+      const previous = tasks.slice(0, this.#index).map(t => t.task_id).reverse()
+        .find(id => done.has(id)) ?? this.#branchTaskId;
       this.#index++;
       yield say(JSON.stringify({action: "delegate", task: {task_id: task.task_id,
         agent_id: task.agent_id, depends_on: [previous], permissions: task.permissions,
@@ -284,7 +288,8 @@ export class ScriptedDecisionModel extends Scripted {
     if (!this.#plan.runsTests)
       yield say(JSON.stringify({action: "blocked",
         reason: "I test non sono stati autorizzati: senza un esito PASS del Runner non si crea la Draft PR"}));
-    else if (/independent_runner_failure/u.test(context))
+    // The context FIELD (a verified Runner FAIL), not the word in the prompt.
+    else if (/independent_runner_failure\\?"\s*:/u.test(context))
       yield say(JSON.stringify({action: "blocked",
         reason: "Il Runner ha riportato un FAIL verificato: esecuzione simulata, nessuna correzione automatica"}));
     else if (!completed.has("t99-test"))

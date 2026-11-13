@@ -441,10 +441,13 @@ test("simulated execution plans only from APPROVED permissions, one Task per rea
   const next = async (request = {}) => {
     for await (const e of model.generateContentAsync(request)) return JSON.parse(e.content.parts[0].text);
   };
-  assert.deepEqual((await next()).task.depends_on, ["branch"]);
-  assert.deepEqual((await next()).task.depends_on, ["t01-backend"]);
+  const completed = ids => ({contents: [{parts: [{text: JSON.stringify(
+    {independently_gateway_completed_tasks: ids.map(task_id => ({task_id}))})}]}]});
+  assert.deepEqual((await next(completed(["branch"]))).task.depends_on, ["branch"]);
+  assert.deepEqual((await next(completed(["branch", "t01-backend"]))).task.depends_on, ["t01-backend"]);
   assert.equal((await next()).task.agent_id, "test");
-  assert.equal((await next({x: "independent_runner_failure"})).action, "blocked");
+  assert.equal((await next({contents: [{parts: [{text: JSON.stringify(
+    {independent_runner_failure: {failed_phase: "backend_tests"}})}]}]})).action, "blocked");
 });
 
 test("execution errors from the canonical fail-closed stops are explained in plain words", async () => {
@@ -655,4 +658,24 @@ test("Cronologia shows each failed test with its error message, bounded", async 
   const bounded = failedTestLines({test_failures: many});
   assert.equal(bounded.length, 8);
   assert.ok(bounded.every(line => line.length < 500));
+});
+
+test("simulated Orchestrator: depends on the last COMPLETED Task and reads the failure FIELD only", async () => {
+  const {ScriptedDecisionModel} = await import("../src/scripted-execution-models.mjs");
+  const plan = {runsTests: true, tasks: [{task_id: "t01-backend"}, {task_id: "t02-test"}, {task_id: "t03-frontend"},
+    {task_id: "t99-test"}].map(t => ({...t, agent_id: "backend", permissions: [], instruction: "x"}))};
+  const model = new ScriptedDecisionModel({plan, branchTaskId: "branch"});
+  const ask = async completed => {
+    const request = {system: "independent_runner_failure.failed_tests lists each failed test",
+      contents: [{parts: [{text: JSON.stringify({independently_gateway_completed_tasks:
+        completed.map(task_id => ({task_id}))})}]}]};
+    for await (const r of model.generateContentAsync(request)) return JSON.parse(r.content.parts[0].text);
+  };
+  assert.deepEqual((await ask(["branch"])).task.depends_on, ["branch"]);
+  assert.deepEqual((await ask(["branch", "t01-backend"])).task.depends_on, ["t01-backend"]);
+  // t02-test ended as a verified "no change needed": not completed, skipped.
+  assert.deepEqual((await ask(["branch", "t01-backend"])).task.depends_on, ["t01-backend"]);
+  await ask(["branch", "t01-backend", "t03-frontend"]);
+  // The prompt mentions independent_runner_failure, but no FAIL field exists.
+  assert.equal((await ask(["branch", "t01-backend", "t03-frontend", "t99-test"])).action, "ready_for_pr");
 });
