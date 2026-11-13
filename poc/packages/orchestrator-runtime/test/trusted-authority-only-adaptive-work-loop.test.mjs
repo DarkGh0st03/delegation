@@ -949,7 +949,7 @@ for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete',
   };
   f.hooks.executeTask=async(choice,before)=>{
    if(stop)return originalExecute(choice);
-   stop={task_id:choice.task_id,agent_id:choice.agent_id,
+   stop={task_id:choice.task_id,agent_id:choice.agent_id,edited_path:'apps/backend.ts',
     read_revision:before.executionProgress.current_head_sha,
     read_evidence_sha256:'e'.repeat(64)};
    if(mode==='changed-head')f.move();
@@ -1161,7 +1161,7 @@ test('R434 dynamic specialist no-change never completes a Task or grants Test au
    return ctx;
   };
   f.hooks.executeTask=async(task,before)=>{
-   noChange={task_id:task.task_id,agent_id:role,
+   noChange={task_id:task.task_id,agent_id:role,edited_path:'apps/backend.ts',
     read_revision:before.executionProgress.current_head_sha,
     read_evidence_sha256:'f'.repeat(64)};
    return {status:'owner_verified_specialist_no_change',

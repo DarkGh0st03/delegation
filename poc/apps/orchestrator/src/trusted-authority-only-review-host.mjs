@@ -47,7 +47,7 @@ import {AuthenticatedGiteaReadCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-evidence.ts';
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
 import {isTestAgentReadGrant,readUpdateGrantShape,isProjectTestCreateGrant,isProjectTestSource,
- isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
+ isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE,exactFilePath}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
@@ -1590,8 +1590,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
            const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
            if(head.commit_sha===reported.read_revision&&isDeepStrictEqual(live,before)&&
               !closed&&session.phase==='operational'&&gateway.phase==='active'){
+            // The file the specialist verified as already correct, taken
+            // from the Engineer-signed grant of that Task (not from the model).
+            const edited=readUpdateGrantShape(operationalCoordinator
+             .assertTrustedGatewayRegisteredTask(pin.task_id).permissions)?.edit;
+            const editedPath=edited&&exactFilePath(edited);
+            if(typeof editedPath!=='string')deny('no-change Task has no signed edited file');
             adaptiveSpecialistNoChange=Object.freeze({
-             task_id:pin.task_id,agent_id:pin.agent_id,read_revision:reported.read_revision,
+             task_id:pin.task_id,agent_id:pin.agent_id,edited_path:editedPath,
+             read_revision:reported.read_revision,
              read_evidence_sha256:reported.read_evidence_sha256
             });
             return Object.freeze({status:'owner_verified_specialist_no_change',

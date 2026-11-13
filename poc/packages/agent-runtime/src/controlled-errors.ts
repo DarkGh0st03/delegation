@@ -4,7 +4,9 @@ export type ControlledToolErrorKind =
   | "tests_failed"
   | "tool_unavailable"
   | "invalid_tool_call"
-  | "iteration_limit";
+  | "iteration_limit"
+  /** The proposed update equals the file read in this Task: nothing to write. */
+  | "no_change";
 
 export class ControlledToolError extends Error {
   readonly kind: ControlledToolErrorKind;

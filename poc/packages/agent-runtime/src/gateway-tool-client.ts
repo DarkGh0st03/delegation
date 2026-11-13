@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import {safeToolFailureReason} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import {isProjectTestSource} from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import type { SpecializedAgentRole } from "./contracts.ts";
@@ -107,6 +108,8 @@ export class GatewayControlledToolClient {
   readonly #approvedDiagnosticReadPaths:readonly string[];
   readonly #onTrustedDiscoveryRead?: (result:unknown)=>void;
   readonly #approvedDiagnosticWritePaths:readonly string[];
+  /** SHA-256 of each file content read (and attested) in this Task. */
+  readonly #readContentSha256=new Map<string,string>();
 
   constructor(config: GatewayControlledToolClientConfig) {
     if (config.gatewayBaseUrl.trim().length === 0) {
@@ -143,6 +146,17 @@ export class GatewayControlledToolClient {
     args: Record<string, unknown>
   ): Promise<unknown> {
     this.#signal?.throwIfAborted();
+    // A "change" identical to the file just read is not a change: answer
+    // locally, BEFORE Gateway Prepare, so the single write grant stays
+    // unused and the owner can record a verified no-change outcome.
+    if(tool==="update_file"&&this.#trustedEffectStager?.stagedTool==="read_then_update"&&
+       typeof args.path==="string"&&typeof args.content==="string"&&
+       this.#readContentSha256.get(args.path)===
+        createHash("sha256").update(args.content,"utf8").digest("hex"))
+      throw new ControlledToolError("no_change",
+        "The new content is identical to the file read in this Task, so no change is needed. "+
+        "Do not call update_file again with the same content; reply with a short report explaining "+
+        "why the file already satisfies the instruction.");
     // R384.1: A model can request CREATE only through a privately prebound
     // single-effect Task/Child selected by the HMAC owner registry. The same
     // native one-shot MCP presentation used by the original A2A Task must
@@ -413,6 +427,11 @@ export class GatewayControlledToolClient {
        blob_sha:result.blob_sha
       });
     }
+    if(tool==="read_file"&&this.#trustedEffectStager?.stagedTool==="read_then_update"&&
+       typeof args.path==="string"&&execution&&typeof execution==="object"&&
+       typeof (execution as {content?:unknown}).content==="string")
+      this.#readContentSha256.set(args.path,createHash("sha256")
+        .update((execution as {content:string}).content,"utf8").digest("hex"));
     return execution;
   }
 }

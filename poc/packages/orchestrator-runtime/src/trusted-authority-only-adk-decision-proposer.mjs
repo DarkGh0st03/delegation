@@ -143,7 +143,10 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   }else if(executionProgress!==undefined)fail();
   if(specialistNoChange!==undefined){
    if(decisionKind!=='adaptive'||
-      !exact(specialistNoChange,['task_id','agent_id','read_revision','read_evidence_sha256'])||
+      !exact(specialistNoChange,['task_id','agent_id','edited_path','read_revision','read_evidence_sha256'])||
+      typeof specialistNoChange.edited_path!=='string'||!specialistNoChange.edited_path||
+      specialistNoChange.edited_path.length>512||specialistNoChange.edited_path.startsWith('/')||
+      specialistNoChange.edited_path.split('/').some(x=>!x||x==='.'||x==='..')||
       !ID.test(specialistNoChange.task_id)||
       !Object.hasOwn(pins,specialistNoChange.agent_id)||
       !isFileSpecialist(specialistNoChange.agent_id)||
@@ -250,6 +253,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
+    'independently_verified_specialist_no_change means that a specialist read edited_path and verified that it already satisfies the requirement: do not delegate another edit of that file; continue with the remaining work (it still needs a new Test run before ready_for_pr).',
     'Do NOT delegate a read-only Task to read a file you are about to edit, or the files that edit depends on: put those reads in the edit Task itself (every extra Task costs a new Child credential and more model calls).',
     'A read_file-only investigation Task (exactly ONE read_file of ONE exact file inside the original Engineer scope, for Backend, Frontend or Test) is useful ONLY when no edit Task can carry the read: before a create_file Task (a CREATE Task has no reads) or to diagnose an independently verified Test failure. An independently signed read-only Child and original Engineer grant are mandatory; reading never proves a repair.',
     'Generic workflow for ANY requirement: (1) Backend and Frontend implement the requirement, one edited file per Task with read grants for its dependencies; (2) the Test specialist creates or updates project test sources under '+this.projectTestSourceProfile.roots.join(', ')+' (suffixes '+this.projectTestSourceProfile.suffixes.join(', ')+') that cover the NEW behaviour, with read grants for the changed application files in the same Task; (3) one final Test run_tests Task on the latest HEAD; (4) ready_for_pr only after an independently verified PASS.',

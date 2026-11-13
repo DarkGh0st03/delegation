@@ -553,7 +553,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
           runnerProfile=undefined;
           projectTests=undefined;
           researcherAcceptance=undefined;
-        }else errors.push(event.payload.error.kind);
+        }else if(event.payload.error.kind!=="no_change")
+          errors.push(event.payload.error.kind);
+        // "no_change" never reached the Gateway and consumed no grant.
         continue;
       }
       const result = object(event.payload.result);
@@ -614,7 +616,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       // and safe aggregate counts. Fail closed exactly as before.
       const staticKinds=new Set([
         "authorization_denied","tests_failed","tool_unavailable",
-        "invalid_tool_call","iteration_limit","invalid_commit_result",
+        "invalid_tool_call","iteration_limit","no_change","invalid_commit_result",
         "invalid_test_result","malformed_tool_result",
         "inconsistent_read_revision"
       ]);
@@ -637,9 +639,15 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         ...progress.snapshot()
       }) + "\n");
     }
+    // Verified "no change needed": the specialist read the granted files
+    // (one or more, all attested) and wrote nothing; an attempted update
+    // identical to the file read was answered locally as no_change.
     if(ownerEffect?.stagedTool==="read_then_update"&&ownerEffect.reportNoChange&&
-       errors.length===0&&events.length===1&&readEvidenceCount===1&&
-       events[0]?.name==="read_file"&&!signal?.aborted){
+       errors.length===0&&readEvidenceCount>=1&&
+       filesModified.size===0&&filesCreated.size===0&&
+       events.every(e=>(e.name==="read_file"&&e.payload.ok)||
+         (e.name==="update_file"&&!e.payload.ok&&e.payload.error.kind==="no_change"))&&
+       !signal?.aborted){
       await ownerEffect.reportNoChange();
       throw new Error("ADK specialist ended after read without producing an update");
     }

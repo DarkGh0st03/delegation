@@ -294,6 +294,42 @@ test("R359.5 mixed owner client stages and independently attests both provider e
   /Mixed native Task supports only/u);
 });
 
+test("an update identical to the file read in this Task is answered locally as no_change, before any Gateway call",async()=>{
+ const calls:string[]=[];
+ let index=0;
+ const client=new GatewayControlledToolClient({
+  gatewayBaseUrl:"http://gateway.local",agentRole:"backend",taskId:"mixed-no-change",
+  evidenceHandler:evidenceHandler(),
+  trustedEffectStager:{stagedTool:"read_then_update",
+   async stage(id){calls.push("stage:"+id);},
+   async attest(id,tool){calls.push("attest:"+tool+":"+id);}},
+  fetchFn:async(input,init)=>{
+   const url=String(input),body=JSON.parse(String(init?.body));
+   if(url.endsWith("/prepare")){
+    const req=++index;calls.push("prepare:"+req);
+    return Response.json({request_id:"nc-"+req,audience:"gateway",
+     challenge:"c",required_permission:{resource:"signed",operation:"read_file"},
+     expires_at:new Date(Date.now()+60000).toISOString()},{status:201});
+   }
+   calls.push("execute:"+body.request_id);
+   const read=body.request_id==="nc-1";
+   return Response.json({request_id:body.request_id,decision:"allow",
+    execution:{provider:"gitea",performed:true,tool:read?"read_file":"update_file",
+     branch:"feature/x",path:"routes.ts",
+     ...(read?{revision:"a".repeat(40),content:"router.get(\"/\", list);\n"}:{commit_sha:"b".repeat(40)})}});
+  }
+ });
+ await client.invoke("read_file",{branch:"feature/x",path:"routes.ts"});
+ await assert.rejects(client.invoke("update_file",{branch:"feature/x",path:"routes.ts",
+  content:"router.get(\"/\", list);\n"}),
+  (e:unknown)=>e instanceof ControlledToolError&&e.kind==="no_change"&&/no change is needed/u.test(e.message));
+ assert.deepEqual(calls,["prepare:1","stage:nc-1","execute:nc-1","attest:read_file:nc-1"],
+  "the identical update reached neither Prepare nor the owner stage");
+ // The single write grant is still unused: a real change proceeds normally.
+ await client.invoke("update_file",{branch:"feature/x",path:"routes.ts",content:"changed\n"});
+ assert.deepEqual(calls.slice(4),["prepare:2","stage:nc-2","execute:nc-2","attest:update_file:nc-2"]);
+});
+
 test("R391 Test CREATE invokes native owner stage and private VP only for exact test source",async()=>{
  const oldArchitecture=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
  const oldNative=process.env.APPROVED_RUNNER_NATIVE_MCP;

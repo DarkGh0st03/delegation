@@ -52,7 +52,7 @@ export function safeMcpToolTiming(
 ){
   const allowed=new Set<ControlledToolErrorKind>([
     "authorization_denied","tests_failed","tool_unavailable",
-    "invalid_tool_call","iteration_limit"
+    "invalid_tool_call","iteration_limit","no_change"
   ]);
   const kind=payload.ok?null:
     allowed.has(payload.error.kind)?payload.error.kind:null;
@@ -233,6 +233,7 @@ export function createAdkSpecializedAgent(
       "Approved creatable files:",...list(creatable),"",
       "Read and write are independent permissions: never assume either from the other.",
       "Each granted operation may be used exactly ONCE in this Task: read EVERY approved readable file once (in any order; they are the file to edit and the files it depends on), then make the single write (update_file or create_file) or the single run_tests. After the write or the test run, call no more tools and reply only with a short report: repeated, extra or out-of-order tool calls are refused and make the Task fail.",
+      "If, after reading, the file to edit already does exactly what the instruction asks, do NOT write it: reply with a short report saying that no change is needed and why. This is a valid outcome that the Orchestrator takes into account.",
       "Before every update_file, first call read_file for that exact existing path in this same Task.",
       "Use the content returned by that successful read to construct the full replacement. A read from a previous Task is not evidence for this Task.",
       "If that read is not authorized, fails, or the source is unavailable, do not attempt to write; report the limitation.",
