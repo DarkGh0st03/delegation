@@ -206,7 +206,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  // Retain at most two independently authenticated Runner FAILs.
  // Neither is a completed Task or a new grant under the Engineer root.
  const adaptiveVerifiedFailures=[];
- let adaptiveSpecialistNoChange;
+ /** Owner-attested "no change needed" outcomes, in order (no fixed limit). */
+ const adaptiveSpecialistNoChanges=[];
  // Set only after the adaptive controller re-opens an independent latest
  // Runner PASS on the current Gitea HEAD. Never trust A2A readiness text.
  let adaptiveReadyProof;
@@ -809,7 +810,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          (()=>{const pending=[...stagedTaskIds.values()].filter(p=>
            !gatewayAttestedTaskIds.has(p.task_id));
           const unresolved=[...adaptiveVerifiedFailures.map(f=>f.failed_task_id),
-           ...(adaptiveSpecialistNoChange?[adaptiveSpecialistNoChange.task_id]:[])];
+           ...adaptiveSpecialistNoChanges.map(x=>x.task_id)];
           return pending.length!==unresolved.length||
            pending.some(p=>!unresolved.includes(p.task_id));
          })())
@@ -837,7 +838,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          .map(p=>({task_id:p.task_id,agent_id:p.agent_id,
           operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)})),
         ...(sourceObservations.length?{source_observations:sourceObservations}:{})},
-       ...(adaptiveSpecialistNoChange?{specialistNoChange:adaptiveSpecialistNoChange}:{}),
+       ...(adaptiveSpecialistNoChanges.length?{specialistNoChanges:[...adaptiveSpecialistNoChanges]}:{}),
        ...(adaptiveVerifiedFailures.length?{verifiedFailure:{
         failed_phase:adaptiveVerifiedFailures.at(-1).failed_phase,
         source_evidence_sha256:adaptiveVerifiedFailures.at(-1).source_evidence_sha256,
@@ -1113,8 +1114,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      const adaptiveReady=!!adaptiveReadyProof&&adaptiveLoopAttempted&&
       input.sourceTestTaskId===adaptiveReadyProof.source_test_task_id&&
       input.sourceTestRuntimeTaskId===adaptiveReadyProof.source_test_runtime_task_id&&
-      pending.length===adaptiveVerifiedFailures.length+Number(!!adaptiveSpecialistNoChange)&&
-      pending.every(p=>p.task_id===adaptiveSpecialistNoChange?.task_id||
+      pending.length===adaptiveVerifiedFailures.length+adaptiveSpecialistNoChanges.length&&
+      pending.every(p=>adaptiveSpecialistNoChanges.some(x=>x.task_id===p.task_id)||
        adaptiveVerifiedFailures.some(f=>
         p.task_id===f.failed_task_id&&f.gateway_task_completed===false));
      if(pending.length&&!(d1RetestPassed&&pending.length===1&&
@@ -1584,7 +1585,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           // The SDK's explicit FAILED result survives dispatch only after the
           // bootstrap has acknowledged fencing the private remote Task port.
           if(reported&&error instanceof ProtectedA2ATaskFailedError&&adaptiveLoopFlight&&
-             !adaptiveSpecialistNoChange&&session.phase==='operational'&&gateway.phase==='active'){
+             session.phase==='operational'&&gateway.phase==='active'){
            const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
            const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
            const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
@@ -1596,13 +1597,14 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
              .assertTrustedGatewayRegisteredTask(pin.task_id).permissions)?.edit;
             const editedPath=edited&&exactFilePath(edited);
             if(typeof editedPath!=='string')deny('no-change Task has no signed edited file');
-            adaptiveSpecialistNoChange=Object.freeze({
+            const noChange=Object.freeze({
              task_id:pin.task_id,agent_id:pin.agent_id,edited_path:editedPath,
              read_revision:reported.read_revision,
              read_evidence_sha256:reported.read_evidence_sha256
             });
+            adaptiveSpecialistNoChanges.push(noChange);
             return Object.freeze({status:'owner_verified_specialist_no_change',
-             observation:adaptiveSpecialistNoChange,gateway_task_completed:false,
+             observation:noChange,gateway_task_completed:false,
              recovery_authorized:false});
            }
           }

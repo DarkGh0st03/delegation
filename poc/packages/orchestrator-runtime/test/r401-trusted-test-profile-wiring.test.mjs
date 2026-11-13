@@ -119,13 +119,15 @@ test('R434 no-change evidence requires registered non-Test role with read+update
  const stop={task_id:'read-but-unchanged',agent_id:'invoice',edited_path:'apps/invoice.ts',
   read_revision:'a'.repeat(40),read_evidence_sha256:'f'.repeat(64)};
  const cfg=config({action:'blocked',reason:'Stop'},{
-  specialistNoChange:stop
+  specialistNoChanges:[stop]
  });
  assert.doesNotThrow(()=>new TrustedAuthorityOnlyAdkDecisionProposer(cfg));
  for(const invalid of [
   {...cfg,agents:{invoice:{capabilities:['read_file']}}},
-  {...cfg,specialistNoChange:{...stop,agent_id:'test'}},
-  {...cfg,specialistNoChange:{...stop,agent_id:'orchestrator'}}
+  {...cfg,specialistNoChanges:[{...stop,agent_id:'test'}]},
+  {...cfg,specialistNoChanges:[{...stop,agent_id:'orchestrator'}]},
+  {...cfg,specialistNoChanges:[stop,stop]},
+  {...cfg,specialistNoChanges:[]}
  ])assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer(invalid),
   /R351 authority-only model Task choice denied/u);
 });

@@ -46,7 +46,7 @@ class SingleDecisionModel extends BaseLlm{
 }
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
- constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,verifiedFailureHistory,specialistNoChange,nextEpoch,decisionKind='agent',executionProgress,maxVerifiedFailures=2,
+ constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,verifiedFailureHistory,specialistNoChanges,nextEpoch,decisionKind='agent',executionProgress,maxVerifiedFailures=2,
  projectTestSourceProfile=IAM_CONSOLE_PROJECT_TEST_PROFILE}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
@@ -141,21 +141,26 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    }
    this.executionProgress=Object.freeze(structuredClone(executionProgress));
   }else if(executionProgress!==undefined)fail();
-  if(specialistNoChange!==undefined){
-   if(decisionKind!=='adaptive'||
-      !exact(specialistNoChange,['task_id','agent_id','edited_path','read_revision','read_evidence_sha256'])||
-      typeof specialistNoChange.edited_path!=='string'||!specialistNoChange.edited_path||
-      specialistNoChange.edited_path.length>512||specialistNoChange.edited_path.startsWith('/')||
-      specialistNoChange.edited_path.split('/').some(x=>!x||x==='.'||x==='..')||
-      !ID.test(specialistNoChange.task_id)||
-      !Object.hasOwn(pins,specialistNoChange.agent_id)||
-      !isFileSpecialist(specialistNoChange.agent_id)||
-      !pins[specialistNoChange.agent_id].includes('read_file')||
-      !pins[specialistNoChange.agent_id].includes('update_file')||
-      prior.some(p=>p.task_id===specialistNoChange.task_id)||
-      !/^[a-f0-9]{40}$/u.test(specialistNoChange.read_revision)||
-      !/^[a-f0-9]{64}$/u.test(specialistNoChange.read_evidence_sha256))fail();
-   this.specialistNoChange=Object.freeze({...specialistNoChange});
+  if(specialistNoChanges!==undefined){
+   // Every owner-attested "no change needed" outcome of this session.
+   if(decisionKind!=='adaptive'||!Array.isArray(specialistNoChanges)||
+      !specialistNoChanges.length||specialistNoChanges.length>24||
+      new Set(specialistNoChanges.map(x=>x?.task_id)).size!==specialistNoChanges.length)fail();
+   for(const noChange of specialistNoChanges){
+    if(!exact(noChange,['task_id','agent_id','edited_path','read_revision','read_evidence_sha256'])||
+       typeof noChange.edited_path!=='string'||!noChange.edited_path||
+       noChange.edited_path.length>512||noChange.edited_path.startsWith('/')||
+       noChange.edited_path.split('/').some(x=>!x||x==='.'||x==='..')||
+       !ID.test(noChange.task_id)||
+       !Object.hasOwn(pins,noChange.agent_id)||
+       !isFileSpecialist(noChange.agent_id)||
+       !pins[noChange.agent_id].includes('read_file')||
+       !pins[noChange.agent_id].includes('update_file')||
+       prior.some(p=>p.task_id===noChange.task_id)||
+       !/^[a-f0-9]{40}$/u.test(noChange.read_revision)||
+       !/^[a-f0-9]{64}$/u.test(noChange.read_evidence_sha256))fail();
+   }
+   this.specialistNoChanges=Object.freeze(specialistNoChanges.map(x=>Object.freeze({...x})));
   }
   if(verifiedFailureHistory!==undefined){
    const phases={has:isRunnerPhaseName};
@@ -253,7 +258,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
-    'independently_verified_specialist_no_change means that a specialist read edited_path and verified that it already satisfies the requirement: do not delegate another edit of that file; continue with the remaining work (it still needs a new Test run before ready_for_pr).',
+    'independently_verified_specialist_no_changes lists Tasks whose specialist read edited_path and reported that the file already satisfies the instruction (a legitimate outcome, possible several times). You supervise these claims: if the requirement is met, continue with the remaining work; if you judge that the file still needs a change, delegate a new edit with a more precise instruction. A new independently completed Test run is required before ready_for_pr.',
     'Do NOT delegate a read-only Task to read a file you are about to edit, or the files that edit depends on: put those reads in the edit Task itself (every extra Task costs a new Child credential and more model calls).',
     'A read_file-only investigation Task (exactly ONE read_file of ONE exact file inside the original Engineer scope, for Backend, Frontend or Test) is useful ONLY when no edit Task can carry the read: before a create_file Task (a CREATE Task has no reads) or to diagnose an independently verified Test failure. An independently signed read-only Child and original Engineer grant are mandatory; reading never proves a repair.',
     'Generic workflow for ANY requirement: (1) Backend and Frontend implement the requirement, one edited file per Task with read grants for its dependencies; (2) the Test specialist creates or updates project test sources under '+this.projectTestSourceProfile.roots.join(', ')+' (suffixes '+this.projectTestSourceProfile.suffixes.join(', ')+') that cover the NEW behaviour, with read grants for the changed application files in the same Task; (3) one final Test run_tests Task on the latest HEAD; (4) ready_for_pr only after an independently verified PASS.',
@@ -280,7 +285,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    ...(this.decisionKind==='adaptive'?{
     trusted_owner_verified_failure_budget:this.maxVerifiedFailures
    }:{}),
-   ...(this.specialistNoChange?{independently_verified_specialist_no_change:this.specialistNoChange}:{}),
+   ...(this.specialistNoChanges?{independently_verified_specialist_no_changes:this.specialistNoChanges}:{}),
    next_epoch:this.nextEpoch,
    ...(this.executionProgress?{verified_execution_progress:this.executionProgress}:{}),
    ...(this.verifiedFailureHistory?{
@@ -334,7 +339,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    fail();
   const known=new Set(this.previous.map(p=>p.task_id));
   if(known.has(raw.task_id)||raw.depends_on.some(x=>!known.has(x))||
-     this.specialistNoChange?.task_id===raw.task_id||
+     this.specialistNoChanges?.some(x=>x.task_id===raw.task_id)||
      this.verifiedFailureHistory?.some(p=>p.failed_task_id===raw.task_id))fail();
   const seen=new Set(),selected=[];
   for(const p of raw.permissions){

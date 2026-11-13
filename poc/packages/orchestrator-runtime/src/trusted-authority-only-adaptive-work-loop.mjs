@@ -107,7 +107,9 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
    const effect=await hooks.executeTask(decision.task,before);
    if(effect?.status==='owner_verified_specialist_no_change'){
     const observed=effect.observation;
-    if(before.specialistNoChange||!observed||
+    // A specialist may verify "no change needed" any number of times; each
+    // outcome is owner-attested and the Orchestrator supervises the next step.
+    if(!observed||
        !isFileSpecialist(decision.task.agent_id)||
        !before.agents?.[decision.task.agent_id]?.capabilities?.includes('read_file')||
        !before.agents?.[decision.task.agent_id]?.capabilities?.includes('update_file')||
@@ -119,10 +121,10 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      deny('specialist no-change is not bound to the original attested read');
     signal?.throwIfAborted();
     const progress=await hooks.readContext();
-    const {nextEpoch,specialistNoChange,...unchanged}=progress;
-    const {nextEpoch:priorEpoch,...prior}=before;
+    const {nextEpoch,specialistNoChanges,...unchanged}=progress;
+    const {nextEpoch:priorEpoch,specialistNoChanges:priorNoChanges=[],...prior}=before;
     if(nextEpoch!==priorEpoch+1||
-       JSON.stringify(specialistNoChange)!==JSON.stringify(observed)||
+       JSON.stringify(specialistNoChanges)!==JSON.stringify([...priorNoChanges,observed])||
        JSON.stringify(unchanged)!==JSON.stringify(prior))
      deny('specialist no-change did not preserve the original authority and success ledger');
     retestRequired='verified specialist no-change requires a new independently completed Test';
@@ -164,7 +166,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
        progress.executionProgress?.current_head_sha!==observed.tested_commit_sha||
        JSON.stringify(progress.executionProgress?.completed_work)!==
         JSON.stringify(before.executionProgress?.completed_work)||
-       JSON.stringify(progress.specialistNoChange)!==JSON.stringify(before.specialistNoChange)||
+       JSON.stringify(progress.specialistNoChanges)!==JSON.stringify(before.specialistNoChanges)||
        JSON.stringify(progress.verifiedFailure)!==JSON.stringify({
         failed_phase:observed.failed_phase,
         source_evidence_sha256:observed.source_evidence_sha256,
@@ -187,7 +189,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     deny('Task did not yield independently attested owner progress');
    if(JSON.stringify(progress.verifiedFailureHistory)!==JSON.stringify(before.verifiedFailureHistory)||
       JSON.stringify(progress.verifiedFailure)!==JSON.stringify(before.verifiedFailure)||
-      JSON.stringify(progress.specialistNoChange)!==JSON.stringify(before.specialistNoChange))
+      JSON.stringify(progress.specialistNoChanges)!==JSON.stringify(before.specialistNoChanges))
     deny('completed Task changed the authenticated failure history');
    if(decision.task.agent_id==='test'&&decision.task.permissions.some(p=>p.operation==='run_tests'))
     retestRequired=false;

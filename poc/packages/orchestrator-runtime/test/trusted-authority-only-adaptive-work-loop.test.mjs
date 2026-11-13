@@ -943,7 +943,7 @@ for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete',
    context.agents.backend.capabilities.push('read_file');
    if(stop){
     context.nextEpoch++;
-    context.specialistNoChange=stop;
+    context.specialistNoChanges=[stop];
    }
    return context;
   };
@@ -1157,7 +1157,7 @@ test('R434 dynamic specialist no-change never completes a Task or grants Test au
    const ctx=await original();
    ctx.rootPermissions.push(update,read);
    ctx.agents[role]={capabilities:['read_file','update_file']};
-   if(noChange){ctx.nextEpoch++;ctx.specialistNoChange=noChange;}
+   if(noChange){ctx.nextEpoch++;ctx.specialistNoChanges=[noChange];}
    return ctx;
   };
   f.hooks.executeTask=async(task,before)=>{
@@ -1187,4 +1187,42 @@ test('R434 dynamic specialist no-change never completes a Task or grants Test au
   assert.equal(f.verified.length,0);
   assert.equal(f.retired,true);
  }
+});
+
+test('several verified "no change needed" outcomes in one session; the Orchestrator may reassign the same file',async()=>{
+ const f=fixture();
+ const update=grant('backend'),read={...update,operation:'read_file'};
+ const original=f.hooks.readContext,originalExecute=f.hooks.executeTask;
+ const noChanges=[];
+ f.hooks.readContext=async()=>{
+  const ctx=await original();
+  ctx.rootPermissions.push(read);
+  ctx.agents.backend.capabilities.push('read_file');
+  ctx.nextEpoch+=noChanges.length;
+  if(noChanges.length)ctx.specialistNoChanges=[...noChanges];
+  return ctx;
+ };
+ // The first two edit Tasks end with "no change needed"; the third (same
+ // file, more precise instruction from the supervising Orchestrator) writes.
+ f.hooks.executeTask=async(choice,before)=>{
+  if(choice.agent_id==='backend'&&noChanges.length<2){
+   const stop={task_id:choice.task_id,agent_id:'backend',edited_path:'apps/backend.ts',
+    read_revision:before.executionProgress.current_head_sha,read_evidence_sha256:'e'.repeat(64)};
+   noChanges.push(stop);
+   return {status:'owner_verified_specialist_no_change',observation:stop,
+    gateway_task_completed:false,recovery_authorized:false};
+  }
+  return originalExecute(choice);
+ };
+ const edit=(i)=>{const c=candidate('backend',i,[read,update]);c.task.depends_on=[];return c;};
+ const test=candidate('test',3);test.task.depends_on=['task-2'];
+ const model=new Decisions([edit(0),edit(1),edit(2),test,
+  {action:'ready_for_pr',reason:'Current independent project Test passed'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks,maxSteps:6});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.deepEqual(f.verified.map(p=>p.task_id),['task-2','task-3']);
+ const lastContext=JSON.stringify(model.requests[2]);
+ assert.match(lastContext,/independently_verified_specialist_no_changes/u);
+ assert.match(lastContext,/task-0/u);assert.match(lastContext,/task-1/u);
+ assert.match(lastContext,/You supervise these claims/u);
 });
