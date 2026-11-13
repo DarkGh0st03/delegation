@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import {extractTypecheckLocations,extractTypecheckErrorCodes} from "./typecheck-diagnostics.ts";
 import {extractVitestFailureFiles} from "./vitest-failure-files.ts";
+import {extractTestFailureMessages,type TestFailureMessage} from "./test-failure-messages.ts";
 import type {
   RunnerExecutor,
   RunnerPhaseName,
@@ -285,6 +286,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     let containerCreateAttempted = false;
     let failed = false;
     let privateVitestFailure:ReturnType<typeof extractPrivateVitestFailures>|undefined;
+    let testFailures:TestFailureMessage[]=[];
 
     try {
       signal.throwIfAborted();
@@ -388,9 +390,12 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           continue;
         }
 
+        // A Vitest phase also writes a JSON report to a fixed Runner-owned
+        // path in the throw-away container: the source of the failed test
+        // names and error messages (untrusted, bounded data).
         const privateVitest=this.#config.failure_evidence_dir&&fixed.vitest;
-        const reportPath="/tmp/private-"+fixed.phase+"-vitest.json";
-        const command=privateVitest?fixed.command+
+        const reportPath="/tmp/runner-"+fixed.phase+"-vitest.json";
+        const command=fixed.vitest?fixed.command+
           " --reporter=default --reporter=json --outputFile="+reportPath:fixed.command;
         const result = await executeCommand(
           "docker",
@@ -411,13 +416,13 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
             typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
             typecheckErrorCodes=extractTypecheckErrorCodes(result.stdout,result.stderr);
           }
-          if(fixed.vitest&&!result.timed_out)
+          if(fixed.vitest&&!result.timed_out){
             failingTestFiles=extractVitestFailureFiles(result.stdout,result.stderr);
-          if(privateVitest){
             // A fixed Runner-owned path, never a path supplied by an agent.
             const report=await executeCommand("docker",["exec",containerName,"cat",reportPath]);
-            privateVitestFailure=extractPrivateVitestFailures(
-              report.exit_code===0&&!report.timed_out?report.stdout:"");
+            const json=report.exit_code===0&&!report.timed_out?report.stdout:"";
+            testFailures=extractTestFailureMessages(json,failingTestFiles);
+            if(privateVitest)privateVitestFailure=extractPrivateVitestFailures(json);
           }
           failed = true;
           phases.push({
@@ -500,6 +505,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           ?{typecheck_error_codes:typecheckErrorCodes}:{}),
         ...(failingTestFiles.length>0
           ?{failing_test_files:failingTestFiles}:{}),
+        ...(testFailures.length>0?{test_failures:testFailures}:{}),
         ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
         ...(acceptanceFailure ? {acceptance_failure: acceptanceFailure} : {}),
         project_tests: {

@@ -72,6 +72,17 @@ export function friendlyExecutionError(error) {
 }
 
 /** Only non-secret status fields of the canonical workflow result. */
+/**
+ * Cronologia lines for the failed tests of a Runner FAIL: file, test name and
+ * the first lines of the error message (already cleaned and bounded by the
+ * Runner and the Gateway). Shown to the Engineer as data, never executed.
+ */
+export function failedTestLines(result) {
+  const failures = Array.isArray(result?.test_failures) ? result.test_failures.slice(0, 8) : [];
+  return failures.map(f => "Test fallito: " + String(f.file) + " › " + String(f.test) + " — " +
+    String(f.message).split("\n").slice(0, 3).join(" · ").slice(0, 400));
+}
+
 function summarizeResult(result) {
   const a = result?.adaptive ?? {};
   return {status: result?.status ?? null, pr_created: !!result?.pr_created,
@@ -279,6 +290,7 @@ export class EngineerSessions {
         const failed = (result.phases ?? []).find(p => p.status === "fail")?.phase;
         this.#log(session, "Esito del Runner: " + result.status.toUpperCase() +
           (failed ? " (prima fase fallita: " + failed + ")" : ""));
+        for (const line of failedTestLines(result)) this.#log(session, line);
         return result;
       } catch (error) {
         this.#log(session, "Il Runner non ha dato un esito: " + String(error?.message ?? error).slice(0, 300));

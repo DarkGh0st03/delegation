@@ -18,7 +18,11 @@ const request = {
   project_profile: IAM_CONSOLE_PROJECT_PROFILE,
   project_profile_sha256: projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)
 };
-const runnerFixedPhaseCommands = IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => ({phase: p.name, command: p.command}));
+// A Vitest phase also writes its JSON report (source of failed test messages).
+const runnerFixedPhaseCommands = IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => ({phase: p.name,
+  command: p.failure_report === "vitest"
+    ? `${p.command} --reporter=default --reporter=json --outputFile=/tmp/runner-${p.name}-vitest.json`
+    : p.command}));
 
 const config = {
   gitea_base_url: "http://127.0.0.1:3000",

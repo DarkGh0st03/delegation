@@ -68,6 +68,8 @@ export interface RunnerRunResult {
   typecheck_error_codes?: string[];
   /** Vitest FAIL paths only; no assertion text. Filter through signed read grants. */
   failing_test_files?: string[];
+  /** Failed tests of those files with their cleaned error message (untrusted data). */
+  test_failures?: import("./test-failure-messages.ts").TestFailureMessage[];
   project_e2e_failure?: NonNullable<ReturnType<typeof import("../scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
 }
 

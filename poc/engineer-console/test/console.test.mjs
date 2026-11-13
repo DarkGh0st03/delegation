@@ -640,3 +640,17 @@ test("policy v2 carries the project profile; v1 policies migrate to the reposito
   const bad = defaultPolicy(other); bad.project_profile.image = "node:latest";
   assert.throws(() => validatePolicy(bad, other), /Profilo di test non valido/u);
 });
+
+test("Cronologia shows each failed test with its error message, bounded", async () => {
+  const {failedTestLines} = await import("../src/sessions.mjs");
+  assert.deepEqual(failedTestLines({status: "pass"}), []);
+  const lines = failedTestLines({status: "fail", test_failures: [
+    {file: "tests/backend/user.routes.test.ts", test: "GET /api/users > filters by department",
+     message: "AssertionError: expected 4 to be 2\n- Expected\n+ Received\n- 2\n+ 4"}]});
+  assert.deepEqual(lines, ["Test fallito: tests/backend/user.routes.test.ts › " +
+    "GET /api/users > filters by department — AssertionError: expected 4 to be 2 · - Expected · + Received"]);
+  const many = Array.from({length: 20}, (_, i) => ({file: "f.test.ts", test: "t" + i, message: "m".repeat(900)}));
+  const bounded = failedTestLines({test_failures: many});
+  assert.equal(bounded.length, 8);
+  assert.ok(bounded.every(line => line.length < 500));
+});

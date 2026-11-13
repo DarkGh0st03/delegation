@@ -11,6 +11,8 @@ import {isAbsolute,resolve,join} from "node:path";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import {GiteaClient} from "./gitea-client.ts";
 import {sanitizeVitestFailureFiles} from "../../test-runner-controller/src/vitest-failure-files.ts";
+import {sanitizeTestFailureMessages,type TestFailureMessage}
+ from "../../test-runner-controller/src/test-failure-messages.ts";
 import {sanitizeTypecheckErrorCodes}
  from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {RunnerClient,type RunnerClientRequest,type RunnerClientResult}
@@ -62,6 +64,7 @@ interface FailReceipt{
  readonly environment_phase:string;
  readonly typecheck_error_codes?:readonly string[];
  readonly failing_test_files?:readonly string[];
+ readonly test_failures?:readonly TestFailureMessage[];
  readonly acceptance_failure?:RunnerClientResult["acceptance_failure"];
  readonly repair_candidate:boolean;readonly runner_profile:"poc-default";
  readonly log_reference:string;readonly policy_version:string;
@@ -109,7 +112,7 @@ async function readOnce(directory:string,name:string):Promise<unknown>{
   const st=await fd.stat();
   if(!st.isFile()||st.nlink!==1||(st.mode&0o777)!==0o600||
      (typeof process.getuid==="function"&&st.uid!==process.getuid())||
-     st.size<180||st.size>8192)
+     st.size<180||st.size>32768)
    fail("unsafe or incomplete Runner failure receipt");
   return JSON.parse(await fd.readFile("utf8"));
  }finally{await fd.close();}
@@ -126,7 +129,11 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
  const codesPresent=Object.hasOwn(v,"typecheck_error_codes");
  const phase=v.first_failed_phase;
  const files=v.failing_test_files;
- if(Object.keys(v).filter(k=>!["typecheck_error_codes","acceptance_failure","failing_test_files"].includes(k)).sort().join(",")!==FIELDS||
+ const messages=v.test_failures;
+ if(Object.keys(v).filter(k=>!["typecheck_error_codes","acceptance_failure","failing_test_files","test_failures"].includes(k)).sort().join(",")!==FIELDS||
+    (Object.hasOwn(v,"test_failures")&&
+     (!Array.isArray(files)||!Array.isArray(messages)||!messages.length||
+      JSON.stringify(sanitizeTestFailureMessages(messages,files as string[]))!==JSON.stringify(messages)))||
     (Object.hasOwn(v,"failing_test_files")&&
      (!isRunnerPhaseName(phase)||phase==="researcher_acceptance"||
       !Array.isArray(files)||!files.length||
@@ -216,6 +223,10 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
   const now=this.#now();
   if(!Number.isSafeInteger(now)||now<=0)
    fail("invalid owner time");
+  // Failed test names and messages: untrusted data, bounded, per failing file.
+  const testFailures=stage.first_failed_phase!=="researcher_acceptance"&&
+   result.failing_test_files?.length&&result.test_failures?.length
+   ?sanitizeTestFailureMessages(result.test_failures,result.failing_test_files):[];
   const unsigned:Omit<FailReceipt,"mac_sha256">={
    schema:"authority-only-runner-fail-evidence-v2",
    kind:"gateway_controlled_docker_runner_fail",...e,
@@ -228,6 +239,7 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
     {acceptance_failure:result.acceptance_failure}:{}),
    ...(stage.first_failed_phase!=="researcher_acceptance"&&
     result.failing_test_files?.length?{failing_test_files:result.failing_test_files}:{}),
+   ...(testFailures.length?{test_failures:testFailures}:{}),
    environment_phase:stage.environment_phase,
    repair_candidate:stage.repair_candidate,
    runner_profile:"poc-default",log_reference:result.log_reference!,
@@ -269,6 +281,7 @@ export class AuthenticatedRunnerFailureObserver{
   tested_commit_sha:string;first_failed_phase:string;environment_phase:string;
   typecheck_error_codes?:readonly string[];
   failing_test_files?:readonly string[];
+  test_failures?:readonly TestFailureMessage[];
   acceptance_failure?:RunnerClientResult["acceptance_failure"];
   repair_candidate:boolean;evidence_sha256:string;
   gateway_task_completed:false;recovery_authorized:false
@@ -297,6 +310,7 @@ export class AuthenticatedRunnerFailureObserver{
     {typecheck_error_codes:Object.freeze([...v.typecheck_error_codes])}:{}),
    ...(v.acceptance_failure?{acceptance_failure:safeAcceptanceFailureSummary(v.acceptance_failure)!}:{}),
    ...(v.failing_test_files?.length?{failing_test_files:Object.freeze([...v.failing_test_files])}:{}),
+   ...(v.test_failures?.length?{test_failures:Object.freeze(v.test_failures.map(x=>Object.freeze({...x})))}:{}),
    repair_candidate:v.repair_candidate,
    evidence_sha256:digest(canonical(v)),
    gateway_task_completed:false as const,recovery_authorized:false as const

@@ -88,7 +88,9 @@
             <label>Immagine Docker (con versione esplicita, es. <code>node:22.15.0-bookworm</code>)
               <input name="profile_image"></label>
             <label>Fasi (JSON: elenco di <code>{"name": ..., "command": ...}</code>;
-              <code>"failure_report": "vitest"</code> per avere i file di test falliti)
+              <code>"failure_report": "vitest"</code> se il comando termina con un'invocazione di Vitest
+              (es. <code>npx vitest run tests/backend</code>): il Runner aggiunge il report JSON e
+              riporta test falliti e messaggi d'errore)
               <textarea name="profile_phases" rows="8" spellcheck="false"></textarea></label>
             <label>Cartelle dei test (una per riga): solo qui il Test agent può scrivere
               <textarea name="profile_test_roots" rows="2"></textarea></label>

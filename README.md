@@ -44,6 +44,11 @@ Engineer console and the test Runner. Full guide (Italian):
    same Task. Backend/Frontend change application files; the Test agent
    reads the changed files and writes tests for the new behaviour; then the
    phases of the signed project profile run in a throw-away Docker container.
+   When a test phase fails, the Runner reports which tests failed and their
+   error message (cleaned and bounded, carried in the MAC-protected FAIL
+   evidence): the Orchestrator uses them, as untrusted data, to decide whether
+   to repair the test or the application code, and the Engineer sees them in
+   the session timeline.
 4. **Draft PR** only after a verified PASS of every project test phase on the
    final commit. The Root is revoked at the end (or at once with *Stop*).
 

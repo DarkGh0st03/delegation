@@ -209,10 +209,14 @@ test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>
   root:{...root,root_permissions:[...approved,
    {resource:uri+"/directories/tests/backend/accounts",operation:"read_file"}]},
   expected:{...expected,first_failed_phase:"backend_tests",
-   failing_test_files:[allowed,hidden]}
+   failing_test_files:[allowed,hidden],
+   test_failures:[{file:allowed,test:"t1",message:"expected 1 to be 2"},
+    {file:hidden,test:"t2",message:"outside the signed reads"}]}
  } as never);
  const proof=await observeTrustedNativeTestFailure(f.config);
  assert.deepEqual(proof.failing_test_files,[allowed]);
+ // Messages follow the same signed read scope as the failing files.
+ assert.deepEqual(proof.test_failures,[{file:allowed,test:"t1",message:"expected 1 to be 2"}]);
  assert.equal(proof.recovery_authorized,false);
 });
 

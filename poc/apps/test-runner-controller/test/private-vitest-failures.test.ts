@@ -42,7 +42,7 @@ test("Runner keeps machine-readable assertions exclusively in private SHA-bound 
   const result=await runner.run(request);
   assert.equal(result.status,"fail");
   assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION|private_vitest_failure|private-token/);
-  assert.ok(commands.some(args=>args.includes("cat")&&args.at(-1)==="/tmp/private-frontend_tests-vitest.json"));
+  assert.ok(commands.some(args=>args.includes("cat")&&args.at(-1)==="/tmp/runner-frontend_tests-vitest.json"));
   assert.ok(commands.some(args=>args.some(x=>x.includes("--reporter=default --reporter=json --outputFile="))));
   const dir=join(root,"evidence",(await readdir(join(root,"evidence")))[0]);
   const manifest=JSON.parse(await readFile(join(dir,"manifest.json"),"utf8"));
@@ -50,5 +50,27 @@ test("Runner keeps machine-readable assertions exclusively in private SHA-bound 
   assert.equal(manifest.private_vitest_failure.status,"captured");
   assert.equal(manifest.private_vitest_failure.causal_attribution,"not_established");
   assert.match(JSON.stringify(manifest.private_vitest_failure),/PRIVATE_ASSERTION/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+test("Runner FAIL response names the failed tests with their cleaned error message",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"runner-test-failures-"));
+ try{
+  const request={request_id:"r",repository:"gitea://fixture/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)};
+  // No private evidence directory: the messages still reach the response.
+  const runner=new IsolatedDockerRunnerExecutor({gitea_base_url:"http://fixture.invalid",gitea_token:"private-token",phase_timeout_ms:1000,log_dir:join(root,"logs")},{
+   fetch_fn:async url=>String(url).includes("/archive/")?new Response("exact archive"):new Response(JSON.stringify({commit:{id:request.commit_sha}})),
+   command_runner:async(_command,args)=>{
+    if(args.includes("cat"))return {exit_code:0,stdout:JSON.stringify(report),stderr:"",timed_out:false};
+    const fail=args.some(x=>x.includes("vitest run tests/frontend"));
+    return {exit_code:fail?1:0,stdout:fail?" FAIL  tests/frontend/actions.test.tsx > actions keeps previous status on failure\n":"",stderr:"",timed_out:false};
+   }
+  });
+  const result=await runner.run(request);
+  assert.equal(result.status,"fail");
+  assert.deepEqual(result.failing_test_files,["tests/frontend/actions.test.tsx"]);
+  assert.deepEqual(result.test_failures,[{file:"tests/frontend/actions.test.tsx",
+   test:"actions keeps previous status on failure",
+   message:"AssertionError: expected SUSPENDED to equal ACTIVE\nPRIVATE_ASSERTION"}]);
+  assert.doesNotMatch(JSON.stringify(result),/private-token/);
  }finally{await rm(root,{recursive:true,force:true});}
 });

@@ -47,6 +47,8 @@ type NativeVerifiedFailedTest=Readonly<{
  failed_phase:string;source_evidence_sha256:string;
  typecheck_error_codes?:readonly string[];
  failing_test_files?:readonly string[];
+ /** Failed tests of those files with their message: untrusted data. */
+ test_failures?:readonly Readonly<{file:string;test:string;message:string}>[];
  acceptance_failure?:import("../../../apps/gateway/src/runner-client.ts").RunnerClientResult["acceptance_failure"];
  recovery_authorized:false;child_credential_issued:false;
  gateway_task_completed:false;task_registered:false;
@@ -139,6 +141,7 @@ export async function observeTrustedNativeTestFailure(
   root.root_permissions.some(p=>giteaPermissionCovers(p,{
    resource:canonicalFileUri(root.repository,root.branch,path),operation:"read_file"
   })));
+ const testFailures=fail.test_failures?.filter(x=>failingTestFiles?.includes(x.file));
  return Object.freeze({
   status:"native_test_failure_evidence_verified_only" as const,
   failed_task_id:intent.task_id,failed_runtime_task_id:intent.runtime_task_id,
@@ -149,6 +152,8 @@ export async function observeTrustedNativeTestFailure(
   ...(fail.typecheck_error_codes?.length?
    {typecheck_error_codes:Object.freeze([...fail.typecheck_error_codes])}:{}),
   ...(failingTestFiles?.length?{failing_test_files:Object.freeze(failingTestFiles)}:{}),
+  // Only messages of failing files inside the signed read scope.
+  ...(testFailures?.length?{test_failures:Object.freeze(testFailures)}:{}),
   ...(fail.acceptance_failure?{acceptance_failure:fail.acceptance_failure}:{}),
   recovery_authorized:false as const,
   child_credential_issued:false as const,

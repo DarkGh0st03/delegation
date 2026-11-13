@@ -55,7 +55,7 @@ export function validateTrustedRunnerPass(
        .test(result.log_reference??"")||
     result.acceptance_failure!==undefined||
     result.project_e2e_failure!==undefined||
-    result.failing_test_files!==undefined||
+    result.failing_test_files!==undefined||result.test_failures!==undefined||
     result.typecheck_diagnostics!==undefined||
     result.typecheck_error_codes!==undefined)
   deny("Runner PASS claim is incomplete or contains failure evidence");

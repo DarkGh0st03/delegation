@@ -172,6 +172,30 @@ test("RunnerClient accepts only bounded Vitest paths in a genuine failure",async
   assert.ok(!JSON.stringify(result).includes("DO_NOT_DISCLOSE"));
 });
 
+test("RunnerClient carries failed test messages only for kept failing files",async()=>{
+  const ok={file:"tests/frontend/access.test.tsx",test:"access > hides admin link",
+    message:"AssertionError: expected true to be false"};
+  const body=(test_failures:unknown)=>({request_id:request.request_id,repository:request.repository,
+    branch:request.branch,tested_commit_sha:request.commit_sha,runner_profile:"poc-default",
+    project_profile_sha256:PROFILE_SHA,status:"fail",
+    phases:[{phase:"frontend_tests",status:"fail"}],
+    project_tests:{status:"fail",phases:[{phase:"frontend_tests",status:"fail"}]},
+    researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"},
+    failing_test_files:["tests/frontend/access.test.tsx","src/outside-profile.test.ts"],test_failures});
+  const run=(test_failures:unknown)=>new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify(body(test_failures)),{status:200})}).run(request);
+  assert.deepEqual((await run([ok])).test_failures,[ok]);
+  // A message for a file outside the profile, or a malformed one, is dropped.
+  for(const bad of [[{...ok,file:"src/outside-profile.test.ts"}],[{...ok,message:"x\n    at y"}],"text"])
+    assert.equal((await run(bad)).test_failures,undefined);
+  // A PASS can never carry failure messages.
+  const pass=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify({...body([ok]),status:"pass",failing_test_files:undefined}),{status:200})});
+  await assert.rejects(pass.run(request),/contradictory failure evidence/u);
+});
+
 test("RunnerClient carries only valid fileless TypeScript codes",async()=>{
   const secret="PRIVATE_COMPILER_MESSAGE";
   const fixture={request_id:request.request_id,repository:request.repository,

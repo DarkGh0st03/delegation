@@ -11,6 +11,8 @@ import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
   from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {sanitizeVitestFailureFiles}
   from "../../test-runner-controller/src/vitest-failure-files.ts";
+import {sanitizeTestFailureMessages,type TestFailureMessage}
+  from "../../test-runner-controller/src/test-failure-messages.ts";
 import type { RunnerPhaseExecutionResult } from "./types.ts";
 
 type FetchLike = typeof fetch;
@@ -55,6 +57,8 @@ export interface RunnerClientResult {
   typecheck_diagnostics?: TypecheckLocation[];
   typecheck_error_codes?: string[];
   failing_test_files?: string[];
+  /** Failed tests of failing_test_files with their cleaned message (untrusted data). */
+  test_failures?: TestFailureMessage[];
   project_e2e_failure?: NonNullable<ReturnType<typeof import("../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
 }
 
@@ -207,7 +211,7 @@ export class RunnerClient {
     // failure evidence (even an empty or malformed failure field).
     if(status==="pass"&&[
       "acceptance_failure","typecheck_diagnostics","typecheck_error_codes",
-      "failing_test_files","project_e2e_failure"
+      "failing_test_files","test_failures","project_e2e_failure"
     ].some(key=>Object.hasOwn(body,key)&&body[key]!==null))
       throw new ProviderUnavailableError(
         "Runner PASS response contains contradictory failure evidence");
@@ -294,6 +298,11 @@ export class RunnerClient {
         ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files)
            .filter(path=>isProjectTestSource(path,testSourceProfileOf(this.#profile)))}: {})
     };
+    // Messages only for failing files kept above; malformed input is dropped.
+    if(result.failing_test_files?.length&&body.test_failures!==undefined){
+      const messages=sanitizeTestFailureMessages(body.test_failures,result.failing_test_files);
+      if(messages.length)result.test_failures=messages;
+    }
 
     if (
       result.request_id !== request.request_id ||
