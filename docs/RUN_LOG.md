@@ -7,6 +7,35 @@ Draft PR su Gitea.
 
 ---
 
+## 2026-11-13 — Ricerca e filtro utenti con Gemini: prima riparazione guidata dai messaggi d'errore
+
+Sessione `s-107efa00274b`, requisito in linguaggio naturale "Consenti a un
+amministratore di cercare gli utenti per nome o email e di filtrarli per
+reparto", `gemini-3.8-flash`.
+
+- Planning: 23 permessi proposti, 23 firmati (8 chiamate a Gemini).
+- 9 Task (Backend 4, Frontend 2, Test 1 + 2 esecuzioni dei test), 33
+  autorizzazioni del Gateway, nessuna negata.
+- Primo Runner: FAIL su `backend_tests`. La Cronologia mostra per la prima
+  volta il motivo: `expected 'Alice Romano' to be 'Alice Chen'` in due test di
+  `tests/backend/user.routes.test.ts` (il test nuovo si aspettava un utente che
+  non esiste nei dati di esempio).
+- L'Orchestratore ha letto il messaggio, ha delegato al Test agent la
+  correzione del test (non del codice: il backend era corretto) e il secondo
+  Runner ha dato **PASS** su tutte le 6 fasi.
+- La sessione si è fermata alla proposta della Draft PR: l'Orchestratore ha
+  scritto `"depends_on": "task-11"` (stringa) invece di `["task-11"]` e la
+  validazione l'ha rifiutata. Corretto dopo la sessione (una stringa singola
+  vale come lista di un elemento, validata come prima).
+
+Sessioni precedenti dello stesso requisito (`s-2c477b28eb09`,
+`s-7f5fb36e688c`) avevano rivelato tre difetti, corretti prima di questa: la
+Child DC poteva durare più della Root operativa; il Test agent non poteva
+concludere "nessuna modifica necessaria"; i messaggi d'errore dei test non
+arrivavano né all'Orchestratore né all'Engineer.
+
+---
+
 ## 2026-11-12 — Sistema generico: seconda repository con Runner reale (sandbox)
 
 Verifica del profilo di progetto per repository su una repository diversa da

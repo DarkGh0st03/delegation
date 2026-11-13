@@ -135,3 +135,19 @@ test('R434 no-change evidence requires a registered specialist (Test included) w
  ])assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer(invalid),
   /R351 authority-only model Task choice denied/u);
 });
+
+test('a single dependency written as a string is the same one-element list (session s-107efa00274b)',async()=>{
+ const repo='gitea://gitea.local/thesis/iam-console-poc';
+ const pr={resource:repo,operation:'create_pull_request'};
+ const proposer=dependsOn=>new TrustedAuthorityOnlyAdkDecisionProposer({
+  model:new ScriptedChoice({task_id:'task-12',agent_id:'orchestrator',depends_on:dependsOn,
+   permissions:[pr],instruction:'Open the Draft PR for the tested commit'}),
+  requirement:'Search users',branch:'feature/account-suspension',
+  rootPermissions:[pr],agents:{orchestrator:{capabilities:['create_pull_request']},test:{capabilities:['run_tests']}},
+  previousTasks:[{task_id:'task-11',agent_id:'test'}],nextEpoch:2,decisionKind:'pull_request'});
+ assert.deepEqual((await proposer('task-11').propose()).depends_on,['task-11']);
+ assert.deepEqual((await proposer(['task-11']).propose()).depends_on,['task-11']);
+ // Still validated: an unknown dependency or a non-string value is refused.
+ await assert.rejects(proposer('task-99').propose(),/R351 authority-only model Task choice denied/u);
+ await assert.rejects(proposer(11).propose(),/R351 authority-only model Task choice denied/u);
+});

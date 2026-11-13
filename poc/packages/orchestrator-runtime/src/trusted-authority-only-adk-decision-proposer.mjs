@@ -261,6 +261,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      'Propose exactly ONE next software engineering Task; never claim approval or completion.',
     this.decisionKind==='adaptive'?'Return JSON only using the action schema above.':
      'Return JSON only with exactly task_id,agent_id,depends_on,permissions,instruction.',
+    'depends_on is always a JSON array of task IDs (e.g. ["task-3"]; [] for none).',
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
@@ -335,6 +336,11 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    if(!exact(raw,['action','task'])||raw.action!=='delegate')fail();
    raw=raw.task;
   }
+  // A single dependency written as a string instead of a one-element list
+  // (session s-107efa00274b) is the same unambiguous value: normalize it
+  // here, then validate exactly as any other choice.
+  if(raw&&typeof raw==='object'&&!Array.isArray(raw)&&typeof raw.depends_on==='string')
+   raw={...raw,depends_on:[raw.depends_on]};
   if(!exact(raw,['task_id','agent_id','depends_on','permissions','instruction'])||
      typeof raw.task_id!=='string'||!ID.test(raw.task_id)||
      typeof raw.agent_id!=='string'||!Object.hasOwn(this.agents,raw.agent_id)||
