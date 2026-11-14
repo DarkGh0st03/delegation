@@ -14,6 +14,7 @@ import {fileURLToPath} from "node:url";
 import {SESSION_COOKIE, sessionTokenFromCookie} from "./auth.mjs";
 import {validateRepoName} from "./gitea.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
+import {detectStaging} from "./staging-detect.mjs";
 
 const PUBLIC = resolve(dirname(fileURLToPath(import.meta.url)), "../public");
 const STATIC = Object.freeze({
@@ -83,6 +84,25 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
     return user;
   }
 
+  // Automatic staging detection (a proposal; the Engineer confirms it).
+  const detecting = new Map();
+  function detectRepository(name, {force = false} = {}) {
+    if (!staging) return Promise.resolve(undefined);
+    if (!force && (staging.profile(name).profile || staging.detection(name)))
+      return Promise.resolve(staging.detection(name));
+    if (detecting.has(name)) return detecting.get(name);
+    const run = (async () => {
+      const detail = await gitea.repositoryDetail(validateRepoName(name));
+      if (!detail.head_sha) return undefined;
+      const tree = await gitea.repositoryTree(name, detail.head_sha);
+      const result = await detectStaging({files: tree.files,
+        read: path => gitea.fileText(name, detail.head_sha, path)});
+      return staging.saveDetection(name, result, detail.head_sha);
+    })().finally(() => detecting.delete(name));
+    detecting.set(name, run);
+    return run;
+  }
+
   async function repoWithPolicy(name) {
     const repository = await gitea.repositoryDetail(validateRepoName(name));
     const stored = store.loadPolicy(repository.owner, repository.name);
@@ -138,6 +158,9 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
       if (method === "GET" && path === "/api/repos") {
         const repositories = await gitea.listRepositories();
         for (const r of repositories) { try { staging?.ensureDefault(r.name); } catch { /* invalid name */ } }
+        // First view of a repository without a staging profile: detect it.
+        await Promise.all(repositories.filter(r => !r.empty).map(r =>
+          detectRepository(r.name).catch(() => undefined)));
         return send(res, 200, {org: gitea.org, staging_available: !!staging,
           repositories: repositories.map(r => staging ? {...r, staging: staging.summary(r.name)} : r)});
       }
@@ -166,6 +189,7 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
           const repository = await gitea.importRepository({cloneUrl, name,
             credentials: github.cloneCredentials});
           staging?.ensureDefault(repository.name);
+          detectRepository(repository.name).catch(() => undefined);
           return send(res, 201, {repository});
         } catch (error) {
           if (error.status === 409)
@@ -176,17 +200,22 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
           throw new HttpError(400, error.message);
         }
       }
-      const stagingMatch = /^\/api\/repos\/([^/]+)\/staging$/u.exec(path);
-      if (stagingMatch && (method === "GET" || method === "PUT")) {
+      const stagingMatch = /^\/api\/repos\/([^/]+)\/staging(\/detect)?$/u.exec(path);
+      if (stagingMatch && (method === "GET" || method === "PUT" || (method === "POST" && stagingMatch[2]))) {
         if (!staging) throw new HttpError(503, "Lo staging è disponibile solo nell'avvio con Docker");
         const {repository} = await repoWithPolicy(decodeURIComponent(stagingMatch[1]));
         if (method === "PUT") {
           try { staging.save(repository.name, await readJson(req)); }
           catch (error) { throw new HttpError(error.status ?? 400, error.message); }
         }
+        if (method === "POST") {
+          try { await detectRepository(repository.name, {force: true}); }
+          catch (error) { throw new HttpError(502, "Analisi della repository non riuscita: " + error.message); }
+        }
         const {profile, source} = staging.profile(repository.name);
         return send(res, 200, {repository: {owner: repository.owner, name: repository.name},
-          profile: profile ?? null, profile_source: source, status: staging.status(repository.name) ?? null});
+          profile: profile ?? null, profile_source: source, status: staging.status(repository.name) ?? null,
+          detection: staging.detection(repository.name) ?? null});
       }
       const repoMatch = /^\/api\/repos\/([^/]+)(\/policy)?$/u.exec(path);
       if (repoMatch) {

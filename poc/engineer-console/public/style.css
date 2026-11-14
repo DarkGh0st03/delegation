@@ -372,3 +372,4 @@ a.btn { text-decoration: none; }
 .staging-form h3 { font-size: 1.05rem; margin-bottom: 4px; }
 .staging-form textarea, .staging-form input[name="image"] { font-family: var(--mono, ui-monospace, monospace); font-size: .85rem; }
 .pr-next { margin-top: 10px; font-size: .86rem; color: var(--muted); }
+.app-meta.na { font-size: .8rem; color: var(--muted); font-style: italic; cursor: help; }

@@ -152,6 +152,30 @@ function renderAppCell(td, repo, available) {
   td.replaceChildren();
   const st = repo.staging;
   if (!available || !st) { td.appendChild(el("span", "muted small", "—")); return; }
+  if (!st.configured && st.detection?.interface === "none") {
+    // Automatic detection found no graphical interface (library, CLI, API).
+    const na = el("span", "app-meta na", "Interfaccia non disponibile");
+    na.title = st.detection.reason + " — puoi comunque configurarla da Configura.";
+    td.appendChild(na); return;
+  }
+  if (!st.configured && st.detection?.interface === "web" && st.detection.proposal) {
+    // Detected web interface: a proposal the Engineer confirms with one click.
+    const b = el("button", "btn secondary small", "Pubblica l'app");
+    b.type = "button"; b.title = "Rilevata: " + st.detection.reason + ". Pubblica main su un indirizzo locale.";
+    b.addEventListener("click", async (event) => {
+      event.stopPropagation(); b.disabled = true;
+      try {
+        const name = encodeURIComponent(repo.name);
+        const data = await api("GET", "/api/repos/" + name + "/staging");
+        if (!data.detection?.proposal) throw new Error("Nessuna proposta disponibile");
+        await api("PUT", "/api/repos/" + name + "/staging", {...data.detection.proposal, enabled: true});
+        await loadRepos();
+      } catch (error) { b.disabled = false; message("import-msg", error.message, "error"); }
+    });
+    td.appendChild(b);
+    td.appendChild(el("span", "app-meta", "Interfaccia web rilevata"));
+    return;
+  }
   if (!st.configured || !st.enabled) {
     const b = el("button", "btn ghost small", st.configured ? "Disattivata" : "Configura app");
     b.type = "button"; b.title = "Come costruire e avviare l'app di questa repository";
@@ -439,16 +463,30 @@ async function loadStagingForm(focus) {
   try {
     const data = await api("GET", "/api/repos/" + encodeURIComponent(selectedRepo.repository.name) + "/staging");
     form.hidden = false;
-    const p = data.profile || {enabled: false, image: "node:22.15.0-bookworm", build: "", start: "", port: 3000};
-    f.enabled.checked = !!p.enabled; f.image.value = p.image; f.build.value = p.build;
+    const d = data.detection;
+    const p = data.profile || d?.proposal ||
+      {enabled: false, image: "node:22.15.0-bookworm", build: "", start: "", port: 3000};
+    f.enabled.checked = !!data.profile?.enabled; f.image.value = p.image; f.build.value = p.build;
     f.start.value = p.start; f.port.value = p.port;
     const st = data.status;
-    $("staging-state").textContent = !st ? (data.profile ? "Nessun deploy ancora registrato." : "Non configurata.") :
+    const detected = data.profile ? "" : !d ? "Non configurata." :
+      d.interface === "web" ? "Proposta rilevata automaticamente (" + d.reason + "): controllala, attiva l'interruttore e salva."
+      : "Interfaccia non disponibile: " + d.reason + "." + (d.proposal ? " Proposta precompilata, disattivata." : "") +
+        " Puoi comunque configurarla a mano.";
+    $("staging-state").textContent = !st ? (data.profile ? "Nessun deploy ancora registrato." : detected) :
       (st.live_sha ? "Attiva: main @ " + st.live_sha.slice(0, 7) + " su " + st.url + ". " : "") +
       (st.message || "") + (st.state === "failed" ? " Correggi i comandi o premi «Salva app di prova» per riprovare." : "");
     if (focus) form.scrollIntoView({block: "start"});
   } catch { form.hidden = true; }
 }
+$("staging-detect").addEventListener("click", async () => {
+  try {
+    await api("POST", "/api/repos/" + encodeURIComponent(selectedRepo.repository.name) + "/staging/detect");
+    await loadStagingForm(false);
+    message("staging-msg", "Repository analizzata di nuovo.", "ok");
+    loadRepos();
+  } catch (error) { message("staging-msg", error.message, "error"); }
+});
 $("staging-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const f = event.target.elements;

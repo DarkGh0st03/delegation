@@ -108,6 +108,19 @@ export class GiteaAdmin {
     return {files: [...new Set(files)].sort(), directories: [...new Set(directories)].sort()};
   }
 
+  /** Text of one small file at an exact commit (read-only), or undefined. */
+  async fileText(name, sha, path, {maxBytes = 65536} = {}) {
+    validateRepoName(name);
+    if (!/^[a-f0-9]{40}$/u.test(sha)) throw Error("Invalid commit SHA");
+    if (typeof path !== "string" || !path || path.startsWith("/") || path.split("/").some(s => !s || s === "..")) return undefined;
+    const response = await this.#fetch(this.#base + "/api/v1/repos/" + encodeURIComponent(this.#org) + "/" +
+      encodeURIComponent(name) + "/raw/" + path.split("/").map(encodeURIComponent).join("/") + "?ref=" + sha, {
+      headers: {authorization: this.#auth}, redirect: "error", signal: AbortSignal.timeout(20_000)});
+    if (!response.ok) return undefined;
+    const body = Buffer.from(await response.arrayBuffer());
+    return body.length > maxBytes ? undefined : body.toString("utf8");
+  }
+
   /** The open pull request whose head is `branch`, or null (read-only). */
   async pullRequestFor(name, branch) {
     validateRepoName(name);

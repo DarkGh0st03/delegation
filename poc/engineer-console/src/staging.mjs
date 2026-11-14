@@ -84,7 +84,10 @@ export class StagingStore {
    * not own the folder the console writes to). */
   constructor(directory, {create = true} = {}) {
     this.#dir = directory;
-    if (create) mkdirSync(join(directory, "profiles"), {recursive: true});
+    if (create) {
+      mkdirSync(join(directory, "profiles"), {recursive: true});
+      mkdirSync(join(directory, "detections"), {recursive: true});
+    }
   }
   get directory() { return this.#dir; }
 
@@ -121,7 +124,34 @@ export class StagingStore {
     if (!existsSync(this.#path(name)) && defaultStagingProfile(name)) this.save(name, defaultStagingProfile(name));
   }
 
-  delete(name) { const path = this.#path(name); if (existsSync(path)) rmSync(path); }
+  delete(name) {
+    for (const path of [this.#path(name), this.#detectionPath(name)]) if (existsSync(path)) rmSync(path);
+  }
+
+  #detectionPath(name) { return join(this.#dir, "detections", validateRepoName(name) + ".json"); }
+
+  /** Result of the automatic detection (see staging-detect.mjs). */
+  saveDetection(name, result, sha) {
+    const record = {interface: result.interface === "web" ? "web" : "none",
+      reason: String(result.reason ?? "").slice(0, 200),
+      evidence: (result.evidence ?? []).map(String).slice(0, 8),
+      ...(result.proposal ? {proposal: validateStagingProfile(result.proposal)} : {}),
+      sha: typeof sha === "string" ? sha : null, detected_at: new Date().toISOString()};
+    const path = this.#detectionPath(name), tmp = path + ".tmp-" + process.pid;
+    writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n");
+    renameSync(tmp, path);
+    return record;
+  }
+
+  detection(name) {
+    try {
+      const raw = JSON.parse(readFileSync(this.#detectionPath(name), "utf8"));
+      return {interface: raw.interface === "web" ? "web" : "none", reason: String(raw.reason ?? ""),
+        evidence: Array.isArray(raw.evidence) ? raw.evidence.map(String) : [],
+        ...(raw.proposal ? {proposal: validateStagingProfile(raw.proposal)} : {}),
+        sha: raw.sha ?? null, detected_at: raw.detected_at ?? null};
+    } catch { return undefined; }
+  }
 
   /** When a profile was last saved (ISO time), "" if unknown. */
   savedAt(name) {
@@ -159,7 +189,10 @@ export class StagingStore {
   /** What the repository table shows. */
   summary(name) {
     const {profile, source} = this.profile(name);
+    const detection = profile ? undefined : this.detection(name);
     return {configured: !!profile, enabled: !!profile?.enabled, profile_source: source,
-      ...(profile?.enabled ? {status: this.status(name) ?? null} : {})};
+      ...(profile?.enabled ? {status: this.status(name) ?? null} : {}),
+      ...(detection ? {detection: {interface: detection.interface, reason: detection.reason,
+        proposal: !!detection.proposal}} : {})};
   }
 }

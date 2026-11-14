@@ -280,3 +280,90 @@ test("deployer: several repositories run side by side, each on its own port and 
   assert.equal(world.containers.has("delegation-staging-greeter"), false);
   assert.ok(world.containers.get("delegation-staging-py-dashboard").running);
 });
+
+import {detectStaging} from "../src/staging-detect.mjs";
+const detect = (files, contents = {}) => detectStaging({files: Object.keys(contents).concat(files),
+  read: async path => contents[path]});
+
+test("detection: web interfaces get a start proposal, libraries/CLIs/APIs are 'not available'", async () => {
+  const vite = await detect(["index.html", "src/main.tsx", "package-lock.json"], {"package.json": JSON.stringify({
+    scripts: {build: "vite build"}, dependencies: {react: "19"}, devDependencies: {vite: "6"}})});
+  assert.equal(vite.interface, "web");
+  assert.match(vite.proposal.build, /npm ci --include=dev.*npm run build/u);
+  assert.match(vite.proposal.start, /vite preview --host 0\.0\.0\.0 --port 4173/u);
+
+  const express = await detect(["public/index.html", "server.js"], {"package.json": JSON.stringify({
+    scripts: {start: "node server.js"}, dependencies: {express: "5"}})});
+  assert.equal(express.interface, "web");
+  assert.equal(express.proposal.port, 3000);
+  assert.match(express.proposal.start, /PORT=3000 npm start/u);
+
+  const api = await detect(["src/index.js"], {"package.json": JSON.stringify({
+    scripts: {start: "node src/index.js"}, dependencies: {express: "5"}})});
+  assert.equal(api.interface, "none");
+  assert.match(api.reason, /solo API/u);
+  assert.equal(api.proposal.enabled, false, "an API can still be enabled by hand");
+
+  const library = await detect(["src/index.js", "test/index.test.js"], {"package.json": JSON.stringify({
+    name: "unit-convert", scripts: {test: "node --test"}})});
+  assert.equal(library.interface, "none");
+  assert.match(library.reason, /nessuna interfaccia grafica/u);
+  assert.equal(library.proposal, undefined);
+
+  const cli = await detect([], {"package.json": JSON.stringify({bin: {conv: "cli.js"}})});
+  assert.match(cli.reason, /riga di comando/u);
+
+  const flask = await detect(["app.py", "templates/index.html"], {"requirements.txt": "flask==3.0.3\n"});
+  assert.equal(flask.interface, "web");
+  assert.match(flask.proposal.start, /flask --app app run --host 0\.0\.0\.0 --port 8000/u);
+  assert.equal(flask.proposal.image, "python:3.12.7-slim");
+
+  const fastapi = await detect(["main.py"], {"requirements.txt": "fastapi\nuvicorn\n"});
+  assert.equal(fastapi.interface, "none");
+
+  const site = await detect(["index.html", "style.css"]);
+  assert.equal(site.interface, "web");
+  assert.equal((await detect(["README.md", "notes.txt"])).interface, "none");
+  // A broken manifest is reported, never executed.
+  assert.equal((await detect([], {"package.json": "{not json"})).interface, "none");
+});
+
+test("console API: detection is stored per repository and drives the App column", async (t) => {
+  const dir = tempDir(t);
+  const staging = new StagingStore(join(dir, "staging"));
+  const files = {"package.json": JSON.stringify({scripts: {build: "vite build"},
+    dependencies: {react: "19"}, devDependencies: {vite: "6"}}), "index.html": "<!doctype html>"};
+  const gitea = {org: "thesis",
+    async listRepositories() { return [{owner: "thesis", name: "shop", default_branch: "main"},
+      {owner: "thesis", name: "lib", default_branch: "main"}]; },
+    async repositoryDetail(name) { return {owner: "thesis", name, default_branch: "main", head_sha: SHA1,
+      protected_branches: ["main"]}; },
+    async repositoryTree(name) { return {files: name === "shop" ? Object.keys(files) : ["src/index.js"],
+      directories: [""]}; },
+    async fileText(name, sha, path) { return name === "shop" ? files[path] : undefined; }};
+  let handler;
+  const server = createServer((req, res) => handler(req, res));
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  t.after(() => server.close());
+  const port = server.address().port;
+  handler = createConsoleHandler({auth: new ConsoleAuth({users: {engineer: hashPassword("correct-horse")}}),
+    gitea, store: new ConsoleStore(join(dir, "console")), health: async () => ({}), port, staging});
+  const call = (method, path, body, cookie) => fetch(`http://127.0.0.1:${port}${path}`, {method,
+    headers: {...(body ? {"content-type": "application/json"} : {}), ...(method === "GET" ? {} : {"x-console-request": "1"}),
+      ...(cookie ? {cookie} : {})}, ...(body ? {body: JSON.stringify(body)} : {})});
+  const login = await call("POST", "/api/login", {username: "engineer", password: "correct-horse"});
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const repos = await (await call("GET", "/api/repos", undefined, cookie)).json();
+  const byName = Object.fromEntries(repos.repositories.map(r => [r.name, r.staging]));
+  assert.deepEqual(byName.shop.detection, {interface: "web", reason: "Interfaccia web costruita con Vite", proposal: true});
+  assert.equal(byName.shop.configured, false, "a proposal is not a deployment until confirmed");
+  assert.equal(byName.lib.detection.interface, "none");
+  const detail = await (await call("GET", "/api/repos/shop/staging", undefined, cookie)).json();
+  assert.equal(detail.detection.proposal.port, 4173);
+  // Confirming = saving the proposal; the deployer then publishes it.
+  await call("PUT", "/api/repos/shop/staging", {...detail.detection.proposal, enabled: true}, cookie);
+  const after = await (await call("GET", "/api/repos", undefined, cookie)).json();
+  assert.equal(after.repositories.find(r => r.name === "shop").staging.enabled, true);
+  const redetect = await call("POST", "/api/repos/lib/staging/detect", undefined, cookie);
+  assert.equal((await redetect.json()).detection.interface, "none");
+});
