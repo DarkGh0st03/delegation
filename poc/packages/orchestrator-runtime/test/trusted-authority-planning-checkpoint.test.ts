@@ -8,7 +8,7 @@ import {compileAuthorityOnlyPlanningProposal} from '../src/authority-only-planni
 import {signAuthorityPlanningCheckpoint as signTicket,verifyAuthorityPlanningCheckpoint as verifyTicket,AuthorityPlanningCheckpointStore as Store} from '../src/trusted-authority-planning-checkpoint.ts';
 import {TrustedActiveAuthorityPlanning} from '../src/trusted-active-authority-planning.ts';
 import {TrustedAdkReadOnlyPlanner} from '../src/trusted-adk-planner.ts';
-import {TrustedExecutionCoordinator} from '../src/trusted-execution-coordinator.ts';
+import {TrustedAuthorityOnlyEngineerSession} from '../src/trusted-authority-only-engineer-session.ts';
 import {TrustedPlanningGatewayReadPort} from '../src/trusted-planning-gateway-port.ts';
 import {selectAuthorityOnlyGrant} from '../../plan-contracts/src/authority-only-approval.mjs';
 import {RUST_OPERATIONS} from '../../../apps/gateway/src/operation-catalog.ts';
@@ -61,7 +61,7 @@ test('storage rejects public directory and wrong signer before persistence',asyn
 // behavior is covered separately by the native E2E, not claimed by this test.
 function active(store:Store,afterProposal?:()=>void){
  let phase='planning',calls=0;
- const coordinator=Object.create(TrustedExecutionCoordinator.prototype);
+ const coordinator=Object.create(TrustedAuthorityOnlyEngineerSession.prototype);
  Object.defineProperty(coordinator,'phase',{get:()=>phase});
  const port=Object.create(TrustedPlanningGatewayReadPort.prototype);
  port.assertTrustedPlanningBinding=(c:unknown,s:unknown)=>{assert.equal(c,coordinator);assert.deepEqual(s,snapshot);};

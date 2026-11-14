@@ -17,12 +17,10 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {startSpecializedAgentServer}
  from "../../agent-runtime/src/server.ts";
-import {
- TrustedEffectStagingTaskRegistry,
- createTrustedEffectAgentBindingServer,
- connectTrustedOwnerEffectStagingClient,
- connectTrustedEffectAgentBindingClient
-} from "../../agent-runtime/src/index.ts";
+import {TrustedEffectStagingTaskRegistry}
+ from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
+import {createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient,connectTrustedEffectAgentBindingClient}
+ from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}

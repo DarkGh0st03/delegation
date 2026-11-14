@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  ControlledToolError,
-  DelegationEvidenceHandler,
-  GatewayControlledToolClient
-} from "../src/index.ts";
+import {ControlledToolError} from "../src/controlled-errors.ts";
+import {DelegationEvidenceHandler} from "../src/delegation-evidence-handler.ts";
+import {GatewayControlledToolClient} from "../src/gateway-tool-client.ts";
 
 function evidenceHandler(): DelegationEvidenceHandler {
   return new DelegationEvidenceHandler({

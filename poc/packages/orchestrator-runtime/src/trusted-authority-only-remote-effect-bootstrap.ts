@@ -13,8 +13,7 @@
  */
 import {resolve} from "node:path";
 import {timingSafeEqual} from "node:crypto";
-import {loadTrustedPlanIpcSecret} from
- "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import {loadOwnerIpcSecret} from "../../../apps/gateway/src/owner-ipc-secret.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "./trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
@@ -156,7 +155,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   // keys; a compromised Frontend binder cannot enroll Backend Tasks.
   const secretPaths=[...stageChannels.map(x=>x.secretFile),
    ...bindingChannels.map(x=>x.secretFile)];
-  const secrets=await Promise.all(secretPaths.map(loadTrustedPlanIpcSecret));
+  const secrets=await Promise.all(secretPaths.map(loadOwnerIpcSecret));
   for(let i=0;i<secrets.length;i++)
    for(let j=i+1;j<secrets.length;j++)
     if(timingSafeEqual(secrets[i]!,secrets[j]!))

@@ -13,12 +13,10 @@ import {
 import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
 import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "../src/approved-specialized-profiles.ts";
 import {createSpecializedAgentCard} from "../src/cards.ts";
-import {
-  ControlledToolError,
-  createAdkSpecializedAgent,
-  SPECIALIZED_AGENT_PROFILES,
-  type SpecializedAgentRole
-} from "../src/index.ts";
+import {ControlledToolError} from "../src/controlled-errors.ts";
+import {createAdkSpecializedAgent} from "../src/adk-specialized-agents.ts";
+import {SPECIALIZED_AGENT_PROFILES} from "../src/specialized-agents.ts";
+import {type SpecializedAgentRole} from "../src/contracts.ts";
 import {safeMcpToolTiming,
   type AdkGenerationConfig} from "../src/adk-specialized-agents.ts";
 

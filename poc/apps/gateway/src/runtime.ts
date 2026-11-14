@@ -1,23 +1,16 @@
 import {TrustedAuthorityOnlyBranchExecutor} from './trusted-authority-only-branch-executor.ts';
-import { AdapterVerifierClient } from "./adapter-client.ts";
 import {loadDirectCoreRustVerifier} from "./direct-core-loader.ts";
 import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
 import {
   InMemoryCompositeStore,
-  prepareCompositeAuthorization,
-  verifyCompositeAuthorization,
   prepareReadCompositeAuthorization,
   executeReadCompositeAuthorization
 } from "./composite-authorization.ts";
-import type { GatewayRuntimeConfig } from "./config.ts";
 import { executeAuthorization } from "./execute.ts";
 import { GiteaClient } from "./gitea-client.ts";
 import { GiteaExecutor } from "./gitea-executor.ts";
-import { GiteaReadOnlyExecutor } from "./gitea-read-executor.ts";
-import { MockExecutor } from "./mock-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
-import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions} from "./trusted-authority-only-admissions.ts";
 import {TrustedGatewayGiteaReadEvidencePublisher}
  from "./trusted-authority-only-gitea-publisher.ts";
@@ -29,7 +22,6 @@ import type {TrustedAuthorityOnlyRunnerExecutor}
  from "./trusted-authority-only-runner-executor.ts";
 import {TrustedAuthorityOnlyPullRequestExecutor}
  from "./trusted-authority-only-pull-request-executor.ts";
-import { RunnerClient } from "./runner-client.ts";
 import {
   InMemoryAuditSink,
   InMemoryRequestStore,
@@ -40,10 +32,25 @@ import type {
   AuditSink,
   ExecuteAuthorizationResponse,
   ExecutionPort,
+  GatewayPrepareConfig,
   PolicyPort,
   PreparedAuthorizationResponse,
   VerifierPort
 } from "./types.ts";
+
+/** Gateway of one console session: Gitea provider, native Rust verifier. */
+export interface GatewayRuntimeConfig {
+  bind_host: string;
+  bind_port: number;
+  prepare: GatewayPrepareConfig;
+  verifier_mode?: "core-rust";
+  opa_url: string;
+  opa_timeout_ms: number;
+  provider_mode: "gitea";
+  gitea_base_url?: string;
+  gitea_gateway_token?: string;
+  gitea_timeout_ms: number;
+}
 
 export class JsonLineAuditSink implements AuditSink {
   emit(event: AuditEvent): void {
@@ -59,8 +66,6 @@ export interface GatewayRuntimeDependencies {
   executor?: ExecutionPort;
   /** Trusted in-process Planning coordinator supplies this optional guard. */
   planningRevisions?: TrustedPlanningRevisions;
-  /** Opt-in trusted Engineer-approved execution plan gate (no public mutation API). */
-  approvedPlans?: TrustedApprovedExecutionPlans;
   authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
   /** Explicit owner-only source-read publication, never enabled by public config. */
   authorityOnlyReadEnabled?: boolean;
@@ -81,8 +86,6 @@ export interface GatewayRuntimeDependencies {
 }
 
 function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
-  if (config.provider_mode === "mock") return new MockExecutor();
-
   if (!config.gitea_base_url || !config.gitea_gateway_token) {
     throw new Error("Gitea provider mode requires Gitea URL and Gateway token");
   }
@@ -95,35 +98,18 @@ function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
     timeoutMs: config.gitea_timeout_ms
   });
 
-  if (config.provider_mode === "gitea-readonly") {
-    return new GiteaReadOnlyExecutor(client);
-  }
-
-  const runnerClient =
-    config.runner_url && config.runner_gateway_token
-      ? new RunnerClient({
-          baseUrl: config.runner_url,
-          gatewayToken: config.runner_gateway_token,
-          timeoutMs: config.runner_timeout_ms
-        })
-      : undefined;
-  const repositoryUri =
-    `gitea://${config.prepare.repository.authority}/` +
-    `${config.prepare.repository.owner}/${config.prepare.repository.repository}`;
-
-  return new GiteaExecutor(client, runnerClient, repositoryUri);
+  return new GiteaExecutor(client);
 }
 
 export class GatewayRuntime {
   readonly #config: GatewayRuntimeConfig;
   readonly #store: InMemoryRequestStore;
-  readonly #compositeStore: InMemoryCompositeStore;
+  readonly #compositeStore = new InMemoryCompositeStore();
   readonly #audit: AuditSink;
   readonly #verifier: VerifierPort;
   readonly #policy: PolicyPort;
   readonly #executor: ExecutionPort;
   readonly #planningRevisions?: TrustedPlanningRevisions;
-  readonly #approvedPlans?: TrustedApprovedExecutionPlans;
   readonly #authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
   readonly #authorityOnlyReadEnabled:boolean;
   readonly #authorityOnlyReceiptWriter?:TrustedGatewayGiteaReadEvidencePublisher;
@@ -148,7 +134,7 @@ export class GatewayRuntime {
     const branch=dependencies.authorityOnlyBranchExecutor;
     if(gate&&
        (!(gate instanceof TrustedAuthorityOnlyGatewayAdmissions)||
-        dependencies.approvedPlans||dependencies.planningRevisions))
+        dependencies.planningRevisions))
       throw Error("Authority-only Gateway requires distinct trusted runtime without legacy gates");
     if((dependencies.authorityOnlyReadEnabled===true)!==Boolean(readWriter)||
        (dependencies.authorityOnlyMutationEnabled===true)!==Boolean(mutation)||
@@ -190,7 +176,6 @@ export class GatewayRuntime {
     this.#authorityOnlyPullRequestExecutor=pr;
     this.#config = config;
     this.#planningRevisions = dependencies.planningRevisions;
-    this.#approvedPlans = dependencies.approvedPlans;
     this.#authorityOnlyAdmissions = gate;
     this.#authorityOnlyReadEnabled=dependencies.authorityOnlyReadEnabled===true;
     this.#authorityOnlyReceiptWriter=readWriter;
@@ -201,23 +186,14 @@ export class GatewayRuntime {
     this.#authorityOnlyRunnerEnabled=dependencies.authorityOnlyRunnerEnabled===true;
     this.#authorityOnlyRunnerExecutor=runner;
     this.#store = dependencies.store ?? new InMemoryRequestStore();
-    this.#compositeStore = new InMemoryCompositeStore();
     this.#audit = dependencies.audit ?? new JsonLineAuditSink();
     if (dependencies.verifier) {
       // Test-only or explicitly trusted embedded verifier injection.
       this.#verifier = dependencies.verifier;
-    } else if (config.verifier_mode === "core-rust") {
-      // Fail at startup if native Core Rust and independent trust/status
-      // resolvers have not been deployed. NEVER fall back to Adapter.
-      this.#verifier = loadDirectCoreRustVerifier();
     } else {
-      if (!config.adapter_url || !config.adapter_gateway_token) {
-        throw new Error("Adapter verifier mode requires URL and Gateway caller secret");
-      }
-      this.#verifier = new AdapterVerifierClient({
-        baseUrl: config.adapter_url,
-        gatewayToken: config.adapter_gateway_token
-      });
+      // Fail at startup if native Core Rust and independent trust/status
+      // resolvers have not been deployed.
+      this.#verifier = loadDirectCoreRustVerifier();
     }
     this.#policy =
       dependencies.policy ??
@@ -228,19 +204,7 @@ export class GatewayRuntime {
     this.#executor = dependencies.executor ?? defaultExecutor(config);
   }
 
-  /**
-   * Owner-only capability check. Operational repair source reads must NEVER
-   * use a Gateway instance without the authenticated Task/epoch guard.
-   */
-  hasTrustedOperationalPlanGate():boolean{
-    return this.#approvedPlans!==undefined;
-  }
-  /** Identity equality, not duck-typed metadata. */
-  hasExactTrustedOperationalPlanGate(gate:TrustedApprovedExecutionPlans):boolean{
-    return this.#approvedPlans===gate;
-  }
-
-  get providerLabel(): "mock" | "gitea" {
+  get providerLabel(): string {
     return this.#executor.provider;
   }
 
@@ -249,34 +213,18 @@ export class GatewayRuntime {
       store: this.#store,
       audit: this.#audit,
       ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
-      ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {}),
       ...(this.#authorityOnlyAdmissions ? {authorityOnlyAdmissions:this.#authorityOnlyAdmissions} : {})
     });
   }
 
-  /** Dry-run only: it never calls Gitea, Docker or the execution port. */
-  prepareComposite(raw: unknown) {
-    if(this.#authorityOnlyAdmissions)
-      throw Error("Composite Gateway operations unavailable in authority-only staging");
-    return prepareCompositeAuthorization(raw, {
-      store:this.#compositeStore,
-      audit:this.#audit,
-      verifier:this.#verifier,
-      policy:this.#policy,
-      config:this.#config.prepare
-    });
-  }
-
-  /** One read-only executable composite pinned to a trusted revision. */
+  /** Planning: one signed VP for a bundle of 2-12 reads of the pinned commit. */
   async prepareReadComposite(raw:unknown){
     if(this.#authorityOnlyAdmissions)
       throw Error("Composite Gateway reads unavailable in authority-only staging");
     return prepareReadCompositeAuthorization(raw,{
       store:this.#compositeStore,audit:this.#audit,verifier:this.#verifier,
-      policy:this.#policy,config:this.#config.prepare,
-      executor:this.#executor,
-      ...(this.#planningRevisions?{planningRevisions:this.#planningRevisions}:{}),
-      ...(this.#approvedPlans?{approvedPlans:this.#approvedPlans}:{})
+      policy:this.#policy,config:this.#config.prepare,executor:this.#executor,
+      ...(this.#planningRevisions?{planningRevisions:this.#planningRevisions}:{})
     });
   }
 
@@ -285,24 +233,9 @@ export class GatewayRuntime {
       throw Error("Composite Gateway reads unavailable in authority-only staging");
     return executeReadCompositeAuthorization(raw,{
       store:this.#compositeStore,audit:this.#audit,verifier:this.#verifier,
-      policy:this.#policy,config:this.#config.prepare,
-      executor:this.#executor,
+      policy:this.#policy,config:this.#config.prepare,executor:this.#executor,
       ...(this.#planningRevisions?{planningRevisions:this.#planningRevisions}:{}),
-      ...(this.#approvedPlans?{approvedPlans:this.#approvedPlans}:{}),
       ...(signal?{signal}:{})
-    });
-  }
-
-  /** Returns a check result, never an executable capability or provider result. */
-  async verifyComposite(raw: unknown) {
-    if(this.#authorityOnlyAdmissions)
-      throw Error("Composite Gateway verification unavailable in authority-only staging");
-    return verifyCompositeAuthorization(raw, {
-      store:this.#compositeStore,
-      audit:this.#audit,
-      verifier:this.#verifier,
-      policy:this.#policy,
-      config:this.#config.prepare
     });
   }
 
@@ -315,7 +248,6 @@ export class GatewayRuntime {
       repository: this.#config.prepare.repository,
       executor: this.#executor,
       ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
-      ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {}),
       ...(this.#authorityOnlyAdmissions ? {authorityOnlyAdmissions:this.#authorityOnlyAdmissions} : {}),
       ...(this.#authorityOnlyReadEnabled ? {
         authorityOnlyReadEnabled:true,

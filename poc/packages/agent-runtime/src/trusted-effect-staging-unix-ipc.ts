@@ -8,7 +8,7 @@ import {createHash,createHmac,randomBytes,timingSafeEqual} from "node:crypto";
 import {Buffer} from "node:buffer";
 import {lstat,chmod,unlink} from "node:fs/promises";
 import {dirname,resolve} from "node:path";
-import {loadTrustedPlanIpcSecret} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import {loadOwnerIpcSecret} from "../../../apps/gateway/src/owner-ipc-secret.ts";
 import {assertTrustedOriginalScopedEffectDirectory,
  loadTrustedOriginalScopedEffectSecret,
  assertTrustedOriginalScopedEffectSocket,
@@ -89,7 +89,7 @@ async function createPrivateServer(opts:{
  const secret=scope?await loadTrustedOriginalScopedEffectSecret({
   channel:opts.channel,side,scope,socketPath:socket,
   secretFile:opts.secretFile
- }):await loadTrustedPlanIpcSecret(opts.secretFile);
+ }):await loadOwnerIpcSecret(opts.secretFile);
  let running=false,closed=false;
  const nonces=new Map<string,number>();
  const server=createServer(async(req,res)=>{
@@ -204,7 +204,7 @@ class PrivateClient{
    return new PrivateClient(channel,socket,secret);
   }
   return new PrivateClient(channel,socket,
-   await loadTrustedPlanIpcSecret(config.secretFile));
+   await loadOwnerIpcSecret(config.secretFile));
  }
  async send(value:object):Promise<Record<string,unknown>>{
   const body=Buffer.from(JSON.stringify(value));

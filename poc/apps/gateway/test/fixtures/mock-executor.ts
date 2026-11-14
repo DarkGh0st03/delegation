@@ -2,7 +2,7 @@ import type {
   ExecutionPort,
   MockExecutionResult,
   PreparedRequestRecord
-} from "./types.ts";
+} from "../../src/types.ts";
 
 export class MockExecutor implements ExecutionPort {
   readonly provider = "mock" as const;

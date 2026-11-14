@@ -1,7 +1,7 @@
 import type {
   AgentArtifactPayload,
   SpecializedAgentRole
-} from "@thesis/agent-runtime";
+} from "../../agent-runtime/src/contracts.ts";
 import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 export const ACCOUNT_SUSPENSION_ARTIFACT_BRANCH =

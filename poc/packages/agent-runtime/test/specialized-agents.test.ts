@@ -1,13 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  SPECIALIZED_AGENT_PROFILES,
-  createSpecializedAgentController,
-  type ModelClient,
-  type ModelTurnRequest,
-  type ModelTurnResponse,
-  type SpecializedAgentRole
-} from "../src/index.ts";
+import {SPECIALIZED_AGENT_PROFILES, createSpecializedAgentController} from "../src/specialized-agents.ts";
+import {type ModelClient, type ModelTurnRequest, type ModelTurnResponse} from "../src/llm-client.ts";
+import {type SpecializedAgentRole} from "../src/contracts.ts";
 
 class CaptureModel implements ModelClient {
   readonly requests: ModelTurnRequest[] = [];

@@ -26,7 +26,7 @@ import {TrustedGatewayGiteaReadEvidencePublisher}
 import {prepareAuthorization,InMemoryRequestStore,InMemoryAuditSink}
  from "../../../apps/gateway/src/prepare.ts";
 import {executeAuthorization} from "../../../apps/gateway/src/execute.ts";
-import {MockExecutor} from "../../../apps/gateway/src/mock-executor.ts";
+import {MockExecutor} from "../../../apps/gateway/test/fixtures/mock-executor.ts";
 import {VerificationRejectedError} from "../../../apps/gateway/src/errors.ts";
 import {signAuthorityOnlyGrant,verifyAuthorityOnlyGrant,
  selectAuthorityOnlyGrant} from "../../../packages/plan-contracts/src/authority-only-approval.mjs";

@@ -1,14 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TaskState } from "@a2a-js/sdk";
-import {
-  DELEGATED_AUTHORIZATION_EXTENSION_URI,
-  DeterministicA2AOrchestrator,
-  IncompatibleAgentError,
-  createSpecializedAgentCard,
-  agentDid,
-  startSpecializedAgentServer
-} from "../src/index.ts";
+import {DELEGATED_AUTHORIZATION_EXTENSION_URI} from "../src/contracts.ts";
+import {DeterministicA2AOrchestrator, IncompatibleAgentError} from "../src/orchestrator.ts";
+import {createSpecializedAgentCard, agentDid} from "../src/cards.ts";
+import {startSpecializedAgentServer} from "../src/server.ts";
 
 test("specialized Agent Cards expose the frozen A2A 1.0 contract", () => {
   for (const role of ["backend", "frontend", "test"] as const) {

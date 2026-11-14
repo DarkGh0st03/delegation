@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  DEFAULT_OPENAI_MODEL,
-  OpenAIResponsesClient,
-  type ModelFunctionTool
-} from "../src/index.ts";
+import {DEFAULT_OPENAI_MODEL, OpenAIResponsesClient, type ModelFunctionTool} from "../src/llm-client.ts";
 
 const tool: ModelFunctionTool = {
   type: "function",

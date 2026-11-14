@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { GiteaClient } from "../src/gitea-client.ts";
-import { GiteaReadOnlyExecutor } from "../src/gitea-read-executor.ts";
+import { GiteaExecutor } from "../src/gitea-executor.ts";
 import { TrustedPlanningRevisions } from "../src/planning-revisions.ts";
 import { InMemoryRequestStore, InMemoryAuditSink, prepareAuthorization } from "../src/prepare.ts";
 import { executeAuthorization } from "../src/execute.ts";
@@ -57,7 +57,7 @@ function fixture(){
   const revisions=new TrustedPlanningRevisions(client,{nowMs:()=>now});
   const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
   let n=0,providerCalls=0;
-  const executor=new GiteaReadOnlyExecutor(client);
+  const executor=new GiteaExecutor(client);
   const verifier:VerifierPort={
     async verify(req){return {
       presenter_id:"did:thesis:orchestrator",
@@ -264,7 +264,7 @@ test("R380.3 native ancestor proof covers only original pinned read-only Plannin
         return {allow:true,policy_version:"offline-r3803-planning-scope"};
       }},
       repository:repo,
-      executor:new GiteaReadOnlyExecutor(f.client),
+      executor:new GiteaExecutor(f.client),
       ...(usePlanning?{
         planningRevisions:f.revisions,
         // Merely configured; not activated or used for this pinned session.

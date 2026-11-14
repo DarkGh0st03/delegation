@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { GatewayRuntime } from "../src/runtime.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions} from "../src/trusted-authority-only-admissions.ts";
-import {MockExecutor} from "../src/mock-executor.ts";
+import {MockExecutor} from "./fixtures/mock-executor.ts";
 import { InMemoryAuditSink } from "../src/prepare.ts";
 import type { PolicyInput, PolicyPort, VerificationRequest, VerifierPort } from "../src/types.ts";
 
@@ -18,8 +18,6 @@ const baseConfig = {
       repository: "iam-console-poc"
     }
   },
-  adapter_url: "http://unused",
-  adapter_gateway_token: "unused",
   opa_url: "http://unused",
   opa_timeout_ms: 2_000,
   gitea_timeout_ms: 3_000
@@ -43,25 +41,6 @@ const policy: PolicyPort = {
     return { allow: true, policy_version: "phase4a-v1" };
   }
 };
-
-test("runtime preserves explicit mock mode without requiring Gitea secrets", () => {
-  const runtime = new GatewayRuntime(
-    { ...baseConfig, provider_mode: "mock" as const },
-    { verifier, policy, audit: new InMemoryAuditSink() }
-  );
-  assert.equal(runtime.providerLabel, "mock");
-});
-
-test("runtime rejects gitea-readonly mode when provider credentials are absent", () => {
-  assert.throws(
-    () =>
-      new GatewayRuntime(
-        { ...baseConfig, provider_mode: "gitea-readonly" as const },
-        { verifier, policy, audit: new InMemoryAuditSink() }
-      ),
-    /requires Gitea URL and Gateway token/u
-  );
-});
 
 test("runtime rejects mutable gitea mode when provider credentials are absent", () => {
   assert.throws(

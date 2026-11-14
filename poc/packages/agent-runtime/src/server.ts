@@ -23,10 +23,6 @@ import {SPECIALIZED_AGENT_ROLES,type SpecializedAgentRole} from "./contracts.ts"
 import { createAdkA2ATaskHandler, type AdkA2ATaskHandlerConfig } from "./adk-a2a-handler.ts";
 import { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 
-import {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host.ts";
-
-type DiscoveryHostConfig=Parameters<typeof startTrustedBackendDiscoveryHost>[0];
-
 export interface SpecializedAgentServerOptions {
   role: string;
   /** Owner-only non-native extra-role Card; never A2A/Task/LLM input. */
@@ -39,9 +35,6 @@ export interface SpecializedAgentServerOptions {
   artifactBuilder?: DeterministicArtifactPayloadBuilder;
   taskHandler?: DeterministicTaskHandler;
   adk?: AdkA2ATaskHandlerConfig;
-  /** Trusted Backend host configuration, never A2A task data. */
-  backendDiscovery?:Omit<DiscoveryHostConfig,
-    "adapterBaseUrl"|"backendToken"|"fetchFn"|"timeoutMs">;
   /** Opt-in only; the default A2A baseline stays unchanged. */
   mcpTaskSigning?: { signingPrivateKeyPem: string; signingPublicKeyPem: string };
   /** Original host role DID; MUST equal the configured native Rust signer. */
@@ -56,9 +49,6 @@ export interface SpecializedAgentServer {
   server: Server;
   /** Host-only evidence counter, never a public A2A or ADK capability. */
   cryptoProofCount?:()=>number;
-  /** Owner/Gateway bootstrap selectors; never included in the Agent Card. */
-  privateDiscoveryPorts?:Pick<Awaited<ReturnType<typeof startTrustedBackendDiscoveryHost>>,
-    "ownerBinding"|"gatewaySigner">;
   close(): Promise<void>;
 }
 
@@ -107,7 +97,7 @@ export async function startSpecializedAgentServer(
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
   // R381.6: a private Rust MCP subprocess is an owner-bound signing
   // transport, never a free-standing A2A capability. Refuse it BEFORE any
-  // listener, discovery host or Task is created without the original
+  // listener or Task is created without the original
   // authority-only host and its private one-shot Task registry.
   if(options.adk?.nativePresentationTransport==="mcp-stdio"&&(
        process.env.DELEGATION_GATEWAY_ARCHITECTURE!=="authority-only"||
@@ -127,19 +117,6 @@ export async function startSpecializedAgentServer(
   if (options.mcpTaskSigning && !options.adk) {
     throw new Error("Private MCP task worker requires a configured ADK runtime");
   }
-  if(options.backendDiscovery&&(options.role!=="backend"||!options.adk||
-     options.adk.trustedBackendDiscovery||options.adk.trustedBackendDiscoverySlot))
-    throw Error("Private discovery host requires one Backend ADK signing source");
-  // Historical discovery host still uses legacy Adapter HTTP. Never
-  // silently reintroduce it for the canonical socket-only ADK launcher.
-  if(options.backendDiscovery&&!options.adk?.adapterBaseUrl?.trim())
-    throw Error("Legacy Backend discovery host requires explicit historical Adapter URL");
-  const discovery=options.backendDiscovery?await startTrustedBackendDiscoveryHost({
-    ...options.backendDiscovery,adapterBaseUrl:options.adk!.adapterBaseUrl!,
-    backendToken:options.adk!.adapterToken,
-    ...(options.adk!.fetchFn?{fetchFn:((url,init)=>
-      options.adk!.fetchFn!(String(url),init)) as typeof fetch}:{})
-  }):undefined;
   try{
   const mcpTaskRegistry = options.mcpTaskSigning
     ? new PrivateMcpTaskRegistry({role:options.role as SpecializedAgentRole,
@@ -147,7 +124,6 @@ export async function startSpecializedAgentServer(
     : undefined;
   const adkHandler = options.adk
     ? createAdkA2ATaskHandler({...options.adk,
-      ...(discovery?{trustedBackendDiscoverySlot:discovery.slot}:{}),
       ...(mcpTaskRegistry ? {mcpTaskRegistry} : {}),
       ...(nativeExtra?{trustedAdditionalReadOnlyRole:{
        role:options.role,capabilities:[...pinned!.capabilities]
@@ -214,9 +190,6 @@ export async function startSpecializedAgentServer(
 
   let closing:Promise<void>|undefined;
   return {
-    ...(discovery?{privateDiscoveryPorts:Object.freeze({
-      ownerBinding:discovery.ownerBinding,gatewaySigner:discovery.gatewaySigner
-    })}:{}),
     role: options.role,
     baseUrl,
     card,
@@ -226,16 +199,12 @@ export async function startSpecializedAgentServer(
     close: () => closing??=(async()=>{
       // close() fences private Task effects BEFORE awaiting HTTP shutdown.
       options.adk?.trustedEffectTaskRegistry?.retireAll();
-      const results=await Promise.allSettled([discovery?.close(),
-        new Promise<void>((resolve,reject)=>server.close(error=>
-          error?reject(error):resolve()))]);
-      const failed=results.find(r=>r.status==="rejected");
-      if(failed?.status==="rejected")throw failed.reason;
+      await new Promise<void>((resolve,reject)=>server.close(error=>
+        error?reject(error):resolve()));
     })()
   };
   }catch(error){
     options.adk?.trustedEffectTaskRegistry?.retireAll();
-    await discovery?.close();
     throw error;
   }
 }

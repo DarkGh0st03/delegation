@@ -25,9 +25,10 @@ import {canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
 import {startSpecializedAgentServer}
  from "../../agent-runtime/src/server.ts";
-import {TrustedEffectStagingTaskRegistry,
- createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
- from "../../agent-runtime/src/index.ts";
+import {TrustedEffectStagingTaskRegistry}
+ from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
+import {createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
+ from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 const canonicalRoles=Object.freeze(["backend","frontend","test"]);
 const roles=Object.freeze([...canonicalRoles,"reviewer"]);

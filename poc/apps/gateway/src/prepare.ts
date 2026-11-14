@@ -2,7 +2,6 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { deriveRequiredPermission } from "./canonical.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
-import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-only-admissions.ts";
 import {
   assertNoCallerSuppliedAuthority,
@@ -51,7 +50,6 @@ export interface PrepareDependencies {
   requestId?: () => string;
   challenge?: () => string;
   planningRevisions?: TrustedPlanningRevisions;
-  approvedPlans?: TrustedApprovedExecutionPlans;
   authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
 }
 
@@ -72,7 +70,7 @@ export function prepareAuthorization(
   const started = durationNow();
 
   if(dependencies.authorityOnlyAdmissions&&
-     (dependencies.approvedPlans||dependencies.planningRevisions))
+     dependencies.planningRevisions)
     throw Error("Authority-only Gateway mode cannot share legacy or Planning gates");
   assertNoCallerSuppliedAuthority(raw);
   // No legacy/Planning/mock owner can register a new public Agent role.
@@ -90,14 +88,6 @@ export function prepareAuthorization(
   // R360: only the activated owner Gateway may pin an operational Task HEAD.
   // The raw Prepare/A2A request supplies no revision or additional authority.
   const effectivePinnedRevision = pinnedRevision ?? authorityOnlyBinding?.pinned_revision;
-  // Phase-A Planning has a separate short-lived read-only DC and pinned SHA.
-  // Any operational Prepare requires an authenticated approved plan when
-  // the plan enforcement feature is installed.
-  const approvedBinding = !pinnedRevision
-    ? dependencies.approvedPlans?.authorizePrepare(
-        normalized.task_id,normalized.agent_role,permission,normalized.request
-      )
-    : undefined;
 
   if (config.audience.trim().length === 0) {
     throw new Error("Gateway audience cannot be empty");
@@ -136,13 +126,6 @@ export function prepareAuthorization(
       authority_only_agent_did:authorityOnlyBinding.agent_did,
       authority_only_work_branch:authorityOnlyBinding.work_branch
     } : {}),
-    ...(approvedBinding ? {
-      approved_plan_digest:approvedBinding.plan_digest,
-      approved_plan_task_id:approvedBinding.plan_task_id,
-      approved_work_branch:approvedBinding.work_branch,
-      ...(approvedBinding.tested_head_sha
-        ?{approved_tested_head_sha:approvedBinding.tested_head_sha}:{})
-    } : {}),
     created_at_ms: nowMs,
     expires_at_ms: nowMs + config.request_ttl_ms,
     consumed: false
@@ -161,8 +144,7 @@ export function prepareAuthorization(
     resource_uri: permission.resource,
     operation: permission.operation,
     prepare_ms: prepareMs,
-    ...(effectivePinnedRevision ? { pinned_revision:effectivePinnedRevision } : {}),
-    ...(approvedBinding ? { approved_plan_digest:approvedBinding.plan_digest } : {})
+    ...(effectivePinnedRevision ? { pinned_revision:effectivePinnedRevision } : {})
   });
 
   return {

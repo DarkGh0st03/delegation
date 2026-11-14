@@ -8,12 +8,9 @@ import {
 } from "@google/adk";
 import { TaskState } from "@a2a-js/sdk";
 import {safeAdkRequestShape,safeAdkFunctionHistoryShape} from "../src/adk-request-shape.ts";
-import {
-  DELEGATED_AUTHORIZATION_EXTENSION_URI,
-  DeterministicA2AOrchestrator,
-  startSpecializedAgentServer,
-  type SpecializedAgentRole
-} from "../src/index.ts";
+import {DELEGATED_AUTHORIZATION_EXTENSION_URI, type SpecializedAgentRole} from "../src/contracts.ts";
+import {DeterministicA2AOrchestrator} from "../src/orchestrator.ts";
+import {startSpecializedAgentServer} from "../src/server.ts";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SECRET = "SECRET_DELEGATION_CREDENTIAL_PAYLOAD_PHASE3";

@@ -26,10 +26,10 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
-import {
- TrustedEffectStagingTaskRegistry,createTrustedEffectAgentBindingServer,
- connectTrustedOwnerEffectStagingClient
-} from "../../agent-runtime/src/index.ts";
+import {TrustedEffectStagingTaskRegistry}
+ from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
+import {createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
+ from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 const roles=["backend","frontend","test"] as const;
 type Role=(typeof roles)[number];

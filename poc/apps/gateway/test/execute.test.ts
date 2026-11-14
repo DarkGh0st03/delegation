@@ -8,7 +8,7 @@ import {
   VerificationUnavailableError
 } from "../src/errors.ts";
 import { executeAuthorization } from "../src/execute.ts";
-import { MockExecutor } from "../src/mock-executor.ts";
+import { MockExecutor } from "./fixtures/mock-executor.ts";
 import {
   InMemoryAuditSink,
   InMemoryRequestStore,

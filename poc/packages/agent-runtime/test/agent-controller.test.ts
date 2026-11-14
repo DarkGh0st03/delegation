@@ -1,16 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  AgentController,
-  ControlledToolError,
-  ControlledToolRegistry,
-  InMemoryAgentRuntimeAuditSink,
-  modelVisibleTaskContext,
-  type AgentTaskContext,
-  type ModelClient,
-  type ModelTurnRequest,
-  type ModelTurnResponse
-} from "../src/index.ts";
+import {AgentController, InMemoryAgentRuntimeAuditSink, modelVisibleTaskContext} from "../src/agent-controller.ts";
+import {ControlledToolError} from "../src/controlled-errors.ts";
+import {ControlledToolRegistry} from "../src/tool-registry.ts";
+import {type AgentTaskContext} from "../src/contracts.ts";
+import {type ModelClient, type ModelTurnRequest, type ModelTurnResponse} from "../src/llm-client.ts";
 
 class ScriptedModelClient implements ModelClient {
   readonly requests: ModelTurnRequest[] = [];

@@ -4,6 +4,7 @@ import {request as rawRequest} from "node:http";
 import { createGatewayHttpServer } from "../src/http.ts";
 import { InMemoryAuditSink } from "../src/prepare.ts";
 import { GatewayRuntime } from "../src/runtime.ts";
+import { MockExecutor } from "./fixtures/mock-executor.ts";
 import type {
   PolicyInput,
   PolicyPort,
@@ -23,11 +24,9 @@ const config = {
       repository: "iam-console-poc"
     }
   },
-  adapter_url: "http://unused",
-  adapter_gateway_token: "unused",
   opa_url: "http://unused",
   opa_timeout_ms: 2_000,
-  provider_mode: "mock" as const,
+  provider_mode: "gitea" as const,
   gitea_timeout_ms: 3_000
 };
 
@@ -52,6 +51,7 @@ class Policy implements PolicyPort {
 
 test("HTTP prepare and execute expose verified and policy-allowed mock execution", async () => {
   const runtime = new GatewayRuntime(config, {
+    executor: new MockExecutor(),
     verifier: new Verifier(),
     policy: new Policy(),
     audit: new InMemoryAuditSink()
@@ -76,7 +76,7 @@ test("HTTP prepare and execute expose verified and policy-allowed mock execution
         agent_role: "backend",
         tool: "read_file",
         arguments: {
-          branch: "feature/account-suspension",
+          branch: "feature/session-work",
           path: "apps/backend/src/users/user.service.ts"
         }
       })

@@ -24,11 +24,9 @@ import {preliminaryReadPermissions,trustedPlanningSourceBranch}
   from "./trusted-engineer-authority.ts";
 import {OrchestratorPlanningGatewayReadClient}
   from "./orchestrator-gateway-client.ts";
-import type {TrustedExecutionCoordinator}
-  from "./trusted-execution-coordinator.ts";
 import {TrustedAuthorityOnlyEngineerSession}
   from "./trusted-authority-only-engineer-session.ts";
-type PlanningAuthority=TrustedExecutionCoordinator|TrustedAuthorityOnlyEngineerSession;
+type PlanningAuthority=TrustedAuthorityOnlyEngineerSession;
 
 type ReadTool="read_repository"|"list_directory"|"read_file";
 export interface TrustedPlanningGatewayPortConfig {
@@ -57,8 +55,8 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
   readonly #credentialId:string;
   constructor(config:TrustedPlanningGatewayPortConfig){
     const snapshot=structuredClone(config.snapshot);
-    if(config.coordinator instanceof TrustedAuthorityOnlyEngineerSession)
-      config.coordinator.assertTrustedPlanningSnapshot(snapshot);
+    if(!(config.coordinator instanceof TrustedAuthorityOnlyEngineerSession))fail();
+    config.coordinator.assertTrustedPlanningSnapshot(snapshot);
     const root=config.coordinator.trustedPlanningAuthority();
     if(root.session_id!==snapshot.session_id||
        root.base_revision!==snapshot.base_revision)fail();

@@ -16,10 +16,10 @@ import {startSpecializedAgentServer}
  from "../../agent-runtime/src/server.ts";
 import {DeterministicA2AOrchestrator}
  from "../../agent-runtime/src/orchestrator.ts";
-import {TrustedEffectStagingTaskRegistry,
- createTrustedEffectAgentBindingServer,
- connectTrustedOwnerEffectStagingClient}
- from "../../agent-runtime/src/index.ts";
+import {TrustedEffectStagingTaskRegistry}
+ from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
+import {createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
+ from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}

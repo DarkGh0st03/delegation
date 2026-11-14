@@ -89,19 +89,12 @@ export interface PreparedRequestRecord {
   request_fingerprint: string;
   /** Trusted Gateway-only Planning pin, never accepted in caller tool args. */
   pinned_revision?: string;
-  /** Created solely by the trusted approval registry, never user JSON. */
-  approved_plan_digest?: string;
-  approved_plan_task_id?: string;
   /** R288 trusted, staged authority binding. Not execution authority. */
   authority_only_digest?: string;
   authority_only_plan_task_id?: string;
   authority_only_agent_did?: string;
   /** Engineer-signed session work branch (authority-only), for OPA. */
   authority_only_work_branch?: string;
-  /** Trusted signed-plan-derived branch, never public caller input. */
-  approved_work_branch?: string;
-  /** Trusted-only Runner SHA, never supplied by ADK, MCP or caller arguments. */
-  approved_tested_head_sha?:string;
   created_at_ms: number;
   expires_at_ms: number;
   consumed: boolean;
@@ -130,7 +123,6 @@ export interface PrepareAuditEvent {
   operation: Operation;
   prepare_ms: number;
   pinned_revision?: string;
-  approved_plan_digest?: string;
 }
 
 export interface ExecuteAuditEvent {
@@ -158,7 +150,6 @@ export interface ExecuteAuditEvent {
   chain_depth?: number;
   disclosed_permission_count?: number;
   pinned_revision?: string;
-  approved_plan_digest?: string;
   provider_revision?: string;
   provider_commit_sha?: string;
   provider_blob_sha?: string;
@@ -410,8 +401,6 @@ export interface PolicyInput {
   arguments: Record<string, unknown>;
   required_permission: Permission;
   pinned_revision?: string;
-  approved_plan_digest?: string;
-  approved_work_branch?: string;
   /** Server-injected from the signed session; never from tool arguments. */
   session_work_branch?: string;
   repository: GatewayRepositoryConfig;

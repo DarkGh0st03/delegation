@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {createGeminiAdkModel} from "../src/index.ts";
+import {createGeminiAdkModel} from "../src/gemini-adk-model.ts";
 test("Gemini factory rejects absent API keys",()=>{
   assert.throws(()=>createGeminiAdkModel({apiKey:""}),/GEMINI_API_KEY/u);
 });

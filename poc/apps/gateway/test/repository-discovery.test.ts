@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GiteaClient } from "../src/gitea-client.ts";
-import { GiteaReadOnlyExecutor } from "../src/gitea-read-executor.ts";
 import { GiteaExecutor } from "../src/gitea-executor.ts";
 import { ProviderUnavailableError, ProviderOperationUnavailableError } from "../src/errors.ts";
 import { deriveRequiredPermission } from "../src/canonical.ts";
@@ -127,7 +126,7 @@ test("read-only provider supports just three discovery tools; all mutations fail
     };},
     async readTextFile(){calls.push("file");throw Error("not used");}
   } as unknown as GiteaClient;
-  const executor=new GiteaReadOnlyExecutor(client);
+  const executor=new GiteaExecutor(client);
   const a=await executor.execute(record("read_repository"));
   const b=await executor.execute(record("list_directory"));
   assert.equal(a.tool,"read_repository");

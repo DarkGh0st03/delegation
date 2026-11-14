@@ -25,7 +25,6 @@ import {
 } from "./errors.ts";
 import { buildPolicyInput } from "./policy-input.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
-import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import type { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-only-admissions.ts";
 import type { TrustedGatewayGiteaReadEvidencePublisher }
  from "./trusted-authority-only-gitea-publisher.ts";
@@ -120,7 +119,6 @@ export interface ExecuteDependencies {
   repository: GatewayRepositoryConfig;
   executor: ExecutionPort;
   planningRevisions?: TrustedPlanningRevisions;
-  approvedPlans?: TrustedApprovedExecutionPlans;
   authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
   /** Owner-only result publisher, required for opt-in authority-only reads. */
   authorityOnlyReceiptWriter?: TrustedGatewayGiteaReadEvidencePublisher;
@@ -149,7 +147,7 @@ export async function executeAuthorization(
   dependencies: ExecuteDependencies
 ): Promise<ExecuteAuthorizationResponse> {
   if(dependencies.authorityOnlyAdmissions&&
-     (dependencies.planningRevisions||dependencies.approvedPlans))
+     dependencies.planningRevisions)
     throw new GatewayError(403,"authority_only_binding_denied",
       "Authority-only and legacy Gateway modes cannot share provider effects");
   if(dependencies.authorityOnlyRunnerExecutor&&
@@ -257,8 +255,6 @@ export async function executeAuthorization(
         // No operational-approved Task can inherit this ancestor scope.
         (!!record.pinned_revision&&
          dependencies.planningRevisions!==undefined&&
-         record.approved_plan_digest===undefined&&
-         record.approved_plan_task_id===undefined&&
          dependencies.authorityOnlyAdmissions===undefined&&
          record.agent_role==="orchestrator"&&
          (record.request.tool==="read_file"||
@@ -383,7 +379,7 @@ export async function executeAuthorization(
          dependencies.verifier instanceof DirectCoreRustVerifier&&
          dependencies.policy instanceof OpaPolicyClient&&
          dependencies.executor instanceof GiteaExecutor&&
-         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+         !dependencies.planningRevisions){
         // No old blob-only PUT adapter, synthetic verifier, injected OPA,
         // legacy signed DAG, or unsupported provider may write here.
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedMutationEvidenceBinding(
@@ -402,7 +398,7 @@ export async function executeAuthorization(
          dependencies.verifier instanceof DirectCoreRustVerifier&&
          dependencies.policy instanceof OpaPolicyClient&&
          dependencies.executor instanceof GiteaExecutor&&
-         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+         !dependencies.planningRevisions){
         // Test CREATE is additionally constrained to one exact tests/*
         // project source by the original signed Child and Gateway admission.
         // The ORIGINAL consumed Prepare, signed single-file Child and
@@ -420,7 +416,7 @@ export async function executeAuthorization(
          dependencies.verifier instanceof DirectCoreRustVerifier&&
          dependencies.policy instanceof OpaPolicyClient&&
          dependencies.executor instanceof GiteaExecutor&&
-         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+         !dependencies.planningRevisions){
         // Exactly the pre-enrolled Test Child + immutable Runner commit,
         // never a legacy RunnerClient fallback or agent-chosen tested SHA.
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedRunnerEvidenceBinding(
@@ -432,7 +428,7 @@ export async function executeAuthorization(
          dependencies.verifier instanceof DirectCoreRustVerifier&&
          dependencies.policy instanceof OpaPolicyClient&&
          dependencies.executor instanceof GiteaExecutor&&
-         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+         !dependencies.planningRevisions){
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedBranchEvidenceBinding(record,verified);
       }else if(record.request.tool==="create_pull_request"&&record.agent_role==="orchestrator"&&
          dependencies.authorityOnlyPullRequestEnabled===true&&
@@ -441,7 +437,7 @@ export async function executeAuthorization(
          dependencies.verifier instanceof DirectCoreRustVerifier&&
          dependencies.policy instanceof OpaPolicyClient&&
          dependencies.executor instanceof GiteaExecutor&&
-         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+         !dependencies.planningRevisions){
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedPullRequestEvidenceBinding(
          record,verified);
       }else{
@@ -474,36 +470,6 @@ export async function executeAuthorization(
   // A pending challenge must not survive trusted Planning expiry/revocation.
   // Recheck after asynchronous cryptography/OPA, before any provider read.
   dependencies.planningRevisions?.assertActiveForExecution(record);
-  if (!record.pinned_revision) {
-    try {
-      dependencies.approvedPlans?.assertAuthorizedForExecution(record,verified.presenter_id,verified.credential_id);
-    } catch {
-      dependencies.audit.emit({
-        event:"authorization_executed",
-        timestamp:new Date(nowMs).toISOString(),
-        request_id:record.request_id,task_id:record.task_id,
-        agent_role:record.agent_role,tool:record.request.tool,
-        resource_uri:record.required_permission.resource,
-        operation:record.required_permission.operation,
-        decision:"deny",reason:"approved_plan_denied",
-        verification_ms:verificationMs,opa_ms:opaMs,
-        policy_decision:"allow",policy_version:policyDecision.policy_version,
-        provider_ms:0,provider_result:"not_called",
-        total_ms:elapsed(totalStarted,durationNow),
-        vp_size_bytes:Buffer.byteLength(request.signed_vp,"utf8"),
-        chain_depth:verified.hierarchy_depth,
-        disclosed_permission_count:verified.permissions.length,
-        ...(record.approved_plan_digest ? {approved_plan_digest:record.approved_plan_digest} : {}),
-        provider
-      });
-      throw new GatewayError(403,"approved_plan_denied",
-        "Trusted approved plan rejected the operation before provider execution");
-    }
-  }
-  // Synchronous owner-private flight fence: an epoch must not advance
-  // while an already-authorized provider request is still executing.
-  const releaseEffect=!record.pinned_revision
-    ?dependencies.approvedPlans?.beginProviderEffect(record):undefined;
   const providerStarted = durationNow();
   let execution: ExecutionResult;
   try {
@@ -553,7 +519,6 @@ export async function executeAuthorization(
         record,dependencies.signal);
     }
   } catch (error) {
-    releaseEffect?.();
     const providerMs = elapsed(providerStarted, durationNow);
     const common = {
       event: "authorization_executed" as const,
@@ -576,8 +541,6 @@ export async function executeAuthorization(
       chain_depth: verified.hierarchy_depth,
       disclosed_permission_count: verified.permissions.length,
       ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
-      ...(record.approved_plan_digest
-        ? {approved_plan_digest:record.approved_plan_digest} : {}),
       provider,
       provider_error_detail: providerErrorDetail(error)
     };
@@ -603,17 +566,6 @@ export async function executeAuthorization(
     throw new GatewayError(503, "provider_unavailable", "Protected provider failed");
   }
 
-  // Count only real Gateway-confirmed provider effects as trusted evidence
-  // for a later, separately attested A2A Task completion.
-  try {
-    if (!record.pinned_revision) {
-      dependencies.approvedPlans?.recordProviderSuccess(
-        record,execution,verified.presenter_id,verified.credential_id
-      );
-    }
-  } finally {
-    releaseEffect?.();
-  }
   // R295: owner-only provenance publication must happen AFTER a *real*
   // GiteaExecutor success (it carries a private WeakMap result witness).
   // Only the explicitly enabled read gate above can reach this hook.
@@ -733,7 +685,6 @@ export async function executeAuthorization(
     disclosed_permission_count: verified.permissions.length,
     ...providerIdentifiers,
     ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
-    ...(record.approved_plan_digest ? {approved_plan_digest:record.approved_plan_digest} : {}),
     provider: execution.provider
   });
 

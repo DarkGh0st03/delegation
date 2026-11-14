@@ -13,10 +13,7 @@ import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
 import {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
-import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
- type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
-import {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome,
  type AdkGenerationConfig,type TrustedAdditionalReadOnlyAdkRole}
  from "./adk-specialized-agents.ts";
@@ -77,10 +74,6 @@ export interface AdkA2ATaskHandlerConfig {
   gatewayTimeoutMs?: number;
   /** Private Task signer for one-shot crypto VP proofs; not model tools. */
   mcpTaskRegistry?:PrivateMcpTaskRegistry;
-  /** Opt-in private Child signer for one exact Gateway-bound Backend read. */
-  trustedBackendDiscovery?:TrustedBackendDiscoveryA2ABinding;
-  /** Trusted Backend host's dynamic, one-use owner-prebound discovery slot. */
-  trustedBackendDiscoverySlot?:TrustedBackendDiscoveryTaskSlot;
   fetchFn?: FetchLike;
 }
 
@@ -235,13 +228,6 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
      !config.trustedEffectTaskRegistry||
      typeof config.trustedOriginalWorkerIpcTaskBinding!=="function"))
     throw Error("Original worker model IPC requires owner-pinned Task registry");
-  if(config.trustedBackendDiscovery)
-    validateTrustedBackendDiscoveryA2ABinding(config.trustedBackendDiscovery);
-  if(config.trustedBackendDiscovery&&config.trustedBackendDiscoverySlot)
-    throw Error("Backend discovery cannot have two active signing sources");
-  if(config.trustedBackendDiscoverySlot&&
-     !(config.trustedBackendDiscoverySlot instanceof TrustedBackendDiscoveryTaskSlot))
-    throw Error("Untrusted Backend discovery dynamic slot");
   if(Object.prototype.hasOwnProperty.call(config,"trustedEffectStager"))
     throw Error("unscoped_authority_only_effect_stager_retired");
   if(config.trustedEffectTaskRegistry&&
@@ -292,9 +278,6 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   }
 
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
-    const selectedDiscovery=config.trustedBackendDiscoverySlot
-      ?config.trustedBackendDiscoverySlot.bindingFor(context)
-      :selectTrustedBackendDiscoveryA2A(config.trustedBackendDiscovery,context);
     // This port is claimed once, before model or FunctionTools can run.
     // A forged A2A Task fails here without falling back to shared effects.
     const ownerEffect=config.trustedEffectTaskRegistry?.selectFor(context);
@@ -371,28 +354,17 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     });
     // The task-local crypto MCP and direct Gateway client use the SAME
     // exact-Child presentation. Never fall back to a generic Adapter bearer.
-    const discoveryEvidence=selectedDiscovery?{
-      credentialId:context.delegation_evidence.credential_id,
-      presenterId:context.delegation_evidence.presenter_id,
-      createPresentation:(p:import("./delegation-evidence-handler.ts")
-       .PreparedGatewayAuthorization)=>selectedDiscovery.createSignedPresentation(p)
-    }:undefined;
     const cryptoPresentation = config.mcpTaskRegistry
       ? new LocalCryptoMcpBridge({
           registry:config.mcpTaskRegistry,taskId:context.task_id
         })
-      : selectedDiscovery;
+      : undefined;
     const gatewayClient = new GatewayControlledToolClient({
       ...(ownerEffect?{trustedEffectStager:ownerEffect}:{}),
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
       taskId: context.trusted_gateway_task_id??context.task_id,
       evidenceHandler,
-      ...(selectedDiscovery&&config.trustedBackendDiscoverySlot?{
-        onTrustedDiscoveryRead:(result:unknown)=>
-          config.trustedBackendDiscoverySlot!.captureGatewaySource(
-           context.trusted_gateway_task_id!,result)
-      }:{}),
       ...(signedTask?{
         approvedDiagnosticReadPaths:context.subtask.approved_file_permissions!
           .filter(p=>p.operation==="read_file").map(p=>p.path),
@@ -419,7 +391,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
              ...(context.subtask.approved_file_permissions!==undefined
                ? {allowedFilePermissions:context.subtask.approved_file_permissions}:{})
            } : {}),
-       evidenceHandler:discoveryEvidence??evidenceHandler});
+       evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.trustedAdditionalReadOnlyRole?{
@@ -709,11 +681,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       // Active-task revocation cannot be inferred from model output.
       try{releaseOriginalWorkerIpcTask?.();}
       finally{
-        try{selectedDiscovery?.fence();}
-        finally{
-          if(ownerEffect)
-            config.trustedEffectTaskRegistry!.retireFor(context.trusted_gateway_task_id!);
-        }
+        if(ownerEffect)
+          config.trustedEffectTaskRegistry!.retireFor(context.trusted_gateway_task_id!);
       }
     }
   };

@@ -4,26 +4,15 @@ import rego.v1
 
 default allow := false
 
-policy_version := "authority-only-parametric-v3"
+policy_version := "authority-only-parametric-v4"
 
 # ---------------------------------------------------------------------------
 # Per-repository parameters.
 #
 # The Engineer console publishes data.thesis.console_repositories, keyed by
-# the canonical repository URI. The built-in entry keeps the original
-# Account Suspension fixture working when no console parameters exist (CI
-# and the scripted native E2E). Parameters never come from tool arguments.
+# the canonical repository URI, before every session. A repository without
+# published parameters is denied. Parameters never come from tool arguments.
 # ---------------------------------------------------------------------------
-builtin_repositories := {"gitea://gitea.local/thesis/iam-console-poc": {
-	"base_branch": "main",
-	"protected_branches": ["main"],
-	"work_branch_prefix": "feature/",
-	"default_work_branch": "feature/account-suspension",
-	"forbidden_path_prefixes": [],
-	"runner_profile": "poc-default",
-	"allow_pull_request": true,
-}}
-
 repository_uri := sprintf("gitea://%s/%s/%s", [
 	input.repository.authority,
 	input.repository.owner,
@@ -31,10 +20,6 @@ repository_uri := sprintf("gitea://%s/%s/%s", [
 ])
 
 repo_config := data.thesis.console_repositories[repository_uri]
-
-repo_config := builtin_repositories[repository_uri] if {
-	not data.thesis.console_repositories[repository_uri]
-}
 
 controlled_repository if {
 	is_object(repo_config)
@@ -62,27 +47,10 @@ valid_work_branch(branch) if {
 	not branch in repo_config.protected_branches
 }
 
-# The effective work branch, in order of trust:
-# 1. session_work_branch: injected by the Gateway from the Engineer-signed
-#    operational authority of the live session (authority-only path);
-# 2. approved_work_branch with its plan digest (historical signed-DAG path);
-# 3. the repository's fixed default work branch, if configured.
+# The work branch is injected by the Gateway from the Engineer-signed
+# operational authority of the live session; without it no write is allowed.
 work_branch := input.session_work_branch if {
 	valid_work_branch(input.session_work_branch)
-}
-
-work_branch := input.approved_work_branch if {
-	not input.session_work_branch
-	is_string(input.approved_plan_digest)
-	regex.match("^[a-f0-9]{64}$", input.approved_plan_digest)
-	valid_work_branch(input.approved_work_branch)
-}
-
-work_branch := repo_config.default_work_branch if {
-	not input.session_work_branch
-	not input.approved_plan_digest
-	not input.approved_work_branch
-	valid_work_branch(repo_config.default_work_branch)
 }
 
 work_branch_uri := branch_uri(work_branch)

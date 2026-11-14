@@ -3,7 +3,7 @@ import type {
   DelegationEvidence,
   DeterministicSubtask,
   SpecializedAgentRole
-} from "@thesis/agent-runtime";
+} from "../../agent-runtime/src/contracts.ts";
 import type {
   ChildIssuanceInput,
   IssuedDelegationCredential

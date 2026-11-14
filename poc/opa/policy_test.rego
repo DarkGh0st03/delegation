@@ -5,12 +5,23 @@ import data.thesis.gateway.allow
 import data.thesis.gateway.decision
 
 repo_uri := "gitea://gitea.local/thesis/iam-console-poc"
-feature_uri := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension"
-backend_file := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts"
+feature_uri := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work"
+backend_file := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work/files/apps/backend/src/users/user.service.ts"
 main_file := "gitea://gitea.local/thesis/iam-console-poc/branches/main/files/apps/backend/src/users/user.service.ts"
+
+# Parameters the console would publish for the default test repository.
+default_repos := {repo_uri: {
+	"base_branch": "main",
+	"protected_branches": ["main"],
+	"work_branch_prefix": "feature/",
+	"forbidden_path_prefixes": [],
+	"runner_profile": "poc-default",
+	"allow_pull_request": true,
+}}
 
 make_input(tool, resource, arguments) := {
 	"request_id": "req-policy-1",
+	"session_work_branch": "feature/session-work",
 	"task_id": "task-policy-1",
 	"agent_role": "backend",
 	"tool": tool,
@@ -36,8 +47,8 @@ test_allow_read_file_on_feature_branch if {
 	allow with input as make_input(
 		"read_file",
 		backend_file,
-		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
-	)
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"},
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_allow_update_file_on_feature_branch if {
@@ -45,23 +56,23 @@ test_allow_update_file_on_feature_branch if {
 		"update_file",
 		backend_file,
 		{
-			"branch": "feature/account-suspension",
+			"branch": "feature/session-work",
 			"path": "apps/backend/src/users/user.service.ts",
 			"content": "updated",
 		},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_allow_create_file_on_feature_branch if {
 	allow with input as make_input(
 		"create_file",
-		"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/tests/e2e/account-suspension.spec.ts",
+		"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work/files/tests/e2e/account-suspension.spec.ts",
 		{
-			"branch": "feature/account-suspension",
+			"branch": "feature/session-work",
 			"path": "tests/e2e/account-suspension.spec.ts",
 			"content": "test",
 		},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_file_operation_on_main if {
@@ -73,7 +84,7 @@ test_deny_file_operation_on_main if {
 			"path": "apps/backend/src/users/user.service.ts",
 			"content": "updated",
 		},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_read_file_outside_feature_branch if {
@@ -81,23 +92,23 @@ test_deny_read_file_outside_feature_branch if {
 		"read_file",
 		main_file,
 		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_allow_exact_feature_branch_creation if {
 	allow with input as make_input(
 		"create_branch",
 		repo_uri,
-		{"base_branch": "main", "branch": "feature/account-suspension"},
-	)
+		{"base_branch": "main", "branch": "feature/session-work"},
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_branch_creation_from_non_main if {
 	not allow with input as make_input(
 		"create_branch",
 		repo_uri,
-		{"base_branch": "develop", "branch": "feature/account-suspension"},
-	)
+		{"base_branch": "develop", "branch": "feature/session-work"},
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_creation_of_other_branch if {
@@ -105,7 +116,7 @@ test_deny_creation_of_other_branch if {
 		"create_branch",
 		repo_uri,
 		{"base_branch": "main", "branch": "feature/other"},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_allow_exact_pull_request_direction if {
@@ -113,11 +124,11 @@ test_allow_exact_pull_request_direction if {
 		"create_pull_request",
 		repo_uri,
 		{
-			"head_branch": "feature/account-suspension",
+			"head_branch": "feature/session-work",
 			"base_branch": "main",
 			"title": "Account suspension",
 		},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_reverse_pull_request_direction if {
@@ -126,18 +137,18 @@ test_deny_reverse_pull_request_direction if {
 		repo_uri,
 		{
 			"head_branch": "main",
-			"base_branch": "feature/account-suspension",
+			"base_branch": "feature/session-work",
 			"title": "Wrong direction",
 		},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_allow_run_tests_only_on_feature_branch_with_fixed_profile if {
 	allow with input as make_input(
 		"run_tests",
 		feature_uri,
-		{"branch": "feature/account-suspension", "profile": "poc-default"},
-	)
+		{"branch": "feature/session-work", "profile": "poc-default"},
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_run_tests_on_main if {
@@ -145,15 +156,15 @@ test_deny_run_tests_on_main if {
 		"run_tests",
 		"gitea://gitea.local/thesis/iam-console-poc/branches/main",
 		{"branch": "main", "profile": "poc-default"},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_run_tests_with_arbitrary_profile if {
 	not allow with input as make_input(
 		"run_tests",
 		feature_uri,
-		{"branch": "feature/account-suspension", "profile": "arbitrary-shell"},
-	)
+		{"branch": "feature/session-work", "profile": "arbitrary-shell"},
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_merge_pull_request_even_if_repository_is_controlled if {
@@ -161,14 +172,14 @@ test_deny_merge_pull_request_even_if_repository_is_controlled if {
 		"merge_pull_request",
 		repo_uri,
 		{"pull_request": 1},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_uncontrolled_repository if {
 	base := make_input(
 		"read_file",
 		backend_file,
-		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	bad := object.union(base, {
 		"repository": {
@@ -177,24 +188,24 @@ test_deny_uncontrolled_repository if {
 			"repository": "iam-console-poc",
 		},
 	})
-	not allow with input as bad
+	not allow with input as bad with data.thesis.console_repositories as default_repos
 }
 
 test_deny_without_verified_delegation_context if {
 	base := make_input(
 		"read_file",
 		backend_file,
-		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	bad := object.remove(base, {"verified_delegation"})
-	not allow with input as bad
+	not allow with input as bad with data.thesis.console_repositories as default_repos
 }
 
 test_deny_operation_tool_mismatch if {
 	base := make_input(
 		"read_file",
 		backend_file,
-		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	bad := object.union(base, {
 		"required_permission": {
@@ -202,17 +213,17 @@ test_deny_operation_tool_mismatch if {
 			"operation": "update_file",
 		},
 	})
-	not allow with input as bad
+	not allow with input as bad with data.thesis.console_repositories as default_repos
 }
 
 test_decision_exposes_policy_version if {
 	result := decision with input as make_input(
 		"read_file",
 		backend_file,
-		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
-	)
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"},
+	) with data.thesis.console_repositories as default_repos
 	result.allow == true
-	result.policy_version == "authority-only-parametric-v3"
+	result.policy_version == "authority-only-parametric-v4"
 }
 
 # Planning has read-only access to main only when the Orchestrator presents
@@ -220,17 +231,17 @@ test_decision_exposes_policy_version if {
 test_allow_orchestrator_repository_discovery if {
 	base := make_input("read_repository", repo_uri, {})
 	planning := object.union(base, {"agent_role": "orchestrator"})
-	allow with input as planning
+	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
 test_deny_backend_repository_discovery if {
-	not allow with input as make_input("read_repository", repo_uri, {})
+	not allow with input as make_input("read_repository", repo_uri, {}) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_repository_discovery_on_wrong_resource if {
 	base := make_input("read_repository", feature_uri, {})
 	planning := object.union(base, {"agent_role": "orchestrator"})
-	not allow with input as planning
+	not allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
 test_allow_orchestrator_main_directory_root if {
@@ -240,7 +251,7 @@ test_allow_orchestrator_main_directory_root if {
 		{"branch": "main", "path": ""},
 	)
 	planning := object.union(base, {"agent_role": "orchestrator"})
-	allow with input as planning
+	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
 test_allow_orchestrator_main_nested_directory if {
@@ -250,7 +261,7 @@ test_allow_orchestrator_main_nested_directory if {
 		{"branch": "main", "path": "apps/backend"},
 	)
 	planning := object.union(base, {"agent_role": "orchestrator"})
-	allow with input as planning
+	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
 test_deny_backend_main_directory if {
@@ -258,7 +269,7 @@ test_deny_backend_main_directory if {
 		"list_directory",
 		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories",
 		{"branch": "main", "path": ""},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_allow_orchestrator_read_file_main if {
@@ -268,7 +279,7 @@ test_allow_orchestrator_read_file_main if {
 		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	planning := object.union(base, {"agent_role": "orchestrator"})
-	allow with input as planning
+	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
 test_deny_backend_read_file_main if {
@@ -276,15 +287,15 @@ test_deny_backend_read_file_main if {
 		"read_file",
 		main_file,
 		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
-	)
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_allow_feature_branch_directory if {
 	allow with input as make_input(
 		"list_directory",
 		sprintf("%s/directories/apps/backend", [feature_uri]),
-		{"branch": "feature/account-suspension", "path": "apps/backend"},
-	)
+		{"branch": "feature/session-work", "path": "apps/backend"},
+	) with data.thesis.console_repositories as default_repos
 }
 
 test_deny_directory_resource_on_unrelated_branch if {
@@ -294,7 +305,7 @@ test_deny_directory_resource_on_unrelated_branch if {
 		{"branch": "main", "path": ""},
 	)
 	planning := object.union(base, {"agent_role": "orchestrator"})
-	not allow with input as planning
+	not allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
 test_deny_orchestrator_write_on_main_even_with_valid_delegation if {
@@ -304,87 +315,31 @@ test_deny_orchestrator_write_on_main_even_with_valid_delegation if {
 		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	planning := object.union(base, {"agent_role": "orchestrator"})
-	not allow with input as planning
+	not allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
-
-approved_feature_branch := "feature/engineer-approved-42"
-approved_file := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fengineer-approved-42/files/apps/backend/src/users/user.service.ts"
-approved_test_uri := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fengineer-approved-42"
-trusted_approval := {"approved_plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "approved_work_branch": approved_feature_branch}
-
-test_allow_signed_dynamic_branch_file_update if {
-  base := make_input("update_file",approved_file,
-    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
-  allow with input as object.union(base,trusted_approval)
-}
-test_allow_signed_dynamic_branch_creation if {
-  base := make_input("create_branch",repo_uri,
-    {"base_branch":"main","branch":approved_feature_branch})
-  allow with input as object.union(base,trusted_approval)
-}
-test_allow_signed_dynamic_branch_runner if {
-  base := make_input("run_tests",approved_test_uri,
-    {"branch":approved_feature_branch,"profile":"poc-default"})
-  allow with input as object.union(base,trusted_approval)
-}
-test_deny_unapproved_dynamic_branch_without_gateway_binding if {
-  base := make_input("update_file",approved_file,
-    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
-  not allow with input as base
-}
-test_deny_spoofed_dynamic_branch_digest if {
-  base := make_input("update_file",approved_file,
-    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
-  bad := object.union(base,{
-    "approved_plan_digest":"forged","approved_work_branch":approved_feature_branch
-  })
-  not allow with input as bad
-}
-test_deny_approved_branch_mismatch_on_main_and_other_feature if {
-  base := make_input("create_branch",repo_uri,
-    {"base_branch":"main","branch":"feature/attacker"})
-  not allow with input as object.union(base,trusted_approval)
-  from_main := make_input("update_file",main_file,{
-    "branch":"main","path":"apps/backend/src/users/user.service.ts"
-  })
-  not allow with input as object.union(from_main,trusted_approval)
-}
-test_deny_approved_branch_traversal_and_invalid_profile if {
-  base := make_input("create_branch",repo_uri,
-    {"base_branch":"main","branch":"feature/a..b"})
-  bad := object.union(base,{
-    "approved_plan_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "approved_work_branch":"feature/a..b"
-  })
-  not allow with input as bad
-  tests := make_input("run_tests",approved_test_uri,
-    {"branch":approved_feature_branch,"profile":"uncontrolled-shell"})
-  not allow with input as object.union(tests,trusted_approval)
-}
 
 # R454: OPA may evaluate a new signed specialist read (the native Gateway
 # separately authenticates the role/Child and exact read-only Task). A model
 # or A2A Card cannot use that role name to gain writes, Runner or PR power.
 test_additional_specialist_signed_source_read_allowed if {
  base := make_input("read_file",backend_file,
-  {"branch":"feature/account-suspension","path":"apps/backend/src/users/user.service.ts"})
+  {"branch":"feature/session-work","path":"apps/backend/src/users/user.service.ts"})
  reviewer := object.union(base,{
   "agent_role":"reviewer",
   "verified_delegation":object.union(base.verified_delegation,{
    "presenter_id":"did:thesis:reviewer-agent"
   })
  })
- allow with input as reviewer
+ allow with input as reviewer with data.thesis.console_repositories as default_repos
 }
 
 test_additional_specialist_cannot_use_nonread_provider_ops if {
  every action in ["update_file","create_file","run_tests","create_branch","create_pull_request"] {
-  args := {"branch":"feature/account-suspension","path":"apps/backend/src/users/user.service.ts","content":"forbidden"}
+  args := {"branch":"feature/session-work","path":"apps/backend/src/users/user.service.ts","content":"forbidden"}
   base := make_input(action,backend_file,args)
   reviewer := object.union(base,{"agent_role":"reviewer"})
-  not allow with input as reviewer
+  not allow with input as reviewer with data.thesis.console_repositories as default_repos
  }
 }
 
@@ -395,7 +350,7 @@ test_additional_specialist_cannot_list_directory if {
  base := make_input(
   "list_directory",
   sprintf("%s/directories/apps/backend", [feature_uri]),
-  {"branch":"feature/account-suspension","path":"apps/backend"}
+  {"branch":"feature/session-work","path":"apps/backend"}
  )
  reviewer := object.union(base,{
   "agent_role":"reviewer",
@@ -403,15 +358,15 @@ test_additional_specialist_cannot_list_directory if {
    "presenter_id":"did:thesis:reviewer-agent"
   })
  })
- not allow with input as reviewer
+ not allow with input as reviewer with data.thesis.console_repositories as default_repos
 }
 
 test_original_specialist_can_still_list_approved_directory if {
  allow with input as make_input(
   "list_directory",
   sprintf("%s/directories/apps/backend", [feature_uri]),
-  {"branch":"feature/account-suspension","path":"apps/backend"}
- )
+  {"branch":"feature/session-work","path":"apps/backend"}
+ ) with data.thesis.console_repositories as default_repos
 }
 
 # ---------------------------------------------------------------------------
@@ -518,23 +473,13 @@ test_unconfigured_repository_is_denied if {
 	not allow with input as other with data.thesis.console_repositories as console_repos
 }
 
-test_console_config_overrides_builtin_for_same_repository if {
-	override := {repo_uri: {
-		"base_branch": "main", "protected_branches": ["main"], "work_branch_prefix": "agent/",
-		"forbidden_path_prefixes": [], "runner_profile": "poc-default", "allow_pull_request": true,
-	}}
-	not allow with input as make_input("read_file", backend_file,
-		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"})
-		with data.thesis.console_repositories as override
-}
-
 test_allow_new_specialists_update_on_feature_branch if {
 	every role in ["docs", "data", "devops"] {
 		allow with input as object.union(make_input(
 			"update_file",
-			"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/README.md",
-			{"branch": "feature/account-suspension", "path": "README.md", "content": "updated"},
-		), {"agent_role": role})
+			"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work/files/README.md",
+			{"branch": "feature/session-work", "path": "README.md", "content": "updated"},
+		), {"agent_role": role}) with data.thesis.console_repositories as default_repos
 	}
 }
 
@@ -542,6 +487,18 @@ test_deny_write_by_unknown_role if {
 	not allow with input as object.union(make_input(
 		"update_file",
 		backend_file,
-		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts", "content": "x"},
-	), {"agent_role": "reviewer"})
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts", "content": "x"},
+	), {"agent_role": "reviewer"}) with data.thesis.console_repositories as default_repos
+}
+
+test_deny_writes_without_signed_session_branch if {
+	base := object.remove(make_input("update_file", backend_file,
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"}),
+		["session_work_branch"])
+	not allow with input as base with data.thesis.console_repositories as default_repos
+}
+
+test_deny_unconfigured_default_repository if {
+	not allow with input as make_input("read_file", backend_file,
+		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"})
 }

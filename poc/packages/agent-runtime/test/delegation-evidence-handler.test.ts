@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  ControlledToolError,
-  DelegationEvidenceHandler
-} from "../src/index.ts";
+import {ControlledToolError} from "../src/controlled-errors.ts";
+import {DelegationEvidenceHandler} from "../src/delegation-evidence-handler.ts";
 
 const prepared = {
   request_id: "req_phase8a",
