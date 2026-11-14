@@ -51,6 +51,11 @@ function detectNode(pkg, files) {
     return web("Interfaccia web costruita con Vite", {image: NODE_IMAGE,
       build: `${install} && ${scripts.build ? "npm run build" : "npx vite build"}`,
       start: "npx vite preview --host 0.0.0.0 --port 4173 --strictPort", port: 4173}, evidence);
+  // A start script plus HTML pages (e.g. Node's own http server + public/).
+  const publicHtml = [...files].some(f => /^(public|static|www)\/.+\.html$/u.test(f));
+  if (scripts.start && (html || publicHtml))
+    return web("Applicazione Node.js con pagine web", {image: NODE_IMAGE, build,
+      start: "HOST=0.0.0.0 PORT=3000 npm start", port: 3000}, evidence);
   if (ui && scripts.start)
     return web("Interfaccia web (script start)", {image: NODE_IMAGE, build,
       start: "HOST=0.0.0.0 PORT=3000 npm start", port: 3000}, evidence);

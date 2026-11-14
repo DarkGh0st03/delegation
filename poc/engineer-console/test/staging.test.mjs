@@ -298,6 +298,11 @@ test("detection: web interfaces get a start proposal, libraries/CLIs/APIs are 'n
   assert.equal(express.proposal.port, 3000);
   assert.match(express.proposal.start, /PORT=3000 npm start/u);
 
+  const plainNode = await detect(["server.js", "public/index.html", "public/app.js"], {"package.json":
+    JSON.stringify({scripts: {start: "node server.js", test: "node --test"}})});
+  assert.equal(plainNode.interface, "web", "Node's own http server + public/ pages");
+  assert.match(plainNode.reason, /pagine web/u);
+
   const api = await detect(["src/index.js"], {"package.json": JSON.stringify({
     scripts: {start: "node src/index.js"}, dependencies: {express: "5"}})});
   assert.equal(api.interface, "none");

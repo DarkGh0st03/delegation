@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campus Library</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <p class="eyebrow">Campus Library</p>
+      <h1>Catalogue</h1>
+      <p class="summary" id="summary">Loading…</p>
+    </header>
+    <form class="search" id="search-form" role="search">
+      <label for="query">Search by title or author</label>
+      <input id="query" name="q" type="search" placeholder="e.g. Fowler" autocomplete="off">
+    </form>
+    <ul class="books" id="books" aria-live="polite"></ul>
+  </main>
+</body>
+</html>
