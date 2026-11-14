@@ -189,6 +189,15 @@ export class ScriptedWorkerModel extends Scripted {
     // A new file is not read (it does not exist yet): only its context.
     for (const f of this.#queue)
       f.readOrder = f.op === "create" ? [...(f.reads ?? [])] : [...(f.reads ?? []), f.path];
+    this.#planned = [...this.#queue];
+  }
+  #planned = [];
+  /** A repair Task edits an already planned file again (same signed reads). */
+  requeue(path) {
+    const item = this.#planned.find(f => f.path === path);
+    if (!item) return false;
+    this.#queue.push({...item, op: "update", readOrder: [...(item.reads ?? []), item.path]});
+    return true;
   }
   #content(path, previous) {
     // JSON and CSV have no comments: the simulated change keeps them valid
@@ -242,13 +251,21 @@ export class ScriptedWorkerModel extends Scripted {
 
 /** run_tests on the work branch, then a short report. */
 export class ScriptedTestModel extends Scripted {
-  #branch; #turn = 0; #files;
+  #branch; #turn = 0; #files; #repaired = "";
   constructor({branch, worker}) {
     super({model: "scripted-test-no-ai"});
     this.#branch = branch; this.#files = worker;
   }
   async *generateContentAsync(request) {
     this.calls++;
+    // A repair Task from the Orchestrator edits its test file again.
+    const repairs = [...JSON.stringify(request?.contents ?? request ?? "")
+      .matchAll(/Correggi (\S+) dopo il FAIL dei test \(riparazione \d+\)/gu)];
+    const repair = repairs.at(-1);
+    if (repair && !this.#files.pending && this.#turn === 0 && this.#repaired !== repair[0]) {
+      this.#repaired = repair[0];
+      this.#files.requeue(repair[1]);
+    }
     // Test files assigned to the Test role are edited first, like any worker.
     if (this.#files.pending) { yield* this.#files.generateContentAsync(request); return; }
     const turn = ++this.#turn;
@@ -263,6 +280,7 @@ export class ScriptedTestFileWorker extends ScriptedWorkerModel {
   #remaining;
   constructor(options) { super(options); this.#remaining = options.files.length; }
   get pending() { return this.#remaining > 0; }
+  requeue(path) { const ok = super.requeue(path); if (ok) this.#remaining++; return ok; }
   async *generateContentAsync(request) {
     for await (const event of super.generateContentAsync(request)) {
       if (event.content?.parts?.[0]?.text) this.#remaining--;
@@ -273,7 +291,7 @@ export class ScriptedTestFileWorker extends ScriptedWorkerModel {
 
 /** Orchestrator decisions: delegate the planned Tasks in order, then stop. */
 export class ScriptedDecisionModel extends Scripted {
-  #plan; #branchTaskId; #index = 0;
+  #plan; #branchTaskId; #index = 0; #repairs = 0; #retest = null; #repairId = null;
   constructor({plan, branchTaskId}) {
     super({model: "scripted-orchestrator-no-ai"});
     this.#plan = plan; this.#branchTaskId = branchTaskId;
@@ -296,6 +314,39 @@ export class ScriptedDecisionModel extends Scripted {
     }
     const context = JSON.stringify(request);
     const completed = completedTaskIds(request);
+    const lastDone = [...completed].pop() ?? this.#branchTaskId;
+    const failed = /independent_runner_failure\\?"\s*:/u.test(context);
+    const testTask = [...this.#plan.tasks].reverse().find(t => t.agent_id === "test" && t.path && t.op !== "read");
+    const run = this.#plan.tasks.find(t => t.task_id === "t99-test");
+    // After a verified FAIL, like the real Orchestrator: hand the test file to
+    // the Test agent, then run the tests again (the owner's budget ends it).
+    if (this.#plan.runsTests && testTask && run && (failed || this.#repairId) &&
+        !(this.#retest && completed.has(this.#retest))) {
+      if (this.#repairId && !this.#retest) {
+        this.#retest = `t99-retest-${this.#repairs}`;
+        yield say(JSON.stringify({action: "delegate", task: {task_id: this.#retest, agent_id: "test",
+          depends_on: [completed.has(this.#repairId) ? this.#repairId : lastDone],
+          permissions: run.permissions, instruction: "Esegui di nuovo i test del progetto dopo la correzione"}}));
+        return;
+      }
+      const budget = Number(/trusted_owner_verified_failure_budget\\?"\s*:\s*(\d+)/u.exec(context)?.[1] ?? 1);
+      if (this.#repairs + 1 >= budget) {
+        yield say(JSON.stringify({action: "blocked",
+          reason: "I test falliscono ancora dopo " + this.#repairs + " correzioni: budget di riparazione esaurito"}));
+        return;
+      }
+      this.#repairs++; this.#retest = null;
+      this.#repairId = `t98-repair-${this.#repairs}`;
+      yield say(JSON.stringify({action: "delegate", task: {task_id: this.#repairId, agent_id: "test",
+        depends_on: [lastDone], permissions: testTask.permissions,
+        instruction: `Correggi ${testTask.path} dopo il FAIL dei test (riparazione ${this.#repairs})`}}));
+      return;
+    }
+    if (this.#retest && completed.has(this.#retest)) {
+      yield say(JSON.stringify({action: "ready_for_pr",
+        reason: "Test PASS verificato dal Runner dopo la correzione"}));
+      return;
+    }
     if (!this.#plan.runsTests)
       yield say(JSON.stringify({action: "blocked",
         reason: "I test non sono stati autorizzati: senza un esito PASS del Runner non si crea la Draft PR"}));

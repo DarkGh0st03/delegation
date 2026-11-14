@@ -730,3 +730,37 @@ test("console explains an exhausted repair budget and shows compiler errors", as
     message: "Property 'workEmail' does not exist on type 'UserSummary'."}]}),
     ["Errore di compilazione: apps/backend/src/a.ts:3 TS2339 — Property 'workEmail' does not exist on type 'UserSummary'."]);
 });
+
+test("free mode: a requirement naming a new file proposes create_file in an existing folder", async () => {
+  const {requestedNewFiles, scriptedProposal} = await import("../src/scripted-planner-model.mjs");
+  const files = ["src/catalog.js", "test/catalog.test.js"], dirs = ["", "src", "test"];
+  assert.deepEqual(requestedNewFiles("Create `src/genres.js` and `test/genres.test.js`; not `docs/x.md`, " +
+    "`src/catalog.js` or `../etc/passwd.txt`", files, dirs), ["src/genres.js", "test/genres.test.js"]);
+  const ops = scriptedProposal(["src/catalog.js"], ["src/genres.js"]).requested_permissions
+    .map(p => p.operation + ":" + (p.path ?? ""));
+  assert.ok(ops.includes("create_file:src/genres.js") && ops.includes("update_file:src/catalog.js"));
+});
+
+test("free mode: after a verified FAIL the simulated Orchestrator repairs and retests within the budget", async () => {
+  const {ScriptedDecisionModel} = await import("../src/scripted-execution-models.mjs");
+  const plan = {runsTests: true, tasks: [
+    {task_id: "t01-test", agent_id: "test", path: "test/a.test.js", op: "update",
+      permissions: [{resource: "r", operation: "read_file"}, {resource: "r", operation: "update_file"}]},
+    {task_id: "t99-test", agent_id: "test", permissions: [{resource: "b", operation: "run_tests"}]}]};
+  const model = new ScriptedDecisionModel({plan, branchTaskId: "branch"});
+  const next = async (context) => {
+    const out = [];
+    for await (const e of model.generateContentAsync({contents: [JSON.stringify(context)]})) out.push(e);
+    return JSON.parse(out[0].content.parts[0].text);
+  };
+  const done = ids => ({independently_gateway_completed_tasks: ids.map(task_id => ({task_id}))});
+  await next(done(["branch"])); await next(done(["branch", "t01-test"]));
+  const failure = {...done(["branch", "t01-test"]), independent_runner_failure: {phase: "tests"},
+    trusted_owner_verified_failure_budget: 2};
+  const repair = await next(failure);
+  assert.equal(repair.task.task_id, "t98-repair-1");
+  assert.match(repair.task.instruction, /Correggi test\/a\.test\.js dopo il FAIL dei test \(riparazione 1\)/u);
+  const retest = await next({...done(["branch", "t01-test", "t98-repair-1"]), trusted_owner_verified_failure_budget: 2});
+  assert.equal(retest.task.permissions[0].operation, "run_tests");
+  assert.equal((await next(failure)).action, "blocked", "the second FAIL exhausts a budget of two");
+});

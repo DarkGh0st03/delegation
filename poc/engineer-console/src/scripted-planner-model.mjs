@@ -56,7 +56,20 @@ export function selectPlanningFiles(files, requirement, limit = 12) {
   return chosen.sort();
 }
 
-export function scriptedProposal(files) {
+/** New files the requirement names explicitly (a path with a folder or an
+ * extension that does not exist yet, in an existing folder). Pure. */
+export function requestedNewFiles(requirement, files, directories) {
+  const existing = new Set(files), dirs = new Set(directories);
+  const out = new Set();
+  for (const [, path] of String(requirement).matchAll(/`([A-Za-z0-9_./-]{3,120})`/gu)) {
+    const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    if (!existing.has(path) && dirs.has(parent) && /\.[A-Za-z0-9]{1,8}$/u.test(path) &&
+        !path.split("/").some(s => !s || s === "." || s === "..")) out.add(path);
+  }
+  return [...out].sort().slice(0, 4);
+}
+
+export function scriptedProposal(files, newFiles = []) {
   return {
     requested_permissions: [
       {operation: "create_branch", resource_type: "repository", path: null},
@@ -65,7 +78,8 @@ export function scriptedProposal(files) {
       ...files.flatMap(path => [
         {operation: "read_file", resource_type: "file", path},
         {operation: "update_file", resource_type: "file", path}
-      ])
+      ]),
+      ...newFiles.map(path => ({operation: "create_file", resource_type: "file", path}))
     ],
     assumptions: ["Proposta SIMULATA: nessun modello di IA è stato usato. I file sono " +
       "scelti confrontando le parole del requisito con i percorsi della repository."],
@@ -75,10 +89,11 @@ export function scriptedProposal(files) {
 }
 
 export class ScriptedPlannerModel extends BaseLlm {
-  #files; #readTarget; #baseBranch; calls = 0;
-  constructor({snapshotFiles, requirement, baseBranch = "main"}) {
+  #files; #newFiles; #readTarget; #baseBranch; calls = 0;
+  constructor({snapshotFiles, snapshotDirectories = [], requirement, baseBranch = "main"}) {
     super({model: "scripted-planner-no-ai"});
     this.#files = selectPlanningFiles(snapshotFiles, requirement);
+    this.#newFiles = requestedNewFiles(requirement, snapshotFiles, snapshotDirectories);
     this.#baseBranch = baseBranch;
     this.#readTarget = this.#files[0] ??
       snapshotFiles.find(f => /^readme/iu.test(f)) ?? snapshotFiles[0];
@@ -94,7 +109,7 @@ export class ScriptedPlannerModel extends BaseLlm {
       return;
     }
     yield {content: {role: "model", parts: [{text: JSON.stringify(
-      scriptedProposal(this.#files))}]}};
+      scriptedProposal(this.#files, this.#newFiles))}]}};
   }
 
   connect() { throw Error("Scripted planner has no live connection"); }

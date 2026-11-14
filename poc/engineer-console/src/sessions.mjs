@@ -241,7 +241,10 @@ export class EngineerSessions {
       return file;
     };
     const roles = [...SPECIALIST_ROLES];
-    const childCount = scripted ? plan.tasks.length : 24;
+    // One Child per Task; the free mode also reserves two per repair cycle
+    // (repair Task + new test run) within the failure budget.
+    const maxVerifiedFailures = scripted ? 3 : 4;
+    const childCount = scripted ? Math.min(24, plan.tasks.length + 2 * (maxVerifiedFailures - 1)) : 24;
     const childIndices = Array.from({length: childCount}, () => String(this.#nextStatus++));
     const workerPorts = {};
     for (const role of roles) workerPorts[role] = await freePort();
@@ -271,7 +274,7 @@ export class EngineerSessions {
         baseBranch: session.base_branch ?? "main",
         // Paid runs may repair after up to two verified test failures (as in the
         // earlier real pilots); free runs stop at the first one.
-        executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: scripted ? 1 : 4},
+        executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures},
         ...(createEnabled ? {enableNativeCreateFile: true} : {}),
         // The owner refuses a title with surrounding blanks: trim after cutting.
         draftTitle: ((scripted ? "[SIMULATA] " : "") +
@@ -645,8 +648,8 @@ export class EngineerSessions {
       model = gemini.planning();
       this.#log(session, `Planner: Gemini (${geminiModelName()}), con limiti di chiamate e token per sessione`);
     } else {
-      model = new ScriptedPlannerModel({snapshotFiles: tree.files, requirement: session.requirement,
-        baseBranch: session.base_branch});
+      model = new ScriptedPlannerModel({snapshotFiles: tree.files, snapshotDirectories: tree.directories,
+        requirement: session.requirement, baseBranch: session.base_branch});
       this.#log(session, "Planner: SIMULATO (nessuna IA, nessun costo)");
     }
 
