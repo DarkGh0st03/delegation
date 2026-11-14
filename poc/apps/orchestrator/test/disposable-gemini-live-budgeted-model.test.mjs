@@ -157,8 +157,9 @@ test("aborted provider and explicit provider errors block all outputs and furthe
 });
 
 test("session role ceilings are fixed and do not expose billing or secret data",()=>{
+ // Planning, Orchestrator Execution and one ceiling per registry specialist.
  assert.deepEqual(Object.keys(PRIVATE_GEMINI_SESSION_LIMITS).sort(),[
-  "adaptive-execution","backend","frontend","planning","test"
+  "adaptive-execution","backend","data","devops","docs","frontend","planning","test"
  ]);
  for(const [phase,limit] of Object.entries(PRIVATE_GEMINI_SESSION_LIMITS)){
   assert.equal(Object.isFrozen(limit),true,phase);
