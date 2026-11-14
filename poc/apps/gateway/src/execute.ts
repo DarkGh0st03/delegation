@@ -44,6 +44,7 @@ import type {
   VerifierPort,
   VerifiedDelegation
 } from "./types.ts";
+import {APPLICATION_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -388,7 +389,7 @@ export async function executeAuthorization(
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedMutationEvidenceBinding(
           record,verified);
       }else if(record.request.tool==="create_file"&&
-         (["backend","frontend"].includes(record.agent_role)||
+         (APPLICATION_ROLES.includes(record.agent_role)||
           (record.agent_role==="test"&&
            isProjectTestCreateGrant([record.required_permission],
              dependencies.authorityOnlyAdmissions?.projectTestSourceProfile)))&&

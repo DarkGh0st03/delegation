@@ -527,3 +527,21 @@ test_console_config_overrides_builtin_for_same_repository if {
 		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"})
 		with data.thesis.console_repositories as override
 }
+
+test_allow_new_specialists_update_on_feature_branch if {
+	every role in ["docs", "data", "devops"] {
+		allow with input as object.union(make_input(
+			"update_file",
+			"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/README.md",
+			{"branch": "feature/account-suspension", "path": "README.md", "content": "updated"},
+		), {"agent_role": role})
+	}
+}
+
+test_deny_write_by_unknown_role if {
+	not allow with input as object.union(make_input(
+		"update_file",
+		backend_file,
+		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts", "content": "x"},
+	), {"agent_role": "reviewer"})
+}

@@ -20,9 +20,11 @@ import {DurableNativeD1FirstTaskAdmissionJournal,
  from "./trusted-native-d1-first-task-admission.ts";
 import {preflightNativeD1FailureCandidate}
  from "./trusted-native-runner-failure-d1-preflight.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
 type Admission=Awaited<ReturnType<typeof admitFirstNativeD1RepairTask>>;
-type Role="backend"|"frontend"|"test";
+type Role=SpecialistRole;
 const hex64=/^[a-f0-9]{64}$/u;
 function deny(s:string):never{throw Error("Native D1 Child/Gateway NO-GO: "+s);}
 export async function enrollFirstNativeD1ChildAtGateway(input:{
@@ -79,7 +81,7 @@ export async function enrollFirstNativeD1ChildAtGateway(input:{
     row.session_id!==root.session_id||
     row.root_credential_id!==root.root_credential_id||
     row.authority_digest!==root.authority_digest||
-    !["backend","frontend","test"].includes(row.agent_id)||
+    !SPECIALIST_ROLES.includes(row.agent_id)||
     !Array.isArray(row.permissions)||row.permissions.length<1||
     row.execution_authorized!==false||
     row.child_credential_issued!==false||

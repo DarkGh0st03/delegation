@@ -13,6 +13,7 @@ import type {SpecializedAgentProfile} from "./specialized-agents.ts";
 import {LEGACY_ACCOUNT_SUSPENSION_PROFILES} from "./fixtures/account-suspension-agent-profiles.ts";
 import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "./approved-specialized-profiles.ts";
 import { ControlledToolRegistry } from "./tool-registry.ts";
+import {SPECIALIST_ROLES,APPLICATION_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 // These are only model-facing argument schemas. Gateway/Verifier/OPA remain authoritative.
 // Strict schemas prevent ADK from silently stripping unknown fields (notably authority overrides).
@@ -140,7 +141,7 @@ export function createAdkSpecializedAgent(
   if(extra&&(!signedTask||typeof extra.role!=="string"||
      !/^[a-z][a-z0-9_-]{0,23}$/u.test(extra.role)||
      extra.role!==config.role||
-     ["backend","frontend","test","orchestrator"].includes(extra.role)||
+     [...SPECIALIST_ROLES,"orchestrator"].includes(extra.role)||
      !Array.isArray(extra.capabilities)||extra.capabilities.length!==1||
      extra.capabilities[0]!=="read_file"||
      config.trustedRunTestsAllowed!==undefined))
@@ -244,7 +245,7 @@ export function createAdkSpecializedAgent(
       "For update_file provide the complete UTF-8 replacement file, not a patch or fragment.",
       // Generic TypeScript implementation quality guidance. This is NOT a
       // compilation claim, a new tool, or an expansion of signed grants.
-      ...(config.role==="backend"||config.role==="frontend"?[
+      ...(APPLICATION_ROLES.includes(config.role)?[
         "Before each update_file, check that the proposed TypeScript code is consistent with types and imports in the approved source you have read. In particular, use only known union/enum literal values and avoid comparisons between mutually exclusive types.",
         "Do not guess a type, imported symbol, or status literal when the defining source is unavailable under this Task. Report the uncertainty instead of inventing a contract.",
         // The native owner executes a read+update Task as a ONE-SHOT sequence
@@ -256,6 +257,20 @@ export function createAdkSpecializedAgent(
       "Never change existing data, seed records, fixtures or behaviour that the requirement does not ask to change just to make a test pass: if a test expects data or behaviour the application does not have, the test is wrong; report it.",
       "Never claim a commit or successful test without a confirmed controlled tool result.",
       "If the approved Task cannot be completed within these exact grants, report the limitation.",
+      // Role-specific guidance for the newer specialists (skill only:
+      // their grants come exactly like every other role's from the Task).
+      ...(config.role==="docs"?[
+        "Document only what the code and files you read in this Task show: never describe features, commands or options that do not exist.",
+        "Keep the existing structure, language and tone of the document; change only the parts the instruction concerns."
+      ]:[]),
+      ...(config.role==="data"?[
+        "Keep data files syntactically valid (e.g. well-formed JSON, CSV with the same columns) and consistent with the types and code that read them.",
+        "Add or change only the records and fields the instruction asks for; never remove or rewrite existing records."
+      ]:[]),
+      ...(config.role==="devops"?[
+        "Keep configuration files valid for their tool (Dockerfile, YAML workflows, package scripts) and change only what the instruction asks.",
+        "Never add secrets, tokens or credentials to configuration, and never weaken existing checks or tests."
+      ]:[]),
       ...(config.role==="test"?[
         "A failed run_tests ends THIS signed Test Task. Do not retry Docker or claim PASS within it. The trusted Orchestrator may admit a NEW Task with a fresh child under the original Rust root if its permission scope suffices; otherwise obtain a fresh Engineer approval.",
         "TypeScript error locations do not grant file read or update permissions.",

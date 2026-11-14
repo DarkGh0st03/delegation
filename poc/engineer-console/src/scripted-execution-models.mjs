@@ -30,6 +30,16 @@ export function permissionPath(resource) {
  */
 export function roleForPath(path, testSources) {
   if (isProjectTestSource(path, testSources)) return "test";
+  const name = path.split("/").at(-1);
+  // DevOps: container, CI and build configuration.
+  if (/^(Dockerfile|Containerfile|\.dockerignore|Makefile|docker-compose\.ya?ml|compose\.ya?ml)$/u.test(name) ||
+      /(^|\/)\.(github|gitlab|circleci)\//u.test(path) || /\.(dockerfile)$/u.test(name))
+    return "devops";
+  // Documentation.
+  if (/(^|\/)docs?\//u.test(path) || /\.(md|mdx|rst|adoc)$/u.test(name)) return "docs";
+  // Data: seed and data files, schemas and migrations.
+  if (/(^|\/)(data|seeds?|fixtures|migrations|db)\//u.test(path) || /\.(sql|csv)$/u.test(name))
+    return "data";
   if (/^(tests?|e2e)\//u.test(path) || /\.spec\.[a-z]+$/u.test(path)) return "frontend";
   if (/(^|\/)(frontend|client|web|ui)\//u.test(path) || /\.(tsx|jsx|vue|svelte|css|scss|html)$/u.test(path))
     return "frontend";
@@ -40,7 +50,9 @@ export function simulatedMarker(path, sessionId) {
   const text = `[delegation ${sessionId}] Modifica SIMULATA: nessuna IA, il requisito non è implementato.`;
   if (/\.(css|scss)$/u.test(path)) return `/* ${text} */`;
   if (/\.(html|vue|svelte|md)$/u.test(path)) return `<!-- ${text} -->`;
-  if (/\.(py|rb|sh|ya?ml|toml)$/u.test(path)) return `# ${text}`;
+  if (/\.(py|rb|sh|ya?ml|toml)$/u.test(path) ||
+      /(^|\/)(Dockerfile|Containerfile|Makefile|\.dockerignore)$/u.test(path)) return `# ${text}`;
+  if (/\.sql$/u.test(path)) return `-- ${text}`;
   return `// ${text}`;
 }
 
@@ -183,6 +195,9 @@ export class ScriptedWorkerModel extends Scripted {
       if (typeof this.#contents[path] !== "string") throw Error("No reference content for " + path);
       return this.#contents[path];
     }
+    // JSON and CSV have no comments: the simulated change keeps them valid
+    // (one extra trailing newline) instead of breaking the data.
+    if (/\.(json|csv)$/u.test(path)) return previous + "\n";
     return previous + (previous.endsWith("\n") || !previous ? "" : "\n") +
       simulatedMarker(path, this.#sessionId) + "\n";
   }

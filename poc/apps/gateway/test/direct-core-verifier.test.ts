@@ -18,7 +18,10 @@ const ids={
   orchestrator:"did:thesis:orchestrator",
   backend:"did:thesis:backend",
   frontend:"did:thesis:frontend",
-  test:"did:thesis:test"
+  test:"did:thesis:test",
+  docs:"did:thesis:docs",
+  data:"did:thesis:data",
+  devops:"did:thesis:devops"
 } as const;
 const read:Permission={
   resource:"gitea://gitea.local/thesis/repository/branches/main/files/app.ts",
@@ -286,12 +289,15 @@ test("R455 Gateway Rust signer roster mirrors bounded Engineer deployment variab
   ADAPTER_ID_BACKEND:ids.backend,
   ADAPTER_ID_FRONTEND:ids.frontend,
   ADAPTER_ID_TEST:ids.test,
+  ADAPTER_ID_DOCS:ids.docs,
+  ADAPTER_ID_DATA:ids.data,
+  ADAPTER_ID_DEVOPS:ids.devops,
   ADAPTER_ID_REVIEWER:"did:thesis:reviewer-agent",
   ADAPTER_ADDITIONAL_SPECIALISTS:"reviewer"
  };
  const trusted=trustedCoreRustIdentitiesFromEnvironment(environment);
  assert.deepEqual(Object.keys(trusted).sort(),
-  ["orchestrator","backend","frontend","test","reviewer"].sort());
+  ["orchestrator","backend","frontend","test","docs","data","devops","reviewer"].sort());
  assert.equal(trusted.reviewer,environment.ADAPTER_ID_REVIEWER);
  assert.equal(Object.isFrozen(trusted),true);
  for(const changes of [

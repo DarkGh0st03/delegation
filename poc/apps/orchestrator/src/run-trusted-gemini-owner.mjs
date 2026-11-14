@@ -23,6 +23,7 @@ import {
   MAX_PRELIMINARY_ROOT_SECONDS,DEFAULT_PLANNER_SESSION_MS,
   DEFAULT_ENGINEER_REVIEW_MS,TRUSTED_PLANNING_HANDOFF_MARGIN_MS
 } from "../../../packages/plan-contracts/src/planning-limits.mjs";
+import {isValidSpecialistRoster} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const SOURCE_SHA=/^[a-f0-9]{40}$/u;
 const SOURCE_ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
@@ -79,7 +80,8 @@ export async function loadProtectedGeminiOwnerInput(inputFile,{chargeAuthorizati
      !exact(input.snapshot,["session_id","repository","base_revision","directories","files"])||
      !exact(input.preliminaryRoot,["credential_id","valid_from",
        "validity_seconds","credential_status"])||
-     !exact(input.agents,["backend","frontend","test"])||
+     !input.agents||typeof input.agents!=="object"||Array.isArray(input.agents)||
+     !isValidSpecialistRoster(Object.keys(input.agents))||
      !Array.isArray(input.snapshot.directories)||
      !Array.isArray(input.snapshot.files)||
      typeof input.requirement!=="string"||!input.requirement.trim()||

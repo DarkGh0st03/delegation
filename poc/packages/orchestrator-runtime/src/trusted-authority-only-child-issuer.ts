@@ -22,22 +22,23 @@ import type {TrustedChildCryptographyPort,ExactTrustedChildIssuance}
 import {TrustedAuthorityOnlyExecutionCoordinator} from
  "./trusted-authority-only-execution-coordinator.ts";
 import {DurableAuthorityOnlyChildJournal} from "./trusted-authority-only-child-journal.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const ROLE=new Set(["backend","frontend","test"]);
+const ROLE=new Set(SPECIALIST_ROLES);
 const EXTRA_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 function nativeAdditionalReadRole(id:string,did:string,
  permissions:readonly DelegatedPermission[]):boolean{
  const raw=process.env.ADAPTER_ADDITIONAL_SPECIALISTS??"";
  const provisioned=raw?raw.split(","):[];
  return EXTRA_ROLE.test(id)&&
-  !["backend","frontend","test","orchestrator","engineer","gateway",
+  ![...SPECIALIST_ROLES,"orchestrator","engineer","gateway",
      "constructor","prototype"].includes(id)&&
   provisioned.length>0&&provisioned.length<=13&&
   new Set(provisioned).size===provisioned.length&&
   provisioned.includes(id)&&
   provisioned.every(role=>EXTRA_ROLE.test(role)&&
-   !["backend","frontend","test","orchestrator","engineer","gateway",
+   ![...SPECIALIST_ROLES,"orchestrator","engineer","gateway",
       "constructor","prototype"].includes(role))&&
   process.env["ADAPTER_ID_"+id.toUpperCase()]===did&&
   permissions.length===1&&permissions[0]?.operation==="read_file";

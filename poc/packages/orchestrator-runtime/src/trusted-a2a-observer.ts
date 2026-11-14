@@ -9,6 +9,7 @@
 import type {DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
 import type {TrustedCompletionObservation} from
   "../../../apps/gateway/src/trusted-task-observation.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 export function observedA2ACompletion(
@@ -16,7 +17,7 @@ export function observedA2ACompletion(
   preboundGatewayTaskId?:string
 ):TrustedCompletionObservation{
   if(!result||!ID.test(result.task_id)||
-     !["backend","frontend","test"].includes(result.role)||
+     !SPECIALIST_ROLES.includes(result.role)||
      result.artifact?.role!==result.role){
     throw new Error("Trusted A2A observer requires validated Task, role and artifact");
   }

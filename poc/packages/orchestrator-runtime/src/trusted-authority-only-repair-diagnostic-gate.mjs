@@ -5,6 +5,7 @@
  * Gateway completion and an independently corroborated source digest.
  * No I/O, new grants, model inference or credential issuance here.
  */
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 const SHA=/^[a-f0-9]{40}$/u, HASH=/^[a-f0-9]{64}$/u;
 const TASK=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const deny=()=>{throw Error("R385.6 signed diagnostic repair NO-GO");};
@@ -12,7 +13,7 @@ export function selectTrustedRepairDiagnosticRead({
  repairTask,failedEpoch,currentHead,readRecords
 }={}){
  if(!repairTask||!TASK.test(repairTask.task_id??"")||
-    !["backend","frontend","test"].includes(repairTask.agent_id)||
+    !SPECIALIST_ROLES.includes(repairTask.agent_id)||
     !Array.isArray(repairTask.permissions)||
     !SHA.test(currentHead??"")||
     !Number.isSafeInteger(failedEpoch)||failedEpoch<1||
@@ -25,7 +26,7 @@ export function selectTrustedRepairDiagnosticRead({
  const target=updates[0].resource;
  const eligible=readRecords.filter(row=>{
   if(!row||!TASK.test(row.task_id??"")||
-     !["backend","frontend","test"].includes(row.agent_id)||
+     !SPECIALIST_ROLES.includes(row.agent_id)||
      !Number.isSafeInteger(row.epoch)||row.epoch<=failedEpoch||
      row.epoch>=256||!SHA.test(row.revision??"")||
      !HASH.test(row.evidence_sha256??"")||

@@ -11,6 +11,8 @@ import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {canonicalBranchUri} from "../../../apps/gateway/src/canonical.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 const OPS=new Set<string>(RUST_OPERATIONS);
 const deny=(msg:string):never=>{throw Error("Trusted epoch intake: "+msg);};
 export class TrustedOperationalEpochIntake {
@@ -99,7 +101,7 @@ export class TrustedOperationalEpochIntake {
   * NO credential issuance / Gateway admission / provider read occurs here.
   */
  async preflightRepairDiscovery(input:{
-   sessionId:string;taskId:string;agentId:"backend"|"frontend"|"test";
+   sessionId:string;taskId:string;agentId:SpecialistRole;
    resource:string;
  }):Promise<Readonly<{
   session_id:string;task_id:string;agent_id:string;agent_did:string;resource:string;
@@ -109,7 +111,7 @@ export class TrustedOperationalEpochIntake {
  }>>{
   if(!input||input.sessionId!==this.#session||
      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(input.taskId??"")||
-     !["backend","frontend","test"].includes(input.agentId)||
+     !SPECIALIST_ROLES.includes(input.agentId)||
      typeof input.resource!=="string"||
      !/^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/[^?\s#]+$/u.test(input.resource))
    deny("noncanonical discovery task or resource");

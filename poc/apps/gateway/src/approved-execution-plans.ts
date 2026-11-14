@@ -32,12 +32,14 @@ import {TrustedChildIssuanceJournal} from "../../../packages/orchestrator-runtim
 import type {ExecutionResult,GiteaReadFileExecutionResult,RunnerExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type { GatewayRepositoryConfig } from "./types.ts";
+import {SPECIALIST_ROLES,APPLICATION_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole,ApplicationRole} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const CATALOG = new Set<string>(RUST_OPERATIONS);
 const SUPPORTED = new Set<string>(TOOL_NAMES);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
 const SHA = /^[a-f0-9]{40}$/u;
-const TASK_AGENT = new Set<string>(["orchestrator","backend","frontend","test"]);
+const TASK_AGENT = new Set<string>(["orchestrator",...SPECIALIST_ROLES]);
 const MAX_TASKS = 128;
 
 export interface AuthenticatedPlanRecord {
@@ -88,7 +90,7 @@ export interface VerifiedImplementationSummary {
   readonly plan_digest:string;
   readonly plan_task_id:string;
   readonly runtime_task_id:string;
-  readonly role:"backend"|"frontend";
+  readonly role:ApplicationRole;
   readonly branch:string;
   readonly revision:string;
   readonly changed_files:readonly Readonly<{
@@ -468,7 +470,7 @@ export class TrustedApprovedExecutionPlans {
    */
   async admitRepairDiscoveryTask(input:{
     sessionId:string;failedRuntimeTestTaskId:string;
-    taskId:string;agentRole:"backend"|"frontend"|"test";
+    taskId:string;agentRole:SpecialistRole;
     resource:string;credentialId:string;
     childIssuanceJournal:TrustedChildIssuanceJournal;
   }):Promise<Readonly<{status:"discovery_read_admitted_not_executed";
@@ -478,7 +480,7 @@ export class TrustedApprovedExecutionPlans {
     ensureId(input.credentialId,"discovery credential ID");
     if(!this.#epochIntake||!session?.active||
        !(input.childIssuanceJournal instanceof TrustedChildIssuanceJournal)||
-       !["backend","frontend","test"].includes(input.agentRole)||
+       !SPECIALIST_ROLES.includes(input.agentRole)||
        this.#epochAdmissionInFlight.has(input.sessionId)||
        this.#discoveryAdmissionsInFlight.has(input.sessionId))
       denied("Trusted parent, issued child journal and active repair session required");
@@ -701,7 +703,7 @@ export class TrustedApprovedExecutionPlans {
       denied("Repair Task not admitted from current signed epoch");
     const task=row.plan.tasks.find((x:any)=>x.id===input.plan_task_id);
     if(!task||task.agent_id!==input.role||
-       !["backend","frontend","test"].includes(input.role))
+       !SPECIALIST_ROLES.includes(input.role))
       denied("Repair Agent role not in trusted Gateway epoch");
     if(task.depends_on.some((id:string)=>
       !session.completedPlanTasks.has(id)))
@@ -1103,7 +1105,7 @@ export class TrustedApprovedExecutionPlans {
     // The role-specific artifact is an observation and cannot create
     // writes or grant scope. No entry exists for unattested completions.
     let implementation:VerifiedImplementationSummary|undefined;
-    if((binding.agent==="backend"||binding.agent==="frontend")&&
+    if((APPLICATION_ROLES.includes(binding.agent))&&
        observation?.source==="trusted_a2a_poll"){
       // F2 is a projection, NOT an additional completion attestor. Older
       // legitimate signed/recovery paths may use a less detailed artifact.
@@ -1161,7 +1163,7 @@ export class TrustedApprovedExecutionPlans {
    * All caller pins must match an independently completed Gateway Task. */
   readVerifiedImplementationSummary(pins:Readonly<{
     session_id:string;plan_digest:string;plan_task_id:string;
-    runtime_task_id:string;role:"backend"|"frontend";
+    runtime_task_id:string;role:ApplicationRole;
     branch:string;revision:string;
   }>):VerifiedImplementationSummary {
     if(!pins||!ensureId(pins.session_id,"session ID")||

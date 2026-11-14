@@ -25,6 +25,9 @@
   --role-backend: #2563eb;
   --role-frontend: #0d9488;
   --role-test: #d97706;
+  --role-docs: #db2777;
+  --role-data: #0891b2;
+  --role-devops: #475569;
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 }
 [hidden] { display: none !important; }
@@ -274,6 +277,9 @@ select { cursor: pointer; }
 .role.backend { background: var(--role-backend); }
 .role.frontend { background: var(--role-frontend); }
 .role.test { background: var(--role-test); }
+.role.docs { background: var(--role-docs); }
+.role.data { background: var(--role-data); }
+.role.devops { background: var(--role-devops); }
 .side { display: grid; gap: 20px; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 0; }
 .stats div { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }

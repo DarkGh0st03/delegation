@@ -1,6 +1,7 @@
 import type { Operation as RustOperation } from "./operation-catalog.ts";
+import {SPECIALIST_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
-export const AGENT_ROLES = ["orchestrator", "backend", "frontend", "test"] as const;
+export const AGENT_ROLES = ["orchestrator",...SPECIALIST_ROLES] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export const TOOL_NAMES = [

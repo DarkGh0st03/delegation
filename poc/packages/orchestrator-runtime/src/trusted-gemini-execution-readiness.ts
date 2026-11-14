@@ -25,6 +25,8 @@ import {startSpecializedAgentServer,
   from "../../agent-runtime/src/server.ts";
 import {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
+import {provisionedSpecialists} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
 const CONFIRMATION="I AUTHORIZE GEMINI API CHARGES";
 const MODEL=/^gemini-[a-z0-9]+(?:[.-][a-z0-9]+)*$/u;
@@ -145,7 +147,7 @@ export async function createReviewedGeminiAdkModel(
 }
 
 
-export type ReviewedGeminiAgentRole="backend"|"frontend"|"test";
+export type ReviewedGeminiAgentRole=SpecialistRole;
 export interface TrustedGeminiAgentTransport{
   gatewayBaseUrl:string;
   adapterBaseUrl:string;
@@ -159,7 +161,6 @@ export interface ReviewedGeminiA2ARoleRuntime{
     ReviewedGeminiAgentRole,AdkA2ATaskHandlerConfig
   >>;
 }
-const ROLES=["backend","frontend","test"] as const;
 // Only a verified receipt can mint a role configuration in this host process.
 // A caller-supplied object with a copied digest is not a verified runtime.
 const mintedRoleRuntimes=new WeakSet<object>();
@@ -190,7 +191,8 @@ export async function createReviewedGeminiA2ARoleRuntime(input:
   const configs={} as Record<ReviewedGeminiAgentRole,
     AdkA2ATaskHandlerConfig>;
   const seenTokens=new Set<string>();
-  for(const role of ROLES){
+  // Required roles plus the optional specialists the owner provisioned.
+  for(const role of provisionedSpecialists(input.transports)){
     const transport=input.transports?.[role];
     if(!transport||typeof transport.gatewayBaseUrl!=="string"||
        typeof transport.adapterBaseUrl!=="string"||
@@ -262,11 +264,12 @@ export async function startReviewedGeminiA2AServers(input:{
     const root=input.coordinator.trustedOperationalAuthority();
     if(root.plan_digest!==input.reviewed.readiness.plan_digest)
       reject("operational plan digest differs from signed Engineer decision");
-    const ports=ROLES.map(role=>input.ports?.[role]);
+    const roles=Object.keys(input.reviewed.role_configs) as ReviewedGeminiAgentRole[];
+    const ports=roles.map(role=>input.ports?.[role]);
     if(ports.some(port=>!Number.isSafeInteger(port)||port<1024||port>65535)||
-       new Set(ports).size!==ROLES.length)
+       new Set(ports).size!==roles.length)
       reject("distinct, valid local A2A ports are required");
-    for(const role of ROLES){
+    for(const role of roles){
       if(input.coordinator.phase!=="execution")
         reject("operational execution phase changed during server startup");
       const server=await startSpecializedAgentServer({
@@ -278,7 +281,7 @@ export async function startReviewedGeminiA2AServers(input:{
       servers[role]=server;
     }
     const endpoints=Object.freeze(Object.fromEntries(
-      ROLES.map(role=>[role,servers[role].baseUrl])
+      roles.map(role=>[role,servers[role].baseUrl])
     ) as Record<ReviewedGeminiAgentRole,string>);
     return Object.freeze({
       servers:Object.freeze(servers),

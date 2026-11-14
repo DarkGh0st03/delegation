@@ -25,6 +25,7 @@ import {DurableAuthorityOnlyRunnerIntentJournal,
 import {preflightNativeD1FailureCandidate}
  from "./trusted-native-runner-failure-d1-preflight.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA64=/^[a-f0-9]{64}$/u;
@@ -33,7 +34,7 @@ const deny=(s:string):never=>{
  throw Error("Native D1 Task admission NO-GO: "+s);
 };
 type Candidate=Readonly<{
- role:"backend"|"frontend"|"test";
+ role:SpecialistRole;
  permissions:readonly DelegatedPermission[];
 }>;
 type Admission=Readonly<{

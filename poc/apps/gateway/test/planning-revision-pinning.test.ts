@@ -242,7 +242,10 @@ test("R380.3 native ancestor proof covers only original pinned read-only Plannin
     orchestrator:"did:thesis:orchestrator",
     backend:"did:thesis:backend",
     frontend:"did:thesis:frontend",
-    test:"did:thesis:test"
+    test:"did:thesis:test",
+    docs:"did:thesis:docs",
+    data:"did:thesis:data",
+    devops:"did:thesis:devops"
   };
   const scoped=new DirectCoreRustVerifier(native,identities,{
     allowGiteaScopeCoverage:true

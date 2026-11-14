@@ -16,8 +16,10 @@
 import {constants} from "node:fs";
 import {open,lstat,readdir,realpath} from "node:fs/promises";
 import {basename,dirname,isAbsolute,resolve} from "node:path";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
-type Role="backend"|"frontend"|"test";
+type Role=SpecialistRole;
 type Channel="stage"|"bind";
 type Side="owner"|"worker";
 export type TrustedOriginalScopedEffectRole=Readonly<{
@@ -46,7 +48,7 @@ export function assessTrustedOriginalScopedEffectIdentity({
     !["stage","bind"].includes(channel)||
     !["owner","worker"].includes(side)||
     !exact(scope,["ownerUid","role","roleGid","workerUid"])||
-    !["backend","frontend","test"].includes(scope.role)||
+    !SPECIALIST_ROLES.includes(scope.role)||
     ![scope.ownerUid,scope.workerUid,scope.roleGid,actualUid,
       actualPrimaryGid].every(valid)||
     scope.ownerUid===scope.workerUid||

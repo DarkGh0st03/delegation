@@ -552,7 +552,10 @@ async function nativeGatewayCreate(t:import("node:test").TestContext,
   orchestrator:"did:example:gateway-orch-3837",
   backend:bound.agent_did,
   frontend:"did:example:gateway-front-3837",
-  test:"did:example:gateway-test-3837"
+  test:"did:example:gateway-test-3837",
+  docs:"did:example:gateway-docs-3837",
+  data:"did:example:gateway-data-3837",
+  devops:"did:example:gateway-devops-3837"
  };
  let rustCalls=0,opaCalls=0,legacyCalls=0;
  const verifier=new DirectCoreRustVerifier({

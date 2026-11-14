@@ -9,10 +9,11 @@
  */
 import {planDigest,validatePlan} from "./plan.mjs";
 import {approvedWorkBranch} from "./approved-work-branch.mjs";
+import {SPECIALIST_ROLES} from "./agent-roles.mjs";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{64}$/u;
-const ROLES=new Set(["backend","frontend","test"]);
+const ROLES=new Set(SPECIALIST_ROLES);
 const pair=p=>JSON.stringify([p.resource,p.operation]);
 const fail=x=>{throw Error("Operational epoch preflight: "+x);};
 function idHistory(values,label,max){

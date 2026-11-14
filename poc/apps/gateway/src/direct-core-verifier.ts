@@ -20,6 +20,7 @@ import type {
   AgentRole, MultipleVerificationRequest, Permission,
   VerificationRequest, VerifiedDelegation, VerifierPort
 } from "./types.ts";
+import {SPECIALIST_ROLES,REQUIRED_SPECIALISTS} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 export type CoreRustIdentityMap = Readonly<Record<string,string>>;
 
@@ -31,9 +32,7 @@ export interface CoreRustBinding {
   ): string | Promise<string>;
 }
 
-const ROLES:readonly AgentRole[]=[
- "orchestrator","backend","frontend","test"
-];
+const ROLES:readonly AgentRole[]=["orchestrator",...SPECIALIST_ROLES];
 const ADDITIONAL_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 
 function validIdentity(id:unknown): id is string {
@@ -108,8 +107,10 @@ export class DirectCoreRustVerifier implements VerifierPort {
     }
     const roles=identities&&typeof identities==="object"&&!Array.isArray(identities)
       ?Object.keys(identities):[];
-    if(roles.length<ROLES.length||roles.length>ROLES.length+13||
-       !ROLES.every(role=>Object.hasOwn(identities,role))||
+    // Required presenters always; optional specialists only when provisioned.
+    const required=["orchestrator",...REQUIRED_SPECIALISTS];
+    if(roles.length<required.length||roles.length>ROLES.length+13||
+       !required.every(role=>Object.hasOwn(identities,role))||
        roles.some(role=>!ROLES.includes(role as AgentRole)&&
          (!ADDITIONAL_ROLE.test(role)||
           ["engineer","gateway","constructor","prototype"].includes(role))))

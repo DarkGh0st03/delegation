@@ -9,6 +9,7 @@ import type {AgentRole} from "./types.ts";
 import type {
   TrustedCompletionEvidence,TrustedProviderEffect,TrustedTaskCompletionAttestor
 } from "./approved-execution-plans.ts";
+import {SPECIALIST_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -63,7 +64,7 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
           x.tool==="create_pull_request");
     }
     if(o.source!=="trusted_a2a_poll"||
-       !["backend","frontend","test"].includes(e.role))return false;
+       !SPECIALIST_ROLES.includes(e.role))return false;
     const a=o.artifact;
     if(!a||typeof a.branch!=="string"||!a.branch.length||
        typeof a.revision!=="string"||!SHA.test(a.revision)||

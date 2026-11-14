@@ -338,7 +338,7 @@ test("Gitea 422 on import becomes an actionable message", async (t) => {
 test("each native process gets only its own secrets: Engineer core and one wallet per role", async () => {
   const {nativeEnvironment, walletEnvironment, WALLET_ROLES} = await import("../src/trusted-core.mjs");
   const local = {ANVIL_DEPLOYER_PRIVATE_KEY: "0x" + "a".repeat(64), ADAPTER_CALLER_GATEWAY: "g"};
-  for (const role of ["ENGINEER", "ORCHESTRATOR", "BACKEND", "FRONTEND", "TEST"]) {
+  for (const role of ["ENGINEER", "ORCHESTRATOR", "BACKEND", "FRONTEND", "DOCS", "DATA", "DEVOPS", "TEST"]) {
     local[`ROLE_EVM_PRIVATE_KEY_${role}`] = "0x" + role.length.toString(16).padStart(64, "0") + role;
     local[`ROLE_DID_${role}`] = "did:ethr:0x7a69:0x" + role.length.toString(16).padStart(40, "0");
     local[`ADAPTER_CALLER_${role}`] = "token-" + role;
@@ -368,6 +368,8 @@ test("each native process gets only its own secrets: Engineer core and one walle
     assert.equal(wallet.DELEGATION_WALLET_SOCKET, core[`DELEGATION_WALLET_SOCKET_${role}`]);
     assert.equal(wallet.GOVERNANCE_PRIVATE_KEY, undefined);
   }
+  assert.deepEqual(WALLET_ROLES, ["ORCHESTRATOR", "BACKEND", "FRONTEND", "DOCS", "DATA", "DEVOPS", "TEST"],
+    "one wallet for the Orchestrator and for every specialist of the registry");
   assert.throws(() => walletEnvironment({local, trust, anvilUrl: "x", role: "ENGINEER"}), /wallet non valido/u);
   const {ROLE_DID_TEST: _drop, ...incomplete} = local;
   assert.throws(() => nativeEnvironment({local: incomplete, trust, anvilUrl: "x"}), /ROLE_DID_TEST/u);

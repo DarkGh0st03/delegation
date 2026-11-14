@@ -45,7 +45,9 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,readUpdateGrantShape,
  readCreateGrantShape,isProjectTestReadCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
-const ROLES=["backend","frontend","test"] as const;
+import {SPECIALIST_ROLES,APPLICATION_ROLES,REQUIRED_SPECIALISTS} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
+const ROLES=SPECIALIST_ROLES;
 function deny(reason:string):never{
  throw Error("Trusted authority-only A2A owner NO-GO: "+reason);
 }
@@ -55,7 +57,7 @@ const trustedRoster=(urls:AgentUrls):string[]=>{
  if(!urls||typeof urls!=="object"||Array.isArray(urls))deny("missing trusted A2A endpoints");
  const roles=Object.keys(urls).sort();
  if(roles.length<3||roles.length>16||
-    !ROLES.every(role=>Object.hasOwn(urls,role))||
+    !REQUIRED_SPECIALISTS.every(role=>Object.hasOwn(urls,role))||
     roles.some(role=>!ROLE.test(role)||["orchestrator","constructor","prototype"].includes(role)))
   deny("trusted A2A roster has an unprovisioned or reserved specialist");
  return roles;
@@ -123,7 +125,9 @@ export class TrustedAuthorityOnlyA2AOwner {
      !opts.agentBaseUrls)
     deny("original owner, active private bind and protected A2A client required");
   const roles=trustedRoster(opts.agentBaseUrls);
-  if(roles.length>ROLES.length&&(!opts.verifiedAgentProfiles||
+  // Registry roles (required + provisioned optional) need no extra pin; a
+  // non-registry specialist needs exactly matching verified owner Cards.
+  if(roles.some(role=>!ROLES.includes(role as SpecialistRole))&&(!opts.verifiedAgentProfiles||
      Object.keys(opts.verifiedAgentProfiles).sort().join(",")!==roles.join(",")))
    deny("additional specialist lacks exactly matching verified owner Card pins");
   const urls=Object.fromEntries(roles.map(role=>[
@@ -243,13 +247,13 @@ export class TrustedAuthorityOnlyA2AOwner {
      !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
    deny("Test update requires an exact project test repair grant");
   if(typedMixedCreate&&
-     (!(["backend","frontend"].includes(role)||signedTestReadCreate)||
+     (!(APPLICATION_ROLES.includes(role)||signedTestReadCreate)||
       input.effectStager.stagedTool!=="read_then_create"||
       typeof input.effectStager.attest!=="function"))
    deny("reads + create Task requires owner-controlled mixed staging");
   if(!typedMixedCreate&&filePermissions.some(p=>p.operation==="create_file")&&
      (filePermissions.length!==1||
-      !(["backend","frontend"].includes(role)||signedTestCreate)||
+      !(APPLICATION_ROLES.includes(role)||signedTestCreate)||
       !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
        input.effectStager,this.#gateway,input.taskId,input.runtimeTaskId,
        root.repository.owner+"/"+root.repository.repository,branch)))
@@ -468,14 +472,14 @@ export async function startTrustedAuthorityOnlySdkA2AOwner(
  // Card probes use GET with no credential, then the protected SDK client
  // performs the one-shot A2A HTTP send only after R324 private Task bind.
  const verifiedAgentProfiles=await assertTrustedApprovedA2AStartup({
-  endpoints:urls as Record<"backend"|"frontend"|"test",string>,
+  endpoints:urls as Record<SpecialistRole,string>,
   ...(extra.length?{additionalRolePins:config.additionalRolePins}:{})
  });
  const client=new DeterministicA2AOrchestrator(config.a2aPolling,(url,card)=>{
   const role=roles.find(candidate=>urls[candidate]===url);
   if(!role)deny("SDK send has no verified specialist endpoint");
   const live=ROLES.includes(role as SpecializedAgentRole)
-   ?verifyTrustedApprovedAgentCard(role as "backend"|"frontend"|"test",url,card)
+   ?verifyTrustedApprovedAgentCard(role as SpecialistRole,url,card)
    :verifyOwnerPinnedAdditionalCard(role,url,card,config.additionalRolePins![role]!);
   const pinned=verifiedAgentProfiles[role]!;
   if(live.did!==pinned.did||

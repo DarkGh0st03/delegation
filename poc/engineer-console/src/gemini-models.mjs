@@ -10,6 +10,7 @@
  * contents or the API key: only timings, token counts, finish reasons, tool
  * names and a short, key-scrubbed preview of the model text.
  */
+import {SPECIALIST_ROLES} from "../../packages/plan-contracts/src/agent-roles.mjs";
 import {BaseLlm} from "@google/adk";
 
 const KEY_PATTERN = /AIza[0-9A-Za-z_-]{20,}/gu;
@@ -23,11 +24,15 @@ export const VALIDATED_GEMINI_MODEL = "gemini-3.8-flash";
  * the disposable live model set): turns per Task, time per call, output cap,
  * LOW thinking. Without them the defaults are 8 turns and 60 s per call,
  * too little for a specialist that rewrites a whole file. */
+const worker = maxModelTurns => ({maxModelTurns, maxModelCallMs: 180000,
+  generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}});
 export const GEMINI_WORKER_SETTINGS = Object.freeze({
-  backend: {maxModelTurns: 20, maxModelCallMs: 180000,
-    generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}},
-  frontend: {maxModelTurns: 14, maxModelCallMs: 180000,
-    generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}},
+  backend: worker(20),
+  frontend: worker(14),
+  // Documentation, Data and DevOps edit one focused file per Task.
+  docs: worker(10),
+  data: worker(10),
+  devops: worker(10),
   // Test writes whole test files too (thinking tokens count in the cap).
   test: {maxModelTurns: 10, maxModelCallMs: 180000,
     generateContentConfig: {maxOutputTokens: 20480, thinkingConfig: {thinkingLevel: "LOW"}}}
@@ -134,8 +139,8 @@ export async function createSessionGeminiModels({apiKey, model, record, createPr
   };
   return {
     planning: () => forPhase("planning"),
-    execution: () => ({backend: forPhase("backend"), frontend: forPhase("frontend"),
-      test: forPhase("test"), orchestrator: forPhase("adaptive-execution")}),
+    execution: () => ({...Object.fromEntries(SPECIALIST_ROLES.map(role => [role, forPhase(role)])),
+      orchestrator: forPhase("adaptive-execution")}),
     summary: () => sessionBudget.publicSummary(),
     /** Stop: abort pending calls and refuse new ones (calls already sent may be billed). */
     cancel: () => { for (const m of models) m.fenceOwnerCancellation(); }

@@ -46,8 +46,35 @@ pub enum CallerRole {
     Backend,
     Frontend,
     Test,
+    /// Documentation specialist (README, docs).
+    Docs,
+    /// Data specialist (seed data, schemas, migrations).
+    Data,
+    /// DevOps specialist (Dockerfile, CI, build configuration).
+    Devops,
     Gateway,
     Additional(AdditionalSpecialistName),
+}
+
+impl CallerRole {
+    /// First-class specialists that are provisioned only when configured
+    /// (their DID is present): same authority model as Backend/Frontend.
+    pub const OPTIONAL_SPECIALISTS: [CallerRole; 3] =
+        [CallerRole::Docs, CallerRole::Data, CallerRole::Devops];
+
+    /// Every specialist that may receive a Child credential and present VPs.
+    pub fn is_specialist(&self) -> bool {
+        matches!(
+            self,
+            Self::Backend
+                | Self::Frontend
+                | Self::Test
+                | Self::Docs
+                | Self::Data
+                | Self::Devops
+                | Self::Additional(_)
+        )
+    }
 }
 impl CallerRole {
     pub fn as_str(&self) -> &str {
@@ -57,6 +84,9 @@ impl CallerRole {
             Self::Backend => "backend",
             Self::Frontend => "frontend",
             Self::Test => "test",
+            Self::Docs => "docs",
+            Self::Data => "data",
+            Self::Devops => "devops",
             Self::Gateway => "gateway",
             Self::Additional(name) => name.as_str(),
         }
@@ -68,6 +98,9 @@ impl CallerRole {
             "backend" => Ok(Self::Backend),
             "frontend" => Ok(Self::Frontend),
             "test" => Ok(Self::Test),
+            "docs" => Ok(Self::Docs),
+            "data" => Ok(Self::Data),
+            "devops" => Ok(Self::Devops),
             "gateway" => Ok(Self::Gateway),
             other => AdditionalSpecialistName::parse(other).map(Self::Additional),
         }
@@ -238,6 +271,11 @@ impl CallerRegistry {
         ];
         for role in &roles {
             self.record_for_role(*role)?;
+        }
+        for role in CallerRole::OPTIONAL_SPECIALISTS {
+            if self.by_role.contains_key(&role) {
+                roles.push(role);
+            }
         }
         let mut additional: Vec<CallerRole> = self
             .by_role
@@ -550,5 +588,51 @@ mod additional_role_authority_isolation_tests {
             .unwrap(),
         ]);
         assert!(independent.is_ok());
+    }
+}
+
+#[cfg(test)]
+mod optional_specialist_tests {
+    use super::*;
+
+    #[test]
+    fn documentation_data_devops_are_first_class_specialists() {
+        for (name, role) in [
+            ("docs", CallerRole::Docs),
+            ("data", CallerRole::Data),
+            ("devops", CallerRole::Devops),
+        ] {
+            assert_eq!(CallerRole::from_name(name).unwrap(), role);
+            assert_eq!(role.as_str(), name);
+            assert!(role.is_specialist());
+            assert!(!matches!(role, CallerRole::Additional(_)));
+        }
+        assert!(!CallerRole::Orchestrator.is_specialist());
+        assert!(!CallerRole::Engineer.is_specialist());
+        assert!(!CallerRole::Gateway.is_specialist());
+    }
+
+    #[test]
+    fn optional_specialists_join_the_roster_only_when_provisioned() {
+        let base = |extra: Vec<CallerRecord>| {
+            let mut records = vec![
+                CallerRecord::new(CallerRole::Engineer, "t-e".into(), "did:e".into(),
+                    vec![CallerCapability::IssueRoot]).unwrap(),
+                CallerRecord::new(CallerRole::Orchestrator, "t-o".into(), "did:o".into(),
+                    vec![CallerCapability::IssueChild]).unwrap(),
+                CallerRecord::new(CallerRole::Backend, "t-b".into(), "did:b".into(),
+                    vec![CallerCapability::CreatePresentation]).unwrap(),
+                CallerRecord::new(CallerRole::Frontend, "t-f".into(), "did:f".into(),
+                    vec![CallerCapability::CreatePresentation]).unwrap(),
+                CallerRecord::new(CallerRole::Test, "t-t".into(), "did:t".into(),
+                    vec![CallerCapability::CreatePresentation]).unwrap(),
+            ];
+            records.extend(extra);
+            CallerRegistry::new(records).unwrap()
+        };
+        assert_eq!(base(vec![]).managed_identity_roles().unwrap().len(), 5);
+        let with_docs = base(vec![CallerRecord::new(CallerRole::Docs, "t-d".into(), "did:d".into(),
+            vec![CallerCapability::CreatePresentation]).unwrap()]);
+        assert!(with_docs.managed_identity_roles().unwrap().contains(&CallerRole::Docs));
     }
 }

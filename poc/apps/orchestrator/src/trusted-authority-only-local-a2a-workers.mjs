@@ -7,8 +7,9 @@ import {TrustedEffectStagingTaskRegistry}
  from "../../../packages/agent-runtime/src/trusted-effect-staging-task-registry.ts";
 import {connectTrustedOwnerEffectStagingClient,createTrustedEffectAgentBindingServer}
  from "../../../packages/agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
+import {SPECIALIST_ROLES,REQUIRED_SPECIALISTS} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
-const ORIGINAL=["backend","frontend","test"];
+const ORIGINAL=SPECIALIST_ROLES;
 const ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 function deny(){throw Error("Invalid private local A2A worker configuration");}
 
@@ -27,7 +28,7 @@ export async function startTrustedAuthorityOnlyLocalA2AWorkers({
    ?Object.keys(trustedAgentRegistry).filter(role=>role!=="orchestrator").sort()
    :undefined;
  if(!workers||roles.length<3||roles.length>16||
-    !ORIGINAL.every(role=>Object.hasOwn(workers,role))||
+    !REQUIRED_SPECIALISTS.every(role=>Object.hasOwn(workers,role))||
     roles.some(role=>!ROLE.test(role)||
      ["constructor","prototype","orchestrator"].includes(role))||
     (registered&&registered.join(",")!==roles.join(","))||

@@ -15,6 +15,7 @@
 import { createRequire } from "node:module";
 import type {CoreRustBinding,CoreRustIdentityMap} from "./direct-core-verifier.ts";
 import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
+import {SPECIALIST_ROLES,REQUIRED_SPECIALISTS} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const requireNative=createRequire(import.meta.url);
 
@@ -39,11 +40,15 @@ export function trustedCoreRustIdentitiesFromEnvironment(
  const legal=/^[a-z][a-z0-9_-]{0,23}$/u;
  if(additional.length>13||new Set(additional).size!==additional.length||
     additional.some(role=>!legal.test(role)||
-      ["engineer","gateway","orchestrator","backend","frontend","test",
+      ["engineer","gateway","orchestrator",...SPECIALIST_ROLES,
        "constructor","prototype"].includes(role)))
   throw Error("Invalid native Rust Core additional specialist roster");
  const pins:Record<string,string>=Object.create(null);
- for(const role of ["orchestrator","backend","frontend","test",...additional])
+ // Required presenters always; optional specialists (Documentation, Data,
+ // DevOps) only when the deployment provisioned their DID.
+ const optional=SPECIALIST_ROLES.filter(role=>!REQUIRED_SPECIALISTS.includes(role)&&
+  env["ADAPTER_ID_"+role.toUpperCase()]!==undefined);
+ for(const role of ["orchestrator",...REQUIRED_SPECIALISTS,...optional,...additional])
   pins[role]=value("ADAPTER_ID_"+role.toUpperCase());
  if(new Set(Object.values(pins)).size!==Object.keys(pins).length)
   throw Error("Native Rust Core specialist DIDs must be distinct");

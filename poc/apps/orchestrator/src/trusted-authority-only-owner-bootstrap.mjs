@@ -54,6 +54,7 @@ import {prepareAuthorization} from "../../gateway/src/prepare.ts";
 import {executeAuthorization} from "../../gateway/src/execute.ts";
 import {persistStatusIndexReservation}
  from "../../../packages/orchestrator-runtime/src/trusted-status-index-reservation.ts";
+import {SPECIALIST_ROLES,REQUIRED_SPECIALISTS,APPLICATION_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const SHA=/^[0-9a-f]{40}$/u;
 const ACTIONS_REPO="DarkGh0st03/delegation";
@@ -65,9 +66,11 @@ const ACTIONS_CAP="I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES
 const RUN=/^[1-9][0-9]{0,19}$/u;
 const HEX=/^[0-9a-f]+$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const ROLES=["backend","frontend","test","orchestrator"];
+// Known roles (registry + Orchestrator); the required ones must be present,
+// optional specialists (Documentation, Data, DevOps) when provisioned.
+const ROLES=[...REQUIRED_SPECIALISTS,"orchestrator"];
 const ADDITIONAL_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
-const REQUIRED_ROLES=new Set(ROLES);
+const REQUIRED_ROLES=new Set([...SPECIALIST_ROLES,"orchestrator"]);
 // A new specialist only gets a read ceiling here. Widening role operations
 // requires separately reviewed native owner/Gateway support, not a Card claim.
 function trustedRegistry(registry){
@@ -112,8 +115,7 @@ const CONFIG_KEYS=["schema","source_sha","snapshot","requirement",
  "gateway","checkpoint","approval","directories","native"];
 const DIRS=["checkpoint","activation","tasks","recovery","operationalSessions","receipts"];
 const AGENTS={
- backend:["read_file","update_file","create_file"],
- frontend:["read_file","update_file","create_file"],
+ ...Object.fromEntries(APPLICATION_ROLES.map(role=>[role,["read_file","update_file","create_file"]])),
  test:["read_file","update_file","create_file","run_tests"],
  orchestrator:["create_branch","create_pull_request"]
 };

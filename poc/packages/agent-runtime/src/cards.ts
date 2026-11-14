@@ -14,11 +14,15 @@ import {
 
 import {APPROVED_SPECIALIZED_AGENT_PROFILES,
  nativeAuthorityOnlyAdvertisedCapabilities} from "./approved-specialized-profiles.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 const ROLE_CONFIG = {
   backend:{name:"Backend Development Agent",did:"did:thesis:backend-agent"},
   frontend:{name:"Frontend Development Agent",did:"did:thesis:frontend-agent"},
-  test:{name:"Software Testing Agent",did:"did:thesis:test-agent"}
+  test:{name:"Software Testing Agent",did:"did:thesis:test-agent"},
+  docs:{name:"Documentation Agent",did:"did:thesis:docs-agent"},
+  data:{name:"Data Engineering Agent",did:"did:thesis:data-agent"},
+  devops:{name:"DevOps Agent",did:"did:thesis:devops-agent"}
 } as const;
 
 // Agent Cards advertise generic ROLE CAPABILITIES only. Per-Task file and
@@ -41,6 +45,24 @@ const APPROVED_PLAN_SKILLS = {
     name: "Software Testing",
     description: "Develop and run approved software tests under delegated, verified authorization.",
     example: "Validate an approved change with the authorized test files and test profile."
+  },
+  docs: {
+    id: "technical-documentation",
+    name: "Technical Documentation",
+    description: "Keep README and project documentation consistent with authorized changes, using delegated, verified repository operations.",
+    example: "Document a new approved feature in the project README."
+  },
+  data: {
+    id: "data-engineering",
+    name: "Data Engineering",
+    description: "Change seed data, data files, schemas and migrations for authorized Tasks using delegated, verified repository operations.",
+    example: "Add the records an approved feature needs to the project's data file."
+  },
+  devops: {
+    id: "devops-engineering",
+    name: "DevOps Engineering",
+    description: "Change build, container and CI configuration for authorized Tasks using delegated, verified repository operations.",
+    example: "Expose an approved configuration setting in the Dockerfile and CI workflow."
   }
 } as const;
 
@@ -175,7 +197,7 @@ export interface OwnerAdditionalCardPin{
 export function createOwnerAdditionalSpecialistCard(
  role:string,baseUrl:string,pin:OwnerAdditionalCardPin
 ):AgentCard{
- const CORE=["backend","frontend","test"];
+ const CORE=SPECIALIST_ROLES;
  const validRole=/^[a-z][a-z0-9_-]{0,23}$/u;
  const validDid=/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/u;
  const validSkill=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;

@@ -13,8 +13,10 @@ import {APPROVED_SPECIALIZED_AGENT_PROFILES,nativeAuthorityOnlyAdvertisedCapabil
 import {trustedSignerAgentDid} from "../../agent-runtime/src/cards.ts";
 import {DELEGATED_AUTHORIZATION_EXTENSION_URI}
   from "../../agent-runtime/src/contracts.ts";
+import {SPECIALIST_ROLES,REQUIRED_SPECIALISTS,provisionedSpecialists} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
-type Role="backend"|"frontend"|"test";
+type Role=SpecialistRole;
 type VerifiedProfile=Readonly<{did:string;capabilities:readonly string[]}>;
 // Three canonical SDK roles remain statically guaranteed; additional
 // verified Owner roles may be indexed without weakening those base pins.
@@ -27,16 +29,22 @@ export interface TrustedAdditionalA2ACardPin {
  did:string;name:string;skillId:string;
  capabilities:readonly string[];
 }
-const ROLES=["backend","frontend","test"] as const;
+const ROLES=SPECIALIST_ROLES;
 const NAMES:Readonly<Record<Role,string>>=Object.freeze({
   backend:"Backend Development Agent",
   frontend:"Frontend Development Agent",
-  test:"Software Testing Agent"
+  test:"Software Testing Agent",
+  docs:"Documentation Agent",
+  data:"Data Engineering Agent",
+  devops:"DevOps Agent"
 });
 const SKILLS:Readonly<Record<Role,string>>=Object.freeze({
   backend:"backend-software-engineering",
   frontend:"frontend-software-engineering",
-  test:"software-testing"
+  test:"software-testing",
+  docs:"technical-documentation",
+  data:"data-engineering",
+  devops:"devops-engineering"
 });
 const BASE=/^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/?$/u;
 const LIMIT=32*1024;
@@ -142,7 +150,7 @@ export async function assertTrustedApprovedA2AStartup(input:{
 }):Promise<VerifiedA2AProfiles>{
   const endpoints=input?.endpoints as Readonly<Record<string,string>>|undefined;
   if(!endpoints||typeof endpoints!=="object"||Array.isArray(endpoints)||
-     ROLES.some(role=>!Object.hasOwn(endpoints,role)))denied();
+     REQUIRED_SPECIALISTS.some(role=>!Object.hasOwn(endpoints,role)))denied();
   const keys=Object.keys(endpoints);
   const extra=keys.filter(role=>!ROLES.includes(role as Role)).sort();
   const pins=input.additionalRolePins;
@@ -164,7 +172,7 @@ export async function assertTrustedApprovedA2AStartup(input:{
        pin.capabilities.some(c=>!FILE_OPERATIONS.has(c));
      }))
    denied();
-  const roles=[...ROLES,...extra];
+  const roles=[...provisionedSpecialists(endpoints),...extra];
   const addresses=roles.map(role=>endpoints[role]!);
   if(new Set(addresses).size!==roles.length)denied();
   const profiles:Record<string,VerifiedProfile>={};

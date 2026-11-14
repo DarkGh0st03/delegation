@@ -74,6 +74,7 @@ import {DurableAuthorityOnlyRunnerIntentJournal}
  from '../../gateway/src/trusted-authority-only-runner-intent-journal.ts';
 import {startTrustedAuthorityOnlySdkA2AOwner} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-a2a-owner.ts';
 import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
+import {SPECIALIST_ROLES,APPLICATION_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 const OPS=new Set(RUST_OPERATIONS);
 const fields=(o,allowed)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).every(k=>allowed.includes(k));
 function deny(reason){throw Error('Authority-only review host: '+reason);}
@@ -94,7 +95,7 @@ export function assertTrustedSdkA2ARoster(registry,config){
      !fields(config[key],roles)||
      !isDeepStrictEqual(Object.keys(config[key]).sort(),roles)))
   deny('SDK role endpoints and private channels differ from trusted specialist registry');
- const extras=roles.filter(role=>!['backend','frontend','test'].includes(role));
+ const extras=roles.filter(role=>!SPECIALIST_ROLES.includes(role));
  const pins=config.additionalRolePins;
  if((extras.length>0&&(!fields(pins,extras)||
      !isDeepStrictEqual(Object.keys(pins).sort(),extras)))||
@@ -1321,7 +1322,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       ?(()=>{
        if(!nativeEffectBinding.create||
           !nativeEffectBinding.createObserver||
-          !(['backend','frontend'].includes(pin.agent_id)||
+          !(APPLICATION_ROLES.includes(pin.agent_id)||
            (pin.agent_id==='test'&&isProjectTestCreateGrant(
             operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions,
              projectTestSourceProfile))))
@@ -1368,7 +1369,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          !(create?readCreateGrantShape(row.permissions):readUpdateGrantShape(row.permissions)))
        deny('native sequential staging requires one written file with its signed reads');
       if(create&&(!nativeEffectBinding.create||!nativeEffectBinding.createObserver||
-         !(['backend','frontend'].includes(pin.agent_id)||
+         !(APPLICATION_ROLES.includes(pin.agent_id)||
           (pin.agent_id==='test'&&isProjectTestReadCreateGrant(row.permissions,projectTestSourceProfile)))))
        deny('reads + create Task has no native CREATE preflight/observer or allowed role');
       // Consume owner's one-shot slot BEFORE awaiting journal admission.
@@ -1427,7 +1428,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       // verified live Agent Card both include read_file. A role name, SDK
       // endpoint or LLM proposal alone cannot open this path.
       const additionalRead=pin?.operation==='read_file'&&
-       !['backend','frontend','test','orchestrator'].includes(pin.agent_id)&&
+       ![...SPECIALIST_ROLES,"orchestrator"].includes(pin.agent_id)&&
        Object.hasOwn(configuredAgents,pin.agent_id)&&
        configuredAgents[pin.agent_id]?.capabilities.includes('read_file')&&
        verifiedProfiles&&Object.hasOwn(verifiedProfiles,pin.agent_id)&&
@@ -1436,7 +1437,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         configuredAgents[pin.agent_id].did;
       const diagnosticRead=pin?.operation==='read_file'&&
        adaptiveLoopFlight&&
-       (['backend','frontend'].includes(pin.agent_id)||
+       (APPLICATION_ROLES.includes(pin.agent_id)||
         additionalRead||
         (pin.agent_id==='test'&&isTestAgentReadGrant(
          operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions)))&&
@@ -1477,7 +1478,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          // Coordinator/Child/Gateway checks and authenticated agent bind.
          // This one-use receipt never enters HTTP, A2A, IPC or Gemini.
          onNativeOriginalTaskPrebound:receipt=>{
-          if(!['backend','frontend','test'].includes(pin.agent_id)||
+          if(!SPECIALIST_ROLES.includes(pin.agent_id)||
              closed||session.phase!=='operational')
            deny('disposable model prebind needs an active original specialist');
           const assertOriginalRootActive=()=>{
@@ -1603,7 +1604,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        }
        // A known provider boundary is useful for diagnosis even when the
        // specialist outcome is ambiguous. The same terminal policy applies.
-       if(sequential&&['backend','frontend','test'].includes(pin.agent_id)){
+       if(sequential&&SPECIALIST_ROLES.includes(pin.agent_id)){
         try{
          const reported=TrustedAuthorityOnlySequentialReadUpdateStager.prototype
           .getReportedNoChange.call(input.effectStager);

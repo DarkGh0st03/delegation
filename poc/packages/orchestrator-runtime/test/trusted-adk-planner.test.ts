@@ -1060,21 +1060,21 @@ test("R401.2 Planner compiles dynamically registered Agent Cards but never creat
     description:"Inspect the approved source"}]}
  };
  const d=draft();
- d.tasks[1]={id:"docs",agent_id:"docs",title:"Review invoice interface",
+ d.tasks[1]={id:"auditor",agent_id:"auditor",title:"Review invoice interface",
   description:"Inspect the approved source only",depends_on:["branch"],
   permissions:[{operation:"read_file",path:FILE,reason:"Review contract"}]};
- const result=compilePlanningProposal(d,{...cfg,agents:{docs}});
+ const result=compilePlanningProposal(d,{...cfg,agents:{auditor:docs}});
  assert.deepEqual(result.plan.candidate_agents,[{
-  agent_id:"docs",did:docs.did,card_ref:docs.card_ref
+  agent_id:"auditor",did:docs.did,card_ref:docs.card_ref
  }]);
  assert.equal(result.plan.requested_permissions[1]?.operation,"read_file");
  assert.equal("authority" in result,false);
  const escalated=draft();
- escalated.tasks[1].agent_id="docs";
- assert.throws(()=>compilePlanningProposal(escalated,{...cfg,agents:{docs}}),
+ escalated.tasks[1].agent_id="auditor";
+ assert.throws(()=>compilePlanningProposal(escalated,{...cfg,agents:{auditor:docs}}),
   /tool is not supported for proposed Agent role/u);
  assert.throws(()=>compilePlanningProposal(d,{...cfg,agents:{
-  docs:{did:docs.did,card_ref:docs.card_ref,capabilities:["read_file"] as const}
+  auditor:{did:docs.did,card_ref:docs.card_ref,capabilities:["read_file"] as const}
  }}),/unverified registered Agent Card/u);
 });
 
@@ -1085,7 +1085,7 @@ test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async(
    skills:[{id:"docs-review",name:"Review docs",description:"Inspect approved source"}]}
  };
  const proposal=draft();
- proposal.tasks[1]={id:"docs",agent_id:"docs",title:"Review existing API",
+ proposal.tasks[1]={id:"auditor",agent_id:"auditor",title:"Review existing API",
   description:"Read the pinned source",depends_on:["branch"],
   permissions:[{operation:"read_file",path:FILE,reason:"Review existing contract"}]};
  class CardFirst extends BaseLlm {
@@ -1095,7 +1095,7 @@ test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async(
    this.requests.push(req);
    if(++this.calls===1){
     yield {content:{role:"model",parts:[{functionCall:{
-     id:"registered-docs-card",name:"read_agent_card",args:{role:"docs"}
+     id:"registered-docs-card",name:"read_agent_card",args:{role:"auditor"}
     }}]}};return;
    }
    if(this.calls===2){
@@ -1111,7 +1111,7 @@ test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async(
  }
  const model=new CardFirst();
  let readCount=0;
- const result=await new TrustedAdkReadOnlyPlanner({...cfg,agents:{docs},model,
+ const result=await new TrustedAdkReadOnlyPlanner({...cfg,agents:{auditor:docs},model,
   readPort:{async invoke(tool:string){
    assert.equal(tool,"read_file");readCount++;
    return {provider:"gitea",performed:true,tool,branch:"main",
@@ -1119,6 +1119,6 @@ test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async(
   }}
  }).propose();
  assert.equal(readCount,1);
- assert.equal(result.plan.candidate_agents[0]?.agent_id,"docs");
- assert.ok(JSON.stringify(model.requests[0]?.config?.tools??[]).includes("docs"));
+ assert.equal(result.plan.candidate_agents[0]?.agent_id,"auditor");
+ assert.ok(JSON.stringify(model.requests[0]?.config?.tools??[]).includes("auditor"));
 });

@@ -593,11 +593,11 @@ function renderFeed(s) {
     if (e.assignment) {
       const who = el("span", "who", (e.retry ? "Orchestrator riassegna a " : "Orchestrator assegna un Task a "));
       txt.appendChild(who);
-      txt.appendChild(el("span", "role " + e.assignment.agent, e.assignment.agent));
+      txt.appendChild(el("span", "role " + e.assignment.agent, roleLabel(e.assignment.agent)));
       txt.appendChild(el("span", "instr", e.text));
       if (e.assignment.operations) txt.appendChild(el("span", "ops", e.assignment.operations));
     } else if (e.op) {
-      txt.appendChild(el("span", "role " + e.role, e.role));
+      txt.appendChild(el("span", "role " + e.role, roleLabel(e.role)));
       txt.appendChild(el("span", "op", e.op + " "));
       txt.append(e.path + " — " + e.verdict);
     } else txt.textContent = e.text;
@@ -645,8 +645,11 @@ function renderPr(s) {
   }
   card.appendChild(note);
 }
+const ROLE_LABELS = {orchestrator: "Orchestrator", backend: "Backend", frontend: "Frontend", test: "Test",
+  docs: "Documentation", data: "Data", devops: "DevOps"};
+const roleLabel = (role) => ROLE_LABELS[role] || role;
 const PHASE_LABELS = {"planning": "Orchestrator Planning", "adaptive-execution": "Orchestrator Execution",
-  "backend": "Backend", "frontend": "Frontend", "test": "Test"};
+  ...ROLE_LABELS};
 function renderGemini(s) {
   const calls = s.model_calls ?? [];
   $("sv-gemini-box").hidden = !calls.length;

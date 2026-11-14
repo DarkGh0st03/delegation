@@ -1,7 +1,8 @@
 import { randomBytes, sign, verify, createPrivateKey, createPublicKey } from "node:crypto";
+import {SPECIALIST_ROLES} from "../../packages/plan-contracts/src/agent-roles.mjs";
 
 export const MCP_AUDIENCE = "thesis-shared-mcp";
-export const AGENT_ROLES = ["backend", "frontend", "test"] as const;
+export const AGENT_ROLES = SPECIALIST_ROLES;
 /** Extra roles are permitted only when an Owner holds a corresponding
  * signing key AND the verifier is explicitly provisioned with that role's
  * public key. Role text itself does not grant any repository capability. */

@@ -2,16 +2,13 @@ import type {
   AgentArtifactPayload,
   SpecializedAgentRole
 } from "@thesis/agent-runtime";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 export const ACCOUNT_SUSPENSION_ARTIFACT_BRANCH =
   "feature/account-suspension" as const;
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
-const VALID_ROLES = new Set<SpecializedAgentRole>([
-  "backend",
-  "frontend",
-  "test"
-]);
+const VALID_ROLES = new Set<SpecializedAgentRole>(SPECIALIST_ROLES);
 const VALID_TEST_OUTCOMES = new Set(["not_run", "pass", "fail"]);
 
 export interface WorkflowArtifactValidationOptions {

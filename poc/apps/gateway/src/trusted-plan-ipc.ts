@@ -18,6 +18,8 @@ import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
 import {TrustedGatewayDiscoveryChildVpVerifier}
  from "./trusted-discovery-child-vp-verification.ts";
+import {SPECIALIST_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const ROUTE="/v1/private-plan-control";
 const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
@@ -41,7 +43,7 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u;
 const MAC=/^[0-9a-f]{64}$/u;
 const NONCE=/^[A-Za-z0-9_-]{22}$/u;
-const ROLES=new Set(["orchestrator","backend","frontend","test"]);
+const ROLES=new Set(["orchestrator",...SPECIALIST_ROLES]);
 type Command=
   |{action:"activate";session_id:string;base_revision:string}
   |{action:"bind";session_id:string;plan_task_id:string;runtime_task_id:string;role:AgentRole}
@@ -137,7 +139,7 @@ function validate(x:unknown):Command{
      Number.isSafeInteger(o.epoch)&&(o.epoch as number)>=2&&
      (o.epoch as number)<=3&&
      typeof o.plan_task_id==="string"&&ID.test(o.plan_task_id)&&
-     typeof o.role==="string"&&["backend","frontend","test"].includes(o.role))
+     typeof o.role==="string"&&SPECIALIST_ROLES.includes(o.role))
     return o as Command;
   if((o.action==="close"||o.action==="retire"||
       o.action==="retire_planning")&&
@@ -751,7 +753,7 @@ export class TrustedPlanIpcClient{
   /** Non-authorizing live dependency check before any new child issuance. */
   async assertRepairTaskReady(input:Readonly<{
     session_id:string;plan_digest:string;epoch:number;
-    plan_task_id:string;role:"backend"|"frontend"|"test";
+    plan_task_id:string;role:SpecialistRole;
   }>):Promise<void>{
     const r=await this.#send({action:"assert_repair_task_ready",...input});
     if(r.ready!==true||Object.keys(r).sort().join(",")!=="ok,ready")

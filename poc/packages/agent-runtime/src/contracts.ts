@@ -1,7 +1,8 @@
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 export const DELEGATED_AUTHORIZATION_EXTENSION_URI =
   "urn:thesis:a2a:delegated-authorization:v1" as const;
 
-export const SPECIALIZED_AGENT_ROLES = ["backend", "frontend", "test"] as const;
+export const SPECIALIZED_AGENT_ROLES = SPECIALIST_ROLES;
 export type SpecializedAgentRole = (typeof SPECIALIZED_AGENT_ROLES)[number];
 
 export interface DelegationEvidence {

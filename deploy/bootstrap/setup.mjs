@@ -15,13 +15,16 @@ import {dirname, join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {hashPassword, validateUsername, writeUserFile} from "../../poc/engineer-console/src/auth.mjs";
 import {parseEnvFile} from "../../poc/engineer-console/src/env.mjs";
+import {SPECIALIST_ROLES, roleEnvKey} from "../../poc/packages/plan-contracts/src/agent-roles.mjs";
 
 const CONFIG = process.env.CONFIG_DIR ?? "/config";
 const hex = (bytes = 24) => randomBytes(bytes).toString("hex");
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 // ethers is already a pinned dependency of the DID client.
 const {Wallet} = createRequire(join(ROOT, "blockchain/did-client/package.json"))("ethers");
-export const ROLES = Object.freeze(["ENGINEER", "ORCHESTRATOR", "BACKEND", "FRONTEND", "TEST"]);
+// Engineer, Orchestrator and every specialist of the shared role registry
+// (Backend, Frontend, Documentation, Data, DevOps, Test).
+export const ROLES = Object.freeze(["ENGINEER", "ORCHESTRATOR", ...SPECIALIST_ROLES.map(roleEnvKey)]);
 const CHAIN_HEX = "0x7a69"; // 31337, the local Anvil chain
 
 const localEnv = join(CONFIG, "local.env");
@@ -77,6 +80,9 @@ if (!existsSync(localEnv)) {
       `ENGINEER_APPROVAL_PRIVATE_KEY_B64=${privateKey.export({format: "der", type: "pkcs8"}).toString("base64")}`,
       `ENGINEER_APPROVAL_PUBLIC_KEY_B64=${publicKey.export({format: "der", type: "spki"}).toString("base64")}`);
   }
+  // Caller token of every role (agents added later get theirs here).
+  for (const role of ["ENGINEER", "GATEWAY", "ORCHESTRATOR", ...SPECIALIST_ROLES.map(roleEnvKey)])
+    if (!current[`ADAPTER_CALLER_${role}`]) added.push(`ADAPTER_CALLER_${role}=${hex(32)}`);
   // Bearer shared by the trusted Gateway owner (app) and the Runner service.
   if (!current.RUNNER_GATEWAY_TOKEN) added.push(`RUNNER_GATEWAY_TOKEN=${hex(32)}`);
   // HMAC key for independently re-checkable execution evidence receipts.

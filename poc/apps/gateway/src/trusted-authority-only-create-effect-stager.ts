@@ -17,6 +17,7 @@ import {isProjectTestCreateGrant}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import type {TrustedEffectStagingPort}
  from "../../../packages/agent-runtime/src/gateway-tool-client.ts";
+import {APPLICATION_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const SHA40=/^[a-f0-9]{40}$/u;
 function deny(reason:string):never{
@@ -92,7 +93,7 @@ export class TrustedAuthorityOnlyCreateEffectStager implements TrustedEffectStag
      record.task_id!==this.#runtimeTaskId||
      record.authority_only_plan_task_id!==this.#planTaskId||
      record.request.tool!=="create_file"||
-     !(["backend","frontend"].includes(record.agent_role)||
+     !(APPLICATION_ROLES.includes(record.agent_role)||
        (record.agent_role==="test"&&
         isProjectTestCreateGrant([record.required_permission],
           this.#admissions.projectTestSourceProfile)))||

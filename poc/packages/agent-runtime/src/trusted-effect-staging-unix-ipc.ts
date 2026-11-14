@@ -19,6 +19,7 @@ import {TrustedEffectStagingTaskRegistry,
 import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import type {TrustedEffectStagingPort} from "./gateway-tool-client.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 type Channel="bind"|"stage";
 const SETTINGS={
@@ -31,7 +32,7 @@ const TIME_WINDOW=30_000,BODY_MAX=4096,ACK_MAX=1024,MAX_NONCES=1024;
 const MAC=/^[a-f0-9]{64}$/u,NONCE=/^[A-Za-z0-9_-]{22}$/u;
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 type Role=string;
-const LEGACY_ROLES=["backend","frontend","test"] as const;
+const LEGACY_ROLES=SPECIALIST_ROLES;
 const ROLE=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 /** Only the trusted host can provision this role and its separate 0600 IPC
  * socket/key. A role string alone can never grant a provider operation. */

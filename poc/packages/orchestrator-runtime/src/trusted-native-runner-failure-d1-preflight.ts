@@ -22,8 +22,10 @@ import {DurableAuthorityOnlyRunnerIntentJournal,
  type TrustedAuthorityOnlyRunnerIntent}
  from "../../../apps/gateway/src/trusted-authority-only-runner-intent-journal.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
+import {SPECIALIST_ROLES,APPLICATION_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
-type Role="backend"|"frontend"|"test";
+type Role=SpecialistRole;
 const SHA64=/^[a-f0-9]{64}$/u;
 // Any phase of the approved profile; the Gateway marks a failure of the
 // environment phase as not a repair candidate.
@@ -182,7 +184,7 @@ export async function preflightNativeD1FailureCandidate(input:
  const root=input.coordinator.assertTrustedGatewayAuthorityBinding();
  const branchUri=canonicalBranchUri(root.repository,root.branch);
  const proposed=input.candidate;
- if(!proposed||!["backend","frontend","test"].includes(proposed.role)||
+ if(!proposed||!SPECIALIST_ROLES.includes(proposed.role)||
     !Array.isArray(proposed.permissions)||proposed.permissions.length<1||
     proposed.permissions.length>32)
   deny("bounded, trusted owner-selected D1 candidate required");
@@ -227,7 +229,7 @@ export async function preflightNativeD1FailureCandidate(input:
  }
  if(effects!==1||creates>1||
     (creates===1&&(proposed.permissions.length!==1||
-      !["backend","frontend"].includes(proposed.role))))
+      !APPLICATION_ROLES.includes(proposed.role))))
   deny("exactly one approved side effect per candidate Task");
  const observed=await observeTrustedNativeTestFailure(input);
  return Object.freeze({

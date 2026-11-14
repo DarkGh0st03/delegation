@@ -24,6 +24,8 @@ import {preliminaryReadPermissions,trustedPlanningSourceBranch,
  type TrustedPlanningSnapshot} from "./trusted-engineer-authority.ts";
 import {TrustedPlanningDiscoveryLedger}
   from "./trusted-planning-discovery-ledger.ts";
+import {APPLICATION_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
 type Role=string;
 type ReadTool="read_repository"|"list_directory"|"read_file";
@@ -34,8 +36,8 @@ const sha=/^[a-f0-9]{40}$/u;
 const id=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const roleOps:Readonly<Record<string,ReadonlySet<Op>>>={
   orchestrator:new Set(["create_branch","create_pull_request"]),
-  backend:new Set(["read_file","update_file","create_file"]),
-  frontend:new Set(["read_file","update_file","create_file"]),
+  ...Object.fromEntries(APPLICATION_ROLES.map(role=>
+   [role,new Set<Op>(["read_file","update_file","create_file"])])),
   test:new Set(["read_file","update_file","create_file","run_tests"])
 };
 /**
@@ -875,7 +877,7 @@ export class TrustedAdkReadOnlyPlanner {
           // Unknown roles must carry a trusted owner-supplied Card; no model
           // URL fetching and no synthetic fallback into a different role.
           const card=registered.card??createSpecializedAgentCard(
-            role as "backend"|"frontend"|"test","http://127.0.0.1",{
+            role as SpecialistRole,"http://127.0.0.1",{
               capabilityProfile:"approved-plan"
             });
           return {

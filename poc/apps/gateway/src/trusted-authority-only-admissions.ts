@@ -50,13 +50,14 @@ import {TrustedAuthorityOnlyChildIssuer,type VerifiedStagedChild}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts";
 import {assertVerifiedAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
+import {SPECIALIST_ROLES,APPLICATION_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA40=/^[a-f0-9]{40}$/u;
 const SHA64=/^[a-f0-9]{64}$/u;
 const OPERATIONS=new Set<string>(RUST_OPERATIONS);
 const IMPLEMENTED=new Set<string>(TOOL_NAMES);
-const NATIVE_CORE_ROLES=new Set(["backend","frontend","test","orchestrator"]);
+const NATIVE_CORE_ROLES=new Set([...SPECIALIST_ROLES,"orchestrator"]);
 const OWNER_EXTRA_ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 /** Trusted Coordinator rows only: a fourth role can neither write, create,
  * run Docker nor become a substitute Orchestrator. The underlying signed
@@ -338,7 +339,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  #mixedShape(row:RegisteredAuthorityOnlyTask){
   const shape=readWriteGrantShape(row.permissions);
   if(!shape)return null;
-  return ["backend","frontend"].includes(row.agent_id)||
+  return APPLICATION_ROLES.includes(row.agent_id)||
    (row.agent_id==="test"&&(shape.operation==="update_file"
     ?isProjectTestRepairGrant(row.permissions,this.#testSources)
     :isProjectTestReadCreateGrant(row.permissions,this.#testSources)))?shape:null;
@@ -557,7 +558,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      bound.row.task_id!==taskId||bound.row.session_id!==root.session_id||
      bound.row.root_credential_id!==root.root_credential_id||
      bound.row.authority_digest!==root.authority_digest||
-     !(["backend","frontend"].includes(bound.row.agent_id)||
+     !(APPLICATION_ROLES.includes(bound.row.agent_id)||
       (bound.row.agent_id==="test"&&
        isTestAgentReadGrant(bound.row.permissions))||
       ownerAdditionalSingleRead(bound.row))||
@@ -891,7 +892,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("completed source observation lacks original owner-pinned read");
   if(!bound||!child||!flight||!evidence||
      bound.row.task_id!==taskId||
-     !(["backend","frontend"].includes(bound.row.agent_id)||
+     !(APPLICATION_ROLES.includes(bound.row.agent_id)||
       (bound.row.agent_id==="test"&&
        isTestAgentReadGrant(bound.row.permissions))||
       ownerAdditionalSingleRead(bound.row))||
@@ -2002,7 +2003,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
     sequential.readPaths?.has(record.request.arguments.path)===false;
   const createGrant=perms.find(p=>p?.operation==="create_file");
   if(!bound||!child||!taskId||!createGrant||
-     !(["backend","frontend"].includes(bound.row.agent_id)||
+     !(APPLICATION_ROLES.includes(bound.row.agent_id)||
        (bound.row.agent_id==="test"&&
         (isProjectTestCreateGrant(perms,this.#testSources)||
          isProjectTestReadCreateGrant(perms,this.#testSources))))||
@@ -2075,7 +2076,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const createGrant=perms.length===1?perms[0]:
    readCreateGrantShape(perms)?perms.find(p=>p.operation==="create_file"):undefined;
   if(!bound||record.request.tool!=="create_file"||!createGrant||
-     !(["backend","frontend"].includes(bound.row.agent_id)||
+     !(APPLICATION_ROLES.includes(bound.row.agent_id)||
        (bound.row.agent_id==="test"&&
         (isProjectTestCreateGrant(perms,this.#testSources)||
          isProjectTestReadCreateGrant(perms,this.#testSources))))||

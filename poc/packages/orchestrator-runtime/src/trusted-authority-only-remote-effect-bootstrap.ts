@@ -30,9 +30,10 @@ import {
 } from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 import type {TrustedEffectStagingPort}
  from "../../agent-runtime/src/gateway-tool-client.ts";
+import {SPECIALIST_ROLES,REQUIRED_SPECIALISTS} from "../../plan-contracts/src/agent-roles.mjs";
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
-const CORE_ROLES=["backend","frontend","test"] as const;
+const CORE_ROLES=SPECIALIST_ROLES;
 const ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 export type TrustedRoleBindingChannels=Readonly<Record<string,Readonly<{
  socketPath:string;secretFile:string
@@ -43,8 +44,8 @@ function trustedRoleChannels(value:unknown):value is TrustedRoleBindingChannels{
  if(!value||typeof value!=="object"||Array.isArray(value))return false;
  const entries=value as Record<string,unknown>;
  const names=Object.keys(entries);
- return names.length>=CORE_ROLES.length&&names.length<=16&&
-  CORE_ROLES.every(role=>Object.hasOwn(entries,role))&&
+ return names.length>=REQUIRED_SPECIALISTS.length&&names.length<=16&&
+  REQUIRED_SPECIALISTS.every(role=>Object.hasOwn(entries,role))&&
   names.every(role=>{
    const ch=entries[role] as Record<string,unknown>|undefined;
    return ROLE.test(role)&&!["orchestrator","constructor","prototype"].includes(role)&&
@@ -125,7 +126,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
      (!multi&&(typeof opts.agentBindingSocketPath!=="string"||
                typeof opts.agentBindingSecretFile!=="string")))
    deny("exactly one legacy binder or three per-role bind IPC channels required");
-  const liveRoles=multi?Object.keys(multi).sort():[...CORE_ROLES];
+  const liveRoles=multi?Object.keys(multi).sort():[...REQUIRED_SPECIALISTS];
   const bindingChannels=multi?liveRoles.map(role=>multi[role]!):[{
    socketPath:opts.agentBindingSocketPath!,
    secretFile:opts.agentBindingSecretFile!

@@ -10,6 +10,7 @@
  */
 import type {SpecializedAgentRole} from "./contracts.ts";
 import type {SpecializedAgentProfile} from "./specialized-agents.ts";
+import {ROLE_SKILLS,SPECIALIST_ROLES,TEST_ROLE} from "../../plan-contracts/src/agent-roles.mjs";
 
 const role=(role:SpecializedAgentRole,skill:string,tools:SpecializedAgentProfile["tools"],
  canRunTests:boolean):SpecializedAgentProfile=>Object.freeze({
@@ -29,16 +30,16 @@ const role=(role:SpecializedAgentRole,skill:string,tools:SpecializedAgentProfile
  ].join("\n")
 });
 
+// One profile per role of the shared registry (plan-contracts/agent-roles):
+// application roles change project files, the Test role changes only the
+// project's test sources and may run the tests.
 export const APPROVED_SPECIALIZED_AGENT_PROFILES:Readonly<
  Record<SpecializedAgentRole,SpecializedAgentProfile>
->=Object.freeze({
- backend:role("backend","Backend application logic, data contracts and server-side integration",
-  ["read_file","update_file","create_file"],false),
- frontend:role("frontend","Frontend user interface, accessibility and API integration",
-  ["read_file","update_file","create_file"],false),
- test:role("test","Automated tests, validation evidence and controlled test execution",
-  ["read_file","update_file","create_file","run_tests"],true)
-});
+>=Object.freeze(Object.fromEntries(SPECIALIST_ROLES.map(name=>[name,
+ name===TEST_ROLE
+  ?role(name,ROLE_SKILLS[name],["read_file","update_file","create_file","run_tests"],true)
+  :role(name,ROLE_SKILLS[name],["read_file","update_file","create_file"],false)
+])) as Record<SpecializedAgentRole,SpecializedAgentProfile>);
 
 /**
  * Native Agent Cards may advertise the Test create_file capability because

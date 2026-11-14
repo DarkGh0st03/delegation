@@ -13,8 +13,9 @@
  */
 import {BaseLlm} from "@google/adk";
 import {isDeepStrictEqual} from "node:util";
+import {SPECIALIST_ROLES,isValidSpecialistRoster} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
-const ROLES=Object.freeze(["backend","frontend","test"]);
+const ROLES=Object.freeze(SPECIALIST_ROLES);
 const FROZEN_LIMITS=Object.freeze({
  maxModelTurns:20,
  maxModelCallMs:60000,
@@ -27,17 +28,18 @@ function deny(){throw Error("Protected canonical Gemini owner binding denied");}
 function plain(x){return !!x&&typeof x==="object"&&!Array.isArray(x)&&
  Object.getPrototypeOf(x)===Object.prototype;}
 function sameAgentPins(a,b){
- // R460: the paid Gemini pilot has exactly three specialist roles.
+ // R460: the private Gemini binding covers exactly the registry specialists
+ // the owner provisioned (required roles plus configured optional ones).
  // A trusted Review Host may additionally own the privileged Orchestrator,
- // but MUST NOT silently pass a provisioned fourth A2A specialist through
- // the three-role private Gemini binding. Offline A2A tests remain generic.
- const actual=plain(a)?Object.keys(a).sort().join(","):"";
- if(!plain(a)||!plain(b)||
-    !["backend,frontend,test","backend,frontend,orchestrator,test"]
-     .includes(actual)||
-    Object.keys(b).sort().join(",")!=="backend,frontend,test")
+ // but MUST NOT silently pass an owner-pinned additional (non-registry)
+ // A2A specialist through it. Offline A2A tests remain generic.
+ if(!plain(a)||!plain(b))return false;
+ const specialists=Object.keys(a).filter(role=>role!=="orchestrator");
+ const roles=Object.keys(b);
+ if(!isValidSpecialistRoster(roles)||
+    specialists.sort().join(",")!==[...roles].sort().join(","))
   return false;
- return ROLES.every(role=>{
+ return roles.every(role=>{
   const p=a[role],q=b[role];
   return plain(p)&&plain(q)&&typeof p.did==="string"&&
     p.did.startsWith("did:")&&p.did===q.did&&

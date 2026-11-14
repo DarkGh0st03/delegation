@@ -29,8 +29,10 @@ type AgentBinder=Awaited<ReturnType<typeof connectTrustedEffectAgentBindingClien
 import {isProjectTestRepairGrant,readUpdateGrantShape,isProjectTestCreateGrant,
  readCreateGrantShape,isProjectTestReadCreateGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
-type Role="backend"|"frontend"|"test";
-const ROLES=["backend","frontend","test"] as const;
+import {SPECIALIST_ROLES,APPLICATION_ROLES,REQUIRED_SPECIALISTS} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
+type Role=SpecialistRole;
+const ROLES=SPECIALIST_ROLES;
 const ROLE=/^[a-z][a-z0-9_-]{0,23}$/u;
 function validBinder(b:unknown):b is AgentBinder{
  return !!b&&typeof (b as AgentBinder).bindTask==="function"&&
@@ -80,7 +82,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   const hasSingle=config?.agentBindingClient!==undefined;
   const keys=multi?Object.keys(multi):[];
   const validMulti=!!multi&&keys.length>=3&&keys.length<=16&&
-   ROLES.every(role=>Object.hasOwn(multi,role))&&
+   REQUIRED_SPECIALISTS.every(role=>Object.hasOwn(multi,role))&&
    keys.every(role=>ROLE.test(role)&&
     !["orchestrator","constructor","prototype"].includes(role)&&
     validBinder(multi[role]));
@@ -167,14 +169,14 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
      !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
    deny("Test update requires an exact project test repair grant");
   if(effect.operation==="create_file"&&typedMixedCreate){
-   if(!(["backend","frontend"].includes(row.agent_id)||
+   if(!(APPLICATION_ROLES.includes(row.agent_id)||
          (row.agent_id==="test"&&isProjectTestReadCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile)))||
       !TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
        effectStager,this.#gateway,taskId,runtimeTaskId)||
       effectStager.stagedTool!=="read_then_create")
     deny("reads + create Task requires the original native owner read/write stager");
   }else if(effect.operation==="create_file"){
-   if(!(["backend","frontend"].includes(row.agent_id)||
+   if(!(APPLICATION_ROLES.includes(row.agent_id)||
          (row.agent_id==="test"&&isProjectTestCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile)))||
       row.permissions.length!==1||
       !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(

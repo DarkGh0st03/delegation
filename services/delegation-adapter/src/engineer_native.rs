@@ -196,14 +196,7 @@ impl NativeEngineerSocket {
                     })
             }
             "store_credential"
-                if matches!(
-                    caller.role(),
-                    CallerRole::Orchestrator
-                        | CallerRole::Backend
-                        | CallerRole::Frontend
-                        | CallerRole::Test
-                        | CallerRole::Additional(_)
-                ) =>
+                if caller.role() == CallerRole::Orchestrator || caller.role().is_specialist() =>
             {
                 serde_json::from_value::<StoreCredentialRequest>(req.body)
                     .map_err(|_| String::from("invalid request"))
@@ -211,14 +204,7 @@ impl NativeEngineerSocket {
                     .map(|id| json!({"credential_id": id}))
             }
             "create_presentation"
-                if matches!(
-                    caller.role(),
-                    CallerRole::Orchestrator
-                        | CallerRole::Backend
-                        | CallerRole::Frontend
-                        | CallerRole::Test
-                        | CallerRole::Additional(_)
-                ) =>
+                if caller.role() == CallerRole::Orchestrator || caller.role().is_specialist() =>
             {
                 serde_json::from_value::<CreatePresentationRequest>(req.body)
                     .map_err(|_| String::from("invalid request"))

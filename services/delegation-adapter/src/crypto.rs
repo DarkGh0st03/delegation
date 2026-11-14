@@ -418,13 +418,7 @@ impl CryptoRuntime {
                 "Only the Orchestrator caller may issue specialized child credentials",
             ));
         }
-        if !matches!(
-            request.delegatee,
-            CallerRole::Backend
-                | CallerRole::Frontend
-                | CallerRole::Test
-                | CallerRole::Additional(_)
-        ) {
+        if !request.delegatee.is_specialist() {
             return Err(String::from(
                 "Child credentials may target only provisioned specialist roles",
             ));
@@ -745,14 +739,7 @@ impl CryptoRuntime {
                 "Only the Gateway caller may invoke presentation verification",
             ));
         }
-        if !matches!(
-            request.presenter,
-            CallerRole::Orchestrator
-                | CallerRole::Backend
-                | CallerRole::Frontend
-                | CallerRole::Test
-                | CallerRole::Additional(_)
-        ) {
+        if !(request.presenter == CallerRole::Orchestrator || request.presenter.is_specialist()) {
             return Err(String::from(
                 "Presenter must be an Orchestrator or specialized Agent role",
             ));
@@ -784,14 +771,7 @@ impl CryptoRuntime {
                 "Only the Gateway caller may invoke presentation verification",
             ));
         }
-        if !matches!(
-            request.presenter,
-            CallerRole::Orchestrator
-                | CallerRole::Backend
-                | CallerRole::Frontend
-                | CallerRole::Test
-                | CallerRole::Additional(_)
-        ) {
+        if !(request.presenter == CallerRole::Orchestrator || request.presenter.is_specialist()) {
             return Err(String::from(
                 "Presenter must be an Orchestrator or specialized Agent role",
             ));

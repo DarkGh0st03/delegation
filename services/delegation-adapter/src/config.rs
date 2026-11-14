@@ -79,6 +79,16 @@ impl EvmAdapterConfig {
                 identity_private_keys.insert(role, required(name)?);
             }
         }
+        // Optional first-class specialists: provisioned when their DID is set.
+        for role in CallerRole::OPTIONAL_SPECIALISTS {
+            let suffix = role.as_str().to_ascii_uppercase();
+            if env::var(format!("ADAPTER_ID_{suffix}")).is_ok() && signs(role) {
+                identity_private_keys.insert(
+                    role,
+                    required(&format!("ADAPTER_EVM_PRIVATE_KEY_{suffix}"))?,
+                );
+            }
+        }
         for role in additional {
             if signs(*role) {
                 let key =
@@ -219,6 +229,25 @@ impl AdapterConfig {
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+
+        // Optional first-class specialists (Documentation, Data, DevOps):
+        // present only when the owner provisioned their DID.
+        for role in CallerRole::OPTIONAL_SPECIALISTS {
+            let suffix = role.as_str().to_ascii_uppercase();
+            if let Ok(identity) = env::var(format!("ADAPTER_ID_{suffix}")) {
+                if !identity.starts_with("did:") {
+                    return Err(format!("ADAPTER_ID_{suffix} must be a DID"));
+                }
+                if let Some(record) = entry(
+                    role,
+                    &format!("ADAPTER_CALLER_{suffix}"),
+                    identity,
+                    vec![CallerCapability::CreatePresentation],
+                )? {
+                    records.push(record);
+                }
+            }
+        }
 
         for role in &additional {
             let suffix = role.as_str().to_ascii_uppercase();

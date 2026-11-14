@@ -15,8 +15,9 @@
  */
 import {BaseLlm} from "@google/adk";
 import {createHash} from "node:crypto";
+import {SPECIALIST_ROLES} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
-const PHASES=new Set(["planning","adaptive-execution","backend","frontend","test"]);
+const PHASES=new Set(["planning","adaptive-execution",...SPECIALIST_ROLES]);
 const deny=()=>{throw Error("Disposable private Gemini request budget NO-GO");};
 const positive=(value,max)=>Number.isSafeInteger(value)&&value>=1&&value<=max;
 const nonnegative=value=>Number.isSafeInteger(value)&&value>=0;
@@ -79,7 +80,7 @@ function fingerprintModelWrites(buffered,phase,callIndex,writeBranch){
    const call=part?.functionCall;
    if(!call||!["update_file","create_file"].includes(call.name))continue;
    const args=call.args;
-   if(!["backend","frontend","test"].includes(phase)||
+   if(!SPECIALIST_ROLES.includes(phase)||
       !args||typeof args!=="object"||Array.isArray(args)||
       Object.keys(args).sort().join(",")!=="branch,content,path"||
       args.branch!==writeBranch||
@@ -383,5 +384,15 @@ export const PRIVATE_GEMINI_SESSION_LIMITS=Object.freeze({
  }),
  test:Object.freeze({
   maxCalls:240,maxReportedTokens:1_000_000,maxPerCallTokens:65536
+ }),
+ // Documentation, Data and DevOps: smaller, focused file edits.
+ docs:Object.freeze({
+  maxCalls:120,maxReportedTokens:500_000,maxPerCallTokens:65536
+ }),
+ data:Object.freeze({
+  maxCalls:120,maxReportedTokens:500_000,maxPerCallTokens:65536
+ }),
+ devops:Object.freeze({
+  maxCalls:120,maxReportedTokens:500_000,maxPerCallTokens:65536
  })
 });

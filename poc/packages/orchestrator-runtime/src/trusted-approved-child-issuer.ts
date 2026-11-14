@@ -24,11 +24,12 @@ import type {ChildIssuanceInput,IssuedDelegationCredential} from "./trusted-cred
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import {createRustAdapterChildCryptographyPort,
   type TrustedChildCryptographyPort} from "./trusted-child-crypto-port.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 type FetchLike=typeof fetch;
 type ScopedInput=ChildIssuanceInput;
 type Role=SpecializedAgentRole;
-const ROLES=new Set(["backend","frontend","test"]);
+const ROLES=new Set(SPECIALIST_ROLES);
 const OPS=new Set<string>(RUST_OPERATIONS);
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MAX_PERMISSIONS=128;

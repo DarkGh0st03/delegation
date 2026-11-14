@@ -13,9 +13,10 @@ import {spawn} from "node:child_process";
 import {dirname, join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {readEnvFile} from "./env.mjs";
+import {SPECIALIST_ROLES, roleEnvKey} from "../../packages/plan-contracts/src/agent-roles.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const ROLES = ["ENGINEER", "ORCHESTRATOR", "BACKEND", "FRONTEND", "TEST"];
+const ROLES = ["ENGINEER", "ORCHESTRATOR", ...SPECIALIST_ROLES.map(roleEnvKey)];
 export const OWNER_DIR = "/tmp/delegation-owner";
 export const PUBLIC_ARTIFACT_DIR = "/tmp/delegation-public";
 
@@ -26,7 +27,7 @@ const need = (source, key) => {
 };
 
 /** Roles that have their own MCP-wallet process (one signing key each). */
-export const WALLET_ROLES = ["ORCHESTRATOR", "BACKEND", "FRONTEND", "TEST"];
+export const WALLET_ROLES = ["ORCHESTRATOR", ...SPECIALIST_ROLES.map(roleEnvKey)];
 export const walletSocketPath = role => join(OWNER_DIR, `wallet-${role.toLowerCase()}.sock`);
 
 /** Public, non-secret configuration shared by the Engineer core and wallets. */
@@ -135,7 +136,7 @@ export async function startTrustedCore(config) {
       {socketPath: env.DELEGATION_WALLET_SOCKET_ORCHESTRATOR,
        token: need(local, "ADAPTER_CALLER_ORCHESTRATOR")});
     status.engineer = {ok: true,
-      detail: "avviato; Engineer e un wallet per ciascuno dei 4 ruoli registrati sulla blockchain"};
+      detail: `avviato; Engineer e un wallet per ciascuno dei ${WALLET_ROLES.length} ruoli registrati sulla blockchain`};
   } catch (error) {
     status.engineer = {ok: false, detail: "avvio fallito: " + (error?.message ?? error) +
       ". Se Anvil non è stato riavviato insieme all'app, usa: docker compose down && docker compose up -d"};

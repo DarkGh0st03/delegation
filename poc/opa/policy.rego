@@ -88,7 +88,7 @@ work_branch := repo_config.default_work_branch if {
 work_branch_uri := branch_uri(work_branch)
 
 original_agent_role if {
-	input.agent_role in {"backend", "frontend", "test", "orchestrator"}
+	input.agent_role in {"backend", "frontend", "docs", "data", "devops", "test", "orchestrator"}
 }
 
 verified_context if {

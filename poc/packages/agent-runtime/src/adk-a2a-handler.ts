@@ -27,12 +27,14 @@ import { AdkToolProgress } from "./adk-tool-progress.ts";
 import {safeAdkRequestShape,safeAdkFunctionHistoryShape} from "./adk-request-shape.ts";
 import {safeAdkResponseShape,classifyAdkResponseFailure,
   type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
+import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
 type FetchLike = typeof fetch;
 /** Content-free owner observation, NOT model provenance or signed proof. */
 export interface TrustedOriginalModelCallWindow {
  readonly task_id:string;readonly credential_id:string;
- readonly runtime_task_id:string;readonly role:"backend"|"frontend"|"test";
+ readonly runtime_task_id:string;readonly role:SpecialistRole;
  readonly call_index_before:number;readonly call_index_after:number;
 }
 function originalModelCalls(model:BaseLlm):number{
@@ -58,7 +60,7 @@ export interface AdkA2ATaskHandlerConfig {
   /** Offline worker only: owner-pinned Task selected by the ORIGINAL
    * authenticated effect registry, never selected by A2A/model claims. */
   trustedOriginalWorkerIpcTaskBinding?:(
-    pin:Readonly<{role:"backend"|"frontend"|"test";
+    pin:Readonly<{role:SpecialistRole;
       task_id:string;credential_id:string;runtime_task_id:string}>
   )=>()=>void;
   model: BaseLlm;
@@ -302,11 +304,11 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // matched the exact A2A context, allow one Task to use the worker model.
     if(config.trustedOriginalWorkerIpcTaskBinding){
       if(!ownerEffect||!context.trusted_gateway_task_id||
-         !["backend","frontend","test"].includes(context.role))
+         !SPECIALIST_ROLES.includes(context.role))
         throw Error("Original worker model IPC Task is not authenticated");
       releaseOriginalWorkerIpcTask=config.trustedOriginalWorkerIpcTaskBinding(
         Object.freeze({
-          role:context.role as "backend"|"frontend"|"test",
+          role:context.role as SpecialistRole,
           task_id:context.subtask.subtask_id,
           credential_id:context.delegation_evidence.credential_id,
           runtime_task_id:context.trusted_gateway_task_id

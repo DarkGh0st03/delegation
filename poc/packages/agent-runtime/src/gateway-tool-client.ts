@@ -9,6 +9,7 @@ import {
   DelegationEvidenceHandler,
   type PreparedGatewayAuthorization
 } from "./delegation-evidence-handler.ts";
+import {APPLICATION_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 type FetchLike = typeof fetch;
 
@@ -167,8 +168,7 @@ export class GatewayControlledToolClient {
     // R391: Test CREATE is not an application-source capability. It needs
     // the original native single-effect stager AND an exact test source,
     // independently bound to the signed Task by Gateway/Rust/OPA.
-    const nativeCreateRoleAllowed=this.#agentRole==="backend"||
-      this.#agentRole==="frontend"||
+    const nativeCreateRoleAllowed=APPLICATION_ROLES.includes(this.#agentRole)||
       (this.#agentRole==="test"&&isProjectTestSource(args.path,
         this.#trustedEffectStager?.projectTestSourceProfile));
     if(this.#trustedEffectStager?.stagedTool==="read_then_update"&&

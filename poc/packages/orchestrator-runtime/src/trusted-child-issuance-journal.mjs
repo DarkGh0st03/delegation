@@ -12,9 +12,10 @@ import {createHash} from "node:crypto";
 import {constants} from "node:fs";
 import {open,lstat,readdir} from "node:fs/promises";
 import {join,resolve,isAbsolute} from "node:path";
+import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const ROLE=new Set(["backend","frontend","test"]);
+const ROLE=new Set(SPECIALIST_ROLES);
 const SHA=/^[a-f0-9]{40}$/u,DIGEST=/^[a-f0-9]{64}$/u;
 const HASH=/^[a-f0-9]{64}$/u;
 const MAX_BYTES=4096;

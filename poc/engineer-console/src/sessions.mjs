@@ -14,6 +14,8 @@ import {join} from "node:path";
 import {readEnvFile} from "./env.mjs";
 import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../packages/plan-contracts/src/planning-limits.mjs";
 import {projectProfileDigest, testSourceProfileOf} from "../../packages/plan-contracts/src/project-profile.mjs";
+import {APPLICATION_ROLES, SPECIALIST_ROLES, TEST_ROLE, roleEnvKey}
+  from "../../packages/plan-contracts/src/agent-roles.mjs";
 import {defaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
 import {preflightGemini, createSessionGeminiModels, GEMINI_WORKER_SETTINGS} from "./gemini-models.mjs";
@@ -241,7 +243,7 @@ export class EngineerSessions {
       writeFileSync(file, value, {mode: 0o600}); chmodSync(file, 0o600);
       return file;
     };
-    const roles = ["backend", "frontend", "test"];
+    const roles = [...SPECIALIST_ROLES];
     const childCount = scripted ? plan.tasks.length : 24;
     const childIndices = Array.from({length: childCount}, () => String(this.#nextStatus++));
     const workerPorts = {};
@@ -334,8 +336,8 @@ export class EngineerSessions {
       const contents = reference ? ACCOUNT_SUSPENSION_REFERENCE_FILES : undefined;
       const w = operational.localWorkers.workers, branch = session.work_branch;
       const common = {branch, sessionId: session.id, contents};
-      w.backend.adk.model = new ScriptedWorkerModel({role: "backend", files: files("backend"), ...common});
-      w.frontend.adk.model = new ScriptedWorkerModel({role: "frontend", files: files("frontend"), ...common});
+      for (const role of APPLICATION_ROLES)
+        w[role].adk.model = new ScriptedWorkerModel({role, files: files(role), ...common});
       w.test.adk.model = new ScriptedTestModel({branch, worker: new ScriptedTestFileWorker(
         {role: "test", files: files("test"), ...common})});
       operational.workflow.createBranch.model = new ScriptedRootTaskModel({task_id: "branch",
@@ -350,7 +352,7 @@ export class EngineerSessions {
     } else {
       if (!live.gemini) throw Error("Modelli Gemini della sessione non disponibili");
       const m = live.gemini.execution(), w = operational.localWorkers.workers;
-      for (const role of ["backend", "frontend", "test"])
+      for (const role of SPECIALIST_ROLES)
         w[role].adk = {...w[role].adk, model: m[role], ...GEMINI_WORKER_SETTINGS[role]};
       // One Orchestrator model: Branch proposal, every Task decision, PR proposal.
       operational.workflow.createBranch.model = m.orchestrator;
@@ -676,13 +678,13 @@ export class EngineerSessions {
     this.#log(session, "Emissione della Root preliminare di sola lettura...");
 
     const operationalSessionStore = new TrustedOperationalSessionStore(dirs["op-sessions"]);
+    // Every specialist of the shared registry (the Orchestrator chooses
+    // among them per Task) plus the Orchestrator itself.
     const trustedAgentRegistry = {
-      backend: {did: roleDid("BACKEND"), card_ref: "trusted:backend",
-        capabilities: ["read_file", "update_file", "create_file"]},
-      frontend: {did: roleDid("FRONTEND"), card_ref: "trusted:frontend",
-        capabilities: ["read_file", "update_file", "create_file"]},
-      test: {did: roleDid("TEST"), card_ref: "trusted:test",
-        capabilities: ["read_file", "update_file", "create_file", "run_tests"]},
+      ...Object.fromEntries(SPECIALIST_ROLES.map(role => [role, {
+        did: roleDid(roleEnvKey(role)), card_ref: "trusted:" + role,
+        capabilities: role === TEST_ROLE ? ["read_file", "update_file", "create_file", "run_tests"]
+          : ["read_file", "update_file", "create_file"]}])),
       orchestrator: {did: roleDid("ORCHESTRATOR"), card_ref: "trusted:orchestrator",
         capabilities: ["create_branch", "create_pull_request"]}
     };

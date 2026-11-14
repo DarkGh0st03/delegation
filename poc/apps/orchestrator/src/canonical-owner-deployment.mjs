@@ -21,8 +21,8 @@ import {AuthenticatedGiteaReadCompletionObserver} from "../../gateway/src/truste
 import {AuthenticatedGiteaMutationCompletionObserver} from "../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
 import {AuthenticatedGiteaCreateCompletionObserver}
  from "../../gateway/src/trusted-authority-only-gitea-create-evidence.ts";
+import {provisionedSpecialists} from "../../../packages/plan-contracts/src/agent-roles.mjs";
 
-const roles=["backend","frontend","test"];
 function deny(){throw Error("Protected canonical deployment configuration denied");}
 
 /** Default lifetime of a Task's Child DC, and the minimum left to do work. */
@@ -98,6 +98,9 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   ...(requireVerifiedRepairDiagnostic?["requireVerifiedRepairDiagnostic"]:[]),
   ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[]),
   ...(Object.hasOwn(c??{},"internalHttpHosts")?["internalHttpHosts"]:[])];
+ // Specialist roster: the required roles plus the optional ones (Documentation,
+ // Data, DevOps) the owner provisioned with a token and a port.
+ const roles=provisionedSpecialists(c?.workerTokens);
  if(!exact(c,[...standardKeys,...optionalKeys])||
     typeof c.directory!=="string"||!c.directory.startsWith("/")||
     !exact(c.workerTokens,roles)||!exact(c.workerPorts,roles)||
