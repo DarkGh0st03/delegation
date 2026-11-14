@@ -41,7 +41,7 @@ export function roleForPath(path, testSources) {
   if (/(^|\/)(data|seeds?|fixtures|migrations|db)\//u.test(path) || /\.(sql|csv)$/u.test(name))
     return "data";
   if (/^(tests?|e2e)\//u.test(path) || /\.spec\.[a-z]+$/u.test(path)) return "frontend";
-  if (/(^|\/)(frontend|client|web|ui)\//u.test(path) || /\.(tsx|jsx|vue|svelte|css|scss|html)$/u.test(path))
+  if (/(^|\/)(frontend|client|web|ui|public|static|www)\//u.test(path) || /\.(tsx|jsx|vue|svelte|css|scss|html)$/u.test(path))
     return "frontend";
   return "backend";
 }

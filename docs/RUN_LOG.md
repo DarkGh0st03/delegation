@@ -7,6 +7,31 @@ Draft PR su Gitea.
 
 ---
 
+## 2026-11-14 — Nuovi agenti Documentation, Data, DevOps su campus-library (sandbox)
+
+Modalità gratuita (nessuna IA), Runner **reale** (`npm ci` e `npm test` in un
+container usa e getta), progetto di esempio `campus-library` caricato nel Gitea
+della sandbox (sessione s-b240b9ffe816).
+
+- Planning: 23 permessi (lettura+modifica di `Dockerfile`, `README.md`,
+  `data/books.json`, file di `public/`, `server.js`, `src/catalog.js`, test;
+  branch, test e Draft PR), tutti firmati.
+- Esecuzione: 11 Task, un Child DC ciascuno. Assegnazioni: Data
+  (`data/books.json`), DevOps (`Dockerfile`), Documentation (`README.md`),
+  Backend e Frontend (codice), Test (due file di test, poi `run_tests`).
+- Gateway: 40 operazioni consentite, 0 negate (VP firmata dal wallet di ciascun
+  ruolo, verifica Rust, OPA).
+- Runner: PASS. Draft PR #1 creata; merge lasciato all'Engineer.
+
+Regressione nella stessa sandbox su `iam-console-poc` (sessione
+s-e6325e6436f0, Runner simulato): solo Backend, Frontend e Test, PASS, Draft PR #16.
+Lo staging ha rilevato un'interfaccia web in campus-library ("Pubblica
+l'app", pubblicata su 127.0.0.1:8802) e nessuna interfaccia in unit-convert.
+
+Durante la prova è emerso un difetto preesistente, corretto: il titolo della
+Draft PR, tagliato a 120 caratteri, poteva finire con uno spazio ed era
+rifiutato dal controllo del proprietario (requisiti lunghi).
+
 ## 2026-11-13 — Ricerca e filtro utenti con Gemini: completata con Draft PR
 
 Sessione `s-794fd7426bd3`, nuova console (Sigillo), requisito "Consenti a un

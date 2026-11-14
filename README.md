@@ -1,8 +1,9 @@
 # Delegation — delegated authorization for AI agents in software engineering
 
 Thesis proof of concept: a Software Engineer delegates **bounded, verifiable
-authority** to a team of AI agents (Orchestrator, Backend, Frontend, Test) that
-work on a Git repository. Every agent operation is authorized by a chain of
+authority** to a team of AI agents (an Orchestrator and the Backend, Frontend,
+Documentation, Data, DevOps and Test specialists) that work on a Git
+repository. Every agent operation is authorized by a chain of
 Delegation Credentials verified in Rust and by OPA policy; nothing reaches the
 repository without the Engineer's signed approval, and merging stays human.
 
@@ -24,6 +25,29 @@ Engineer console, the test Runner and the **staging** service: after you merge
 a pull request in Gitea it builds the new `main` and serves it on
 127.0.0.1:8801 ("Apri l'app" in the console). Full guide (Italian):
 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+
+## The agent team
+
+One shared registry (`poc/packages/plan-contracts/src/agent-roles.mjs`) defines
+the specialists; every layer (Gateway, OPA, Orchestrator, agents, wallets,
+console) reads it.
+
+| Agent | Works on | Notes |
+| --- | --- | --- |
+| Orchestrator | branch, Tasks, Draft PR | Chooses, for each file, the specialist whose skill matches it |
+| Backend | server-side code, APIs, contracts | |
+| Frontend | user interface code | |
+| Documentation (`docs`) | README and documentation | Documents only what the code shows |
+| Data (`data`) | seed/data files, schemas, migrations | Keeps data valid; never rewrites existing records |
+| DevOps (`devops`) | Dockerfile, CI and build configuration | `.github/` stays forbidden by the default policy |
+| Test | the project's test sources, test runs | The only role that may run the tests |
+
+Each one has its own DID, MCP-wallet signing key and Agent Card, and gets
+authority only through a per-Task Child credential derived from the
+Engineer-signed Root. The Orchestrator uses only the specialists a requirement
+needs: on `iam-console-poc` that is Backend, Frontend and Test; the demo
+project `demo-repositories/campus-library` also needs Data, Documentation and
+DevOps.
 
 ## How a session works
 
@@ -96,7 +120,9 @@ Details and code reviews: [docs/RUN_LOG.md](docs/RUN_LOG.md).
 | Per-role MCP wallets (one signing key each) | `poc/engineer-console/src/role-wallet.mjs`, `services/delegation-adapter/src/config.rs` |
 | OPA policy | `poc/opa/policy.rego` |
 | Test Runner | `poc/apps/test-runner-controller/`, `deploy/runner/start.mjs` |
-| Staging (redeploys merged main) | `deploy/staging/deployer.mjs`, `poc/engineer-console/src/staging.mjs` |
+| Staging (redeploys merged main) | `deploy/staging/deployer.mjs`, `poc/engineer-console/src/staging.mjs`, detection in `staging-detect.mjs` |
+| Agent role registry | `poc/packages/plan-contracts/src/agent-roles.mjs` |
+| Demo repositories | `demo-repositories/` (campus-library, unit-convert) |
 | Trust registries (EVM) | `blockchain/` |
 
 ## Tests (no paid model calls)
@@ -132,8 +158,8 @@ The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
 - The base branch is the repository's default branch (e.g. `main` or
   `master`); agents always work on `feature/<session>`, a namespace that is
   fixed and protected by OPA.
-- **One MCP-wallet per role.** The Orchestrator and each agent (Backend,
-  Frontend, Test) have their own wallet process: the Rust delegation library
+- **One MCP-wallet per role.** The Orchestrator and each specialist (Backend,
+  Frontend, Documentation, Data, DevOps, Test) have their own wallet process: the Rust delegation library
   plus ONLY that role's signing key, generated inside the wallet (only its
   public key is published on-chain). Agents and the Orchestrator send their
   parameters (their credential, the Gateway challenge) to their own wallet and

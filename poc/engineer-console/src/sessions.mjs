@@ -276,9 +276,12 @@ export class EngineerSessions {
         // earlier real pilots); free runs stop at the first one.
         executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: scripted ? 1 : 4},
         ...(createEnabled ? {enableNativeCreateFile: true} : {}),
-        draftTitle: (reference ? "[RIFERIMENTO] " : scripted ? "[SIMULATA] " : "") + session.requirement.slice(0, 120),
+        // The owner refuses a title with surrounding blanks: trim after cutting.
+        draftTitle: ((reference ? "[RIFERIMENTO] " : scripted ? "[SIMULATA] " : "") +
+          session.requirement.replace(/\s+/gu, " ").slice(0, 120)).trim(),
         draftBody: `Sessione ${session.id}, requisito approvato dall'Engineer.\n\n` +
-          `${session.requirement}\n\n` + (reference
+          `${session.requirement.length > 3000 ? session.requirement.slice(0, 3000).trim() + "…" : session.requirement}\n\n` +
+          (reference
           ? "Codice: SOLUZIONE DI RIFERIMENTO del ricercatore, scritta dagli agenti senza IA attraverso " +
             "l'intera catena di autorizzazione (Child DC, Gateway, OPA). Non è codice generato da un modello.\n"
           : scripted

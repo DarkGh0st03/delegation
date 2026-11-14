@@ -56,7 +56,8 @@ docker compose up
  │
  ├─ app        127.0.0.1:8700    console dell'Engineer; per ogni sessione:
  │                               Gateway, Review Host, Orchestrator e agenti
- │                               Backend/Frontend/Test (A2A su loopback)
+ │                               Backend/Frontend/Documentation/Data/DevOps/Test
+ │                               (A2A su loopback)
  ├─ runner     (solo rete interna) esegue i test in container Docker usa e getta
  └─ staging    (solo rete interna) dopo ogni merge su main costruisce quel commit
                                  e lo pubblica su 127.0.0.1:8801 (una porta per
@@ -85,8 +86,9 @@ richieste salvate dalla console), `delegation-staging` (profili dell'app di
 prova e stato dei deploy). Anvil invece riparte da zero a ogni avvio e
 `trust-bootstrap` registra di nuovo i contratti. **Blockchain e app vanno
 sempre riavviate insieme**: all'avvio il core Rust dell'Engineer genera nuove
-chiavi per gli accumulatori e registra le identità dei 5 ruoli (Engineer,
-Orchestrator, Backend, Frontend, Test) su una catena pulita. Per questo `anvil`
+chiavi per gli accumulatori e registra le identità degli 8 ruoli (Engineer,
+Orchestrator, Backend, Frontend, Documentation, Data, DevOps, Test) su una
+catena pulita, ciascuno con il proprio wallet. Per questo `anvil`
 e `app` non ripartono da soli: usa sempre `docker compose down` seguito da
 `docker compose up -d`.
 
@@ -101,7 +103,7 @@ una sola pagina principale più una pagina per ogni sessione:
 | Home · Repository | Tabella delle repository (selezione con un clic, cestino per eliminarle da Gitea) e import **solo dal tuo account GitHub** (`GITHUB_OWNER` nel file `.env`; per le repository private un `GITHUB_TOKEN` di sola lettura, che resta nel server), con protezione del branch principale |
 | Home · Configura policy | Popup con le regole pubblicate su OPA e applicate dal Gateway: branch protetti, percorsi non modificabili, Draft PR consentita. Il branch di lavoro `feature/<sessione>` è fisso |
 | Home · Prompt | Campo di testo in stile chat per il requisito in linguaggio naturale. Le sessioni usano Gemini: inviare il prompt avvia la sessione, con i limiti di chiamate e token |
-| Home · App (main) | Pulsante **Apri l'app ↗**: la versione di `main` pubblicata dal servizio di staging, con il commit attivo (`main @ abc1234`) e, durante un aggiornamento, "Build della nuova versione…". Si aggiorna da solo ogni 5 secondi |
+| Home · App (main) | Pulsante **Apri l'app ↗**: la versione di `main` pubblicata dal servizio di staging, con il commit attivo (`main @ abc1234`) e, durante un aggiornamento, "Build della nuova versione…". Si aggiorna da solo ogni 5 secondi. Per una repository nuova la console legge i suoi file e mostra **Pubblica l'app** se trova un'interfaccia web (un clic per confermare la proposta) oppure **Interfaccia non disponibile** (libreria, programma a riga di comando, solo API), con il motivo passando il mouse |
 | Home · Configura → App di prova | Come costruire e avviare l'app della repository: immagine Docker, comando di build, comando di avvio, porta. Per `iam-console-poc` è già impostato. Non fa parte dei permessi degli agenti né della firma |
 | Home · Sessioni recenti | Elenco delle sessioni con stato e numero della Draft PR. Le vecchie si archiviano (non si cancellano) con `docker compose exec app node poc/engineer-console/scripts/archive-sessions.mjs --keep 2` |
 | Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519, scheda della Draft PR, riepilogo, chiamate a Gemini, pulsante di stop |
@@ -199,6 +201,21 @@ Limiti attuali, dichiarati:
   di sola lettura e accetta richieste solo dal Gateway (token privato). I
   container di test hanno rete (servono `npm ci` e Playwright);
 - il primo `run_tests` scarica dipendenze e browser: può richiedere vari minuti.
+
+### Il team di agenti
+
+Oltre a Backend, Frontend e Test ci sono **Documentation** (README e
+documentazione), **Data** (file di dati, seed, schemi, migrazioni) e **DevOps**
+(Dockerfile, CI, configurazione di build). Ognuno ha la sua identità sulla
+blockchain, il suo wallet e la sua Agent Card. L'Orchestrator vede la
+specializzazione di ciascuno e assegna ogni file all'agente adatto,
+coinvolgendo solo quelli che servono: su `iam-console-poc` bastano Backend,
+Frontend e Test.
+
+Per vederli al lavoro ci sono due progetti di esempio in `demo-repositories/`
+(istruzioni e requisiti da provare nel suo README): **campus-library**, una
+piccola web app con dati, README e Dockerfile, e **unit-convert**, una
+libreria senza interfaccia. Pubblicali sul tuo GitHub e importali dalla console.
 
 ### App di prova (staging): vedere il risultato dopo il merge
 
