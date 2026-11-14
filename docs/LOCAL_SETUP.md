@@ -123,8 +123,8 @@ firma dell'Engineer.
    Gateway e restituisce una proposta di permessi (operazione + ResourceURI sul
    branch `feature/<sessione>`), salvata come checkpoint firmato.
    Il Planner è Gemini (a pagamento, serve `GEMINI_API_KEY` nel file `.env`).
-   Le modalità gratuite senza IA descritte sotto esistono solo per i test
-   automatici e la sandbox (`DELEGATION_FREE_MODES=1`): la console non le offre.
+   La modalità gratuita senza IA descritta sotto esiste solo per i test
+   automatici e la sandbox (`DELEGATION_FREE_MODES=1`): la console non la offre.
 2. **Revisione.** Nella finestra "Rivedi e approva i permessi" puoi solo
    **togliere** permessi, mai aggiungerne. Per firmare reinserisci la password:
    la console la passa al server di approvazione canonico della sessione
@@ -155,11 +155,6 @@ firma dell'Engineer.
      commento marcato `SIMULATA`: si vede tutta la catena di autorizzazione su
      un diff reale. Il requisito non è implementato; se i test del progetto
      passano nasce comunque una Draft PR etichettata `[SIMULATA]`.
-   - *Soluzione di riferimento* (solo test e sandbox): gratuita e senza IA, solo per `iam-console-poc`
-     al commit di base. Il Planner propone gli 11 file della soluzione nota del
-     ricercatore (codice e test) e gli agenti la scrivono attraverso tutta la
-     catena; nasce una Draft PR etichettata `[RIFERIMENTO]`. Non è codice
-     generato da un modello.
    - *Gemini*: gli agenti scrivono il codice; la PR nasce solo se i test passano.
 
 ### Prova con Gemini (a pagamento)
@@ -212,10 +207,21 @@ specializzazione di ciascuno e assegna ogni file all'agente adatto,
 coinvolgendo solo quelli che servono: su `iam-console-poc` bastano Backend,
 Frontend e Test.
 
-Per vederli al lavoro ci sono due progetti di esempio in `demo-repositories/`
-(istruzioni e requisiti da provare nel suo README): **campus-library**, una
-piccola web app con dati, README e Dockerfile, e **unit-convert**, una
-libreria senza interfaccia. Pubblicali sul tuo GitHub e importali dalla console.
+Per vederli al lavoro ci sono due progetti di esempio, ciascuno nella sua
+repository GitHub: **campus-library**
+(https://github.com/DarkGh0st03/campus-library), una piccola web app con dati,
+README e Dockerfile, e **unit-convert**
+(https://github.com/DarkGh0st03/unit-convert), una libreria senza interfaccia.
+Si importano dalla console come le altre. Requisiti da provare su
+campus-library:
+
+- *Ogni libro deve avere un genere: aggiungilo ai dati, filtra i libri per
+  genere nell'API (parametro `genre`), aggiungi un menu a tendina nella
+  pagina e documenta il filtro nel README* → Data, Backend, Frontend,
+  Documentation, Test.
+- *Rendi configurabile il numero massimo di risultati dell'API con la
+  variabile `MAX_RESULTS` (predefinito 50), impostala nel Dockerfile e
+  documentala nel README* → Backend, DevOps, Documentation, Test.
 
 ### App di prova (staging): vedere il risultato dopo il merge
 

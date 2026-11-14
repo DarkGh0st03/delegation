@@ -37,19 +37,16 @@ DelegationVerifier
        -> Bitstring Status List payload parsing and status-bit validation
 ```
 
-The retained standalone trust-layer integration example is:
-
-```text
-examples/live_pre_gateway_closure.rs
-```
-
-It demonstrates DID-key resolution, EVM-backed trust, accumulator-material commitment verification, authenticated Status List verification, and the transition from `ACCEPT` to `REJECT` after revocation.
+In the running system these contracts are deployed on Anvil by the
+`trust-bootstrap` service (`deploy/bootstrap/trust-bootstrap.sh`, which calls
+`scripts/deploy-local.sh`); the Engineer core then enrols the identity of every
+role (Engineer, Orchestrator and each specialist agent).
 
 ## Off-chain providers intentionally retained
 
 Some components still use in-memory storage because they represent off-chain sources in the local PoC rather than legacy trust decisions:
 
-- `InMemoryTrustStore` is used on the issuance side of the final local example to create the Rust issuer material before its public commitment/key data are published to the EVM/DID layer.
+- `InMemoryTrustStore` holds the Rust issuer material before its public commitment/key data are published to the EVM/DID layer.
 - `InMemoryPublicMaterialStore` supplies the complete accumulator public material off-chain; `EvmTrustResolver` accepts it only when its hash matches the on-chain commitment.
 - `InMemoryStatusListStore` supplies the raw signed Status List artifact off-chain. `JwtAuthenticatedStatusListCredentialProvider` authenticates the JWT using DID-resolved keys, and `EvmAnchoredStatusListResolver` checks its exact commitment against the current on-chain anchor.
 
@@ -78,64 +75,4 @@ From the repository root:
 cd blockchain
 forge test
 cd ..
-```
-
-## Trust-layer local validation
-
-This is the retained pre-Gateway trust-layer regression, including live Anvil/DID/status verification. The [root README](../README.md) describes the complete current ADK/A2A/shared-MCP workflow. After installing the DID client dependencies above, use the one-command launcher:
-
-```bash
-bash blockchain/scripts/run-pre-gateway-local.sh
-```
-
-It:
-
-1. starts a fresh Anvil chain;
-2. deploys the three contracts;
-3. configures the deterministic local identities;
-4. runs Rust formatting and tests;
-5. runs Solidity tests;
-6. resolves the DID verification keys;
-7. executes `live_pre_gateway_closure`;
-8. verifies `beforeRevocation=ACCEPT` and `afterRevocation=REJECT`;
-9. finishes with `preGatewayBlockchainPhase=COMPLETE`.
-
-Anvil is intentionally left running after successful validation.
-
-## Manual validation on an already running Anvil instance
-
-If Anvil and the deployed contracts are already available, export the required environment variables and run:
-
-```bash
-bash blockchain/scripts/check-pre-gateway.sh
-```
-
-Required variables:
-
-```text
-DID_REGISTRY_ADDRESS
-ENTERPRISE_TRUST_REGISTRY_ADDRESS
-ISSUER_REGISTRY_ADDRESS
-GOVERNANCE_PRIVATE_KEY
-ROOT_PRIVATE_KEY
-HOLDER_PRIVATE_KEY
-```
-
-Optional defaults:
-
-```text
-RPC_URL=http://127.0.0.1:8545
-CHAIN_ID=31337
-```
-
-`ROOT_ID` and `HOLDER_ID` are derived automatically from the private keys when omitted.
-
-A successful final run must include:
-
-```text
-didResolution=OK
-statusCredentialSignature=VALID
-beforeRevocation=ACCEPT
-afterRevocation=REJECT
-preGatewayBlockchainPhase=COMPLETE
 ```

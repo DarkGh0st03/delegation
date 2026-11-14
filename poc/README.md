@@ -1,15 +1,21 @@
-# Active ADK/A2A/shared-MCP thesis workspace
+# poc — Node.js workspace
 
-This is the current TypeScript/Node integration layer. The [root README](../README.md) is the main architecture map.
+Everything that runs in the `app`, `runner` and `staging` containers (see
+[docs/LOCAL_SETUP.md](../docs/LOCAL_SETUP.md) and the [root README](../README.md)).
 
-- `packages/orchestrator-runtime/`: deterministic Coordinator, DC permissions and human gate.
-- `packages/agent-runtime/`: A2A/Google ADK/Gemini server, private credential evidence and MCP Worker.
-- `mcp-shared/`: one shared MCP server, catalogue and TaskRouter.
-- `apps/gateway/`: permission canonicalization, Rust verification, OPA and controlled provider operations.
-- `apps/test-runner-controller/`: exact-SHA Docker execution and independent CI.
-- `infra/`, `opa/`, `runner/acceptance/`: local dependencies, policy and researcher-owned acceptance.
-- `scripts/`: initialization, current security-negative experiments and pinned reproducibility.
+| Folder | Role |
+| --- | --- |
+| `engineer-console/` | Sigillo, the Engineer console: web UI, sessions (Planning → signed review → execution), Gemini models and budgets, repository import, staging profiles |
+| `apps/gateway/` | Policy Enforcement Point: every agent operation is prepared, verified (Rust VP + OPA) and executed on Gitea or the Runner |
+| `apps/orchestrator/` | Trusted Engineer host: Review Host (Planning, signed approval, operational Root) and the operational deployment of one session |
+| `apps/test-runner-controller/` | Runner: runs the Engineer-signed project test profile on an exact commit in a throw-away Docker container |
+| `packages/orchestrator-runtime/` | Orchestrator logic: Planner, adaptive Task decisions, Child issuance, journals and recovery |
+| `packages/agent-runtime/` | Specialist agents (Google ADK + A2A): Backend, Frontend, Documentation, Data, DevOps, Test |
+| `packages/plan-contracts/` | Shared contracts: agent role registry, project profile, signed approval, path containment |
+| `mcp-shared/` | Private per-Task cryptography boundary (Child DCs and VPs through each role's wallet) |
+| `opa/` | Rego policy and its tests |
+| `scripts/` | Local preparation, OPA tests, trust bootstrap |
 
-Canonical live entrypoint: `packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`. It **requires a new manual billing decision**. Regular regressions are offline and do not call Gemini APIs.
-
-For a quick workspace check: `npm --prefix poc run check:scaffold`.
+Tests (no paid model calls): `npm --prefix poc run console:test`, `gateway:test`,
+`agent-runtime:test`, `orchestrator-runtime:test`, `orchestrator:test`,
+`plan-contracts:test`, `runner:test`, `opa:test`.

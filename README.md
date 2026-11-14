@@ -46,8 +46,9 @@ Each one has its own DID, MCP-wallet signing key and Agent Card, and gets
 authority only through a per-Task Child credential derived from the
 Engineer-signed Root. The Orchestrator uses only the specialists a requirement
 needs: on `iam-console-poc` that is Backend, Frontend and Test; the demo
-project `demo-repositories/campus-library` also needs Data, Documentation and
-DevOps.
+project [campus-library](https://github.com/DarkGh0st03/campus-library) also
+needs Data, Documentation and DevOps (a library without user interface:
+[unit-convert](https://github.com/DarkGh0st03/unit-convert)).
 
 ## How a session works
 
@@ -82,9 +83,8 @@ DevOps.
 
 Sessions run with **Gemini** (`gemini-3.8-flash`, paid): sending the prompt
 starts the session, bounded by per-session call and token limits, with full
-per-call diagnostics. Two free modes without AI (simulated edits and the known
-reference solution of the example requirement) remain only for automated
-tests and the offline sandbox (`DELEGATION_FREE_MODES=1`).
+per-call diagnostics. A free mode without AI (simulated edits) remains only
+for automated tests and the offline sandbox (`DELEGATION_FREE_MODES=1`).
 
 Repositories are imported **only from the Engineer's GitHub account**
 (`GITHUB_OWNER` in `.env`; optional read-only `GITHUB_TOKEN` for private ones,
@@ -122,7 +122,6 @@ Details and code reviews: [docs/RUN_LOG.md](docs/RUN_LOG.md).
 | Test Runner | `poc/apps/test-runner-controller/`, `deploy/runner/start.mjs` |
 | Staging (redeploys merged main) | `deploy/staging/deployer.mjs`, `poc/engineer-console/src/staging.mjs`, detection in `staging-detect.mjs` |
 | Agent role registry | `poc/packages/plan-contracts/src/agent-roles.mjs` |
-| Demo repositories | `demo-repositories/` (campus-library, unit-convert) |
 | Trust registries (EVM) | `blockchain/` |
 
 ## Tests (no paid model calls)
@@ -176,4 +175,5 @@ The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
 - Gemini limits are on calls and reported tokens, not on money: set a spending
   limit in the Google project. Never run paid sessions without consent.
 
-Historical reports of earlier iterations are kept in [docs/archive](docs/archive/).
+Reports of earlier iterations are in the Git history (removed from the tree
+in November 2026 to keep the repository focused on the current system).
