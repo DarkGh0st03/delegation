@@ -123,11 +123,13 @@ export class GiteaAdmin {
    * poc/scripts/bootstrap-gitea.sh: protected default branch, Gateway write
    * collaborator, Runner read collaborator.
    */
-  async importRepository({cloneUrl, name}) {
+  async importRepository({cloneUrl, name, credentials}) {
     const url = validateCloneUrl(cloneUrl);
     validateRepoName(name);
     await this.#call("POST", "/repos/migrate", {
       clone_addr: url, repo_owner: this.#org, repo_name: name, service: "git",
+      // One-time clone of a private repository; Gitea does not keep a mirror.
+      ...(credentials ? {auth_username: credentials.username, auth_password: credentials.password} : {}),
       mirror: false, private: true, issues: false, labels: false, milestones: false,
       pull_requests: false, releases: false, wiki: false, lfs: false
     }, [201]);
@@ -143,5 +145,12 @@ export class GiteaAdmin {
     await this.#call("PUT", `${path}/collaborators/${encodeURIComponent(this.#runnerUser)}`,
       {permission: "read"}, [204]);
     return this.repositoryDetail(name);
+  }
+
+  /** Delete a repository of the organisation (branches, PRs and history). */
+  async deleteRepository(name) {
+    validateRepoName(name);
+    await this.#call("DELETE", `/repos/${encodeURIComponent(this.#org)}/${encodeURIComponent(name)}`,
+      undefined, [204]);
   }
 }

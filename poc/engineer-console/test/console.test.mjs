@@ -23,13 +23,24 @@ class FakeGitea {
     if (name !== REPO.name) { const e = Error("missing"); e.status = 404; throw e; }
     return structuredClone(REPO);
   }
+  deleted = [];
   async importRepository(input) {
     validateCloneUrl(input.cloneUrl); validateRepoName(input.name);
     this.imported.push(input); return structuredClone(REPO);
   }
+  async deleteRepository(name) { validateRepoName(name); this.deleted.push(name); }
+}
+class FakeGitHub {
+  configured = true; owner = "DarkGh0st03";
+  cloneCredentials = undefined;
+  async listRepositories() { return [{name: "iam-console-poc", private: false}, {name: "greeter-lib", private: false}]; }
+  async cloneUrlFor(name) {
+    if (!(await this.listRepositories()).some(r => r.name === name)) throw Error("not one of the owner's repositories");
+    return `https://github.com/${this.owner}/${name}.git`;
+  }
 }
 
-async function startConsole(t, {sessions} = {}) {
+async function startConsole(t, {sessions, github = new FakeGitHub()} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "console-test-"));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const users = {engineer: hashPassword("correct-horse")};
@@ -41,7 +52,7 @@ async function startConsole(t, {sessions} = {}) {
   const port = server.address().port;
   handler = createConsoleHandler({auth: new ConsoleAuth({users}), gitea,
     store: new ConsoleStore(join(dir, "console")),
-    health: async () => ({ready: true, checks: []}), port, sessions});
+    health: async () => ({ready: true, checks: []}), port, sessions, github});
   const base = `http://127.0.0.1:${port}`;
   const call = (method, path, {body, cookie, headers = {}} = {}) => fetch(base + path, {
     method, redirect: "manual",
@@ -170,23 +181,74 @@ test("policy and requirement are stored for the selected repository", async (t) 
   assert.equal(unknown.status, 404);
 });
 
-test("repository import accepts only plain https URLs and valid names", async (t) => {
+test("repositories are imported ONLY from the configured GitHub account", async (t) => {
   const {call, login, gitea} = await startConsole(t);
   const cookie = await login();
-  for (const clone_url of ["http://github.com/a/b.git", "https://user:pw@github.com/a/b.git",
-    "file:///etc/passwd", "https://github.com/a/b.git?x=1",
-    "https://github.com/a/b/tree/feature/x", "https://github.com/a/b/blob/main/README.md",
-    "https://github.com/onlyowner"]) {
-    const r = await call("POST", "/api/repos/import", {cookie, body: {clone_url, name: "b"}});
-    assert.equal(r.status, 400, clone_url);
+  const list = await (await call("GET", "/api/github/repos", {cookie})).json();
+  assert.equal(list.owner, "DarkGh0st03");
+  assert.deepEqual(list.repositories.map(r => r.name), ["iam-console-poc", "greeter-lib"]);
+  // A repository of another account, a URL or a traversal name is refused.
+  for (const body of [{github_repo: "someone-else-repo"}, {clone_url: "https://github.com/a/b.git"},
+    {github_repo: "../iam-console-poc"}]) {
+    const r = await call("POST", "/api/repos/import", {cookie, body});
+    assert.equal(r.status, 400, JSON.stringify(body));
   }
-  const badName = await call("POST", "/api/repos/import", {cookie,
-    body: {clone_url: "https://github.com/a/b.git", name: "../b"}});
-  assert.equal(badName.status, 400);
-  const ok = await call("POST", "/api/repos/import", {cookie,
-    body: {clone_url: "https://github.com/a/b.git", name: "b"}});
+  const ok = await call("POST", "/api/repos/import", {cookie, body: {github_repo: "greeter-lib"}});
   assert.equal(ok.status, 201);
-  assert.equal(gitea.imported.length, 1);
+  assert.deepEqual(gitea.imported.map(i => [i.cloneUrl, i.name]),
+    [["https://github.com/DarkGh0st03/greeter-lib.git", "greeter-lib"]]);
+  // Without GITHUB_OWNER the import is disabled.
+  const off = await startConsole(t, {github: {configured: false}});
+  const offCookie = await off.login();
+  assert.equal((await off.call("POST", "/api/repos/import", {cookie: offCookie,
+    body: {github_repo: "greeter-lib"}})).status, 409);
+});
+
+test("a repository can be deleted, except while a session is running on it", async (t) => {
+  const busy = {list: () => [{repository: {name: "iam-console-poc"}, phase: "executing"}]};
+  const {call, login, gitea} = await startConsole(t, {sessions: busy});
+  const cookie = await login();
+  assert.equal((await call("DELETE", "/api/repos/iam-console-poc", {cookie})).status, 409);
+  assert.equal((await call("DELETE", "/api/repos/greeter-lib", {cookie})).status, 200);
+  assert.equal((await call("DELETE", "/api/repos/..%2Fx", {cookie})).status, 400);
+  assert.deepEqual(gitea.deleted, ["greeter-lib"]);
+});
+
+test("the console starts only Gemini sessions (free modes are test-only)", async (t) => {
+  const started = [];
+  const sessions = {list: () => [], start: (input) => { started.push(input.mode); return {id: "s-" + "a".repeat(12)}; }};
+  const {call, login} = await startConsole(t, {sessions});
+  const cookie = await login();
+  const request = await (await call("POST", "/api/requests", {cookie,
+    body: {repository: "iam-console-poc", requirement: "Allow searching users by name"}})).json();
+  const previous = process.env.DELEGATION_FREE_MODES;
+  delete process.env.DELEGATION_FREE_MODES;
+  t.after(() => { if (previous !== undefined) process.env.DELEGATION_FREE_MODES = previous; });
+  const scripted = await call("POST", "/api/requests/" + request.request.id + "/planning",
+    {cookie, body: {mode: "scripted"}});
+  assert.equal(scripted.status, 400);
+  const gemini = await call("POST", "/api/requests/" + request.request.id + "/planning",
+    {cookie, body: {mode: "gemini", gemini_consent: true}});
+  assert.equal(gemini.status, 202);
+  assert.deepEqual(started, ["gemini"]);
+});
+
+test("old sessions are archived (moved, never deleted), keeping the newest", async (t) => {
+  const {mkdirSync, writeFileSync, existsSync} = await import("node:fs");
+  const {archiveSessions} = await import("../scripts/archive-sessions.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "archive-test-"));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const add = (id, at, phase) => { mkdirSync(join(dir, "sessions", id), {recursive: true});
+    writeFileSync(join(dir, "sessions", id, "session.json"), JSON.stringify({created_at: at, phase})); };
+  add("s-000000000001", "2026-11-13T10:00:00Z", "failed");
+  add("s-000000000002", "2026-11-13T11:00:00Z", "completed");
+  add("s-000000000003", "2026-11-13T12:00:00Z", "completed");
+  add("s-000000000004", "2026-11-13T12:30:00Z", "executing");
+  add("s-000000000005", "2026-11-12T09:00:00Z", "executing"); // console restarted long ago
+  const result = archiveSessions({stateDir: dir, keep: 2, nowMs: Date.parse("2026-11-13T13:00:00Z")});
+  assert.deepEqual(result.archived.sort(), ["s-000000000001", "s-000000000002", "s-000000000005"]);
+  assert.ok(existsSync(join(dir, "sessions-archive", "s-000000000001", "session.json")));
+  assert.ok(existsSync(join(dir, "sessions", "s-000000000004")), "a running session is never archived");
 });
 
 test("user file is written owner-only and stores no plaintext password", (t) => {
@@ -258,7 +320,7 @@ test("importing a repository name that already exists returns a clear 409", asyn
   gitea.importRepository = async () => { const e = Error("Gitea POST /repos/migrate failed with HTTP 409"); e.status = 409; throw e; };
   const cookie = await login();
   const r = await call("POST", "/api/repos/import", {cookie,
-    body: {clone_url: "https://github.com/a/b.git", name: "b"}});
+    body: {github_repo: "greeter-lib"}});
   assert.equal(r.status, 409);
   assert.match((await r.json()).error, /Esiste già/u);
 });
@@ -268,9 +330,9 @@ test("Gitea 422 on import becomes an actionable message", async (t) => {
   gitea.importRepository = async () => { const e = Error("Gitea POST /repos/migrate failed with HTTP 422"); e.status = 422; throw e; };
   const cookie = await login();
   const r = await call("POST", "/api/repos/import", {cookie,
-    body: {clone_url: "https://github.com/a/b.git", name: "b"}});
+    body: {github_repo: "greeter-lib"}});
   assert.equal(r.status, 422);
-  assert.match((await r.json()).error, /indirizzo di clonazione/u);
+  assert.match((await r.json()).error, /GITHUB_TOKEN/u);
 });
 
 test("each native process gets only its own secrets: Engineer core and one wallet per role", async () => {

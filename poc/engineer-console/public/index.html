@@ -21,6 +21,7 @@
         <path d="M24 19.4v8.8M22.2 18.9l-4.6 7.6M25.8 18.9l4.6 7.6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>
       </symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.5h4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4zm-3 6h12l-1 12H7zm4 2v8h2v-8zm4 0v8h2v-8z"/></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path fill="currentColor" d="M3.4 20.4l17.4-7.5a1 1 0 0 0 0-1.8L3.4 3.6a1 1 0 0 0-1.4 1.1L4 11l9 1-9 1-2 6.3a1 1 0 0 0 1.4 1.1z"/></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l8 3.5V11c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5.5z"/></symbol>
       <symbol id="i-key" viewBox="0 0 24 24"><path fill="currentColor" d="M14 3a7 7 0 0 0-6.6 9.3L2 17.7V22h4.3l1-1v-2h2v-2h2l1.4-1.4A7 7 0 1 0 14 3zm2.5 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></symbol>
@@ -86,14 +87,15 @@
               <div><h2>Repository</h2><p class="muted small" id="repo-org"></p></div>
             </div>
             <form id="import-form" class="import-row">
-              <input name="clone_url" placeholder="https://github.com/utente/progetto.git" required>
-              <input name="name" placeholder="nome in Gitea" required>
-              <button type="submit" class="btn secondary">Importa</button>
+              <select id="github-repo" name="github_repo" required>
+                <option value="">Caricamento delle tue repository GitHub…</option>
+              </select>
+              <button type="submit" class="btn secondary" id="import-btn">Importa da GitHub</button>
             </form>
             <p class="msg" id="import-msg"></p>
             <div class="table-wrap">
               <table class="table selectable">
-                <thead><tr><th>Repository</th><th>Branch</th><th>Policy</th><th>Aggiornata</th><th></th></tr></thead>
+                <thead><tr><th>Repository</th><th>Branch</th><th>Policy</th><th>Aggiornata</th><th></th><th></th></tr></thead>
                 <tbody id="repo-rows"></tbody>
               </table>
             </div>
@@ -114,16 +116,9 @@
           <textarea id="prompt" rows="3" maxlength="4000"
             placeholder="Descrivi il requisito in linguaggio naturale, es.: Consenti a un amministratore di cercare gli utenti per nome o email."></textarea>
           <div class="composer-bar">
-            <div class="segmented" role="radiogroup" aria-label="Modalità">
-              <label><input type="radio" name="mode" value="scripted" checked><span>Simulato</span></label>
-              <label><input type="radio" name="mode" value="reference"><span>Riferimento</span></label>
-              <label id="mode-gemini-label"><input type="radio" name="mode" value="gemini" id="mode-gemini"><span>Gemini</span></label>
-            </div>
-            <label class="consent" id="gemini-consent-row" hidden>
-              <input type="checkbox" id="gemini-consent"> Consento l'uso di crediti Gemini</label>
+            <span class="muted small" id="composer-hint">Ctrl + Invio per avviare</span>
             <button class="send" type="submit" id="send" title="Avvia il Planning"><svg><use href="#i-send"/></svg></button>
           </div>
-          <p class="mode-hint" id="mode-hint"></p>
           <p class="msg" id="composer-msg"></p>
         </form>
       </section>

@@ -15,6 +15,7 @@ import {ConsoleStore} from "./store.mjs";
 import {OpaPolicyPublisher} from "./opa.mjs";
 import {startTrustedCore} from "./trusted-core.mjs";
 import {EngineerSessions} from "./sessions.mjs";
+import {GitHubSource} from "./github.mjs";
 
 const config = loadLocalConfig();
 const users = readUserFile(config.usersPath);
@@ -65,9 +66,12 @@ const gitea = new GiteaAdmin({
 const sessions = config.composeMode
   ? new EngineerSessions({config, core, gitea, store, opa}) : undefined;
 
+// Import source: only the Engineer's own GitHub account (server-side token).
+const github = new GitHubSource({owner: process.env.GITHUB_OWNER, token: process.env.GITHUB_TOKEN});
+
 const handler = createConsoleHandler({
   auth: new ConsoleAuth({users}),
-  gitea, store, opa, sessions,
+  gitea, store, opa, sessions, github,
   health: () => checkEnvironment(config,
     config.composeMode ? {trustedCore: core, policySync} : {policySync}),
   port: config.consolePort

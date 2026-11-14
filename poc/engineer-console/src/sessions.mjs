@@ -307,6 +307,17 @@ export class EngineerSessions {
       }
     };
 
+    // Engineer timeline: each Task the Orchestrator assigns (after the owner
+    // validated it, before its Child DC is issued). Model text, shown as data.
+    const nextChild = operational.workflow.adaptive.nextChildParameters;
+    operational.workflow.adaptive.nextChildParameters = async (task) => {
+      const role = String(task?.agent_id ?? "");
+      const ops = Array.isArray(task?.operations) ? [...new Set(task.operations)].join(", ") : "";
+      this.#log(session, "Orchestrator → " + role + ": " + String(task?.instruction ?? "").slice(0, 400),
+        {assignment: {agent: role, task_id: String(task?.task_id ?? "").slice(0, 128), operations: ops}});
+      return nextChild(task);
+    };
+
     // The operational Root may not outlive the signed approval.
     const receipt = JSON.parse(readFileSync(join(live.dirs.approvals, session.id + ".json"), "utf8"));
     // The Runner may execute only the test phases the Engineer signed.
@@ -472,8 +483,8 @@ export class EngineerSessions {
     finally { await new Promise(ok => live.gatewayServer.close(() => ok())); }
   }
 
-  #log(session, text) {
-    session.log.push({at: new Date().toISOString(), text});
+  #log(session, text, extra) {
+    session.log.push({at: new Date().toISOString(), text, ...(extra ? extra : {})});
     this.#save(session);
   }
 

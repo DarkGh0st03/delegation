@@ -57,7 +57,7 @@ async function showApp(username, gemini) {
   $("whoami").textContent = username;
   $("avatar").textContent = (username || "?").slice(0, 1).toUpperCase();
   $("hello-name").textContent = username ? ", " + username : "";
-  updateModeAvailability();
+  updateComposerAvailability();
   refreshEnvDot();
   await route();
 }
@@ -135,7 +135,7 @@ $("env-refresh").addEventListener("click", loadHealth);
 // Home: repositories, sessions, composer
 // =====================================================================
 async function loadHome() {
-  await Promise.all([loadRepos(), loadSessionList()]);
+  await Promise.all([loadRepos(), loadSessionList(), loadGithubRepos()]);
   const remembered = store.get("sigillo.repo");
   if (!selectedRepo && remembered) await selectRepo(remembered, true);
   renderContext();
@@ -166,15 +166,22 @@ async function loadRepos() {
       const pick = el("td"); pick.appendChild(el("span", "pill brand",
         selectedRepo?.repository.name === repo.name ? "Selezionata" : "Seleziona"));
       tr.appendChild(pick);
+      const del = el("td"), trash = el("button", "icon-del");
+      trash.type = "button"; trash.title = "Elimina " + repo.name + " da Gitea";
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      const use = document.createElementNS("http://www.w3.org/2000/svg", "use"); use.setAttribute("href", "#i-trash");
+      svg.appendChild(use); trash.appendChild(svg);
+      trash.addEventListener("click", (event) => { event.stopPropagation(); deleteRepo(repo.name); });
+      del.appendChild(trash); tr.appendChild(del);
       tr.addEventListener("click", () => selectRepo(repo.name));
       rows.appendChild(tr);
     }
     if (!data.repositories.length) {
       const tr = el("tr"); const td = el("td", "muted", "Nessuna repository: importane una da GitHub.");
-      td.colSpan = 5; tr.appendChild(td); rows.appendChild(tr);
+      td.colSpan = 6; tr.appendChild(td); rows.appendChild(tr);
     }
   } catch (error) {
-    const tr = el("tr"); const td = el("td", "deny", error.message); td.colSpan = 5;
+    const tr = el("tr"); const td = el("td", "deny", error.message); td.colSpan = 6;
     tr.appendChild(td); rows.appendChild(tr);
   }
 }
@@ -206,18 +213,55 @@ function renderContext() {
   updateSend();
 }
 
+async function deleteRepo(name) {
+  if (!confirm("Eliminare " + name + " da Gitea? Si cancellano branch, Pull Request e storia della copia " +
+    "locale (la repository su GitHub non viene toccata). Le sessioni passate restano nell'archivio.")) return;
+  try {
+    await api("DELETE", "/api/repos/" + encodeURIComponent(name));
+    if (selectedRepo?.repository.name === name) { selectedRepo = null; store.set("sigillo.repo", ""); }
+    message("import-msg", name + " eliminata.", "ok");
+    await Promise.all([loadRepos(), loadGithubRepos()]); renderContext();
+  } catch (error) { message("import-msg", error.message, "error"); }
+}
+
+async function loadGithubRepos() {
+  const select = $("github-repo"); select.replaceChildren();
+  try {
+    const [gh, local] = await Promise.all([api("GET", "/api/github/repos"),
+      api("GET", "/api/repos").catch(() => ({repositories: []}))]);
+    if (!gh.configured) {
+      select.appendChild(new Option("Import disattivato: imposta GITHUB_OWNER nel file .env", ""));
+      select.disabled = true; $("import-btn").disabled = true; return;
+    }
+    if (gh.error) throw Error(gh.error);
+    const imported = new Set(local.repositories.map(r => r.name));
+    select.appendChild(new Option("Scegli una repository di " + gh.owner + " su GitHub", ""));
+    for (const r of gh.repositories) {
+      const option = new Option(r.name + (r.private ? " (privata)" : "") +
+        (imported.has(r.name) ? " — già importata" : ""), r.name);
+      option.disabled = imported.has(r.name);
+      select.appendChild(option);
+    }
+    select.disabled = false; $("import-btn").disabled = false;
+  } catch (error) {
+    select.appendChild(new Option("GitHub non disponibile: " + error.message, ""));
+    select.disabled = true; $("import-btn").disabled = true;
+  }
+}
+
 $("import-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const form = new FormData(event.target);
-  message("import-msg", "Import in corso (può richiedere un minuto)…");
+  const name = $("github-repo").value;
+  if (!name) return;
+  message("import-msg", "Import di " + name + " da GitHub in Gitea (può richiedere un minuto)…");
+  $("import-btn").disabled = true;
   try {
-    const data = await api("POST", "/api/repos/import",
-      {clone_url: form.get("clone_url"), name: form.get("name")});
+    const data = await api("POST", "/api/repos/import", {github_repo: name});
     message("import-msg", "Importata: " + data.repository.owner + "/" + data.repository.name +
       ". Il branch principale è protetto (nessun push diretto).", "ok");
-    event.target.reset();
     await selectRepo(data.repository.name);
-  } catch (error) { message("import-msg", error.message, "error"); }
+    await loadGithubRepos();
+  } catch (error) { message("import-msg", error.message, "error"); $("import-btn").disabled = false; }
 });
 
 // ---------- sessions list ----------
@@ -255,31 +299,20 @@ async function loadSessionList() {
 }
 
 // ---------- composer ----------
-const MODE_HINTS = {
-  scripted: "Simulato · gratuito, nessuna IA: il Planner sceglie i file per parole chiave e gli agenti scrivono solo commenti marcati. Utile per provare il flusso.",
-  reference: "Riferimento · gratuito, nessuna IA: gli agenti scrivono la soluzione nota del ricercatore (solo iam-console-poc, sospensione degli account).",
-  gemini: "Gemini · a pagamento: Planner, Orchestratore e agenti ragionano con il modello, con limiti di chiamate e token per sessione."
-};
-function currentMode() { return document.querySelector("input[name=mode]:checked")?.value || "scripted"; }
-function updateModeAvailability() {
-  $("mode-gemini").disabled = !me.gemini;
-  $("mode-gemini-label").title = me.gemini ? "" : "Non disponibile: GEMINI_API_KEY non configurata nel file .env";
-  if (!me.gemini && currentMode() === "gemini") document.querySelector("input[name=mode][value=scripted]").checked = true;
-  onModeChange();
-}
-function onModeChange() {
-  const mode = currentMode();
-  $("gemini-consent-row").hidden = mode !== "gemini";
-  $("mode-hint").textContent = MODE_HINTS[mode];
+// Sessions use Gemini. Sending the prompt is the Engineer's explicit start of
+// a paid session, bounded by the per-session call and token limits. (The free
+// simulated modes exist only for automated tests and the offline sandbox.)
+const sessionMode = () => store.get("sigillo.devMode") || "gemini";
+function updateComposerAvailability() {
+  const ready = me.gemini || sessionMode() !== "gemini";
+  $("composer-hint").textContent = ready ? "Ctrl + Invio per avviare"
+    : "Gemini non configurato: imposta GEMINI_API_KEY nel file .env";
   updateSend();
 }
 function updateSend() {
   const text = $("prompt").value.trim();
-  $("send").disabled = !selectedRepo || text.length < 10 ||
-    (currentMode() === "gemini" && !$("gemini-consent").checked);
+  $("send").disabled = !selectedRepo || text.length < 10 || !(me.gemini || sessionMode() !== "gemini");
 }
-for (const radio of document.querySelectorAll("input[name=mode]")) radio.addEventListener("change", onModeChange);
-$("gemini-consent").addEventListener("change", updateSend);
 $("prompt").addEventListener("input", () => {
   const t = $("prompt"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 260) + "px";
   updateSend();
@@ -298,8 +331,8 @@ $("composer").addEventListener("submit", async (event) => {
     const {request} = await api("POST", "/api/requests",
       {repository: selectedRepo.repository.name, requirement: $("prompt").value});
     const {session} = await api("POST", "/api/requests/" + request.id + "/planning",
-      {mode: currentMode(), gemini_consent: $("gemini-consent").checked});
-    $("prompt").value = ""; $("gemini-consent").checked = false; message("composer-msg", "");
+      {mode: sessionMode(), gemini_consent: true});
+    $("prompt").value = ""; message("composer-msg", "");
     location.hash = "#/session/" + session.id;
   } catch (error) { message("composer-msg", error.message, "error"); updateSend(); }
 });
@@ -437,7 +470,17 @@ function classifyLog(text) {
   return "";
 }
 function feedEvents(s) {
-  const events = s.log.map((l, i) => ({key: "l" + i, at: l.at, kind: classifyLog(l.text), text: l.text}));
+  let afterFail = false;
+  const events = s.log.map((l, i) => {
+    if (l.assignment) {
+      const retry = afterFail; afterFail = false;
+      return {key: "l" + i, at: l.at, kind: "assign" + (retry ? " retry" : ""), assignment: l.assignment,
+        text: l.text.replace(/^Orchestrator → [^:]*: /u, ""), retry};
+    }
+    const kind = classifyLog(l.text);
+    if (kind === "fail") afterFail = true;
+    return {key: "l" + i, at: l.at, kind, text: l.text};
+  });
   s.gateway_decisions.forEach((d, i) => {
     const r = describeResource(d.resource);
     const runnerFail = d.decision === "allow" && /provider_unavailable/u.test(d.reason || "");
@@ -458,7 +501,13 @@ function renderFeed(s) {
     li.appendChild(el("span", "t", time(e.at)));
     li.appendChild(el("span", "ico"));
     const txt = el("span", "txt");
-    if (e.op) {
+    if (e.assignment) {
+      const who = el("span", "who", (e.retry ? "Orchestrator riassegna a " : "Orchestrator assegna un Task a "));
+      txt.appendChild(who);
+      txt.appendChild(el("span", "role " + e.assignment.agent, e.assignment.agent));
+      txt.appendChild(el("span", "instr", e.text));
+      if (e.assignment.operations) txt.appendChild(el("span", "ops", e.assignment.operations));
+    } else if (e.op) {
       txt.appendChild(el("span", "role " + e.role, e.role));
       txt.appendChild(el("span", "op", e.op + " "));
       txt.append(e.path + " — " + e.verdict);
@@ -499,13 +548,15 @@ function renderPr(s) {
   try { a.href = "http://127.0.0.1:3000" + new URL(pr.url).pathname; } catch { a.href = "#"; }
   a.target = "_blank"; a.rel = "noopener"; card.appendChild(a);
 }
+const PHASE_LABELS = {"planning": "Orchestrator Planning", "adaptive-execution": "Orchestrator Execution",
+  "backend": "Backend", "frontend": "Frontend", "test": "Test"};
 function renderGemini(s) {
   const calls = s.model_calls ?? [];
   $("sv-gemini-box").hidden = !calls.length;
   const rows = $("sv-gemini"); rows.replaceChildren();
   for (const c of calls) {
     const tr = el("tr");
-    tr.appendChild(el("td", "", time(c.at))); tr.appendChild(el("td", "", c.phase));
+    tr.appendChild(el("td", "", time(c.at))); tr.appendChild(el("td", "", PHASE_LABELS[c.phase] || c.phase));
     tr.appendChild(el("td", c.ok ? "allow" : "deny", c.ok ? "ok" : (c.layer === "budget" ? "scartata (limite)" : "errore")));
     tr.appendChild(el("td", "", (c.ms / 1000).toFixed(1) + " s"));
     tr.appendChild(el("td", "", c.total_tokens != null ? c.input_tokens + " + " + c.output_tokens + " = " + c.total_tokens : "—"));
@@ -610,7 +661,6 @@ $("rv-reject").addEventListener("click", async () => {
 // Bootstrap
 // =====================================================================
 (async () => {
-  onModeChange();
   try {
     const who = await api("GET", "/api/me");
     if (who.username) await showApp(who.username, who.gemini_available); else showLogin();

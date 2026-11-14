@@ -137,7 +137,12 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
 .hero p { color: var(--muted); margin: 6px 0 0; }
 .home-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 20px; align-items: start; }
 .home-grid > *, .session-grid > * { min-width: 0; }
-.import-row { display: grid; grid-template-columns: 1.6fr 1fr auto; gap: 8px; }
+.import-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+select { cursor: pointer; }
+.icon-del { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); cursor: pointer; }
+.icon-del:hover { color: var(--err); border-color: #f6c9c9; background: var(--err-bg); }
+.icon-del svg { width: 16px; height: 16px; }
 .table-wrap { max-height: 330px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; margin-top: 12px; }
 .table-wrap.tall { max-height: 46vh; }
 .table { width: 100%; border-collapse: collapse; font-size: .9rem; }
@@ -254,6 +259,14 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
 .feed li.milestone .txt { font-weight: 600; color: var(--ink); }
 .feed li.milestone .ico { background: var(--brand); }
 .feed li.denied .txt { color: var(--err); font-weight: 600; }
+.feed li.assign { margin-top: 10px; background: linear-gradient(90deg, #f3f0ff, transparent); border-radius: 10px;
+  border-bottom: 0; box-shadow: inset 3px 0 0 var(--role-orchestrator); }
+.feed li.assign .ico { background: var(--role-orchestrator); }
+.feed li.assign .txt { color: var(--ink); }
+.feed li.assign .who { font-weight: 700; }
+.feed li.assign .instr { display: block; color: var(--ink-2); font-size: .86rem; margin-top: 2px; }
+.feed li.assign .ops { display: block; color: var(--muted); font-size: .78rem; margin-top: 2px; font-family: ui-monospace, Consolas, monospace; }
+.feed li.retry { box-shadow: inset 3px 0 0 #f59e0b; background: linear-gradient(90deg, #fff6e5, transparent); }
 .feed .op { font-family: ui-monospace, Consolas, monospace; font-size: .82rem; }
 .role { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: .74rem; font-weight: 700; color: #fff; margin-right: 6px;
   background: #64748b; text-transform: capitalize; }

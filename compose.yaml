@@ -166,10 +166,14 @@ services:
       OPA_URL: http://opa:8181
       ANVIL_URL: http://anvil:8545
       RUNNER_URL: http://runner:8095
-      # Paid Gemini (optional). Only this service receives the key; every
-      # session also needs the Engineer's explicit consent in the console.
+      # Paid Gemini. Only this service receives the key; every session is
+      # started explicitly by the Engineer and is bounded by call/token limits.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      # The ONLY import source: this GitHub account. The optional read-only
+      # token (private repositories) stays in this service.
+      GITHUB_OWNER: ${GITHUB_OWNER:-DarkGh0st03}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     volumes:
       - config:/config:ro
       - state:/state

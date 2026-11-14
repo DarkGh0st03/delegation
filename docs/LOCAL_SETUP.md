@@ -90,10 +90,10 @@ una sola pagina principale più una pagina per ogni sessione:
 | Dove | Cosa c'è |
 |---|---|
 | Accesso | Password con hash scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
-| Home · Repository | Tabella delle repository (selezione con un clic) e import da URL https pubblico, con protezione del branch principale |
+| Home · Repository | Tabella delle repository (selezione con un clic, cestino per eliminarle da Gitea) e import **solo dal tuo account GitHub** (`GITHUB_OWNER` nel file `.env`; per le repository private un `GITHUB_TOKEN` di sola lettura, che resta nel server), con protezione del branch principale |
 | Home · Configura policy | Popup con le regole pubblicate su OPA e applicate dal Gateway: branch protetti, percorsi non modificabili, Draft PR consentita. Il branch di lavoro `feature/<sessione>` è fisso |
-| Home · Prompt | Campo di testo in stile chat per il requisito in linguaggio naturale, con la modalità: Simulato, Riferimento o Gemini (con consenso esplicito ai costi) |
-| Home · Sessioni recenti | Elenco delle sessioni con stato e numero della Draft PR |
+| Home · Prompt | Campo di testo in stile chat per il requisito in linguaggio naturale. Le sessioni usano Gemini: inviare il prompt avvia la sessione, con i limiti di chiamate e token |
+| Home · Sessioni recenti | Elenco delle sessioni con stato e numero della Draft PR. Le vecchie si archiviano (non si cancellano) con `docker compose exec app node poc/engineer-console/scripts/archive-sessions.mjs --keep 2` |
 | Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519, scheda della Draft PR, riepilogo, chiamate a Gemini, pulsante di stop |
 | Impostazioni (ingranaggio) | Stato dell'ambiente: Gitea, OPA, Anvil, contratti, moduli Rust, core dell'Engineer e verificatore del Gateway. Il pallino sull'ingranaggio è verde quando è tutto pronto |
 
@@ -110,10 +110,9 @@ firma dell'Engineer.
    **Root preliminare di sola lettura**; il Planner legge i file solo tramite il
    Gateway e restituisce una proposta di permessi (operazione + ResourceURI sul
    branch `feature/<sessione>`), salvata come checkpoint firmato.
-   - *Simulato*: gratuito e senza IA. Sceglie i file confrontando le parole del
-     requisito con i percorsi; la proposta lo dichiara esplicitamente.
-   - *Gemini*: a pagamento. Disponibile solo se `GEMINI_API_KEY` è nel file
-     `.env` e serve spuntare il consenso ai costi a ogni sessione.
+   Il Planner è Gemini (a pagamento, serve `GEMINI_API_KEY` nel file `.env`).
+   Le modalità gratuite senza IA descritte sotto esistono solo per i test
+   automatici e la sandbox (`DELEGATION_FREE_MODES=1`): la console non le offre.
 2. **Revisione.** Nella finestra "Rivedi e approva i permessi" puoi solo
    **togliere** permessi, mai aggiungerne. Per firmare reinserisci la password:
    la console la passa al server di approvazione canonico della sessione
@@ -137,11 +136,14 @@ firma dell'Engineer.
    **tutte le fasi dei test del progetto** passano sul commit finale (non c'è
    più una suite di accettazione separata). A fine esecuzione la Root viene
    revocata.
-   - *Simulato*: gli agenti non usano IA. Ogni file approvato riceve solo un
+   Nella cronologia della sessione ogni Task appare come "Orchestrator assegna
+   un Task a …", seguito dalle operazioni dell'agente; dopo un FAIL dei test
+   compare "Orchestrator riassegna a …".
+   - *Simulato* (solo test e sandbox): gli agenti non usano IA. Ogni file approvato riceve solo un
      commento marcato `SIMULATA`: si vede tutta la catena di autorizzazione su
      un diff reale. Il requisito non è implementato; se i test del progetto
      passano nasce comunque una Draft PR etichettata `[SIMULATA]`.
-   - *Soluzione di riferimento*: gratuita e senza IA, solo per `iam-console-poc`
+   - *Soluzione di riferimento* (solo test e sandbox): gratuita e senza IA, solo per `iam-console-poc`
      al commit di base. Il Planner propone gli 11 file della soluzione nota del
      ricercatore (codice e test) e gli agenti la scrivono attraverso tutta la
      catena; nasce una Draft PR etichettata `[RIFERIMENTO]`. Non è codice

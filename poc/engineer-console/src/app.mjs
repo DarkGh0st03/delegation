@@ -66,7 +66,7 @@ function validateRequirement(text) {
   return trimmed;
 }
 
-export function createConsoleHandler({auth, gitea, store, health, port, opa, sessions}) {
+export function createConsoleHandler({auth, gitea, store, health, port, opa, sessions, github}) {
   const allowedOrigins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
 
   function requireMutationGuards(req) {
@@ -137,17 +137,37 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
         return send(res, 200, await health());
       if (method === "GET" && path === "/api/repos")
         return send(res, 200, {org: gitea.org, repositories: await gitea.listRepositories()});
+      if (method === "GET" && path === "/api/github/repos") {
+        if (!github?.configured)
+          return send(res, 200, {configured: false, owner: null, repositories: []});
+        try {
+          return send(res, 200, {configured: true, owner: github.owner,
+            repositories: await github.listRepositories()});
+        } catch (error) {
+          // Reported as data: the page shows why GitHub is not available.
+          return send(res, 200, {configured: true, owner: github.owner, repositories: [],
+            error: error.message});
+        }
+      }
       if (method === "POST" && path === "/api/repos/import") {
         const body = await readJson(req);
+        // Only the Engineer's own GitHub account (GITHUB_OWNER) is a source.
+        if (!github?.configured)
+          throw new HttpError(409, "Import disabilitato: imposta GITHUB_OWNER nel file .env");
+        let cloneUrl;
+        try { cloneUrl = await github.cloneUrlFor(body.github_repo); }
+        catch (error) { throw new HttpError(400, error.message); }
+        const name = body.name === undefined || body.name === "" ? body.github_repo : body.name;
         try {
-          const repository = await gitea.importRepository({cloneUrl: body.clone_url, name: body.name});
+          const repository = await gitea.importRepository({cloneUrl, name,
+            credentials: github.cloneCredentials});
           return send(res, 201, {repository});
         } catch (error) {
           if (error.status === 409)
             throw new HttpError(409, "Esiste già una repository con questo nome in Gitea");
           if (error.status === 422)
-            throw new HttpError(422, "Gitea ha rifiutato l'import: controlla che l'URL sia " +
-              "l'indirizzo di clonazione di una repository pubblica (https://…/utente/progetto.git)");
+            throw new HttpError(422, "Gitea ha rifiutato l'import: se la repository GitHub è privata, " +
+              "imposta nel file .env un GITHUB_TOKEN di sola lettura e riavvia la console");
           throw new HttpError(400, error.message);
         }
       }
@@ -155,6 +175,17 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
       if (repoMatch) {
         const name = decodeURIComponent(repoMatch[1]);
         if (method === "GET" && !repoMatch[2]) return send(res, 200, await repoWithPolicy(name));
+        if (method === "DELETE" && !repoMatch[2]) {
+          try { validateRepoName(name); } catch (error) { throw new HttpError(400, error.message); }
+          const busy = (sessions?.list(200) ?? []).some(s => s.repository?.name === name &&
+            ["planning", "awaiting_review", "approving", "executing", "stopping"].includes(s.phase));
+          if (busy) throw new HttpError(409, "Una sessione attiva usa questa repository: interrompila prima");
+          try { await gitea.deleteRepository(name); }
+          catch (error) { throw new HttpError(error.status === 404 ? 404 : 502, error.message); }
+          store.deletePolicy(gitea.org, name);
+          if (opa) { try { await opa.publish(store.listPolicies()); } catch { /* resynced at next check */ } }
+          return send(res, 200, {deleted: name});
+        }
         if (method === "PUT" && repoMatch[2]) {
           const {repository} = await repoWithPolicy(name);
           let policy;
@@ -176,6 +207,10 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
         const request = store.getRequest(planningMatch[1]);
         if (!request) throw new HttpError(404, "Richiesta non trovata");
         const body = await readJson(req);
+        // The console runs Gemini sessions; the free scripted/reference modes
+        // remain only for automated tests and the offline sandbox.
+        if (body.mode !== "gemini" && process.env.DELEGATION_FREE_MODES !== "1")
+          throw new HttpError(400, "Modalità non disponibile: la console usa solo Gemini");
         try {
           const session = sessions.start({request, mode: body.mode,
             geminiConsent: body.gemini_consent === true, username,

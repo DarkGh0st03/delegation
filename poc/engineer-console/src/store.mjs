@@ -4,7 +4,7 @@
  * owner-only permissions; no credentials are stored here.
  */
 import {randomUUID} from "node:crypto";
-import {existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync} from "node:fs";
+import {existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
 
 const ID = /^[a-z0-9-]{1,64}$/u;
@@ -43,6 +43,11 @@ export class ConsoleStore {
       })
       .sort((a, b) => `${a.repository.owner}/${a.repository.name}`
         .localeCompare(`${b.repository.owner}/${b.repository.name}`));
+  }
+
+  deletePolicy(owner, name) {
+    const path = this.#policyPath(owner, name);
+    if (existsSync(path)) rmSync(path);
   }
 
   savePolicy(policy) {

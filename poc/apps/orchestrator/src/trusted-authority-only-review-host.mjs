@@ -918,8 +918,12 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
         const notAfter=new Date(Math.min(Date.parse(live.root_expires_at),
          Date.parse(live.expires_at))).toISOString();
+        // The owner also learns WHAT is assigned (for the Engineer's timeline):
+        // the validated choice, never a credential.
         const childParameters=await input.nextChildParameters(Object.freeze({
-         epoch:context.nextEpoch,agent_id:choice.agent_id,not_after:notAfter}));
+         epoch:context.nextEpoch,agent_id:choice.agent_id,not_after:notAfter,
+         task_id:choice.task_id,instruction:choice.instruction,
+         operations:Object.freeze(choice.permissions.map(p=>p.operation))}));
         input.signal?.throwIfAborted();
         const current=await readContext();
         if(JSON.stringify(current)!==JSON.stringify(context))deny('adaptive Task context changed before staging');

@@ -54,10 +54,17 @@ Engineer console and the test Runner. Full guide (Italian):
 4. **Draft PR** only after a verified PASS of every project test phase on the
    final commit. The Root is revoked at the end (or at once with *Stop*).
 
-Planner/agent modes: **simulated** (free, no AI, marked comments only),
-**reference solution** (free, no AI, the known solution of the example
-requirement) and **Gemini** (paid, explicit consent per session, call and token
-limits, full per-call diagnostics).
+Sessions run with **Gemini** (`gemini-3.8-flash`, paid): sending the prompt
+starts the session, bounded by per-session call and token limits, with full
+per-call diagnostics. Two free modes without AI (simulated edits and the known
+reference solution of the example requirement) remain only for automated
+tests and the offline sandbox (`DELEGATION_FREE_MODES=1`).
+
+Repositories are imported **only from the Engineer's GitHub account**
+(`GITHUB_OWNER` in `.env`; optional read-only `GITHUB_TOKEN` for private ones,
+kept server-side) and can be deleted from the console. Old sessions are
+archived, not deleted (accountability):
+`docker compose exec app node poc/engineer-console/scripts/archive-sessions.mjs --keep 2`.
 
 ## Latest successful runs
 
