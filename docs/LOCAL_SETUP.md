@@ -42,9 +42,11 @@ docker compose up
  ├─ preparazione (una volta per avvio, poi terminano)
  │   ├─ setup            genera la configurazione privata nel volume "config"
  │   │                   (password di servizio casuali, login Engineer da .env)
- │   ├─ gitea-users      crea gli account Gitea (admin, gateway, runner)
- │   ├─ gitea-bootstrap  importa iam-console-poc al commit fissato, protegge
- │   │                   main, assegna i permessi, crea i token di servizio
+ │   ├─ gitea-users      crea gli account Gitea (admin, gateway, runner,
+ │   │                   staging-deployer)
+ │   ├─ gitea-bootstrap  importa iam-console-poc al commit fissato (ai riavvii
+ │   │                   accetta main avanzato dai tuoi merge), protegge main,
+ │   │                   assegna i permessi, crea i token di servizio
  │   └─ trust-bootstrap  registra i contratti DID/Trust/Issuer su Anvil
  │
  ├─ infrastruttura
@@ -55,9 +57,14 @@ docker compose up
  ├─ app        127.0.0.1:8700    console dell'Engineer; per ogni sessione:
  │                               Gateway, Review Host, Orchestrator e agenti
  │                               Backend/Frontend/Test (A2A su loopback)
- └─ runner     (solo rete interna) esegue i test in container Docker usa e getta;
-                                 è l'UNICO servizio con il socket Docker
+ ├─ runner     (solo rete interna) esegue i test in container Docker usa e getta
+ └─ staging    (solo rete interna) dopo ogni merge su main costruisce quel commit
+                                 e lo pubblica su 127.0.0.1:8801 (una porta per
+                                 repository, da 8801 in su): "Apri l'app"
 ```
+
+`runner` e `staging` sono gli unici servizi con il socket Docker (equivale a
+root sull'host: compromesso dichiarato della tappa 1).
 
 Tutte le porte sono pubblicate solo su `127.0.0.1`: non sono raggiungibili da
 altri computer della rete.
@@ -74,7 +81,8 @@ Immagini:
 
 Dati persistenti (volumi Docker): `delegation-config` (configurazione privata),
 `delegation-gitea-data` (repository Gitea), `delegation-state` (policy e
-richieste salvate dalla console). Anvil invece riparte da zero a ogni avvio e
+richieste salvate dalla console), `delegation-staging` (profili dell'app di
+prova e stato dei deploy). Anvil invece riparte da zero a ogni avvio e
 `trust-bootstrap` registra di nuovo i contratti. **Blockchain e app vanno
 sempre riavviate insieme**: all'avvio il core Rust dell'Engineer genera nuove
 chiavi per gli accumulatori e registra le identità dei 5 ruoli (Engineer,
@@ -93,6 +101,8 @@ una sola pagina principale più una pagina per ogni sessione:
 | Home · Repository | Tabella delle repository (selezione con un clic, cestino per eliminarle da Gitea) e import **solo dal tuo account GitHub** (`GITHUB_OWNER` nel file `.env`; per le repository private un `GITHUB_TOKEN` di sola lettura, che resta nel server), con protezione del branch principale |
 | Home · Configura policy | Popup con le regole pubblicate su OPA e applicate dal Gateway: branch protetti, percorsi non modificabili, Draft PR consentita. Il branch di lavoro `feature/<sessione>` è fisso |
 | Home · Prompt | Campo di testo in stile chat per il requisito in linguaggio naturale. Le sessioni usano Gemini: inviare il prompt avvia la sessione, con i limiti di chiamate e token |
+| Home · App (main) | Pulsante **Apri l'app ↗**: la versione di `main` pubblicata dal servizio di staging, con il commit attivo (`main @ abc1234`) e, durante un aggiornamento, "Build della nuova versione…". Si aggiorna da solo ogni 5 secondi |
+| Home · Configura → App di prova | Come costruire e avviare l'app della repository: immagine Docker, comando di build, comando di avvio, porta. Per `iam-console-poc` è già impostato. Non fa parte dei permessi degli agenti né della firma |
 | Home · Sessioni recenti | Elenco delle sessioni con stato e numero della Draft PR. Le vecchie si archiviano (non si cancellano) con `docker compose exec app node poc/engineer-console/scripts/archive-sessions.mjs --keep 2` |
 | Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519, scheda della Draft PR, riepilogo, chiamate a Gemini, pulsante di stop |
 | Impostazioni (ingranaggio) | Stato dell'ambiente: Gitea, OPA, Anvil, contratti, moduli Rust, core dell'Engineer e verificatore del Gateway. Il pallino sull'ingranaggio è verde quando è tutto pronto |
@@ -190,6 +200,40 @@ Limiti attuali, dichiarati:
   container di test hanno rete (servono `npm ci` e Playwright);
 - il primo `run_tests` scarica dipendenze e browser: può richiedere vari minuti.
 
+### App di prova (staging): vedere il risultato dopo il merge
+
+Come in un sistema reale, la console non pubblica nulla da sola: c'è una
+piccola pipeline di deploy, il servizio `staging`. Ogni 5 secondi controlla il
+`main` di ogni repository con l'app di prova attiva. Quando cambia (cioè dopo
+che **tu** hai fatto il merge di una PR in Gitea):
+
+1. scarica da Gitea l'archivio di quel commit esatto (account `staging-deployer`,
+   sola lettura su tutte le repository dell'organizzazione);
+2. esegue il comando di build in un container usa e getta e ne fa un'immagine
+   `delegation-staging/<repository>:<commit>`;
+3. sostituisce il container dell'app (`delegation-staging-<repository>`), sulla
+   rete separata `delegation-staging`: niente token, nessun accesso a Gitea, OPA
+   o console; porta pubblicata solo su `127.0.0.1`;
+4. aspetta che l'app risponda. Se la nuova versione non parte rimette quella
+   precedente; se la build fallisce la versione attiva non viene toccata.
+   L'errore (con le ultime righe del log) compare passando il mouse sullo stato
+   nella home e nella finestra Configura; "Salva app di prova" riprova.
+
+La prima build di `iam-console-poc` richiede qualche minuto (`npm ci`); le
+successive circa un minuto. La dimostrazione completa diventa: **Apri l'app** →
+scrivi il requisito → approvi i permessi → gli agenti aprono la Draft PR → fai
+il merge in Gitea → dopo poco la home mostra il nuovo commit → ricarichi l'app
+e vedi la funzione nuova.
+
+Comandi utili:
+
+```bash
+docker compose logs -f staging
+```
+
+`docker compose down` ferma anche i container delle app (le immagini restano,
+quindi al riavvio l'ultima versione riparte senza nuova build).
+
 ## Prossimi passi
 
 1. Prima esecuzione completa sul PC (simulata, gratuita), poi Gemini reale solo
@@ -199,7 +243,7 @@ Limiti attuali, dichiarati:
 
 ## Problemi frequenti
 
-- **Porta già in uso** (3000, 8181, 8545 o 8700): un altro programma la occupa,
+- **Porta già in uso** (3000, 8181, 8545, 8700 o 8801): un altro programma la occupa,
   ad esempio un altro Gitea. Fermalo, oppure cambia la porta a sinistra nella
   riga `ports` del servizio in `compose.yaml`.
 - **`ENGINEER_PASSWORD` mancante**: non hai creato `.env` da `.env.example`.

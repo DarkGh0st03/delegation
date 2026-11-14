@@ -8,7 +8,8 @@
 # One-shot preparation (exit after success): setup, gitea-users,
 #   gitea-bootstrap, trust-bootstrap.
 # Application: app (Engineer console; Orchestrator, agents and Gateway are
-#   added to this stage next, then split into their own services in stage 2).
+#   added to this stage next, then split into their own services in stage 2),
+#   runner (project tests), staging (redeploys merged main: "Apri l'app").
 #
 # Every published port is bound to 127.0.0.1 only.
 
@@ -174,9 +175,12 @@ services:
       # token (private repositories) stays in this service.
       GITHUB_OWNER: ${GITHUB_OWNER:-DarkGh0st03}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      STAGING_DIR: /staging
     volumes:
       - config:/config:ro
       - state:/state
+      # Staging profiles (written here) and deploy status (read here).
+      - staging:/staging
     ports:
       - "127.0.0.1:8700:8700"
     depends_on:
@@ -206,14 +210,43 @@ services:
     networks: [infra]
     restart: unless-stopped
 
+  # Staging ("app di prova"): when main of a repository changes (a human
+  # merged a pull request) it builds that exact commit and serves it on
+  # 127.0.0.1:8801+ (one port per repository; the console shows the link).
+  # Like the Runner it holds the Docker socket; it reads Gitea with a
+  # read-only account and the app containers it starts get no token and
+  # run on the separate "staging" network (no access to Gitea/OPA/console).
+  staging:
+    <<: *app-image
+    user: "0:0"
+    command: ["node", "deploy/staging/start.mjs"]
+    environment:
+      GITEA_URL: http://gitea:3000
+      STAGING_DIR: /staging
+      STAGING_NETWORK: delegation-staging
+    volumes:
+      - config:/config:ro
+      - staging:/staging
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gitea-bootstrap: {condition: service_completed_successfully}
+    networks: [infra, staging]
+    # Time to stop the app containers before the network is removed.
+    stop_grace_period: 30s
+    restart: unless-stopped
+
 networks:
   infra:
     name: delegation-infra
+  staging:
+    name: delegation-staging
 
 volumes:
   config:
     name: delegation-config
   state:
     name: delegation-state
+  staging:
+    name: delegation-staging
   gitea-data:
     name: delegation-gitea-data

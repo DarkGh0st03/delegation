@@ -16,6 +16,7 @@ import {OpaPolicyPublisher} from "./opa.mjs";
 import {startTrustedCore} from "./trusted-core.mjs";
 import {EngineerSessions} from "./sessions.mjs";
 import {GitHubSource} from "./github.mjs";
+import {StagingStore} from "./staging.mjs";
 
 const config = loadLocalConfig();
 const users = readUserFile(config.usersPath);
@@ -69,9 +70,17 @@ const sessions = config.composeMode
 // Import source: only the Engineer's own GitHub account (server-side token).
 const github = new GitHubSource({owner: process.env.GITHUB_OWNER, token: process.env.GITHUB_TOKEN});
 
+// Staging ("Apri l'app"): profiles written here, deploy status from the
+// separate deployer service (shared volume). Absent outside Compose.
+const staging = process.env.STAGING_DIR ? new StagingStore(process.env.STAGING_DIR) : undefined;
+if (staging) {
+  try { for (const repo of await gitea.listRepositories()) staging.ensureDefault(repo.name); }
+  catch { /* Gitea not ready yet: the default is also applied on first use */ }
+}
+
 const handler = createConsoleHandler({
   auth: new ConsoleAuth({users}),
-  gitea, store, opa, sessions, github,
+  gitea, store, opa, sessions, github, staging,
   health: () => checkEnvironment(config,
     config.composeMode ? {trustedCore: core, policySync} : {policySync}),
   port: config.consolePort

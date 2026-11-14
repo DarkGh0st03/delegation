@@ -109,7 +109,7 @@ COPY --from=rust-build --chown=node:node /out/delegation-core.node \
 # Mount points prepared with the runtime user as owner, so named volumes
 # initialised from this image are writable by uid 1000.
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
-RUN mkdir -p /config /state && chown node:node /config /state
+RUN mkdir -p /config /state /staging && chown node:node /config /state /staging
 USER node
 EXPOSE 8700
 CMD ["node", "--experimental-strip-types", "--disable-warning=ExperimentalWarning", "poc/engineer-console/src/server.mjs"]

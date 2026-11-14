@@ -95,7 +95,7 @@
             <p class="msg" id="import-msg"></p>
             <div class="table-wrap">
               <table class="table selectable">
-                <thead><tr><th>Repository</th><th>Branch</th><th>Policy</th><th>Aggiornata</th><th></th><th></th></tr></thead>
+                <thead><tr><th>Repository</th><th>Branch</th><th>Policy</th><th>App (main)</th><th></th><th></th></tr></thead>
                 <tbody id="repo-rows"></tbody>
               </table>
             </div>
@@ -205,6 +205,26 @@
       <div class="modal-foot">
         <button type="button" class="btn ghost" id="policy-reset">Ripristina</button>
         <button type="submit" class="btn primary">Salva e applica</button>
+      </div>
+    </form>
+    <form id="staging-form" class="staging-form">
+      <h3>App di prova (staging)</h3>
+      <p class="muted">Dopo ogni merge su <strong>main</strong> il servizio di staging costruisce quel commit e lo
+        pubblica su un indirizzo locale: il pulsante <em>Apri l'app</em> nella home. Non fa parte dei permessi degli
+        agenti: viene eseguito solo codice che hai approvato con il merge.</p>
+      <label class="switch"><input type="checkbox" name="enabled"><span></span> Pubblica main di questa repository</label>
+      <label class="field"><span>Immagine Docker <em>(versione esplicita)</em></span>
+        <input name="image" placeholder="node:22.15.0-bookworm" spellcheck="false"></label>
+      <label class="field"><span>Comando di build <em>(installa e compila; eseguito una volta per versione)</em></span>
+        <textarea name="build" rows="2" spellcheck="false"></textarea></label>
+      <label class="field"><span>Comando di avvio <em>(deve restare in esecuzione e servire l'app)</em></span>
+        <textarea name="start" rows="3" spellcheck="false"></textarea></label>
+      <label class="field"><span>Porta dell'app nel container</span>
+        <input name="port" type="number" min="1" max="65535"></label>
+      <p class="note" id="staging-state"></p>
+      <p class="msg" id="staging-msg"></p>
+      <div class="modal-foot">
+        <button type="submit" class="btn primary">Salva app di prova</button>
       </div>
     </form>
   </dialog>

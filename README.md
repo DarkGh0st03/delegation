@@ -20,7 +20,9 @@ Open **http://127.0.0.1:8700** and sign in to **Sigillo** (the console; name
 and "Ardesia Labs" brand are fictional). The first build compiles the native
 Rust modules and takes several minutes. Compose starts Gitea, OPA and Anvil,
 prepares accounts, the example repository and the on-chain registries, the
-Engineer console and the test Runner. Full guide (Italian):
+Engineer console, the test Runner and the **staging** service: after you merge
+a pull request in Gitea it builds the new `main` and serves it on
+127.0.0.1:8801 ("Apri l'app" in the console). Full guide (Italian):
 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
 ## How a session works
@@ -94,6 +96,7 @@ Details and code reviews: [docs/RUN_LOG.md](docs/RUN_LOG.md).
 | Per-role MCP wallets (one signing key each) | `poc/engineer-console/src/role-wallet.mjs`, `services/delegation-adapter/src/config.rs` |
 | OPA policy | `poc/opa/policy.rego` |
 | Test Runner | `poc/apps/test-runner-controller/`, `deploy/runner/start.mjs` |
+| Staging (redeploys merged main) | `deploy/staging/deployer.mjs`, `poc/engineer-console/src/staging.mjs` |
 | Trust registries (EVM) | `blockchain/` |
 
 ## Tests (no paid model calls)
@@ -114,6 +117,12 @@ cargo test --locked
 The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
 
 ## Declared limits
+
+- **Staging is outside the agents' authority.** It deploys only `main`, i.e.
+  code a human merged; its profile (image, build, start, port) is set by the
+  Engineer in the console and is neither signed nor sent to OPA. Like the
+  Runner, the staging service holds the Docker socket; the app containers it
+  starts get no token and run on a separate network.
 
 - Each repository has a **project profile** (Docker image, ordered test
   phases, test folders and suffixes), bound to the Engineer's signature. It is

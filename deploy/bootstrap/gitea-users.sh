@@ -1,5 +1,5 @@
 #!/bin/sh
-# One-shot: create the Gitea accounts (admin, Gateway, Runner) with the
+# One-shot: create the Gitea accounts (admin, Gateway, Runner, staging deployer) with the
 # Gitea CLI. Runs in the Gitea image as uid 1000 against the same data volume.
 # Idempotent: existing accounts are kept unchanged.
 set -eu
@@ -34,4 +34,5 @@ ensure() {
 ensure "$(value GITEA_ADMIN_USER)" "$(value GITEA_ADMIN_PASSWORD)" "$(value GITEA_ADMIN_EMAIL)" admin
 ensure "$(value GITEA_GATEWAY_USER)" "$(value GITEA_GATEWAY_PASSWORD)" "$(value GITEA_GATEWAY_EMAIL)" user
 ensure "$(value GITEA_RUNNER_USER)" "$(value GITEA_RUNNER_PASSWORD)" "$(value GITEA_RUNNER_EMAIL)" user
+ensure "$(value GITEA_DEPLOYER_USER)" "$(value GITEA_DEPLOYER_PASSWORD)" "$(value GITEA_DEPLOYER_EMAIL)" user
 echo "Gitea accounts ready."

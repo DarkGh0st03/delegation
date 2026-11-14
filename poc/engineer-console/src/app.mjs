@@ -66,7 +66,7 @@ function validateRequirement(text) {
   return trimmed;
 }
 
-export function createConsoleHandler({auth, gitea, store, health, port, opa, sessions, github}) {
+export function createConsoleHandler({auth, gitea, store, health, port, opa, sessions, github, staging}) {
   const allowedOrigins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
 
   function requireMutationGuards(req) {
@@ -135,8 +135,12 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
 
       if (method === "GET" && path === "/api/health")
         return send(res, 200, await health());
-      if (method === "GET" && path === "/api/repos")
-        return send(res, 200, {org: gitea.org, repositories: await gitea.listRepositories()});
+      if (method === "GET" && path === "/api/repos") {
+        const repositories = await gitea.listRepositories();
+        for (const r of repositories) { try { staging?.ensureDefault(r.name); } catch { /* invalid name */ } }
+        return send(res, 200, {org: gitea.org, staging_available: !!staging,
+          repositories: repositories.map(r => staging ? {...r, staging: staging.summary(r.name)} : r)});
+      }
       if (method === "GET" && path === "/api/github/repos") {
         if (!github?.configured)
           return send(res, 200, {configured: false, owner: null, repositories: []});
@@ -161,6 +165,7 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
         try {
           const repository = await gitea.importRepository({cloneUrl, name,
             credentials: github.cloneCredentials});
+          staging?.ensureDefault(repository.name);
           return send(res, 201, {repository});
         } catch (error) {
           if (error.status === 409)
@@ -170,6 +175,18 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
               "imposta nel file .env un GITHUB_TOKEN di sola lettura e riavvia la console");
           throw new HttpError(400, error.message);
         }
+      }
+      const stagingMatch = /^\/api\/repos\/([^/]+)\/staging$/u.exec(path);
+      if (stagingMatch && (method === "GET" || method === "PUT")) {
+        if (!staging) throw new HttpError(503, "Lo staging è disponibile solo nell'avvio con Docker");
+        const {repository} = await repoWithPolicy(decodeURIComponent(stagingMatch[1]));
+        if (method === "PUT") {
+          try { staging.save(repository.name, await readJson(req)); }
+          catch (error) { throw new HttpError(error.status ?? 400, error.message); }
+        }
+        const {profile, source} = staging.profile(repository.name);
+        return send(res, 200, {repository: {owner: repository.owner, name: repository.name},
+          profile: profile ?? null, profile_source: source, status: staging.status(repository.name) ?? null});
       }
       const repoMatch = /^\/api\/repos\/([^/]+)(\/policy)?$/u.exec(path);
       if (repoMatch) {
@@ -183,6 +200,7 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
           try { await gitea.deleteRepository(name); }
           catch (error) { throw new HttpError(error.status === 404 ? 404 : 502, error.message); }
           store.deletePolicy(gitea.org, name);
+          staging?.delete(name);   // the deployer then stops its app
           if (opa) { try { await opa.publish(store.listPolicies()); } catch { /* resynced at next check */ } }
           return send(res, 200, {deleted: name});
         }

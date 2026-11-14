@@ -40,7 +40,7 @@ class FakeGitHub {
   }
 }
 
-async function startConsole(t, {sessions, github = new FakeGitHub()} = {}) {
+async function startConsole(t, {sessions, github = new FakeGitHub(), staging} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "console-test-"));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const users = {engineer: hashPassword("correct-horse")};
@@ -52,7 +52,7 @@ async function startConsole(t, {sessions, github = new FakeGitHub()} = {}) {
   const port = server.address().port;
   handler = createConsoleHandler({auth: new ConsoleAuth({users}), gitea,
     store: new ConsoleStore(join(dir, "console")),
-    health: async () => ({ready: true, checks: []}), port, sessions, github});
+    health: async () => ({ready: true, checks: []}), port, sessions, github, staging});
   const base = `http://127.0.0.1:${port}`;
   const call = (method, path, {body, cookie, headers = {}} = {}) => fetch(base + path, {
     method, redirect: "manual",

@@ -141,8 +141,64 @@ async function loadHome() {
   renderContext();
 }
 
+// ---- Staging: "Apri l'app" (deployed main of each repository) ----
+const appCells = new Map();      // repository name -> table cell
+const stagingUrls = new Map();   // repository name -> live app URL
+let stagingTimer = null;
+const STAGE_TEXT = {building: "Build della nuova versione…", starting: "Avvio della nuova versione…",
+  waiting: "In attesa del primo deploy…", failed: "Deploy non riuscito"};
+
+function renderAppCell(td, repo, available) {
+  td.replaceChildren();
+  const st = repo.staging;
+  if (!available || !st) { td.appendChild(el("span", "muted small", "—")); return; }
+  if (!st.configured || !st.enabled) {
+    const b = el("button", "btn ghost small", st.configured ? "Disattivata" : "Configura app");
+    b.type = "button"; b.title = "Come costruire e avviare l'app di questa repository";
+    b.addEventListener("click", async (event) => {
+      event.stopPropagation(); await selectRepo(repo.name); openPolicy("staging");
+    });
+    td.appendChild(b); return;
+  }
+  const status = st.status;
+  const live = status?.live_sha && status?.url;
+  if (live) stagingUrls.set(repo.name, status.url); else stagingUrls.delete(repo.name);
+  if (live) {
+    const a = el("a", "btn secondary small open-app", "Apri l'app ↗");
+    a.href = status.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.title = "Versione di main " + status.live_sha.slice(0, 7) + " su " + status.url;
+    a.addEventListener("click", (event) => event.stopPropagation());
+    td.appendChild(a);
+  }
+  let note, kind = "muted";
+  if (status && status.deployer_alive === false) { note = "servizio staging fermo"; kind = "deny"; }
+  else if (!status) note = STAGE_TEXT.waiting;
+  else if (status.state === "running" && live) note = "main @ " + status.live_sha.slice(0, 7);
+  else if (status.state === "failed") { note = live ? "ultimo deploy non riuscito" : STAGE_TEXT.failed; kind = "deny"; }
+  else { note = STAGE_TEXT[status.state] || status.state; kind = "busy"; }
+  const meta = el("span", "app-meta " + kind, note);
+  if (status?.message) meta.title = status.message + (status.log ? "\n\n" + status.log.slice(-1200) : "");
+  td.appendChild(meta);
+}
+
+/** Every few seconds while the home is open: a merge shows up as a new
+ * build and then as the new version, without reloading the page. */
+async function refreshStaging() {
+  clearTimeout(stagingTimer);
+  if (!$("app-view").hidden && !$("home-view").hidden && appCells.size) {
+    try {
+      const data = await api("GET", "/api/repos");
+      for (const repo of data.repositories) {
+        const td = appCells.get(repo.name);
+        if (td) renderAppCell(td, repo, data.staging_available);
+      }
+    } catch { /* shown at the next full reload */ }
+  }
+  stagingTimer = setTimeout(refreshStaging, 5000);
+}
+
 async function loadRepos() {
-  const rows = $("repo-rows"); rows.replaceChildren();
+  const rows = $("repo-rows"); rows.replaceChildren(); appCells.clear();
   try {
     const data = await api("GET", "/api/repos");
     $("repo-org").textContent = "Organizzazione Gitea: " + data.org;
@@ -162,7 +218,8 @@ async function loadRepos() {
         await selectRepo(repo.name); openPolicy();
       });
       policy.appendChild(button); tr.appendChild(policy);
-      tr.appendChild(el("td", "muted small", (repo.updated_at || "").slice(0, 10)));
+      const app = el("td", "app-cell"); appCells.set(repo.name, app);
+      renderAppCell(app, repo, data.staging_available); tr.appendChild(app);
       const pick = el("td"); pick.appendChild(el("span", "pill brand",
         selectedRepo?.repository.name === repo.name ? "Selezionata" : "Seleziona"));
       tr.appendChild(pick);
@@ -180,6 +237,7 @@ async function loadRepos() {
       const tr = el("tr"); const td = el("td", "muted", "Nessuna repository: importane una da GitHub.");
       td.colSpan = 6; tr.appendChild(td); rows.appendChild(tr);
     }
+    if (!stagingTimer) stagingTimer = setTimeout(refreshStaging, 5000);
   } catch (error) {
     const tr = el("tr"); const td = el("td", "deny", error.message); td.colSpan = 6;
     tr.appendChild(td); rows.appendChild(tr);
@@ -320,7 +378,7 @@ $("prompt").addEventListener("input", () => {
 $("prompt").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) $("composer").requestSubmit();
 });
-$("ctx-policy").addEventListener("click", openPolicy);
+$("ctx-policy").addEventListener("click", () => openPolicy());
 
 $("composer").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -340,8 +398,9 @@ $("composer").addEventListener("submit", async (event) => {
 // =====================================================================
 // Policy dialog (OPA rules only; the project test profile is kept as is)
 // =====================================================================
-function openPolicy() {
+function openPolicy(section) {
   if (!selectedRepo) return;
+  loadStagingForm(section === "staging");
   const p = selectedRepo.policy, f = $("policy-form").elements, r = selectedRepo.repository;
   $("policy-repo").textContent = r.owner + "/" + r.name;
   $("policy-source").textContent = {default: "predefinita", saved: "salvata"}[selectedRepo.policy_source] ??
@@ -372,6 +431,36 @@ $("policy-form").addEventListener("submit", async (event) => {
     else message("policy-msg", "Policy salvata ma NON applicata: " +
       (selectedRepo.opa_error || "OPA non raggiungibile") + ". Controlla le Impostazioni.", "error");
   } catch (error) { message("policy-msg", error.message, "error"); }
+});
+// Staging profile (same dialog, separate form: not part of the OPA policy)
+async function loadStagingForm(focus) {
+  const form = $("staging-form"), f = form.elements;
+  message("staging-msg", ""); $("staging-state").textContent = "";
+  try {
+    const data = await api("GET", "/api/repos/" + encodeURIComponent(selectedRepo.repository.name) + "/staging");
+    form.hidden = false;
+    const p = data.profile || {enabled: false, image: "node:22.15.0-bookworm", build: "", start: "", port: 3000};
+    f.enabled.checked = !!p.enabled; f.image.value = p.image; f.build.value = p.build;
+    f.start.value = p.start; f.port.value = p.port;
+    const st = data.status;
+    $("staging-state").textContent = !st ? (data.profile ? "Nessun deploy ancora registrato." : "Non configurata.") :
+      (st.live_sha ? "Attiva: main @ " + st.live_sha.slice(0, 7) + " su " + st.url + ". " : "") +
+      (st.message || "") + (st.state === "failed" ? " Correggi i comandi o premi «Salva app di prova» per riprovare." : "");
+    if (focus) form.scrollIntoView({block: "start"});
+  } catch { form.hidden = true; }
+}
+$("staging-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const f = event.target.elements;
+  try {
+    await api("PUT", "/api/repos/" + encodeURIComponent(selectedRepo.repository.name) + "/staging", {
+      version: 1, enabled: f.enabled.checked, image: f.image.value.trim(), build: f.build.value.trim(),
+      start: f.start.value.trim(), port: Number(f.port.value)});
+    await loadStagingForm(false);
+    message("staging-msg", f.enabled.checked ? "Salvato: il servizio di staging pubblica main entro pochi secondi " +
+      "(la prima build può richiedere qualche minuto)." : "Salvato: app di prova disattivata.", "ok");
+    loadRepos();
+  } catch (error) { message("staging-msg", error.message, "error"); }
 });
 $("policy-reset").addEventListener("click", async () => {
   if (selectedRepo) await selectRepo(selectedRepo.repository.name, true);
@@ -547,6 +636,14 @@ function renderPr(s) {
   // Gitea is published on the local machine only.
   try { a.href = "http://127.0.0.1:3000" + new URL(pr.url).pathname; } catch { a.href = "#"; }
   a.target = "_blank"; a.rel = "noopener"; card.appendChild(a);
+  // After the merge the staging service publishes the new main.
+  const url = stagingUrls.get(s.repository.name);
+  const note = el("p", "pr-next", "Dopo il merge in Gitea l'app di prova si aggiorna da sola in pochi minuti. ");
+  if (url) {
+    const app = el("a", "", "Apri l'app ↗"); app.href = url; app.target = "_blank"; app.rel = "noopener noreferrer";
+    note.appendChild(app);
+  }
+  card.appendChild(note);
 }
 const PHASE_LABELS = {"planning": "Orchestrator Planning", "adaptive-execution": "Orchestrator Execution",
   "backend": "Backend", "frontend": "Frontend", "test": "Test"};

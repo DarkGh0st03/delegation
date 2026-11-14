@@ -351,3 +351,18 @@ tr.denied .res-path { text-decoration: line-through; }
   .table th:nth-child(4), .table td:nth-child(4) { display: none; }
   .feed li { grid-template-columns: 54px 14px 1fr; }
 }
+
+/* Staging: "Apri l'app" */
+.app-cell { white-space: nowrap; }
+.app-cell > * { display: flex; width: max-content; }
+a.btn { text-decoration: none; }
+.app-meta { font-size: .76rem; color: var(--muted); margin-top: 4px; align-items: center; }
+#repo-rows .repo-name { white-space: nowrap; }
+.app-meta.deny { color: var(--err); font-weight: 600; }
+.app-meta.busy { color: var(--brand-ink); font-weight: 600; }
+.app-meta.busy::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%;
+  background: currentColor; animation: pulse 1.2s infinite; }
+.staging-form { margin-top: 22px; padding-top: 16px; border-top: 1px dashed var(--line); }
+.staging-form h3 { font-size: 1.05rem; margin-bottom: 4px; }
+.staging-form textarea, .staging-form input[name="image"] { font-family: var(--mono, ui-monospace, monospace); font-size: .85rem; }
+.pr-next { margin-top: 10px; font-size: .86rem; color: var(--muted); }
