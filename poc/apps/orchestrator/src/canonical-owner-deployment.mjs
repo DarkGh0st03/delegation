@@ -2,12 +2,9 @@ import {randomUUID} from "node:crypto";
 import {validateProjectProfile,testSourceProfileOf} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {resolveTrustedAuthorityOnlyExecutionBudgets} from "./trusted-authority-only-execution-budgets.mjs";
 import {join} from "node:path";
-import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {persistStatusIndexReservation} from "../../../packages/orchestrator-runtime/src/trusted-status-index-reservation.ts";
 import {TrustedAuthorityOnlyCompletionObserver} from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
-import {loadProtectedGeminiOwnerInput} from "./run-trusted-gemini-owner.mjs";
-import {loadProtectedCanonicalOwnerManifest,readProtectedCanonicalOwnerFile}
- from "./trusted-authority-only-owner-bootstrap.mjs";
+import {readProtectedCanonicalOwnerFile} from "./trusted-authority-only-owner-bootstrap.mjs";
 import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../gateway/src/gitea-executor.ts";
 import {RunnerClient} from "../../gateway/src/runner-client.ts";
@@ -63,21 +60,6 @@ async function token(file){
  const value=(await readProtectedCanonicalOwnerFile(file,8192)).trim();
  if(value.length<8||/\s/u.test(value))deny();
  return value;
-}
-
-export async function prepareOperational({expectedSourceSha,chargeAuthorization}={}){
- if(chargeAuthorization!=="I AUTHORIZE GEMINI API CHARGES")deny();
- const {pins}=await loadProtectedCanonicalOwnerManifest(
-  process.env.DELEGATION_ENGINEER_SERVICE_CONFIG,{expectedSourceSha});
- const c=JSON.parse(await readProtectedCanonicalOwnerFile(
-  process.env.DELEGATION_CANONICAL_DEPLOYMENT_CONFIG));
- return assembleCanonicalOperationalDeployment({
-  pins,config:c,async loadModelFactory(){
-   const input=await loadProtectedGeminiOwnerInput(
-    process.env.DELEGATION_GEMINI_OWNER_INPUT_FILE,{chargeAuthorization});
-   return ()=>createGeminiAdkModel({apiKey:input.geminiApiKey,model:input.modelName});
-  }
- });
 }
 
 /** Shared in-process composition. Model construction does not perform inference. */

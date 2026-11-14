@@ -72,7 +72,6 @@ FROM ${RUST_IMAGE} AS rust-build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src src
-COPY examples examples
 COPY services/delegation-adapter services/delegation-adapter
 COPY services/delegation-core-node services/delegation-core-node
 COPY services/delegation-engineer-node services/delegation-engineer-node
