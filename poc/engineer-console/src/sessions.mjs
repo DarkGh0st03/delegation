@@ -21,11 +21,9 @@ import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
 import {preflightGemini, createSessionGeminiModels, GEMINI_WORKER_SETTINGS} from "./gemini-models.mjs";
 
 const geminiModelName = () => process.env.GEMINI_MODEL || "gemini-3.8-flash";
-import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from "../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
-import {ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT} from "../../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs";
 
 /** Free modes: no AI provider is ever called. */
-const FREE_MODES = new Set(["scripted", "reference"]);
+const FREE_MODES = new Set(["scripted"]);
 import {simulatedExecutionPlan, ScriptedWorkerModel, ScriptedTestModel, ScriptedTestFileWorker,
   ScriptedDecisionModel, ScriptedRootTaskModel} from "./scripted-execution-models.mjs";
 
@@ -222,7 +220,6 @@ export class EngineerSessions {
     if (!approved.some(p => p.operation === "create_branch"))
       throw Error("Il permesso create_branch non è stato approvato: senza branch di lavoro non si può eseguire");
     const scripted = FREE_MODES.has(session.mode);
-    const reference = session.mode === "reference";
     const plan = simulatedExecutionPlan(approved, session.id, testSourceProfileOf(session.project_profile));
     if (scripted && !plan.tasks.length)
       throw Error("Nessun file approvato con lettura e modifica: niente da eseguire");
@@ -277,14 +274,11 @@ export class EngineerSessions {
         executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures: scripted ? 1 : 4},
         ...(createEnabled ? {enableNativeCreateFile: true} : {}),
         // The owner refuses a title with surrounding blanks: trim after cutting.
-        draftTitle: ((reference ? "[RIFERIMENTO] " : scripted ? "[SIMULATA] " : "") +
+        draftTitle: ((scripted ? "[SIMULATA] " : "") +
           session.requirement.replace(/\s+/gu, " ").slice(0, 120)).trim(),
         draftBody: `Sessione ${session.id}, requisito approvato dall'Engineer.\n\n` +
           `${session.requirement.length > 3000 ? session.requirement.slice(0, 3000).trim() + "…" : session.requirement}\n\n` +
-          (reference
-          ? "Codice: SOLUZIONE DI RIFERIMENTO del ricercatore, scritta dagli agenti senza IA attraverso " +
-            "l'intera catena di autorizzazione (Child DC, Gateway, OPA). Non è codice generato da un modello.\n"
-          : scripted
+          (scripted
           ? "Esecuzione SIMULATA senza IA: ogni file autorizzato riceve solo un commento marcato; il requisito NON è implementato.\n"
           : "Modifiche generate dagli agenti entro i permessi firmati dall'Engineer.\n") +
           "Gli agenti non possono fare merge: la decisione resta umana."
@@ -336,9 +330,8 @@ export class EngineerSessions {
     if (scripted) {
       const files = role => plan.tasks.filter(t => t.agent_id === role && t.path)
         .map(t => ({path: t.path, op: t.op, ...(t.reads ? {reads: t.reads} : {})}));
-      const contents = reference ? ACCOUNT_SUSPENSION_REFERENCE_FILES : undefined;
       const w = operational.localWorkers.workers, branch = session.work_branch;
-      const common = {branch, sessionId: session.id, contents};
+      const common = {branch, sessionId: session.id};
       for (const role of APPLICATION_ROLES)
         w[role].adk.model = new ScriptedWorkerModel({role, files: files(role), ...common});
       w.test.adk.model = new ScriptedTestModel({branch, worker: new ScriptedTestFileWorker(
@@ -378,8 +371,7 @@ export class EngineerSessions {
       trustedAgentRegistry: live.trustedAgentRegistry};
     const provision = await createProtectedCanonicalOperationalProvision(authority, operational);
     live.handoff = live.host.createReviewedCanonicalHandoff({provision});
-    this.#log(session, reference ? "Agenti senza IA con la SOLUZIONE DI RIFERIMENTO: " + plan.tasks.length + " Task pianificati"
-      : scripted ? "Agenti SIMULATI (nessuna IA): " + plan.tasks.length + " Task pianificati"
+    this.#log(session, scripted ? "Agenti SIMULATI (nessuna IA): " + plan.tasks.length + " Task pianificati"
       : "Agenti con Gemini: l'Orchestrator sceglie i Task entro i permessi firmati");
     let result;
     try { result = await live.handoff.runApprovedCanonical(); }
@@ -498,10 +490,6 @@ export class EngineerSessions {
     if (!this.#core.engineer?.ok || !this.#core.verifierInstance || !this.#core.credentials)
       throw Error("Il core Rust dell'Engineer o il verificatore del Gateway non sono pronti");
     if (!FREE_MODES.has(mode) && mode !== "gemini") throw Error("Modalità di Planning non valida");
-    if (mode === "reference" && (request.repository.name !== "iam-console-poc" ||
-        request.base_sha !== ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT))
-      throw Error("La soluzione di riferimento esiste solo per iam-console-poc al commit di base " +
-        ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT.slice(0, 8));
     if (mode === "gemini") {
       if (!process.env.GEMINI_API_KEY) throw Error("GEMINI_API_KEY non configurata nel file .env");
       if (geminiConsent !== true)
@@ -656,11 +644,6 @@ export class EngineerSessions {
         record: entry => this.#recordModelCall(sessionRef.current, entry)});
       model = gemini.planning();
       this.#log(session, `Planner: Gemini (${geminiModelName()}), con limiti di chiamate e token per sessione`);
-    } else if (session.mode === "reference") {
-      model = new ScriptedPlannerModel({snapshotFiles: tree.files, requirement: session.requirement,
-        baseBranch: session.base_branch,
-        referencePaths: Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES)});
-      this.#log(session, "Planner: SOLUZIONE DI RIFERIMENTO (nessuna IA, nessun costo)");
     } else {
       model = new ScriptedPlannerModel({snapshotFiles: tree.files, requirement: session.requirement,
         baseBranch: session.base_branch});

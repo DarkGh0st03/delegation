@@ -508,7 +508,7 @@ $("policy-reset").addEventListener("click", async () => {
 // =====================================================================
 // Session view: live activity, steps, approval pop-up, Draft PR
 // =====================================================================
-const MODES = {gemini: "Gemini", reference: "Soluzione di riferimento (nessuna IA)",
+const MODES = {gemini: "Gemini",
   scripted: "Simulato (nessuna IA)"};
 const STEPS = ["Planning", "Approvazione", "Esecuzione", "Test", "Draft PR"];
 
@@ -747,8 +747,7 @@ function openReview(s) {
   const until = s.proposal.expires_at ? new Date(s.proposal.expires_at) : null;
   $("rv-expiry").textContent = until ? "Firmabile fino alle " + until.toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"}) + " (mancano " +
     Math.max(0, Math.round((until - Date.now()) / 60000)) + " minuti); dopo va rifatto il Planning." : "";
-  const note = s.mode === "scripted" ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso."
-    : s.mode === "reference" ? "Proposta della soluzione di riferimento: file della soluzione nota, nessuna IA." : "";
+  const note = s.mode === "scripted" ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso." : "";
   $("rv-simulated").hidden = !note; $("rv-simulated").textContent = note;
   for (const [id, items] of [["rv-assumptions", s.proposal.assumptions], ["rv-uncertainties", s.proposal.uncertainties]]) {
     const list = $(id); list.replaceChildren();

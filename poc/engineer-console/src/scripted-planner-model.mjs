@@ -74,36 +74,11 @@ export function scriptedProposal(files) {
   };
 }
 
-/**
- * Proposal for the researcher's REFERENCE solution: existing files are read
- * and updated, missing ones created. Pure, exported for tests.
- */
-export function referenceProposal(referencePaths, snapshotFiles) {
-  const existing = new Set(snapshotFiles);
-  return {
-    requested_permissions: [
-      {operation: "create_branch", resource_type: "repository", path: null},
-      {operation: "create_pull_request", resource_type: "repository", path: null},
-      {operation: "run_tests", resource_type: "branch", path: null},
-      ...[...referencePaths].sort().flatMap(path => existing.has(path)
-        ? [{operation: "read_file", resource_type: "file", path},
-           {operation: "update_file", resource_type: "file", path}]
-        : [{operation: "create_file", resource_type: "file", path}])
-    ],
-    assumptions: ["SOLUZIONE DI RIFERIMENTO del ricercatore (nessun modello di IA): i file " +
-      "sono quelli della soluzione nota del requisito di sospensione degli account."],
-    uncertainties: ["Valida solo per iam-console-poc al commit di base: su altre versioni " +
-      "del codice i test possono fallire."]
-  };
-}
-
 export class ScriptedPlannerModel extends BaseLlm {
-  #files; #readTarget; #reference; #baseBranch; calls = 0;
-  constructor({snapshotFiles, requirement, referencePaths, baseBranch = "main"}) {
-    super({model: referencePaths ? "reference-solution-planner-no-ai" : "scripted-planner-no-ai"});
-    this.#reference = referencePaths ? referenceProposal(referencePaths, snapshotFiles) : null;
-    this.#files = referencePaths ? [...referencePaths].filter(p => snapshotFiles.includes(p)).sort()
-      : selectPlanningFiles(snapshotFiles, requirement);
+  #files; #readTarget; #baseBranch; calls = 0;
+  constructor({snapshotFiles, requirement, baseBranch = "main"}) {
+    super({model: "scripted-planner-no-ai"});
+    this.#files = selectPlanningFiles(snapshotFiles, requirement);
     this.#baseBranch = baseBranch;
     this.#readTarget = this.#files[0] ??
       snapshotFiles.find(f => /^readme/iu.test(f)) ?? snapshotFiles[0];
@@ -119,7 +94,7 @@ export class ScriptedPlannerModel extends BaseLlm {
       return;
     }
     yield {content: {role: "model", parts: [{text: JSON.stringify(
-      this.#reference ?? scriptedProposal(this.#files))}]}};
+      scriptedProposal(this.#files))}]}};
   }
 
   connect() { throw Error("Scripted planner has no live connection"); }

@@ -57,17 +57,37 @@ export function extractTypecheckErrorCodes(stdout:string,stderr:string):string[]
  * Gitea use repository-relative paths. This source-free normalization is
  * diagnostic evidence only and NEVER grants tool authorization.
  *
- * Explicit roots are part of this fixed IAM-console Runner profile, not
- * model output. Unknown workspace banners disable relative-path expansion.
+ * Workspace roots (package name -> repository directory) come from the
+ * repository's own npm workspaces, read by the Runner in the throw-away
+ * container; they only map diagnostic paths and are sanitized here.
+ * Unknown workspace banners disable relative-path expansion.
  */
-const WORKSPACE_ROOTS:Readonly<Record<string,string>>=Object.freeze({
-  "@iam/backend":"apps/backend",
-  "@iam/frontend":"apps/frontend",
-  "@iam/shared":"packages/shared",
-  "@iam/security":"security"
-});
+export type WorkspaceRoots=Readonly<Record<string,string>>;
+const WORKSPACE_NAME=/^(?:@[A-Za-z0-9_.-]+\/)?[A-Za-z0-9_.-]+$/u;
+const WORKSPACE_DIR=/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){0,4}$/u;
+/** Bounded, relative-path-only workspace map (untrusted repository data). */
+export function sanitizeWorkspaceRoots(raw:unknown):WorkspaceRoots{
+  const out:Record<string,string>=Object.create(null);
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return Object.freeze(out);
+  for(const [name,dir] of Object.entries(raw).slice(0,100)){
+    if(WORKSPACE_NAME.test(name)&&typeof dir==="string"&&WORKSPACE_DIR.test(dir)&&
+       !dir.split("/").some(part=>part==="."||part===".."))out[name]=dir;
+  }
+  return Object.freeze(out);
+}
+/** Fixed Runner script (never repository-supplied): prints the npm
+ * workspace map of /workspace as JSON, or {} when there is none. */
+export const WORKSPACE_ROOTS_SCRIPT=
+  'const fs=require("fs"),p=require("path"),r="/workspace",o={};try{'+
+  'const k=JSON.parse(fs.readFileSync(r+"/package.json","utf8"));let w=k.workspaces;'+
+  'if(w&&!Array.isArray(w))w=w.packages;for(const g of Array.isArray(w)?w.slice(0,50):[]){'+
+  'if(typeof g!=="string")continue;const ds=g.endsWith("/*")?fs.readdirSync(p.join(r,g.slice(0,-2)))'+
+  '.map(d=>g.slice(0,-2)+"/"+d):[g];for(const d of ds.slice(0,100)){try{'+
+  'const q=JSON.parse(fs.readFileSync(p.join(r,d,"package.json"),"utf8"));'+
+  'if(typeof q.name==="string")o[q.name]=d;}catch{}}}}catch{}process.stdout.write(JSON.stringify(o));';
 const BANNER=/^> ((?:@[A-Za-z0-9_-]+\/)?[A-Za-z0-9_-]+)@[0-9][A-Za-z0-9.+-]* typecheck$/u;
-export function extractTypecheckLocations(stdout:string,stderr:string):TypecheckLocation[]{
+export function extractTypecheckLocations(stdout:string,stderr:string,
+  workspaceRoots:WorkspaceRoots={}):TypecheckLocation[]{
   const lines=(stdout+"\n"+stderr).slice(0,100_000).split(/\r?\n/u).slice(0,1000);
   const candidates:TypecheckLocation[]=[];
   let workspaceRoot:string|null=null;
@@ -75,7 +95,7 @@ export function extractTypecheckLocations(stdout:string,stderr:string):Typecheck
     const banner=BANNER.exec(line);
     if(banner){
       // An unknown banner must not inherit the previous workspace root.
-      workspaceRoot=WORKSPACE_ROOTS[banner[1]!]??null;
+      workspaceRoot=Object.hasOwn(workspaceRoots,banner[1]!)?workspaceRoots[banner[1]!]!:null;
       continue;
     }
     // tsc plain: src/file.ts(12,8): error TS2322: message
@@ -130,14 +150,15 @@ export function sanitizeTypecheckErrors(raw:unknown):TypecheckError[]{
   return out;
 }
 /** Runner side: tsc error lines (plain or pretty) with their message. */
-export function extractTypecheckErrors(stdout:string,stderr:string):TypecheckError[]{
+export function extractTypecheckErrors(stdout:string,stderr:string,
+  workspaceRoots:WorkspaceRoots={}):TypecheckError[]{
   const lines=(stdout+"\n"+stderr).slice(0,100_000).replace(/\x1b\[[0-9;?]*[A-Za-z]/gu,"")
     .split(/\r?\n/u).slice(0,1000);
   const out:TypecheckError[]=[];
   let workspaceRoot:string|null=null;
   for(const line of lines){
     const banner=BANNER.exec(line);
-    if(banner){workspaceRoot=WORKSPACE_ROOTS[banner[1]!]??null;continue;}
+    if(banner){workspaceRoot=Object.hasOwn(workspaceRoots,banner[1]!)?workspaceRoots[banner[1]!]!:null;continue;}
     const m=/^([^\r\n]{1,181})\(([0-9]{1,6}),[0-9]{1,5}\): error (TS[0-9]{4,5}): (.*)$/u.exec(line)??
       /^([^\r\n]{1,181}):([0-9]{1,6}):[0-9]{1,5} - error (TS[0-9]{4,5}): (.*)$/u.exec(line);
     if(!m)continue;

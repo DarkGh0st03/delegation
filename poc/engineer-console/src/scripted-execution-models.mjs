@@ -180,10 +180,10 @@ class Scripted extends BaseLlm {
  * what the Gateway returned, or the fixed REFERENCE content when given.
  */
 export class ScriptedWorkerModel extends Scripted {
-  #branch; #queue; #sessionId; #contents; #turn = 0;
-  constructor({role, branch, files, sessionId, contents}) {
-    super({model: contents ? `reference-${role}-no-ai` : `scripted-${role}-no-ai`});
-    this.#branch = branch; this.#sessionId = sessionId; this.#contents = contents;
+  #branch; #queue; #sessionId; #turn = 0;
+  constructor({role, branch, files, sessionId}) {
+    super({model: `scripted-${role}-no-ai`});
+    this.#branch = branch; this.#sessionId = sessionId;
     this.#queue = files.map(f => typeof f === "string" ? {path: f, op: "update"} : f);
     // Context files first, the edited file last: its content is the last read.
     // A new file is not read (it does not exist yet): only its context.
@@ -191,10 +191,6 @@ export class ScriptedWorkerModel extends Scripted {
       f.readOrder = f.op === "create" ? [...(f.reads ?? [])] : [...(f.reads ?? []), f.path];
   }
   #content(path, previous) {
-    if (this.#contents) {
-      if (typeof this.#contents[path] !== "string") throw Error("No reference content for " + path);
-      return this.#contents[path];
-    }
     // JSON and CSV have no comments: the simulated change keeps them valid
     // (one extra trailing newline) instead of breaking the data.
     if (/\.(json|csv)$/u.test(path)) return previous + "\n";
@@ -206,7 +202,7 @@ export class ScriptedWorkerModel extends Scripted {
     const item = this.#queue[0];
     if (!item) { yield say("Nessun file assegnato a questo ruolo."); return; }
     const {path, op} = item, turn = ++this.#turn;
-    const label = this.#contents ? "soluzione di RIFERIMENTO" : "modifica SIMULATA";
+    const label = "modifica SIMULATA";
     if (op === "read") {
       if (turn === 1) { yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path}); return; }
       this.#queue.shift(); this.#turn = 0;

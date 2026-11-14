@@ -77,11 +77,11 @@ test("re-validation accepts only clean entries of failing files",()=>{
 });
 
 test("typecheck errors keep file, line, code and a one-line message", async()=>{
- const {extractTypecheckErrors,sanitizeTypecheckErrors}=await import("../src/typecheck-diagnostics.ts");
+ const {extractTypecheckErrors,sanitizeTypecheckErrors,sanitizeWorkspaceRoots}=await import("../src/typecheck-diagnostics.ts");
  const out="> @iam/backend@0.1.0 typecheck\n"+
   "src/users/user.service.ts(41,22): error TS2339: Property 'workEmail' does not exist on type 'UserSummary'.\n"+
   "\x1b[96msrc/a.ts\x1b[0m:3:1 - error TS2304: Cannot find name 'x'.‮ hidden\n";
- const errors=extractTypecheckErrors(out,"");
+ const errors=extractTypecheckErrors(out,"",sanitizeWorkspaceRoots({"@iam/backend":"apps/backend"}));
  assert.deepEqual(errors,[
   {file:"apps/backend/src/users/user.service.ts",line:41,code:"TS2339",
    message:"Property 'workEmail' does not exist on type 'UserSummary'."},

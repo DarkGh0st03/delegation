@@ -254,7 +254,7 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
         const request = store.getRequest(planningMatch[1]);
         if (!request) throw new HttpError(404, "Richiesta non trovata");
         const body = await readJson(req);
-        // The console runs Gemini sessions; the free scripted/reference modes
+        // The console runs Gemini sessions; the free scripted mode
         // remain only for automated tests and the offline sandbox.
         if (body.mode !== "gemini" && process.env.DELEGATION_FREE_MODES !== "1")
           throw new HttpError(400, "Modalità non disponibile: la console usa solo Gemini");

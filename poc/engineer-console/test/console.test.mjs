@@ -546,28 +546,6 @@ test("scripted planner understands Italian requirements against English paths", 
   ["apps/backend/src/users/user.service.ts", "packages/shared/src/account-status.ts"]);
 });
 
-test("reference mode proposes update for existing files and create for new ones", async () => {
-  const {referenceProposal} = await import("../src/scripted-planner-model.mjs");
-  const {simulatedExecutionPlan, ScriptedWorkerModel} = await import("../src/scripted-execution-models.mjs");
-  const p = referenceProposal(["a/old.ts", "tests/e2e/new.spec.ts"], ["a/old.ts"]);
-  assert.deepEqual(p.requested_permissions.filter(x => x.path).map(x => [x.operation, x.path]), [
-    ["read_file", "a/old.ts"], ["update_file", "a/old.ts"], ["create_file", "tests/e2e/new.spec.ts"]]);
-  assert.match(p.assumptions[0], /RIFERIMENTO/u);
-  const repo = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1/files/";
-  const plan = simulatedExecutionPlan([
-    {operation: "read_file", resource: repo + "a/old.ts"}, {operation: "update_file", resource: repo + "a/old.ts"},
-    {operation: "create_file", resource: repo + "tests/e2e/new.spec.ts"}], "s-1");
-  assert.deepEqual(plan.tasks.map(t => [t.agent_id, t.op, t.permissions.map(x => x.operation)]),
-    [["backend", "update", ["read_file", "update_file"]], ["frontend", "create", ["create_file"]]]);
-  // A create Task writes the reference content directly, then reports.
-  const worker = new ScriptedWorkerModel({role: "test", branch: "feature/s-1", sessionId: "s-1",
-    files: [{path: "tests/e2e/new.spec.ts", op: "create"}], contents: {"tests/e2e/new.spec.ts": "REF\n"}});
-  const events = [];
-  for (let i = 0; i < 2; i++) for await (const e of worker.generateContentAsync({})) events.push(e.content.parts[0]);
-  assert.deepEqual(events[0].functionCall.args, {branch: "feature/s-1", path: "tests/e2e/new.spec.ts", content: "REF\n"});
-  assert.match(events[1].text, /RIFERIMENTO/u);
-});
-
 test("Gemini preflight is free and explains key/model problems without leaking the key", async () => {
   const {preflightGemini} = await import("../src/gemini-models.mjs");
   const key = "AIza" + "x".repeat(35);

@@ -1,23 +1,17 @@
 import {extractPrivateVitestFailures} from "./private-vitest-failures.ts";
 import {retainFailureEvidence} from "./failure-evidence.ts";
 import {extractProjectE2eFailureDiagnostic} from "../scripts/project-e2e-failure-diagnostic.mjs";
-import {extractAcceptanceFailureSummary} from "./acceptance-diagnostics.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import {extractTypecheckLocations,extractTypecheckErrorCodes,extractTypecheckErrors,type TypecheckError} from "./typecheck-diagnostics.ts";
+import {extractTypecheckLocations,extractTypecheckErrorCodes,extractTypecheckErrors,type TypecheckError,
+  sanitizeWorkspaceRoots,WORKSPACE_ROOTS_SCRIPT,type WorkspaceRoots} from "./typecheck-diagnostics.ts";
 import {extractVitestFailureFiles} from "./vitest-failure-files.ts";
 import {extractTestFailureMessages,type TestFailureMessage} from "./test-failure-messages.ts";
-import type {
-  RunnerExecutor,
-  RunnerPhaseName,
-  RunnerPhaseResult,
-  RunnerRunRequest,
-  RunnerRunResult
-} from "./types.ts";
+import type {RunnerExecutor,RunnerPhaseResult,RunnerRunRequest,RunnerRunResult} from "./types.ts";
 
 /**
  * Host Docker CLI is a subprocess of the trusted Runner, not of the
@@ -61,12 +55,6 @@ export interface IsolatedRunnerConfig {
   total_timeout_ms?: number;
   log_dir: string;
   failure_evidence_dir?: string;
-  acceptance_enabled?: boolean;
-  acceptance_dir?: string;
-  /** Docker named volume holding the acceptance suite (mounted read-only).
-   * Used when the Runner itself runs in a container: a bind source path
-   * would be resolved on the host, not inside the Runner container. */
-  acceptance_volume?: string;
 }
 
 interface CommandOptions {
@@ -90,15 +78,6 @@ type CommandRunner = (
 
 type FetchFn = typeof fetch;
 
-const RESEARCHER_ACCEPTANCE_COMMAND =
-  "set -euo pipefail; " +
-  "npm run start -w @iam/backend >/tmp/runner-acceptance-backend.log 2>&1 & backend_pid=$!; " +
-  "npm run dev -w @iam/frontend -- --host 127.0.0.1 >/tmp/runner-acceptance-frontend.log 2>&1 & frontend_pid=$!; " +
-  "cleanup() { kill \"$backend_pid\" \"$frontend_pid\" 2>/dev/null || true; }; " +
-  "trap cleanup EXIT; " +
-  "wait_port() { for _ in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/\"$1\") >/dev/null 2>&1 && return 0; sleep 0.5; done; echo \"Timed out waiting for port $1\" >&2; return 1; }; " +
-  "wait_port 3000; wait_port 5173; " +
-  "npx playwright test --config .researcher-acceptance/playwright.config.ts";
 
 function cappedAppend(current: string, chunk: Buffer): string {
   if (Buffer.byteLength(current, "utf8") >= MAX_COMMAND_OUTPUT_BYTES) return current;
@@ -283,7 +262,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     let typecheckErrors:TypecheckError[]=[];
     let failingTestFiles:string[]=[];
     let projectE2eFailure:ReturnType<typeof extractProjectE2eFailureDiagnostic>=null;
-    let acceptanceFailure:ReturnType<typeof extractAcceptanceFailureSummary>=null;
     let containerCreateAttempted = false;
     let failed = false;
     let privateVitestFailure:ReturnType<typeof extractPrivateVitestFailures>|undefined;
@@ -314,23 +292,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         "-e",
         "CI=1"
       ];
-      if (this.#config.acceptance_enabled && this.#config.acceptance_volume) {
-        if (!/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(this.#config.acceptance_volume)) {
-          throw new Error("Invalid researcher acceptance volume name");
-        }
-        dockerCreateArgs.push(
-          "--mount",
-          `type=volume,src=${this.#config.acceptance_volume},dst=/workspace/.researcher-acceptance,readonly`
-        );
-      } else if (this.#config.acceptance_enabled) {
-        if (!this.#config.acceptance_dir) {
-          throw new Error("Researcher acceptance directory is not configured");
-        }
-        dockerCreateArgs.push(
-          "--mount",
-          `type=bind,src=${resolve(this.#config.acceptance_dir)},dst=/workspace/.researcher-acceptance,readonly`
-        );
-      }
       dockerCreateArgs.push(request.project_profile.image, "sleep", "infinity");
 
       // A timed-out/ambiguous Docker CLI response may still leave this named
@@ -414,9 +375,17 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
             projectE2eFailure=extractProjectE2eFailureDiagnostic(
               result.stdout,result.stderr,result.timed_out);
           if(fixed.phase==="typecheck"&&!result.timed_out){
-            typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
+            // npm workspace names -> directories of THIS repository, read by a
+            // fixed script in the throw-away container (diagnostic data only).
+            const listed=await executeCommand("docker",
+              ["exec",containerName,"node","-e",WORKSPACE_ROOTS_SCRIPT]);
+            let roots:WorkspaceRoots={};
+            if(listed.exit_code===0&&!listed.timed_out){
+              try{roots=sanitizeWorkspaceRoots(JSON.parse(listed.stdout));}catch{roots={};}
+            }
+            typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr,roots);
             typecheckErrorCodes=extractTypecheckErrorCodes(result.stdout,result.stderr);
-            typecheckErrors=extractTypecheckErrors(result.stdout,result.stderr);
+            typecheckErrors=extractTypecheckErrors(result.stdout,result.stderr,roots);
           }
           if(fixed.vitest&&!result.timed_out){
             failingTestFiles=extractVitestFailureFiles(result.stdout,result.stderr);
@@ -443,41 +412,13 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       const projectPhases = [...phases];
       const projectStatus = failed ? "fail" : "pass";
 
-      let researcherAcceptance: RunnerPhaseResult = {
+      // PASS means the project's own test phases (Engineer-signed profile).
+      // The historical researcher acceptance suite is not run: the phase is
+      // reported as skipped to keep the Runner/Gateway evidence contract.
+      const researcherAcceptance: RunnerPhaseResult = {
         phase: "researcher_acceptance",
         status: "skipped"
       };
-      if (this.#config.acceptance_enabled && !failed) {
-        const result = await executeCommand(
-          "docker",
-          ["exec", containerName, "bash", "-lc", RESEARCHER_ACCEPTANCE_COMMAND]
-      );
-
-        logs.push(
-          `=== researcher_acceptance ===\n${result.stdout}\n${result.stderr}\n`
-        );
-
-        if (result.exit_code === 0 && !result.timed_out) {
-          researcherAcceptance = {
-            phase: "researcher_acceptance",
-            status: "pass"
-          };
-        } else {
-          acceptanceFailure = result.timed_out
-            ? {failed_checks: [], timed_out: true, unclassified_failure: true}
-            : extractAcceptanceFailureSummary(result.stdout, result.stderr);
-          failed = true;
-          researcherAcceptance = {
-            phase: "researcher_acceptance",
-            status: "fail",
-            errors: [
-              result.timed_out
-                ? "researcher acceptance timed out"
-                : `researcher acceptance exited with code ${result.exit_code}`
-            ]
-          };
-        }
-      }
       phases.push(researcherAcceptance);
 
       await mkdir(this.#config.log_dir, { recursive: true });
@@ -510,7 +451,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           ?{failing_test_files:failingTestFiles}:{}),
         ...(testFailures.length>0?{test_failures:testFailures}:{}),
         ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
-        ...(acceptanceFailure ? {acceptance_failure: acceptanceFailure} : {}),
         project_tests: {
           status: projectStatus,
           phases: projectPhases
@@ -550,4 +490,3 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
 
 
 
-export const runnerResearcherAcceptanceCommand = RESEARCHER_ACCEPTANCE_COMMAND;

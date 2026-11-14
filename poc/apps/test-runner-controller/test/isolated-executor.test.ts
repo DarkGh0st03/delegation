@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 import {spawnSync} from "node:child_process";
 import {
   IsolatedDockerRunnerExecutor,
-  runnerResearcherAcceptanceCommand,
   isolatedDockerCliEnvironment
 } from "../src/isolated-executor.ts";
 
@@ -61,67 +60,6 @@ test("Phase 6B Playwright phase boots the controlled app services before E2E", (
   // One shared mutable Backend is used by all project specs. Baseline
   // ACTIVE observations must not overlap the suspension transition.
   assert.match(command, /npm run test:e2e -- --workers=1(?:$|[ ;])/u);
-});
-
-test("Phase 6C mounts researcher acceptance read-only and reports a separate verdict", async () => {
-  // Use a host-native absolute path so the test is valid on both Windows and Linux.
-  const acceptanceDir = resolve("researcher-owned", "acceptance");
-  const calls: Array<{ command: string; args: string[] }> = [];
-  let fetchCount = 0;
-
-  const executor = new IsolatedDockerRunnerExecutor(
-    {
-      ...config,
-      acceptance_enabled: true,
-      acceptance_dir: acceptanceDir
-    },
-    {
-      fetch_fn: async () => {
-        fetchCount += 1;
-        if (fetchCount === 1) {
-          return new Response(
-            JSON.stringify({ commit: { id: request.commit_sha } }),
-            { status: 200, headers: { "content-type": "application/json" } }
-          );
-        }
-        return new Response(Buffer.from("fake-tar-gz"), { status: 200 });
-      },
-      command_runner: async (command, args) => {
-        calls.push({ command, args });
-        return {
-          exit_code: 0,
-          stdout: "",
-          stderr: "",
-          timed_out: false
-        };
-      }
-    }
-  );
-
-  const result = await executor.run(request);
-
-  const create = calls.find(
-    (call) => call.command === "docker" && call.args[0] === "create"
-  );
-  assert.ok(create);
-  const mountIndex = create.args.indexOf("--mount");
-  assert.notEqual(mountIndex, -1);
-  assert.equal(
-    create.args[mountIndex + 1],
-    `type=bind,src=${acceptanceDir},dst=/workspace/.researcher-acceptance,readonly`
-  );
-
-  const acceptance = calls.find(
-    (call) =>
-      call.command === "docker" &&
-      call.args[0] === "exec" &&
-      call.args.at(-1) === runnerResearcherAcceptanceCommand
-  );
-  assert.ok(acceptance);
-  assert.equal(result.status, "pass");
-  assert.equal(result.project_tests?.status, "pass");
-  assert.equal(result.researcher_acceptance?.status, "pass");
-  assert.equal(result.researcher_acceptance?.phase, "researcher_acceptance");
 });
 
 test("isolated executor pins branch head to the exact requested SHA and destroys its container", async () => {
@@ -464,32 +402,6 @@ test("Vitest failed suites return only bounded filenames without raw error text"
   assert.equal(result.phases.find(p=>p.phase==="build")?.status,"skipped");
 });
 
-test("Acceptance FAIL preserves check IDs on the exact SHA and still cleans the container",async()=>{
-  const summary={failed_checks:["ui_pending_actions"],timed_out:false,unclassified_failure:false};
-  let fetched=0,cleaned=false;
-  const executor=new IsolatedDockerRunnerExecutor({...config,
-    acceptance_enabled:true,acceptance_dir:resolve("researcher-owned","acceptance")},{
-    fetch_fn:async()=>++fetched===1
-      ?new Response(JSON.stringify({commit:{id:request.commit_sha}}),{status:200})
-      :new Response(Buffer.from("fake-tar-gz"),{status:200}),
-    command_runner:async(_command,args)=>{
-      if(args[0]==="rm")cleaned=true;
-      return args.at(-1)===runnerResearcherAcceptanceCommand
-        ?{exit_code:1,timed_out:false,stdout:"[researcher-acceptance] failure_summary "+
-          JSON.stringify(summary),stderr:"PRIVATE_ASSERTION"}
-        :{exit_code:0,timed_out:false,stdout:"",stderr:""};
-    }
-  });
-  const result=await executor.run(request);
-  assert.equal(result.status,"fail");
-  assert.equal(result.project_tests?.status,"pass");
-  assert.equal(result.researcher_acceptance?.status,"fail");
-  assert.equal(result.tested_commit_sha,request.commit_sha);
-  assert.deepEqual(result.acceptance_failure,summary);
-  assert.ok(cleaned);
-  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION/u);
-});
-
 test("A real Playwright command failure produces sanitized locations on exact SHA and cleans up",async()=>{
   let fetched=0,cleaned=false;
   const worker=new IsolatedDockerRunnerExecutor(config,{
@@ -568,31 +480,3 @@ test("Docker subprocess allowlist ignores unknown keys, empty and control-charac
  });
 });
 
-test("containerised Runner mounts the acceptance suite from a named volume, read-only", async () => {
-  const calls: Array<{ command: string; args: string[] }> = [];
-  let fetchCount = 0;
-  const executor = new IsolatedDockerRunnerExecutor(
-    { ...config, acceptance_enabled: true, acceptance_volume: "delegation-acceptance" },
-    {
-      fetch_fn: async () => (++fetchCount === 1
-        ? new Response(JSON.stringify({ commit: { id: request.commit_sha } }), { status: 200 })
-        : new Response(Buffer.from("fake-tar-gz"), { status: 200 })),
-      command_runner: async (command, args) => {
-        calls.push({ command, args });
-        return { exit_code: 0, stdout: "", stderr: "", timed_out: false };
-      }
-    }
-  );
-  await executor.run(request);
-  const create = calls.find((call) => call.command === "docker" && call.args[0] === "create");
-  assert.ok(create);
-  assert.equal(create.args[create.args.indexOf("--mount") + 1],
-    "type=volume,src=delegation-acceptance,dst=/workspace/.researcher-acceptance,readonly");
-  await assert.rejects(new IsolatedDockerRunnerExecutor(
-    { ...config, acceptance_enabled: true, acceptance_volume: "../host" },
-    { fetch_fn: async () => (++fetchCount % 2
-        ? new Response(JSON.stringify({ commit: { id: request.commit_sha } }), { status: 200 })
-        : new Response(Buffer.from("x"), { status: 200 })),
-      command_runner: async () => ({ exit_code: 0, stdout: "", stderr: "", timed_out: false }) }
-  ).run(request), /acceptance volume/u);
-});

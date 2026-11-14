@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import type { RunnerContractConfig } from "./types.ts";
 import { MAX_RUN_TOTAL_MS, type IsolatedRunnerConfig } from "./isolated-executor.ts";
 
@@ -82,14 +81,7 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
       ),
       failure_evidence_dir: process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR || undefined,
       log_dir:
-        process.env.TEST_RUNNER_LOG_DIR ?? "/tmp/delegation-runner-logs",
-      acceptance_enabled:
-        (process.env.TEST_RUNNER_ACCEPTANCE_ENABLED ?? "true").toLowerCase() !== "false",
-      ...(process.env.TEST_RUNNER_ACCEPTANCE_VOLUME
-        ? {acceptance_volume: process.env.TEST_RUNNER_ACCEPTANCE_VOLUME} : {}),
-      acceptance_dir:
-        process.env.TEST_RUNNER_ACCEPTANCE_DIR ??
-        fileURLToPath(new URL("../../../runner/acceptance/", import.meta.url))
+        process.env.TEST_RUNNER_LOG_DIR ?? "/tmp/delegation-runner-logs"
     }
   };
 }

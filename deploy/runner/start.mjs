@@ -18,11 +18,9 @@ for (const [key, value] of Object.entries({
   TEST_RUNNER_REPOSITORY_PREFIX: `gitea://gitea.local/${local.GITEA_ORG}/`,
   TEST_RUNNER_BRANCH_PREFIX: "feature/",
   GITEA_RUNNER_BASE_URL: process.env.GITEA_URL ?? "http://gitea:3000",
-  GITEA_RUNNER_TOKEN: gitea.GITEA_RUNNER_TOKEN,
-  // No separate researcher acceptance suite: a PASS means that every phase
-  // of the project's own tests passed (including the tests written by the
-  // Test agent). The Runner reports acceptance as "skipped".
-  TEST_RUNNER_ACCEPTANCE_ENABLED: "false"
+  // A PASS means that every phase of the project's own tests passed
+  // (including the tests written by the Test agent).
+  GITEA_RUNNER_TOKEN: gitea.GITEA_RUNNER_TOKEN
 })) {
   if (!value) { console.error(`Runner: missing ${key} in /config`); process.exit(1); }
   process.env[key] = value;
