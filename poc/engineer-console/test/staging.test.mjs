@@ -102,7 +102,7 @@ function fakeWorld({buildExit = 0, readyFor = () => true} = {}) {
       throw Error("ECONNREFUSED");
     }
     if (!repoExists) return {ok: false, status: 404};
-    if (url.endsWith("/repos/thesis/greeter")) return json({default_branch: "main"});
+    if (/\/repos\/thesis\/[^/]+$/u.test(url)) return json({default_branch: "main"});
     if (url.endsWith("/branches/main")) return json({commit: {id: mainSha}});
     if (url.includes("/archive/")) return {ok: true, status: 200, arrayBuffer: async () => archive};
     return {ok: false, status: 404};
@@ -257,4 +257,26 @@ test("console API: App column, staging profile edit, delete removes the profile"
 
   assert.equal((await call("DELETE", "/api/repos/iam-console-poc", undefined, cookie)).status, 200);
   assert.equal(staging.profile("iam-console-poc").source, "default", "saved profile removed with the repository");
+});
+
+test("deployer: several repositories run side by side, each on its own port and image", async (t) => {
+  const dir = tempDir(t), world = fakeWorld();
+  const store = new StagingStore(dir);
+  store.save("greeter", PROFILE);
+  store.save("py-dashboard", {...PROFILE, image: "python:3.12.7-slim", build: "pip install -r requirements.txt",
+    start: "python -m flask --app app run --host 0.0.0.0 --port 8000", port: 8000});
+  const deployer = deployerFor(t, world, dir);
+  await deployer.tick();
+  const {greeter, "py-dashboard": py} = deployer.status.repositories;
+  assert.equal(greeter.state, "running"); assert.equal(py.state, "running");
+  assert.deepEqual([greeter.url, py.url].sort(), ["http://127.0.0.1:8801/", "http://127.0.0.1:8802/"]);
+  assert.ok(world.containers.get("delegation-staging-greeter").running);
+  assert.ok(world.containers.get("delegation-staging-py-dashboard").running);
+  assert.ok(world.calls.some(c => /^create .* python:3\.12\.7-slim sh -c/u.test(c)), "any image/language");
+  assert.ok(world.calls.some(c => /-p 127\.0\.0\.1:880[12]:8000/u.test(c)));
+  // Removing one leaves the other running.
+  store.delete("greeter");
+  await deployer.tick();
+  assert.equal(world.containers.has("delegation-staging-greeter"), false);
+  assert.ok(world.containers.get("delegation-staging-py-dashboard").running);
 });
