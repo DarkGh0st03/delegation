@@ -197,7 +197,7 @@ async function fixture(fn:(x:{
    effectFenceJournal,sequentialEffectJournal,evidenceDir,approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
-test("R285 only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
+test("only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
  await fixture(async({session,log})=>{
   const planned=await session.startPlanning(preliminary);
   assert.equal(planned.phase,"planning");
@@ -220,7 +220,7 @@ test("R285 only authority pairs are issued after confirmed Planning retirement a
    "urn:authority:reissue","203",120)),/active preliminary root missing/);
  });
 });
-test("R285 journal prevents replay after process reconstruction, even after successful issuance",async()=>{
+test("journal prevents replay after process reconstruction, even after successful issuance",async()=>{
  await fixture(async({session,createSession,log})=>{
   await session.startPlanning(preliminary);
   await assert.rejects(createSession().startPlanning(preliminary),/EEXIST/u);
@@ -230,7 +230,7 @@ test("R285 journal prevents replay after process reconstruction, even after succ
   assert.deepEqual(log.map(x=>x.event).filter(x=>x==="issue"),["issue","issue"]);
  });
 });
-test("R285 failed native preliminary revocation never issues an operational root and cannot retry",async()=>{
+test("failed native preliminary revocation never issues an operational root and cannot retry",async()=>{
  await fixture(async({session,issuer,log})=>{
   await session.startPlanning(preliminary);
   issuer.failRevoke=true;
@@ -244,7 +244,7 @@ test("R285 failed native preliminary revocation never issues an operational root
    /active preliminary root missing/);
  });
 });
-test("R285 modified root status, stale root or overlong authority lifetime is denied BEFORE revocation",async()=>{
+test("modified root status, stale root or overlong authority lifetime is denied BEFORE revocation",async()=>{
  await fixture(async({session,log})=>{
   await session.startPlanning(preliminary);
   for(const invalid of [
@@ -260,7 +260,7 @@ test("R285 modified root status, stale root or overlong authority lifetime is de
   assert.equal(result.phase,"operational");
  });
 });
-test("R285 wrong signed Engineer objective fails closed without revocation or operational issuance",async()=>{
+test("wrong signed Engineer objective fails closed without revocation or operational issuance",async()=>{
  await fixture(async({session,log})=>{
   await session.startPlanning(preliminary);
   await assert.rejects(session.approveAndIssueOperationalRoot(operational),
@@ -268,7 +268,7 @@ test("R285 wrong signed Engineer objective fails closed without revocation or op
   assert.deepEqual(log.map(x=>x.event),["revision.begin","issue"]);
  },signedReceipt({objective:"Unapproved separate requirement"}));
 });
-test("R285 expiring receipt refuses a longer root and disallows a second attempt",async()=>{
+test("expiring receipt refuses a longer root and disallows a second attempt",async()=>{
  await fixture(async({session,log})=>{
   await session.startPlanning(preliminary);
   await assert.rejects(session.approveAndIssueOperationalRoot(operational),
@@ -276,7 +276,7 @@ test("R285 expiring receipt refuses a longer root and disallows a second attempt
   assert.deepEqual(log.map(x=>x.event),["revision.begin","issue"]);
  },signedReceipt({expiry:"2026-11-05T07:30:00Z"}));
 });
-test("R285 forged store object cannot become Engineer authority",async()=>{
+test("forged store object cannot become Engineer authority",async()=>{
  await fixture(async({issuer,journal,log})=>{
   const fakeStore={
    async loadAuthenticatedAuthority(){
@@ -303,7 +303,7 @@ test("R285 forged store object cannot become Engineer authority",async()=>{
  });
 });
 
-test("R285 private Engineer cancellation confirms Gateway retirement and native revocation",async()=>{
+test("private Engineer cancellation confirms Gateway retirement and native revocation",async()=>{
  await fixture(async({session,log,createSession})=>{
   await session.startPlanning(preliminary);
   await session.cancelPlanning();
@@ -318,7 +318,7 @@ test("R285 private Engineer cancellation confirms Gateway retirement and native 
 });
 
 
-// R286: verified signed authority, real Engineer root session and pinned cards.
+// Verified signed authority, real Engineer root session and pinned cards.
 // These tests only register trusted epoch candidates: no Gateway execution.
 const registry={
  backend:{did:"did:thesis:backend",card_ref:"trusted:backend",
@@ -340,7 +340,7 @@ function nextTask(agent_id="backend",epoch=1,task_id="task-backend"):AuthorityOn
 function awaitRequirementHash(){
  return createHash("sha256").update(requirement,"utf8").digest("hex");
 }
-test("R286 Coordinator activation requires a genuinely issued Engineer operational root",async()=>{
+test("Coordinator activation requires a genuinely issued Engineer operational root",async()=>{
  await fixture(async({session,approvals,taskJournal})=>{
   const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
    sessionId,engineer:session,approvals,journal:taskJournal,
@@ -350,7 +350,7 @@ test("R286 Coordinator activation requires a genuinely issued Engineer operation
   assert.equal(coordinator.phase,"failed_closed");
  });
 });
-test("R286 two different signed-scope Tasks/agents are bound without a new Engineer signature",async()=>{
+test("two different signed-scope Tasks/agents are bound without a new Engineer signature",async()=>{
  await fixture(async({session,approvals,taskJournal,log})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -379,7 +379,7 @@ test("R286 two different signed-scope Tasks/agents are bound without a new Engin
    "backend",3,"task-backend")),/invalid epoch or replayed/);
  });
 });
-test("R286 Coordinator rejects escalation, foreign agent, scope or dependency and remains reusable for corrected Task",async()=>{
+test("Coordinator rejects escalation, foreign agent, scope or dependency and remains reusable for corrected Task",async()=>{
  await fixture(async({session,approvals,taskJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -415,7 +415,7 @@ test("R286 Coordinator rejects escalation, foreign agent, scope or dependency an
   assert.equal(coordinator.registeredTaskCount,1);
  });
 });
-test("R286 durable Task journal rejects duplicate session activation across Coordinator objects",async()=>{
+test("durable Task journal rejects duplicate session activation across Coordinator objects",async()=>{
  await fixture(async({session,approvals,taskJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -433,7 +433,7 @@ test("R286 durable Task journal rejects duplicate session activation across Coor
   await assert.rejects(first.registerTask(nextTask()),/invalid epoch or replayed/);
  });
 });
-test("R286 Coordinator cannot activate after root expiry or with fake verified Engineer receipt",async()=>{
+test("Coordinator cannot activate after root expiry or with fake verified Engineer receipt",async()=>{
  await fixture(async({session,approvals,taskJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -458,9 +458,9 @@ test("R286 Coordinator cannot activate after root expiry or with fake verified E
 });
 
 
-// R287: Gateway authority-only admission is opt-in and PREPARE/EXECUTE
+// Gateway authority-only admission is opt-in and PREPARE/EXECUTE
 // remain unreachable from this registry until Rust VP and OPA are integrated.
-test("R287 Gateway independently verifies Engineer signature and exact dynamic Task scope",async()=>{
+test("Gateway independently verifies Engineer signature and exact dynamic Task scope",async()=>{
  await fixture(async({session,approvals,taskJournal,
   gatewayTaskJournal,gatewaySessionStore,log})=>{
   await session.startPlanning(preliminary);
@@ -513,7 +513,7 @@ test("R287 Gateway independently verifies Engineer signature and exact dynamic T
  });
 });
 
-test("R287 Gateway denies replay, dependencies without trusted completion and double-binding",async()=>{
+test("Gateway denies replay, dependencies without trusted completion and double-binding",async()=>{
  await fixture(async({session,approvals,taskJournal,
   gatewayTaskJournal,gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -549,7 +549,7 @@ test("R287 Gateway denies replay, dependencies without trusted completion and do
  });
 });
 
-test("R287 Gateway denies untrusted receipt reader, changed repo and expired root",async()=>{
+test("Gateway denies untrusted receipt reader, changed repo and expired root",async()=>{
  await fixture(async({session,approvals,taskJournal,
   gatewayTaskJournal,gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -584,10 +584,10 @@ test("R287 Gateway denies untrusted receipt reader, changed repo and expired roo
 });
 
 
-// R288: a staged Task can obtain a one-use Gateway challenge, execute
+// A staged Task can obtain a one-use Gateway challenge, execute
 // VerifierPort and independent OPA, but CANNOT touch the provider until a
 // native Child DC is tied to this independently issued Engineer root.
-test("R288 authority-only Prepare + verified VP + OPA allow still DENIES all provider effects",async()=>{
+test("authority-only Prepare + verified VP + OPA allow still DENIES all provider effects",async()=>{
  await fixture(async({session,approvals,taskJournal,
   gatewayTaskJournal,gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -658,7 +658,7 @@ test("R288 authority-only Prepare + verified VP + OPA allow still DENIES all pro
   assert.equal(executor.callCount,0);
  });
 });
-test("R288 missing trusted authority-only execute guard cannot fall back to legacy provider",async()=>{
+test("missing trusted authority-only execute guard cannot fall back to legacy provider",async()=>{
  await fixture(async({session,approvals,taskJournal,
   gatewayTaskJournal,gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -707,7 +707,7 @@ test("R288 missing trusted authority-only execute guard cannot fall back to lega
   assert.equal(executor.callCount,0);
  });
 });
-test("R288 VP rejection and independent OPA denial both stop before provider",async()=>{
+test("VP rejection and independent OPA denial both stop before provider",async()=>{
  await fixture(async({session,approvals,taskJournal,
   gatewayTaskJournal,gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -764,7 +764,7 @@ test("R288 VP rejection and independent OPA denial both stop before provider",as
 });
 
 
-test("R289 authority-only Gateway requires native-verified operational root provenance",async()=>{
+test("authority-only Gateway requires native-verified operational root provenance",async()=>{
  await fixture(async({session,approvals,taskJournal,
   gatewayTaskJournal,gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -824,7 +824,7 @@ function nativeChildPort(calls:ExactTrustedChildIssuance[],
     per:structuredClone(request.permissions)}} as never;
  }};
 }
-test("R290 owner-private native Child issuance uses ONLY Coordinator Task scope and live root",async()=>{
+test("owner-private native Child issuance uses ONLY Coordinator Task scope and live root",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -859,7 +859,7 @@ test("R290 owner-private native Child issuance uses ONLY Coordinator Task scope 
   assert.equal(calls.length,1);
  });
 });
-test("R290 denies unregistered Task, unexpected permission fields, expiry and HTTP fallback",async()=>{
+test("denies unregistered Task, unexpected permission fields, expiry and HTTP fallback",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -896,7 +896,7 @@ test("R290 denies unregistered Task, unexpected permission fields, expiry and HT
   assert.equal(calls.length,1);
  });
 });
-test("R290 uncertain native issuance never retries after response mismatch or reconstruction",async()=>{
+test("uncertain native issuance never retries after response mismatch or reconstruction",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -931,7 +931,7 @@ test("R290 uncertain native issuance never retries after response mismatch or re
  });
 });
 
-test("R291 independently enrolls native Child for exact trusted Gateway Task but still DENIES provider",async()=>{
+test("independently enrolls native Child for exact trusted Gateway Task but still DENIES provider",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal})=>{
   await session.startPlanning(preliminary);
@@ -1004,7 +1004,7 @@ test("R291 independently enrolls native Child for exact trusted Gateway Task but
   assert.equal(calls.length,1);
  });
 });
-test("R291 cannot enroll a Child without separately provisioned Gateway journal",async()=>{
+test("cannot enroll a Child without separately provisioned Gateway journal",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -1032,7 +1032,7 @@ test("R291 cannot enroll a Child without separately provisioned Gateway journal"
  });
 });
 
-test("R293 independently observed completion unblocks exact dependency preflight without provider I/O",async()=>{
+test("independently observed completion unblocks exact dependency preflight without provider I/O",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,effectFenceJournal})=>{
   await session.startPlanning(preliminary);
@@ -1107,7 +1107,7 @@ test("R293 independently observed completion unblocks exact dependency preflight
   assert.throws(()=>gate.assertExecutionReady(),/unavailable/);
  });
 });
-test("R293 bogus completion observer fails closed; no dependency unlock",async()=>{
+test("bogus completion observer fails closed; no dependency unlock",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,effectFenceJournal})=>{
   await session.startPlanning(preliminary);
@@ -1156,7 +1156,7 @@ test("R293 bogus completion observer fails closed; no dependency unlock",async()
   assert.equal(gate.stagedCompletedTaskCount,0);
  });
 });
-test("R293 crash-durable completion fence rejects missing flight, duplicate flight and mismatched proof",async()=>{
+test("crash-durable completion fence rejects missing flight, duplicate flight and mismatched proof",async()=>{
  await fixture(async({effectFenceJournal})=>{
   const flight={
    session_id:sessionId,authority_digest:"a".repeat(64),
@@ -1184,7 +1184,7 @@ test("R293 crash-durable completion fence rejects missing flight, duplicate flig
  });
 });
 
-test("R295 owner-only writer seals genuine GiteaExecutor read result and reader corroborates the same exact Child flight",async()=>{
+test("owner-only writer seals genuine GiteaExecutor read result and reader corroborates the same exact Child flight",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,
   effectFenceJournal,evidenceDir})=>{
@@ -1311,7 +1311,7 @@ test("R295 owner-only writer seals genuine GiteaExecutor read result and reader 
  });
 });
 
-test("R295 a configured publisher never bypasses authority-only terminal Gateway denial",async()=>{
+test("a configured publisher never bypasses authority-only terminal Gateway denial",async()=>{
  await fixture(async({session,approvals,taskJournal,gatewayTaskJournal,
   gatewaySessionStore,evidenceDir})=>{
   await session.startPlanning(preliminary);
@@ -1365,7 +1365,7 @@ test("R295 a configured publisher never bypasses authority-only terminal Gateway
  });
 });
 
-test("R296 opt-in Gateway read publishes evidence and denies replay",async()=>{
+test("opt-in Gateway read publishes evidence and denies replay",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,
   effectFenceJournal,evidenceDir})=>{
@@ -1474,7 +1474,7 @@ test("R296 opt-in Gateway read publishes evidence and denies replay",async()=>{
 });
 
 
-test("R296 opt-in read without durable flight never calls Gitea",async()=>{
+test("opt-in read without durable flight never calls Gitea",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,
   effectFenceJournal,evidenceDir})=>{
@@ -1575,7 +1575,7 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
  });
 });
 
-test("R299 signed Engineer directory grant permits narrower trusted Task, enrolled Child and Gateway read preflight",async()=>{
+test("signed Engineer directory grant permits narrower trusted Task, enrolled Child and Gateway read preflight",async()=>{
  const scope={resource:root+"/branches/feature%2Fsample-change/directories/apps/backend",
   operation:"read_file"};
  const draft={schema_version:"1.0.0",session_id:sessionId,
@@ -1632,7 +1632,7 @@ test("R299 signed Engineer directory grant permits narrower trusted Task, enroll
  },receipt);
 });
 
-test("R299 signed directory grant cannot authorize sibling Task scope",async()=>{
+test("signed directory grant cannot authorize sibling Task scope",async()=>{
  const scope={resource:root+"/branches/feature%2Fsample-change/directories/apps/backend",
   operation:"read_file"};
  const draft={schema_version:"1.0.0",session_id:sessionId,
@@ -1660,7 +1660,7 @@ test("R299 signed directory grant cannot authorize sibling Task scope",async()=>
  },receipt);
 });
 
-test("R301 two read-only effects are durably sequenced before a dependent Task can run",async()=>{
+test("two read-only effects are durably sequenced before a dependent Task can run",async()=>{
  const grant={resource:root+
   "/branches/feature%2Fsample-change/directories/apps/backend",
   operation:"read_file"};
@@ -1774,7 +1774,7 @@ test("R301 two read-only effects are durably sequenced before a dependent Task c
 });
 
 
-test("R302 signed update_file Task pins HEAD/blob and reserves immutable intent WITHOUT a Gitea write",async()=>{
+test("signed update_file Task pins HEAD/blob and reserves immutable intent WITHOUT a Gitea write",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal,
   gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal})=>{
   await session.startPlanning(preliminary);
@@ -1882,7 +1882,7 @@ test("R302 signed update_file Task pins HEAD/blob and reserves immutable intent 
  });
 });
 
-test("R302 unbound mutation and caller-supplied HEAD fail before any provider I/O",async()=>{
+test("unbound mutation and caller-supplied HEAD fail before any provider I/O",async()=>{
  await fixture(async({session,approvals,taskJournal,gatewayTaskJournal,
   gatewaySessionStore})=>{
   await session.startPlanning(preliminary);
@@ -1920,7 +1920,7 @@ test("R302 unbound mutation and caller-supplied HEAD fail before any provider I/
 });
 
 
-test("R303 Test Agent may reserve only exact native Child-signed Runner profile and immutable Gitea SHA; Docker remains denied",async()=>{
+test("Test Agent may reserve only exact native Child-signed Runner profile and immutable Gitea SHA; Docker remains denied",async()=>{
  const permission={
   resource:root+"/branches/feature%2Fsample-change",
   operation:"run_tests"
@@ -2031,7 +2031,7 @@ test("R303 Test Agent may reserve only exact native Child-signed Runner profile 
 });
 
 
-test("R353.8 Orchestrator cannot receive a self-delegated Child",async()=>{
+test("Orchestrator cannot receive a self-delegated Child",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -2052,7 +2052,7 @@ test("R353.8 Orchestrator cannot receive a self-delegated Child",async()=>{
  });
 });
 
-test("R353.8 root PR fence remains separate from specialist Child flights",async()=>{
+test("root PR fence remains separate from specialist Child flights",async()=>{
  await fixture(async({effectFenceJournal})=>{
   const flight={session_id:sessionId,authority_digest:"a".repeat(64),
    root_credential_id:operational.credential_id,credential_id:operational.credential_id,
@@ -2076,7 +2076,7 @@ test("R353.8 root PR fence remains separate from specialist Child flights",async
  });
 });
 
-test("R353.8 even a signed Orchestrator PR grant cannot issue an Orchestrator Child",async()=>{
+test("even a signed Orchestrator PR grant cannot issue an Orchestrator Child",async()=>{
  const permission={resource:root,operation:"create_pull_request"};
  const draft={schema_version:"1.0.0",session_id:sessionId,
   repository:{...repo},branch,base_revision:hash,requirement,
@@ -2111,7 +2111,7 @@ class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayA
  get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 for(const mode of ['pass','no-stage','foreign-root','child-depth','opa-denied','vp-denied',
  'main-moved','existing-branch','post-lost','wrong-post-sha','reader-moved','generic-completion']){
- test('R354 original root branch through canonical Gateway '+mode,async()=>{
+ test('original root branch through canonical Gateway '+mode,async()=>{
   await fixture(async({session,approvals,taskJournal,gatewayTaskJournal,gatewaySessionStore,
    gatewayChildJournal,effectFenceJournal})=>{
    await session.startPlanning(preliminary);await session.approveAndIssueOperationalRoot(operational);

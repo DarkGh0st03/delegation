@@ -43,7 +43,7 @@ async function fixture(fn:(v:{
    directory),directory});
  }finally{await rm(root,{recursive:true,force:true});}
 }
-test("R301 manifest pins a bounded task effect count and refuses reenrollment",async()=>{
+test("manifest pins a bounded task effect count and refuses reenrollment",async()=>{
  await fixture(async({journal})=>{
   await journal.reserveManifest({...base,total_effects:2});
   await assert.rejects(journal.reserveManifest({...base,total_effects:2}),
@@ -55,7 +55,7 @@ test("R301 manifest pins a bounded task effect count and refuses reenrollment",a
   } as never),/invalid pinned Task manifest/);
  });
 });
-test("R301 effect 2 cannot start before independent evidence for effect 1",async()=>{
+test("effect 2 cannot start before independent evidence for effect 1",async()=>{
  await fixture(async({journal,directory})=>{
   await journal.reserveManifest({...base,total_effects:2});
   await journal.reserveEffect(first);
@@ -77,7 +77,7 @@ test("R301 effect 2 cannot start before independent evidence for effect 1",async
   assert.ok(directory.endsWith("protected"));
  });
 });
-test("R301 foreign authority/Child/task/request cannot replace a durable effect flight",async()=>{
+test("foreign authority/Child/task/request cannot replace a durable effect flight",async()=>{
  await fixture(async({journal})=>{
   await journal.reserveManifest({...base,total_effects:2});
   await journal.reserveEffect(first);
@@ -93,7 +93,7 @@ test("R301 foreign authority/Child/task/request cannot replace a durable effect 
   }
  });
 });
-test("R301 ambiguous first flight survives restart, cannot advance or redo",async()=>{
+test("ambiguous first flight survives restart, cannot advance or redo",async()=>{
  await fixture(async({journal,directory})=>{
   await journal.reserveManifest({...base,total_effects:2});
   await journal.reserveEffect(first);
@@ -103,7 +103,7 @@ test("R301 ambiguous first flight survives restart, cannot advance or redo",asyn
   await assert.rejects(restart.reserveTaskFinal(finish),/ENOENT/);
  });
 });
-test("R301 simultaneous duplicate sequence reservation accepts exactly one",async()=>{
+test("simultaneous duplicate sequence reservation accepts exactly one",async()=>{
  await fixture(async({journal,directory})=>{
   await journal.reserveManifest({...base,total_effects:2});
   const other=new DurableAuthorityOnlySequentialEffectJournal(directory);
@@ -114,7 +114,7 @@ test("R301 simultaneous duplicate sequence reservation accepts exactly one",asyn
   assert.equal(outcomes.filter(x=>x.status==="rejected").length,1);
  });
 });
-test("R301 journal rejects shared, symlinked, malformed or untrusted stores",async()=>{
+test("journal rejects shared, symlinked, malformed or untrusted stores",async()=>{
  await fixture(async({journal,directory})=>{
   await chmod(directory,0o755);
   await assert.rejects(journal.reserveManifest({...base,total_effects:2}),
@@ -130,7 +130,7 @@ test("R301 journal rejects shared, symlinked, malformed or untrusted stores",asy
  });
 });
 
-test("R359 immutable typed read-then-update manifest rejects reversed or untyped effects",async()=>{
+test("immutable typed read-then-update manifest rejects reversed or untyped effects",async()=>{
  await fixture(async({journal})=>{
   const typed={...base,total_effects:2,effect_plan:["read_file","update_file"] as const};
   await journal.reserveManifest(typed);
@@ -150,7 +150,7 @@ test("R359 immutable typed read-then-update manifest rejects reversed or untyped
   await assert.rejects(journal.reserveTaskFinal({...finish,effect_plan:typed.effect_plan}),/EEXIST/u);
  });
 });
-test("R359 typed operation cannot be added to an old read-only Task after approval",async()=>{
+test("typed operation cannot be added to an old read-only Task after approval",async()=>{
  await fixture(async({journal})=>{
   await journal.reserveManifest({...base,total_effects:2});
   await assert.rejects(journal.reserveEffect({...first,operation:"read_file"}),
@@ -161,7 +161,7 @@ test("R359 typed operation cannot be added to an old read-only Task after approv
   await journal.reserveEvidence(firstProof);
  });
 });
-test("R359 typed manifests cannot be silently swapped or widened at finalization",async()=>{
+test("typed manifests cannot be silently swapped or widened at finalization",async()=>{
  await fixture(async({journal})=>{
   const typed={...base,total_effects:2,effect_plan:["read_file","update_file"] as const};
   await journal.reserveManifest(typed);

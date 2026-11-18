@@ -200,7 +200,7 @@ test("ADK read-only specialist completes from a Gateway-pinned revision",async()
 
 
 
-test("R79 provider MAX_TOKENS with functionCall cannot execute any controlled tool",async()=>{
+test("provider MAX_TOKENS with functionCall cannot execute any controlled tool",async()=>{
   class TruncatedToolModel extends BaseLlm {
     readonly requests:LlmRequest[]=[];
     constructor(){super({model:"offline-truncated-tool-no-provider"});}
@@ -212,7 +212,7 @@ test("R79 provider MAX_TOKENS with functionCall cannot execute any controlled to
       }]},finishReason:"MAX_TOKENS"};
     }
     override connect():Promise<BaseLlmConnection>{
-      return Promise.reject(Error("Live generation prohibited in R79 regression"));
+      return Promise.reject(Error("Live generation prohibited regression"));
     }
   }
   const boundary=fakeBoundary("frontend");
@@ -230,12 +230,12 @@ test("R79 provider MAX_TOKENS with functionCall cannot execute any controlled to
 });
 
 /**
- * R78: Paid R77 Frontend showed MAX_TOKENS followed by an approved-plan
+ * Paid Frontend showed MAX_TOKENS followed by an approved-plan
  * denial. This local model reproduces a terminal truncated response after
  * one genuine Gateway read; no provider API or private source is used.
  * A read-only specialist can still finish on STOP (separate regression).
  */
-test("R78 Frontend terminal MAX_TOKENS cannot attest a completed A2A Task",async()=>{
+test("Frontend terminal MAX_TOKENS cannot attest a completed A2A Task",async()=>{
   class TruncatedFrontendModel extends BaseLlm {
     readonly requests:LlmRequest[]=[];
     constructor(){super({model:"offline-truncated-frontend-no-provider"});}
@@ -252,7 +252,7 @@ test("R78 Frontend terminal MAX_TOKENS cannot attest a completed A2A Task",async
       }
     }
     override connect():Promise<BaseLlmConnection>{
-      return Promise.reject(Error("No provider calls in R78 regression"));
+      return Promise.reject(Error("No provider calls regression"));
     }
   }
   const boundary=fakeBoundary("frontend",false,true);
@@ -334,7 +334,7 @@ class TwoRunsModel extends BaseLlm {
   }
 }
 
-test("R120 Test A2A FAIL cannot be turned into same-task PASS",async()=>{
+test("Test A2A FAIL cannot be turned into same-task PASS",async()=>{
   const boundary=fakeBoundary("test",false,false,true);
   const model=new TwoRunsModel();
   let completed=false,artifacts="";
@@ -383,7 +383,7 @@ class RepairWorkflowModel extends BaseLlm{
     return Promise.reject(Error("No provider API in offline repair test"));
   }
 }
-test("R120 same-task source edit after failed Runner cannot authorize a second PASS",async()=>{
+test("same-task source edit after failed Runner cannot authorize a second PASS",async()=>{
   const calls:string[]=[];
   const initialSha="a".repeat(40),fixedSha="b".repeat(40);
   let pending="",revision=initialSha;

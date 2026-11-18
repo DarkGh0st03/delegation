@@ -1,5 +1,5 @@
 /**
- * R302.1 — crash-durable, owner-private update_file intent.
+ * crash-durable, owner-private update_file intent.
  *
  * A reservation is a PRECONDITION for a future independently reviewed
  * compare-and-swap write. It is never a provider-write authorization.

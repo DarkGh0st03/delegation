@@ -1,9 +1,9 @@
 /**
- * R302.4 — trusted, ONE-SHOT Gitea atomic update pipeline.
+ * Trusted, ONE-SHOT Gitea atomic update pipeline.
  *
  * Called only from the Gateway AFTER native Rust signature/status verification
  * and a real independent OPA allow. A trusted owner pre-stages an immutable
- * CAS intent and R293 Task flight. No provider call until this verifies both.
+ * CAS intent and Task flight. No provider call until this verifies both.
  * No recovery retry if any provider response or receipt is ambiguous.
  */
 import {createHash} from "node:crypto";

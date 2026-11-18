@@ -66,7 +66,7 @@ export function agentDid(role: SpecializedAgentRole): string {
 }
 
 /**
- * R382.3: in the original authority-only native Rust profile, the Card
+ * In the original authority-only native Rust profile, the Card
  * asserts the SAME already-provisioned role DID used by the Rust signer,
  * not the historical static demonstration DID. This is private host
  * configuration, not a model/Task-selected identity or authorization grant.
@@ -94,7 +94,7 @@ export function createSpecializedAgentCard(
   } = {}
 ): AgentCard {
   const config = ROLE_CONFIG[role];
-  // R382.3: the native Rust signer DID is not the historical static
+  // The native Rust signer DID is not the historical static
   // demonstration Card DID. Publish ONLY the already provisioned role's
   // actual signing identity, and only in the verified authority-only host.
   // The owner Review Host will independently compare this public assertion

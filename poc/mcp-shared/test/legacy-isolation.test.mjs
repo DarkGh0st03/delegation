@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,existsSync} from "node:fs";
 
-test("R264 Shared MCP executable, HTTP listener and obsolete repository routing are absent",()=>{
+test("Shared MCP executable, HTTP listener and obsolete repository routing are absent",()=>{
  for(const path of [
   "../src/main.ts",
   "../src/http-server.ts",

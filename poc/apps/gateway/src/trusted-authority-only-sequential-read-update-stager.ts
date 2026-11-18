@@ -1,5 +1,5 @@
 /**
- * R359.4 owner-private reads->single write coordinator.
+ * owner-private reads->single write coordinator.
  * A typed native Child grants N read_file permissions plus ONE write: the
  * CAS update_file of a file read in this Task (the edited file and its
  * signed context files), or the create_file of a NEW file written from the

@@ -1,4 +1,4 @@
-/** R381.3 offline private stdio -> Unix socket proof. NO real signer/API. */
+/** Offline private stdio -> Unix socket proof. NO real signer/API. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createServer} from "node:net";
@@ -39,7 +39,7 @@ async function fixture<T>(
  }
 }
 
-test("R381.3 Child credential is returned by MCP worker's real native IPC call",async()=>{
+test("Child credential is returned by MCP worker's real native IPC call",async()=>{
  await fixture(
   request=>({ok:true,result:{
    id:"child-from-rust-socket",credentialSubject:{per:[{
@@ -62,7 +62,7 @@ test("R381.3 Child credential is returned by MCP worker's real native IPC call",
   });
 });
 
-test("R381.3 VP travels back through private MCP; no second Rust signer",async()=>{
+test("VP travels back through private MCP; no second Rust signer",async()=>{
  await fixture(
   request=>({ok:true,result:{jwt:"PRIVATE_SIGNED_VP_FROM_NATIVE_RUST"}}),
   async(socketPath,calls)=>{
@@ -82,7 +82,7 @@ test("R381.3 VP travels back through private MCP; no second Rust signer",async()
   });
 });
 
-test("R381.3 root issue/revoke cannot be requested via native MCP",async()=>{
+test("root issue/revoke cannot be requested via native MCP",async()=>{
  assert.throws(()=>createOwnerPrivateNativeCryptoMcpSession(
   "root_issue",{socketPath:"/tmp/socket",bearerToken:"S"},{}),
   /configuration unavailable/u);
@@ -94,7 +94,7 @@ test("R381.3 root issue/revoke cannot be requested via native MCP",async()=>{
   /configuration unavailable/u);
 });
 
-test("R381.3 malformed native reply is fail-closed, sanitized and never retried",async()=>{
+test("malformed native reply is fail-closed, sanitized and never retried",async()=>{
  await fixture(
   ()=>({ok:false,error:"PRIVATE_RUST_SIGNER_SECRET_NEVER_PRINT"}),
   async(socketPath,calls)=>{
@@ -112,7 +112,7 @@ test("R381.3 malformed native reply is fail-closed, sanitized and never retried"
   });
 });
 
-test("R381.3 close-before-connect and concurrency cannot duplicate Rust effect",async()=>{
+test("close-before-connect and concurrency cannot duplicate Rust effect",async()=>{
  await fixture(
   ()=>({ok:true,result:{id:"one"}}),
   async(socketPath,calls)=>{
@@ -130,7 +130,7 @@ test("R381.3 close-before-connect and concurrency cannot duplicate Rust effect",
   });
 });
 
-test("R382.0 aborted trusted Task cannot even start its private MCP Rust session",async()=>{
+test("aborted trusted Task cannot even start its private MCP Rust session",async()=>{
  await fixture(
   ()=>({ok:true,result:{signed_vp:"must-never-sign"}}),
   async(socketPath,calls)=>{
@@ -149,7 +149,7 @@ test("R382.0 aborted trusted Task cannot even start its private MCP Rust session
   });
 });
 
-test("R382.0 cancellation during native Rust IPC never releases VP or retries",async()=>{
+test("cancellation during native Rust IPC never releases VP or retries",async()=>{
  const controller=new AbortController();
  await fixture(
   request=>{
@@ -179,7 +179,7 @@ test("R382.0 cancellation during native Rust IPC never releases VP or retries",a
 });
 
 
-test("R382.1 native MCP rejects forged Task cancellation signals before starting",()=>{
+test("native MCP rejects forged Task cancellation signals before starting",()=>{
  assert.throws(()=>createOwnerPrivateNativeCryptoMcpSession(
   "presentation_create",{
    socketPath:"/tmp/native-private-r3821.sock",bearerToken:"PRIVATE",
@@ -188,7 +188,7 @@ test("R382.1 native MCP rejects forged Task cancellation signals before starting
  /Owner-private native MCP configuration unavailable/u);
 });
 
-test("R382.1 stalled MCP handshake has a finite whole-session deadline",{
+test("stalled MCP handshake has a finite whole-session deadline",{
  timeout:12500,concurrency:false
 },async()=>{
  // Deliberately hold SDK handshake forever without invoking the worker.

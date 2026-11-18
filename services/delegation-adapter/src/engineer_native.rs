@@ -1,4 +1,4 @@
-//! R201: trusted LOCAL Rust cryptography for Engineer and signed A2A Tasks.
+//! Trusted LOCAL Rust cryptography for Engineer and signed A2A Tasks.
 //!
 //! The same process-local CryptoRuntime holds root and child credential objects,
 //! issuer accumulators, EVM status anchors and private signing material. The
@@ -75,7 +75,7 @@ impl NativeEngineerSocket {
         self.poll_with_owner_rights(config, crypto, true)
     }
 
-    /// R225: when the sole Rust CryptoRuntime is embedded in the Software
+    /// When the sole Rust CryptoRuntime is embedded in the Software
     /// Engineer process, its socket serves ONLY Orchestrator and Agents.
     /// Engineer roots/revocations must use the direct Node-API binding.
     pub fn poll_delegates_only(

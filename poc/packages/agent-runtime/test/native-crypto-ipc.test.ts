@@ -31,7 +31,7 @@ async function fixture(t:import("node:test").TestContext,
  return {path,calls};
 }
 
-test("R206 native Rust transport binds Child DC and VP to the same local issuer",async t=>{
+test("native Rust transport binds Child DC and VP to the same local issuer",async t=>{
  const f=await fixture(t,input=>({ok:true,result:input.operation==="issue_child"
   ?{id:"urn:child:42",credentialSubject:{per:[{resource:"gitea://trusted",operation:"read_file"}]}}
   :{signed_vp:"private.signed.jwt"}}));
@@ -50,7 +50,7 @@ test("R206 native Rust transport binds Child DC and VP to the same local issuer"
  assert.deepEqual(f.calls.map(x=>x.operation),["issue_child","create_presentation"]);
 });
 
-test("R206 native Rust transport never falls back to HTTP or leaks failures",async t=>{
+test("native Rust transport never falls back to HTTP or leaks failures",async t=>{
  const f=await fixture(t,()=>({ok:false,error:"PRIVATE_SIGNER_KEY"}));
  await assert.rejects(invokeNativeCrypto({
   socketPath:f.path,token:"PRIVATE_BEARER"
@@ -65,7 +65,7 @@ test("R206 native Rust transport never falls back to HTTP or leaks failures",asy
  },"issue_child",{}),/transport unavailable/u);
 });
 
-test("R213 signed VP handler never falls back to Adapter HTTP when native socket exists",async t=>{
+test("signed VP handler never falls back to Adapter HTTP when native socket exists",async t=>{
  const signed=await fixture(t,request=>({
   ok:true,result:{signed_vp:"native.private.vp"}
  }));
@@ -108,7 +108,7 @@ test("R213 signed VP handler never falls back to Adapter HTTP when native socket
  assert.equal(denied.calls.length,1);
 });
 
-test("R218 canonical signed VP handler rejects missing native socket before HTTP",()=>{
+test("canonical signed VP handler rejects missing native socket before HTTP",()=>{
  const oldFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
  try{
@@ -123,7 +123,7 @@ test("R218 canonical signed VP handler rejects missing native socket before HTTP
  }
 });
 
-test("R239 native approved Task VP works without any Adapter HTTP URL",async t=>{
+test("native approved Task VP works without any Adapter HTTP URL",async t=>{
  const native=await fixture(t,request=>({
   ok:true,result:{signed_vp:"r239-signed-rust-vp"}
  }));
@@ -157,7 +157,7 @@ test("R239 native approved Task VP works without any Adapter HTTP URL",async t=>
  }
 });
 
-test("R381.4 actual Agent VP signs via owner-private MCP subprocess using same native Rust socket",async t=>{
+test("actual Agent VP signs via owner-private MCP subprocess using same native Rust socket",async t=>{
  const rust=await fixture(t,request=>({
   ok:true,result:{signed_vp:"signed.once.in.mcp.worker"}
  }));
@@ -188,7 +188,7 @@ test("R381.4 actual Agent VP signs via owner-private MCP subprocess using same n
  });
 });
 
-test("R381.4 private Agent MCP signing never retries after native failure",async t=>{
+test("private Agent MCP signing never retries after native failure",async t=>{
  const rust=await fixture(t,()=>({
   ok:false,error:"PRIVATE_NATIVE_RUST_KEY_DO_NOT_LOG"
  }));
@@ -212,7 +212,7 @@ test("R381.4 private Agent MCP signing never retries after native failure",async
  assert.equal(rust.calls.length,1);
 });
 
-test("R381.4 non-native signed Agent may not choose private MCP signer",()=>{
+test("non-native signed Agent may not choose private MCP signer",()=>{
  assert.throws(()=>new DelegationEvidenceHandler({
   adapterToken:"PRIVATE",
   nativePresentationTransport:"mcp-stdio",
@@ -221,7 +221,7 @@ test("R381.4 non-native signed Agent may not choose private MCP signer",()=>{
  }),/Private MCP native presenter requires trusted Rust socket/u);
 });
 
-test("R382.0 aborted original A2A Task cannot obtain a native MCP VP after Rust request",async t=>{
+test("aborted original A2A Task cannot obtain a native MCP VP after Rust request",async t=>{
  const abort=new AbortController();
  const rust=await fixture(t,()=>{
   // This is deliberately in the trusted test Rust socket callback:

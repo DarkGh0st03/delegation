@@ -79,7 +79,7 @@ const OPS=new Set(RUST_OPERATIONS);
 const fields=(o,allowed)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).every(k=>allowed.includes(k));
 function deny(reason){throw Error('Authority-only review host: '+reason);}
 /**
- * R435: the Owner must provision a separate endpoint, private staging
+ * The Owner must provision a separate endpoint, private staging
  * channel and private Task-binding channel for EVERY trusted specialist.
  * An unstarted role is not executable just because its DID is registered.
  * The protected SDK admits extra roles only with independent Owner Card
@@ -124,7 +124,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   !fields(options.gateway,['gatewayBaseUrl','adapterToken','fetchFn','timeoutMs']))
   deny('explicit trusted dependencies required; legacy/context overrides forbidden');
  // Disposable owner-private, offline-only seam. A2A/model/workflow JSON
- // cannot mint an R323 native receipt or call this host-only callback.
+ // cannot mint a native receipt or call this host-only callback.
  // Paid startup stays disabled until OS/process isolation is proven.
  if(options.disposableOwnerModelTaskPrebind!==undefined&&
     (typeof options.disposableOwnerModelTaskPrebind!=='function'||
@@ -219,7 +219,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  const adaptiveSourceObservations=new Map();
  let branchAdmissionAttempted=false;
  const branchTaskPins=new Map(),branchStageAttempts=new Set();
- // R357: a signed create_branch ceiling cannot admit a worker Child before
+ // A signed create_branch ceiling cannot admit a worker Child before
  // the exact original root-owned branch has independent Gateway completion.
  // Neither a preexisting provider branch nor a model/A2A report suffices.
  function branchReadyForWorkers(){
@@ -282,7 +282,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  }
  const originalReviewHost=Object.freeze({server,readOnlySessionId:snapshot.session_id,
   get phase(){return session.phase;},
-  /** R382.5 private signed-Planning -> ONE original Root -> canonical
+  /** Private signed-Planning -> ONE original Root -> canonical
    * native MCP Executor owner capability. This method is never placed
    * on the Engineer HTTP server, a Gemini tool, or an A2A/MCP server.
    * The signed authority is reloaded from the SAME checkpoint store,
@@ -346,7 +346,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
    })();
    try{return await activationFlight;}finally{activationFlight=undefined;}
   },
-   /** R350: owner-private same-session Gateway and Child composition.
+   /** owner-private same-session Gateway and Child composition.
    * This only admits authority; it never issues a Child, dispatches A2A,
    * executes a provider operation or claims acceptance. All journals and
    * the native crypto port must be supplied by the trusted owner, not ADK. */
@@ -411,7 +411,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        live.authority_digest!==root.authority_digest)
      deny('operational root changed during Gateway admission');
     const executionHandle=Object.freeze({admission,gateway,childIssuer,
-     /** R351.0: ADK selects the Task and specialist; only this trusted
+     /** ADK selects the Task and specialist; only this trusted
       * owner derives the epoch, signed root pins and native Child request. */
      async proposeAndStageTask(input){
       if(closed||session.phase!=='operational'||gateway.phase!=='active'||
@@ -467,7 +467,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       try{return await decisionFlight;}
       finally{decisionFlight=undefined;}
      },
-     /** R350.2: owner-private Task -> Gateway -> native Child -> enrollment.
+     /** owner-private Task -> Gateway -> native Child -> enrollment.
      * The caller supplies only Task choices and fresh Child metadata;
      * session, revision, requirement, root and DID come from trusted state.
      * Every ambiguous effect is terminal for this operational session. */
@@ -551,7 +551,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       throw error;
      }finally{taskStageFlight=undefined;}
     },
-    /** R367.1: SDK A2A must start AFTER original root/branch verification
+    /** SDK A2A must start AFTER original root/branch verification
      * but BEFORE a model chooses the first worker Task/Child. Later exact
      * private binds still require an admitted native Child and Task.
      * Only the trusted owner may provision SDK A2A agent endpoints
@@ -598,7 +598,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        verifiedProfiles=profiles;
       }catch(error){await owner.close();throw error;}
       a2aOwner=owner;
-      // SDK Owner is private to the verified R349 Engineer session.
+      // SDK Owner is private to the verified Engineer session.
       // Only guarded dispatch and attestation on this handle can use it.
       return Object.freeze({
        status:'owner_protected_a2a_started_no_provider_execution',
@@ -614,7 +614,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       throw error;
      }finally{a2aStarting=undefined;}
      },
-    /** R350.6: owner-only installation of the real in-process Gateway effect
+    /** owner-only installation of the real in-process Gateway effect
      * runtime. The original shared Prepare store, mutation preflight and
      * Runner preflight MUST be bound to this very Gateway instance.
      * This is not an A2A/ADK/MCP callable route. */
@@ -678,7 +678,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       gateway_execution_authorized:false
      });
     },
-    /** R353.0: original owner IDs only, never caller/model PASS or SHA.
+    /** Original owner IDs only, never caller/model PASS or SHA.
      * Reopens the authenticated original Runner receipt after the Gateway
      * completion. This is evidence for a future PR, not PR authorization. */
     async inspectVerifiedPullRequestHead(input){
@@ -747,10 +747,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      try{return await completionFlight;}
      finally{completionFlight=undefined;}
     },
-    /** R353.2: ADK may propose a PR Task only after original Test evidence.
+    /** ADK may propose a PR Task only after original Test evidence.
      * Root/epoch/Child and exact tested SHA stay with the original owner.
      * Admission is not permission to issue a provider POST. */
-    /** R370: one canonical, host-bound operational launch.
+    /** One canonical, host-bound operational launch.
      * The caller supplies private owner transports but can never replace
      * the original Coordinator, Gateway, Child issuer or authority.
      * This is an in-process method; not an HTTP, MCP or A2A endpoint.
@@ -761,10 +761,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
         !fields(input,['sdk','adaptive','draftPullRequest','createBranch']))
       deny('canonical launch requires original activated and live Engineer owner');
-     // R382.4: authority-only is an original trusted host choice, not
+     // authority-only is an original trusted host choice, not
      // a model-controlled fallback. The single canonical live launcher
      // requires the original independently attested Branch and private
-     // Rust MCP Child issuer from the R3818 same-SHA native PASS.
+     // Rust MCP Child issuer from the same-SHA native PASS.
      // No legacy Signed DAG, direct Child fallback or optional Branch
      // shortcut can be used in this explicitly selected profile.
      if(process.env.DELEGATION_GATEWAY_ARCHITECTURE==='authority-only'&&
@@ -1122,7 +1122,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       deny('PR Task admission requires quiescent original owner and one decision');
      const pending=[...stagedTaskIds.values()].filter(p=>!gatewayAttestedTaskIds.has(p.task_id));
      // The original failed Runner flights remain registered but NEVER
-     // completed. PR admission after R356 adaptive recovery requires the
+     // completed. PR admission after adaptive recovery requires the
      // explicit ready_for_pr result and the exact independently completed
      // replacement Test. A model claim or a verified FAIL alone is insufficient.
      const adaptiveReady=!!adaptiveReadyProof&&adaptiveLoopAttempted&&
@@ -1344,7 +1344,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      issuedEffectStagers.set(input.runtimeTaskId,stager);
      return stager;
     },
-     /** R367: the original owner reserves the exact Task/Child/HEAD and
+     /** The original owner reserves the exact Task/Child/HEAD and
       * immutable two-effect read -> CAS journal. This is not an A2A tool. */
      async createEnrolledNativeSequentialReadUpdateStager(input){
       if(closed||session.phase!=='operational'||gateway.phase!=='active'||
@@ -1396,7 +1396,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        throw error;
       }
      },
-     /** R350.5 — dispatch only the original enrolled Task with a genuine
+     /** Dispatch only the original enrolled Task with a genuine
       * owner-private stager created for this Gateway, runtime ID and effect.
       * A2A output is a report, never Gateway provider completion. */
      async dispatchEnrolledTask(input){
@@ -1472,7 +1472,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         taskId:input.taskId,runtimeTaskId:input.runtimeTaskId,
         instruction:input.instruction,effectStager:input.effectStager,
         ...(options.disposableOwnerModelTaskPrebind?{
-         // Called ONLY by the original native R323 prebind, after signed
+         // Called ONLY by the original native prebind, after signed
          // Coordinator/Child/Gateway checks and authenticated agent bind.
          // This one-use receipt never enters HTTP, A2A, IPC or Gemini.
          onNativeOriginalTaskPrebound:receipt=>{
@@ -1559,7 +1559,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          throw verificationError;
         }
        }
-       // R355.7: an adaptive Test may expose bounded verified Runner FAILs
+       // An adaptive Test may expose bounded verified Runner FAILs
        // without a preselected D1 repair. A2A error text never becomes proof;
        // independently check original flight, MAC, Child, root and HEAD.
        let failure=error;
@@ -1654,7 +1654,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        throw failure;
       }finally{dispatchFlight=undefined;}
      },
-     /** R352.1: a verified failure may invite ONE bounded ADK proposal.
+     /** A verified failure may invite ONE bounded ADK proposal.
       * The output is intentionally NOT a Task, a Child, a new permission,
       * a Test PASS, or a Gateway recovery admission. */
      async proposeVerifiedD1RepairTask(input){
@@ -1713,8 +1713,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        task_registered:false,gateway_task_completed:false
       });
      },
-     /** R352.2: original protected Engineer owner consumes a previously
-      * verified model proposal exactly once. Existing R341/R342 components
+     /** Original protected Engineer owner consumes a previously
+      * verified model proposal exactly once. Existing components
       * revalidate the full independent FAIL, reserve a crash-durable source
       * BEFORE Coordinator registration, then issue/enroll a NEW native Child.
       * The failed Test remains uncompleted; this is NOT repair execution. */
@@ -1815,7 +1815,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        throw error;
       }finally{d1RepairAdmissionFlight=undefined;}
      },
-     /** R352.5: owner-only ADK retest choice after independently attested
+     /** owner-only ADK retest choice after independently attested
       * D1 repair. Original failed Test remains failed; no new human grant. */
      async proposeAndStageVerifiedD1Retest(input){
       if(closed||session.phase!=='operational'||gateway.phase!=='active'||
@@ -1889,7 +1889,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       try{return await decisionFlight;}
       finally{decisionFlight=undefined;}
      },
-     /** R350.7 — Gateway alone can confirm an actual provider/Runner
+     /** Gateway alone can confirm an actual provider/Runner
       * completion. The owner passes only IDs pinned to its own prior A2A
       * report, never a model-provided success, receipt, HEAD or signature. */
      async attestEnrolledTaskCompletion(input){
@@ -1984,7 +1984,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        throw error;
       }finally{completionFlight=undefined;}
      },
-     /** R352.0: verify a FAILED Test Runner by the original native
+     /** Verify a FAILED Test Runner by the original native
       * Gateway flight + private MAC/independent Gitea observer. This is a
       * bounded D1 PREFLIGHT only, not Test PASS, repair admission or a
       * model-triggered Child. It never enters gatewayAttestedTaskIds. */
@@ -2004,7 +2004,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          typeof intent.task_id!=='string')
        deny('D1 requires original durable Test Task/Runner identity');
       // Prior A2A activity only identifies the Task to cross-check. It is
-      // never proof of failure: the R339 observer validates the actual
+      // never proof of failure: the observer validates the actual
       // Runner attempt, MAC, Gitea HEAD, Rust owner and original Gateway.
       const pin=stagedTaskIds.get(intent.runtime_task_id);
       const reported=dispatchedReports.get(intent.runtime_task_id);
@@ -2120,7 +2120,7 @@ export async function startTrustedAuthorityOnlyReviewHost(options){
   return Object.freeze({engineerUrl:'http://127.0.0.1:'+host.server.address().port,
    get phase(){return host.phase;},activateOperational:root=>host.activateOperational(root),
    admitOperationalExecution:deps=>host.admitOperationalExecution(deps),
-   // R382.6: owner-only capability forwarded to the SAME original Host.
+   // owner-only capability forwarded to the SAME original Host.
    // It is NOT a new HTTP/A2A/MCP route and cannot sign approval itself.
    createReviewedCanonicalHandoff:opts=>host.createReviewedCanonicalHandoff(opts),
    close:()=>host.close()});

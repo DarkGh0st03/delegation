@@ -1,5 +1,5 @@
 /**
- * R381.0 — experimental owner-only, INTERPROCESS MCP stdio transport.
+ * Experimental owner-only, INTERPROCESS MCP stdio transport.
  *
  * This intentionally implements only a one-time, opaque authorization
  * handshake across a real child-process boundary. The original trusted

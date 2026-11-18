@@ -1,5 +1,5 @@
 /**
- * R335 — owner-side, authenticated controlled Runner FAIL classification.
+ * owner-side, authenticated controlled Runner FAIL classification.
  *
  * Unlike a model/A2A Test FAIL, the input is the ORIGINAL immutable
  * RunnerClient.run() response object branded to one authenticated POST.

@@ -107,9 +107,9 @@ test("prepare generates independent one-time bindings for repeated tool requests
   );
 });
 
-// R360: native operational HEAD is an authenticated Gateway projection,
+// Native operational HEAD is an authenticated Gateway projection,
 // never an untrusted model-supplied field.
-test("R360 owner-authenticated operational Prepare inherits its exact Gitea HEAD",()=>{
+test("owner-authenticated operational Prepare inherits its exact Gitea HEAD",()=>{
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const sha="a".repeat(40),path="apps/backend/users/account.ts";
  const task={task_id:"r360-runtime",agent_role:"backend",tool:"read_file",
@@ -135,7 +135,7 @@ test("R360 owner-authenticated operational Prepare inherits its exact Gitea HEAD
  assert.equal(store.get("r360-forged-read"),undefined);
 });
 
-test("R454 additional specialist cannot prepare outside a native Owner read-only binding",()=>{
+test("additional specialist cannot prepare outside a native Owner read-only binding",()=>{
  const path="apps/backend/src/users/user.service.ts";
  const task={task_id:"runtime-reviewer",agent_role:"reviewer",tool:"read_file",
   arguments:{branch:"feature/sample-change",path}};

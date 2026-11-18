@@ -10,7 +10,7 @@ function keys(){
   pub:kp.publicKey.export({format:"pem",type:"spki"}).toString()};
 }
 
-test("R190 private registry contains no repository or Runner invoker",()=>{
+test("private registry contains no repository or Runner invoker",()=>{
  const k=keys(),reg=new PrivateMcpTaskRegistry({
   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
  });
@@ -19,7 +19,7 @@ test("R190 private registry contains no repository or Runner invoker",()=>{
  assert.equal(typeof reg.takeSignedPresentation,"function");
 });
 
-test("R190 forged role/task bearer cannot trigger crypto signing",async()=>{
+test("forged role/task bearer cannot trigger crypto signing",async()=>{
  const k=keys(),attacker=keys(),reg=new PrivateMcpTaskRegistry({
   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
  });
@@ -54,7 +54,7 @@ test("R190 forged role/task bearer cannot trigger crypto signing",async()=>{
   k.priv,"backend","signed-1"),args),/inactive_task/);
 });
 
-test("R190 cancelled Task cannot retain authority to retrieve a VP",async()=>{
+test("cancelled Task cannot retain authority to retrieve a VP",async()=>{
  const k=keys(),controller=new AbortController();
  const reg=new PrivateMcpTaskRegistry({
   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
@@ -134,7 +134,7 @@ test("crypto challenge concurrency budget permits 12 sequential proofs but never
 });
 
 
-test("R329.2 native owner 20-minute Gateway challenge is signed exactly once (no token or VP exposed to model)",async()=>{
+test("native owner 20-minute Gateway challenge is signed exactly once (no token or VP exposed to model)",async()=>{
  const k=keys(),reg=new PrivateMcpTaskRegistry({
   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
  });

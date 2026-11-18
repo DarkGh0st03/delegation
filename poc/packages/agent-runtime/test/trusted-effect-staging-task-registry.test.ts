@@ -143,7 +143,7 @@ test("ADK rejects stale unscoped owner-stager config at server assembly",()=>{
  ),/Invalid trusted effect Task registry/u);
 });
 
-test("R358 prebound read-only Task needs an exact signed file-read grant and burns its slot",async()=>{
+test("prebound read-only Task needs an exact signed file-read grant and burns its slot",async()=>{
  const f=pins();const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  const binding={...f.binding,operation:"read_file" as const};
  registry.bindTask(binding);
@@ -159,7 +159,7 @@ test("R358 prebound read-only Task needs an exact signed file-read grant and bur
  assert.throws(()=>bad.selectFor(readContext),/already dispatched/u);
 });
 
-test("R359.5 mixed Task cannot stage update before native read attestation",async()=>{
+test("mixed Task cannot stage update before native read attestation",async()=>{
  const f=pins(),calls:string[]=[];
  const reg=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  reg.bindTask({...f.binding,operation:"read_then_update",
@@ -182,7 +182,7 @@ test("R359.5 mixed Task cannot stage update before native read attestation",asyn
   "stage:update-r359","attest:update_file:update-r359"]);
  await assert.rejects(port.stage("third"),/out of sequence/u);
 });
-test("R359.5 mixed A2A cannot reuse a mismatched or enlarged operation grant",()=>{
+test("mixed A2A cannot reuse a mismatched or enlarged operation grant",()=>{
  const f=pins(),reg=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  reg.bindTask({...f.binding,operation:"read_then_update",
   effectStager:{stagedTool:"read_then_update",async stage(){},
@@ -195,7 +195,7 @@ test("R359.5 mixed A2A cannot reuse a mismatched or enlarged operation grant",()
  assert.throws(()=>reg.selectFor(context()),/already dispatched/u);
 });
 
-test("R377.3 Test repair binds one project test without Runner authority",()=>{
+test("Test repair binds one project test without Runner authority",()=>{
  const testPath="tests/frontend/account.test.tsx";
  const f=pins(),reg=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  const binding={...f.binding,role:"test" as const,path:testPath,
@@ -216,7 +216,7 @@ test("R377.3 Test repair binds one project test without Runner authority",()=>{
   /differs from trusted owner/u);
 });
 
-test("R383.8 signed CREATE Task requires exact file/role and one owner-private stage",async()=>{
+test("signed CREATE Task requires exact file/role and one owner-private stage",async()=>{
  const f=pins(),registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  const binding={...f.binding,operation:"create_file" as const,
   effectStager:{stagedTool:"create_file" as const,async stage(id:string){
@@ -248,7 +248,7 @@ test("R383.8 signed CREATE Task requires exact file/role and one owner-private s
  }),/one-shot effect port required/u);
 });
 
-test("R383.8 A2A CREATE extra grants, extra paths and Runner claim are not authority",()=>{
+test("A2A CREATE extra grants, extra paths and Runner claim are not authority",()=>{
  const f=pins();
  const binding={...f.binding,operation:"create_file" as const,
   effectStager:{stagedTool:"create_file" as const,async stage(id:string){
@@ -274,7 +274,7 @@ test("R383.8 A2A CREATE extra grants, extra paths and Runner claim are not autho
  assert.deepEqual(f.calls,[]);
 });
 
-test("R389 signed Test CREATE binding rejects application paths, acceptance and Runner claims",async()=>{
+test("signed Test CREATE binding rejects application paths, acceptance and Runner claims",async()=>{
  const f=pins(),source="tests/backend/account.test.ts";
  const binder={...f.binding,role:"test" as const,path:source,
   operation:"create_file" as const,
@@ -306,9 +306,9 @@ test("R389 signed Test CREATE binding rejects application paths, acceptance and 
  assert.deepEqual(f.calls,["r389-create"]);
 });
 
-/** R437: additional specialist roles need an original owner-private Task
+/** Additional specialist roles need an original owner-private Task
  * pin. These regressions never create a signer, root or Gateway approval. */
-test("R437 owner-private registry selects an extra specialist only on exact signed Task hints",async()=>{
+test("owner-private registry selects an extra specialist only on exact signed Task hints",async()=>{
  const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES}),f=pins(),source="apps/invoice.ts";
  const ownerPins={...f.binding,role:"invoice",planTaskId:"r437-invoice",
   childCredentialId:"urn:r437:child:invoice",presenterId:"did:thesis:invoice-agent",
@@ -329,7 +329,7 @@ test("R437 owner-private registry selects an extra specialist only on exact sign
  registry.retireFor(runtime);
  assert.throws(()=>registry.selectFor(ctx),/already dispatched/u);
 });
-test("R437 extra specialist cannot impersonate Test or Orchestrator or skip exact Child pins",()=>{
+test("extra specialist cannot impersonate Test or Orchestrator or skip exact Child pins",()=>{
  for(const role of ["orchestrator","constructor","prototype","invoice..bad"]){
   const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES}),f=pins();
   assert.throws(()=>registry.bindTask({...f.binding,role}),

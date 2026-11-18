@@ -98,7 +98,7 @@ async function fixture(fn:(x:{
   });
  }finally{await rm(root,{recursive:true,force:true});}
 }
-test("R303.3 signed PASS receipt reopens with MAC, tested SHA and original Task Child",async()=>{
+test("signed PASS receipt reopens with MAC, tested SHA and original Task Child",async()=>{
  await fixture(async({runner,publisher,observer,dir})=>{
   const result=await runner.run(request);
   const digest=await publisher.publish(
@@ -121,7 +121,7 @@ test("R303.3 signed PASS receipt reopens with MAC, tested SHA and original Task 
   await assert.rejects(observer.observe(expected),/invalid owner MAC/);
  });
 });
-test("R303.3 moved Gitea HEAD after PASS cannot unlock Test Task",async()=>{
+test("moved Gitea HEAD after PASS cannot unlock Test Task",async()=>{
  await fixture(async({runner,publisher,observer,setHead})=>{
   const result=await runner.run(request);
   setHead("d".repeat(40));
@@ -134,7 +134,7 @@ test("R303.3 moved Gitea HEAD after PASS cannot unlock Test Task",async()=>{
    /stale or moved feature branch/);
  });
 });
-test("R303.3 foreign Child, SHA, fake or failed Runner result cannot publish PASS",async()=>{
+test("foreign Child, SHA, fake or failed Runner result cannot publish PASS",async()=>{
  await fixture(async({runner,publisher,dir})=>{
   const result=await runner.run(request);
   await assert.rejects(publisher.publish({...intent,
@@ -156,7 +156,7 @@ test("R303.3 foreign Child, SHA, fake or failed Runner result cannot publish PAS
 });
 
 
-test("R353.0 original authenticated PASS exposes only independently current tested HEAD",async()=>{
+test("original authenticated PASS exposes only independently current tested HEAD",async()=>{
  await fixture(async({runner,publisher,observer,setHead})=>{
   await assert.rejects(observer.observeTestedHead(expected),/ENOENT/);
   const result=await runner.run(request);
@@ -176,7 +176,7 @@ test("R353.0 original authenticated PASS exposes only independently current test
   await assert.rejects(observer.observeTestedHead(expected),/stale or moved/);
  });
 });
-test("R353.0 a tampered PASS cannot provide a PR tested SHA",async()=>{
+test("a tampered PASS cannot provide a PR tested SHA",async()=>{
  await fixture(async({runner,publisher,observer,dir})=>{
   const result=await runner.run(request);
   await publisher.publish(intent,expected,request,result,"opa");
@@ -188,7 +188,7 @@ test("R353.0 a tampered PASS cannot provide a PR tested SHA",async()=>{
   await assert.rejects(observer.observeTestedHead(expected),/invalid owner MAC/);
  });
 });
-test("R353.0 observer owner binding rejects foreign repository, branch and prototype spoof",async()=>{
+test("observer owner binding rejects foreign repository, branch and prototype spoof",async()=>{
  await fixture(async({observer})=>{
   assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
    observer,"thesis/sample-app",branch),true);
@@ -202,7 +202,7 @@ test("R353.0 observer owner binding rejects foreign repository, branch and proto
  });
 });
 
-test("R353.0 public projection override cannot replace existing completion verification",async()=>{
+test("public projection override cannot replace existing completion verification",async()=>{
  await fixture(async({runner,publisher,observer,dir})=>{
   const result=await runner.run(request);
   await publisher.publish(intent,expected,request,result,"opa");

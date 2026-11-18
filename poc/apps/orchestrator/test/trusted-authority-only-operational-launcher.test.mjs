@@ -42,7 +42,7 @@ const prConfig=()=>({
  prepare:()=>{throw Error('provider should not be called');},
  execute:()=>{throw Error('provider should not be called');}
 });
-test('R385.6 strict authenticated repair read flag reaches only the private original owner',async()=>{
+test('strict authenticated repair read flag reaches only the private original owner',async()=>{
  const {owner,events}=fakeOwner();
  const original=owner.runAdaptiveWorkLoop;
  owner.runAdaptiveWorkLoop=async config=>{
@@ -55,7 +55,7 @@ test('R385.6 strict authenticated repair read flag reaches only the private orig
  assert.equal(result.status,'owner_operational_ready_for_review_not_pr_authorized');
  assert.deepEqual(events,['a2a','adaptive']);
 });
-test('R385.6 client cannot inject a false, arbitrary or model-shaped diagnostic policy',async()=>{
+test('client cannot inject a false, arbitrary or model-shaped diagnostic policy',async()=>{
  for(const invalid of [false,'true',0,{},null]){
   const {owner,events}=fakeOwner(),input=canonicalConfig(owner);
   input.adaptive.requireVerifiedRepairDiagnostic=invalid;
@@ -63,7 +63,7 @@ test('R385.6 client cannot inject a false, arbitrary or model-shaped diagnostic 
   assert.deepEqual(events,[]);
  }
 });
-test('R384.5 owner forwards bounded recovery budget without changing PR authority',async()=>{
+test('owner forwards bounded recovery budget without changing PR authority',async()=>{
  const {owner,events}=fakeOwner();
  const original=owner.runAdaptiveWorkLoop;
  owner.runAdaptiveWorkLoop=async budget=>{
@@ -78,7 +78,7 @@ test('R384.5 owner forwards bounded recovery budget without changing PR authorit
  assert.equal(outcome.status,'owner_operational_ready_for_review_not_pr_authorized');
  assert.deepEqual(events,['a2a','adaptive']);
 });
-test('R385.13 original operational launcher allows 25 owner-only decisions without creating a 25th Child',async()=>{
+test('original operational launcher allows 25 owner-only decisions without creating a 25th Child',async()=>{
  const {owner,events}=fakeOwner();
  const original=owner.runAdaptiveWorkLoop;
  owner.runAdaptiveWorkLoop=async budget=>{
@@ -96,7 +96,7 @@ test('R385.13 original operational launcher allows 25 owner-only decisions witho
  assert.equal(outcome.pr_created,false);
  assert.deepEqual(events,['a2a','adaptive']);
 });
-test('R385.13 original launcher still rejects 26+ or malformed decisions before SDK or Child',async()=>{
+test('original launcher still rejects 26+ or malformed decisions before SDK or Child',async()=>{
  for(const invalid of [0,-1,26,30,1.5,NaN,Infinity,'25',null]){
   const {owner,events}=fakeOwner();
   const cfg=canonicalConfig(owner);
@@ -106,7 +106,7 @@ test('R385.13 original launcher still rejects 26+ or malformed decisions before 
   assert.deepEqual(events,[]);
  }
 });
-test('R384.5 unbounded or malformed recovery budgets rejected before A2A startup',async()=>{
+test('unbounded or malformed recovery budgets rejected before A2A startup',async()=>{
  for(const invalid of [-1,5,1.5,NaN,'4']){
   const {owner,events}=fakeOwner();
   const config=canonicalConfig(owner);
@@ -116,7 +116,7 @@ test('R384.5 unbounded or malformed recovery budgets rejected before A2A startup
   assert.deepEqual(events,[]);
  }
 });
-test('R370 readiness alone never issues PR, Child, root VP or provider effect',async()=>{
+test('readiness alone never issues PR, Child, root VP or provider effect',async()=>{
  const {owner,events}=fakeOwner();
  const result=await launch(canonicalConfig(owner));
  assert.equal(result.status,'owner_operational_ready_for_review_not_pr_authorized');
@@ -126,20 +126,20 @@ test('R370 readiness alone never issues PR, Child, root VP or provider effect',a
  assert.equal('credential_id' in result,false);
  assert.equal('signed_vp' in result,false);
 });
-test('R370 blocked adaptive result cannot fall through to PR',async()=>{
+test('blocked adaptive result cannot fall through to PR',async()=>{
  const {owner,events}=fakeOwner('owner_adaptive_work_blocked');
  await assert.rejects(launch(canonicalConfig(owner,prConfig())),
   /PR forbidden without latest independently completed Test/);
  assert.deepEqual(events,['a2a','adaptive']);
 });
-test('R370 reject arbitrary Gateway signer/provider override before SDK startup',async()=>{
+test('reject arbitrary Gateway signer/provider override before SDK startup',async()=>{
  const {owner,events}=fakeOwner();
  const cfg=canonicalConfig(owner);
  cfg.sdk.rootCredentialId='untrusted-root-from-model';
  await assert.rejects(launch(cfg),/trusted owner, protected A2A and bounded adaptive model required/);
  assert.deepEqual(events,[]);
 });
-test('R370 reject PR without exact Engineer grant, private native callbacks or a safe base branch',async()=>{
+test('reject PR without exact Engineer grant, private native callbacks or a safe base branch',async()=>{
  for(const mutate of [
   x=>{x.permission.operation='update_file';},
   x=>{x.baseBranch='feature/evil-base';},
@@ -156,7 +156,7 @@ test('R370 reject PR without exact Engineer grant, private native callbacks or a
   assert.deepEqual(events,[]);
  }
 });
-test('R370 reject PR decision bound to another Test SHA before Gateway Prepare',async()=>{
+test('reject PR decision bound to another Test SHA before Gateway Prepare',async()=>{
  const {owner,events}=fakeOwner();
  owner.proposeAndStageVerifiedPullRequestTask=async()=>({
   status:'owner_pr_root_task_bound_no_provider_execution',
@@ -168,7 +168,7 @@ test('R370 reject PR decision bound to another Test SHA before Gateway Prepare',
   /model-selected PR Task is not pinned/);
  assert.deepEqual(events,['a2a','adaptive']);
 });
-test('R370 one-shot private root PR follows Gateway Prepare, durable stage, native execute, independent attest',async()=>{
+test('one-shot private root PR follows Gateway Prepare, durable stage, native execute, independent attest',async()=>{
  const {owner,events}=fakeOwner();
  owner.proposeAndStageVerifiedPullRequestTask=async input=>{
   events.push('pr-proposal');
@@ -212,7 +212,7 @@ const branchCfg=()=>({
  prepare:()=>{throw Error('unreachable branch Prepare');},
  execute:()=>{throw Error('unreachable native branch execute');}
 });
-test('R371 original root Branch is independently attested before protected SDK A2A',async()=>{
+test('original root Branch is independently attested before protected SDK A2A',async()=>{
  const {owner,events}=fakeOwner();
  owner.proposeAndStageBranchTask=async input=>{events.push('branch-proposal');return {
   status:'owner_branch_root_task_bound_no_provider_execution',
@@ -249,7 +249,7 @@ test('R371 original root Branch is independently attested before protected SDK A
  assert.deepEqual(events,['branch-proposal','branch-prepare','branch-stage',
   'branch-native-rust-opa-gitea','branch-attested','a2a','adaptive']);
 });
-test('R371 cannot launch SDK or workers when original Branch GET has not attested',async()=>{
+test('cannot launch SDK or workers when original Branch GET has not attested',async()=>{
  const {owner,events}=fakeOwner();
  owner.proposeAndStageBranchTask=async input=>{
   events.push('branch-proposal');return {
@@ -277,7 +277,7 @@ test('R371 cannot launch SDK or workers when original Branch GET has not atteste
   /branch not independently attested/);
  assert.deepEqual(events,['branch-proposal']);
 });
-test('R371 deny wrong Branch permission or a base inside the agents namespace before private model',async()=>{
+test('deny wrong Branch permission or a base inside the agents namespace before private model',async()=>{
  for(const mutate of [
   b=>{b.baseBranch='feature/development';},
   b=>{b.baseBranch='main/';},

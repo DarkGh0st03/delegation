@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {createOwnerPrivateInterprocessMcpSession}
  from "../src/owner-private-crypto-stdio.ts";
 
-test("R381.0 separate-process MCP broker ACKs once; Rust callback stays in owner",async()=>{
+test("separate-process MCP broker ACKs once; Rust callback stays in owner",async()=>{
   let effects=0;
   const privateCredential=Object.freeze({
     id:"PRIVATE_ORIGINAL_OWNER_DC_DO_NOT_EXPOSE",
@@ -21,7 +21,7 @@ test("R381.0 separate-process MCP broker ACKs once; Rust callback stays in owner
   await s.close();
 });
 
-test("R381.0 interprocess MCP supports separate root and presentation tools without sharing secrets",async()=>{
+test("interprocess MCP supports separate root and presentation tools without sharing secrets",async()=>{
   for(const operation of ["root_issue","root_revoke",
     "presentation_create"] as const){
     let calls=0;
@@ -36,7 +36,7 @@ test("R381.0 interprocess MCP supports separate root and presentation tools with
   }
 });
 
-test("R381.0 close-before-MCP-connect and invalid roles never invoke signer",async()=>{
+test("close-before-MCP-connect and invalid roles never invoke signer",async()=>{
   let effects=0;
   const s=createOwnerPrivateInterprocessMcpSession("child_issue",async()=>{
     effects++;return "PRIVATE";
@@ -48,7 +48,7 @@ test("R381.0 close-before-MCP-connect and invalid roles never invoke signer",asy
     "unrecognized_role" as never,async()=>1),/operation unavailable/u);
 });
 
-test("R381.0 signer failure is private and never retried after interprocess ACK",async()=>{
+test("signer failure is private and never retried after interprocess ACK",async()=>{
   let effects=0;
   const s=createOwnerPrivateInterprocessMcpSession("presentation_create",async()=>{
     effects++;
@@ -63,7 +63,7 @@ test("R381.0 signer failure is private and never retried after interprocess ACK"
   assert.equal(effects,1);
 });
 
-test("R381.0 two concurrent calls cannot create a second MCP or credential effect",async()=>{
+test("two concurrent calls cannot create a second MCP or credential effect",async()=>{
   let effects=0;
   const s=createOwnerPrivateInterprocessMcpSession("child_issue",async()=>{
     effects++;

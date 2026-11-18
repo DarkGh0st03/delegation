@@ -122,7 +122,7 @@ pub struct CredentialStatusReadResponse {
     pub anchor_version: Option<u64>,
 }
 
-/// R128: exact root claims from the CURRENT Rust Adapter-issued record,
+/// Exact root claims from the CURRENT Rust Adapter-issued record,
 /// never a model claim or a raw DC/VP. This is issuer-local observation,
 /// not independent signed-presentation verification or an execution grant.
 #[derive(Clone, Debug, Serialize)]
@@ -615,7 +615,7 @@ impl CryptoRuntime {
         })
     }
 
-    /// R128 private Gateway-only issued-root registry inspection. The
+    /// Private Gateway-only issued-root registry inspection. The
     /// adapter itself must possess a root actually issued by its Engineer
     /// identity. No raw credential, accumulator witness, VP or private
     /// signing material is returned. Rust's anchored Status List check
@@ -1315,7 +1315,7 @@ mod tests {
         );
     }
 
-    /// R456 native cryptographic positive: a dynamically provisioned
+    /// Native cryptographic positive: a dynamically provisioned
     /// specialist is a distinct Rust issuer/presenter, not Backend's key.
     /// This uses real in-memory Rust Core signatures/status, NOT EVM/OPA.
     #[test]

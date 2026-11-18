@@ -1,6 +1,6 @@
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R385.13 - The 24th Child-consuming Task is the final Test retest.
+ * The 24th Child-consuming Task is the final Test retest.
  * One failed prior Test remains registered but never gateway-completed.
  * This exercises the REAL ADK decision-proposer without native effects,
  * Gitea or model billing; no test claim or Pull Request is fabricated.
@@ -69,7 +69,7 @@ function config(choice){
   maxVerifiedFailures:4
  };
 }
-test("R385.13 final Test retest can depend on last independently completed CAS, not failed Test",async()=>{
+test("final Test retest can depend on last independently completed CAS, not failed Test",async()=>{
  const cfg=config(candidate());
  const out=await new Proposer(cfg).propose();
  assert.equal(cfg.model.calls,1);
@@ -77,7 +77,7 @@ test("R385.13 final Test retest can depend on last independently completed CAS, 
  assert.ok(!cfg.previousTasks.some(row=>row.task_id===failedTask));
  assert.equal(cfg.previousTasks.at(-1).task_id,lastCas);
 });
-test("R385.13 cannot reuse failed Test or claim it as a completed prerequisite",async()=>{
+test("cannot reuse failed Test or claim it as a completed prerequisite",async()=>{
  for(const invalid of [candidate(failedTask),
   candidate(lastCas,failedTask),candidate("r375-functional-file-11")]){
   const cfg=config(invalid);

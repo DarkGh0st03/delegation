@@ -54,7 +54,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     if(proof?.status!=='owner_verified_tested_head_not_pr_authorized'||
        !/^[a-f0-9]{40}$/u.test(proof.tested_commit_sha))
      deny('independent current Test proof missing');
-    // R366: readiness must refer to the latest independently completed
+    // Readiness must refer to the latest independently completed
     // Test on the exact Gitea HEAD observed before the model decision.
     // Re-read AFTER asynchronous receipt verification to fence a HEAD,
     // root, completion-ledger or failure-state race. A model claim or an
@@ -72,7 +72,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      source_test_task_id:proof.task_id,source_test_runtime_task_id:proof.runtime_task_id,
      tested_commit_sha:proof.tested_commit_sha,pr_created:false});
    }
-   // R385.6: opt-in owner policy. After an independently verified Test FAIL,
+   // opt-in owner policy. After an independently verified Test FAIL,
    // model-selected UPDATE can be staged only after a distinct signed,
    // Gateway-completed diagnostic read of that *same* source and HEAD.
    // No model excerpt, permission claim or A2A result can satisfy this gate.

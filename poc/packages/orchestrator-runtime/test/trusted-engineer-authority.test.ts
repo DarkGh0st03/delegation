@@ -37,7 +37,7 @@ test("preliminary root lists only exact read-only operations on main and is boun
   ])assert.throws(()=>preliminaryReadPermissions(attack));
 });
 
-test("R380.0 explicit hierarchical Planning Root is bounded and strictly read-only",()=>{
+test("explicit hierarchical Planning Root is bounded and strictly read-only",()=>{
   const files=Array.from({length:160},(_,i)=>`src/group/item-${i}.ts`);
   const large={...snapshot(),directories:["","src","src/group"],files};
   assert.throws(()=>preliminaryReadPermissions(large),/oversized file list/u);
@@ -71,7 +71,7 @@ test("R380.0 explicit hierarchical Planning Root is bounded and strictly read-on
 });
 
 
-test("R380.2 only original trusted owner can select bounded dynamic discovery roots",()=>{
+test("only original trusted owner can select bounded dynamic discovery roots",()=>{
  const base={...snapshot(),hierarchical_preliminary_read:true};
  const valid={...base,dynamic_discovery_roots:["apps/backend"]};
  assert.deepEqual(preliminaryReadPermissions(valid),preliminaryReadPermissions(base),
@@ -90,7 +90,7 @@ test("R380.2 only original trusted owner can select bounded dynamic discovery ro
    /Invalid trusted Planning dynamic discovery roots/u);
 });
 
-test("R380.2 discovery ledger accepts only verified direct children and commits no partial listing",()=>{
+test("discovery ledger accepts only verified direct children and commits no partial listing",()=>{
  const ledger=new TrustedPlanningDiscoveryLedger({
   ...snapshot(),hierarchical_preliminary_read:true,
   dynamic_discovery_roots:["apps/backend"]

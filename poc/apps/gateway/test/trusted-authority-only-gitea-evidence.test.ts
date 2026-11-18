@@ -95,7 +95,7 @@ async function fixture(fn:(arg:{
  try{await fn({directory,record,sign,save,reader});}
  finally{await rm(directory,{recursive:true,force:true});}
 }
-// R357.3 unit-only: the real admission gate is tested separately. The
+// unit-only: the real admission gate is tested separately. The
 // prototype fixture supplies expected binding solely to exercise publisher
 // witness, independent read, MAC and file-replay behavior, NOT EVM/OPA.
 function sourceClient(token:string,head=revision,data=contents){
@@ -149,7 +149,7 @@ function fakeReadAdmission(){
   }
  }) as TrustedAuthorityOnlyGatewayAdmissions;
 }
-test("R357.3 exact witnessed Gitea read publishes only owner-authenticated bytes",async()=>{
+test("exact witnessed Gitea read publishes only owner-authenticated bytes",async()=>{
  await fixture(async({directory,reader})=>{
   const record=originalReadRecord(),gate=fakeReadAdmission();
   const result=await new GiteaExecutor(sourceClient("trusted-gateway")).execute(record);
@@ -180,7 +180,7 @@ test("R357.3 exact witnessed Gitea read publishes only owner-authenticated bytes
   }),/EEXIST/u);
  });
 });
-test("R357.3 missing HEAD pin, forged result or moved independent Gitea HEAD never signs",async()=>{
+test("missing HEAD pin, forged result or moved independent Gitea HEAD never signs",async()=>{
  await fixture(async({directory,reader})=>{
   const gate=fakeReadAdmission(),record=originalReadRecord();
   const real=await new GiteaExecutor(sourceClient("trusted-gateway")).execute(record);
@@ -217,7 +217,7 @@ test("R357.3 missing HEAD pin, forged result or moved independent Gitea HEAD nev
   await assert.rejects(reader().observe(expected),/ENOENT/);
  });
 });
-test("R294 real Gitea client evidence reader binds MAC, exact Task, branch HEAD and file bytes",async()=>{
+test("real Gitea client evidence reader binds MAC, exact Task, branch HEAD and file bytes",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   await save(sign(record()));
   const v=await reader().toTrustedObserver().observe(expected);
@@ -228,7 +228,7 @@ test("R294 real Gitea client evidence reader binds MAC, exact Task, branch HEAD 
   assert.equal(v.completed_at_ms,Date.parse("2026-11-05T10:00:00Z"));
  });
 });
-test("R294 forged Task, wrong key and tampered Gitea bytes/head are denied",async()=>{
+test("forged Task, wrong key and tampered Gitea bytes/head are denied",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   await save(sign(record()));
   for(const bad of [
@@ -244,7 +244,7 @@ test("R294 forged Task, wrong key and tampered Gitea bytes/head are denied",asyn
    /HEAD differs/);
  });
 });
-test("R294 missing outcome, unsigned, invented OPA or malformed signed claims fail closed",async()=>{
+test("missing outcome, unsigned, invented OPA or malformed signed claims fail closed",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   await assert.rejects(reader().observe(expected),/ENOENT/);
   const r=record();
@@ -259,7 +259,7 @@ test("R294 missing outcome, unsigned, invented OPA or malformed signed claims fa
   await assert.rejects(reader().observe(expected),/precise permission boundary/);
  });
 });
-test("R376.2 only the independent authenticated read exposes a bounded source observation",async()=>{
+test("only the independent authenticated read exposes a bounded source observation",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   await save(sign(record()));
   const observer=reader();
@@ -278,7 +278,7 @@ test("R376.2 only the independent authenticated read exposes a bounded source ob
   assert.equal(value.evidence_sha256,(await observer.observe(expected)).evidence_sha256);
  });
 });
-test("R376.2 spoofed read-observer prototype cannot authenticate repository or source",async()=>{
+test("spoofed read-observer prototype cannot authenticate repository or source",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   await save(sign(record()));
   const fake=Object.create(AuthenticatedGiteaReadCompletionObserver.prototype);
@@ -297,7 +297,7 @@ test("R376.2 spoofed read-observer prototype cannot authenticate repository or s
   assert.notEqual(verified.excerpt,"FAKE");
  });
 });
-test("R376.2 diagnostic excerpt is bounded, controls sanitized and signed bytes immutable",async()=>{
+test("diagnostic excerpt is bounded, controls sanitized and signed bytes immutable",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   const long="const value = 1;\n"+"x".repeat(4700)+"\u0007";
   await save(sign({...record(),source_sha256:sha(long),
@@ -314,7 +314,7 @@ test("R376.2 diagnostic excerpt is bounded, controls sanitized and signed bytes 
    /authentication failed/u);
  });
 });
-test("R294 symlinked evidence file cannot impersonate Gateway-owned record",async()=>{
+test("symlinked evidence file cannot impersonate Gateway-owned record",async()=>{
  await fixture(async({directory,record,sign,save,reader})=>{
   await save(sign(record()));
   const name=sha(expected.session_id+"\n"+expected.request_id)+".json";
@@ -326,7 +326,7 @@ test("R294 symlinked evidence file cannot impersonate Gateway-owned record",asyn
   await assert.rejects(reader().observe(expected),/ELOOP/);
  });
 });
-test("R294 evidence reader cannot construct from a non-private or unpinned source",async()=>{
+test("evidence reader cannot construct from a non-private or unpinned source",async()=>{
  await fixture(async({directory})=>{
   assert.throws(()=>new AuthenticatedGiteaReadCompletionObserver({
    directory:"relative",key,repository:"thesis/sample-app",

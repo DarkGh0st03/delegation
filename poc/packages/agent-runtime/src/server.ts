@@ -91,7 +91,7 @@ export async function startSpecializedAgentServer(
      });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
   if (!options.adk && !options.taskHandler) throw new Error("A2A agent requires an ADK runtime or a Task handler");
-  // R381.6: a private Rust MCP subprocess is an owner-bound signing
+  // A private Rust MCP subprocess is an owner-bound signing
   // transport, never a free-standing A2A capability. Refuse it BEFORE any
   // listener or Task is created without the original
   // authority-only host and its private one-shot Task registry.

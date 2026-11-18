@@ -85,7 +85,7 @@ export function prepareAuthorization(
   const pinnedRevision = dependencies.planningRevisions?.authorizePrepare(
     normalized.task_id, normalized.agent_role, normalized.request
   );
-  // R360: only the activated owner Gateway may pin an operational Task HEAD.
+  // Only the activated owner Gateway may pin an operational Task HEAD.
   // The raw Prepare/A2A request supplies no revision or additional authority.
   const effectivePinnedRevision = pinnedRevision ?? authorityOnlyBinding?.pinned_revision;
 

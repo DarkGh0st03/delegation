@@ -1,6 +1,6 @@
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R333 — three physical HMAC staging channels, one Coordinator/root and
+ * Three physical HMAC staging channels, one Coordinator/root and
  * one owner registry.  The local origin of a stage request is pinned
  * by its socket's owner-issued key, never by A2A or its JSON body.
  */
@@ -174,7 +174,7 @@ async function setup(extra=false){
   throw error;
  }
 }
-test("R333 Backend can stage once through its own HMAC socket; Frontend/Test authenticated stages deny without burning Backend slot",async()=>{
+test("Backend can stage once through its own HMAC socket; Frontend/Test authenticated stages deny without burning Backend slot",async()=>{
  const f=await setup();
  try{
   await f.startBind();
@@ -213,7 +213,7 @@ test("R333 Backend can stage once through its own HMAC socket; Frontend/Test aut
   assert.deepEqual(calls,[requestId]);
  }finally{await f.close();}
 });
-test("R333 startup rejects reused staging HMAC keys before it opens any staging socket",async()=>{
+test("startup rejects reused staging HMAC keys before it opens any staging socket",async()=>{
  const f=await setup();
  try{
   await writeFile(f.stageChannels.frontend.secretFile,
@@ -226,7 +226,7 @@ test("R333 startup rejects reused staging HMAC keys before it opens any staging 
    /ENOENT|connect ENOENT|private effect/u);
  }finally{await f.close();}
 });
-test("R333 cannot downgrade three-role staging to a partially specified shared socket",async()=>{
+test("cannot downgrade three-role staging to a partially specified shared socket",async()=>{
  const f=await setup();
  try{
   await f.startBind();
@@ -296,7 +296,7 @@ test("Extra private binder without the matching per-role staging channel is deni
 });
 
 /**
- * R453 offline A2A -> Owner Task -> HMAC integration. Unlike the earlier
+ * Offline A2A -> Owner Task -> HMAC integration. Unlike the earlier
  * one-shot IPC unit test, this sends an actual HTTP+JSON A2A Task through
  * the protected SDK. Native Root/Child/Gateway are deliberately stubbed;
  * no signature or independent provider completion is claimed here.
@@ -313,7 +313,7 @@ async function freeLocalPort():Promise<number>{
   error?reject(error):resolve()));
  return address.port;
 }
-test("R453 additional read specialist receives actual SDK A2A Task only after its private HMAC bind",async()=>{
+test("additional read specialist receives actual SDK A2A Task only after its private HMAC bind",async()=>{
  const f=await setup(true);
  const servers:Awaited<ReturnType<typeof startSpecializedAgentServer>>[]=[];
  let owner:Awaited<ReturnType<typeof startTrustedAuthorityOnlySdkA2AOwner>>|undefined;

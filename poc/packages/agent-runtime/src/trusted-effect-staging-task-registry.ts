@@ -1,7 +1,7 @@
 import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
- * R320: trusted host-only, per-Task ADK/A2A -> Gateway effect binding.
+ * Trusted host-only, per-Task ADK/A2A -> Gateway effect binding.
  *
  * Binding never comes from A2A metadata, an ADK FunctionTool, an MCP call
  * or an environment variable. The authenticated owner registers exact

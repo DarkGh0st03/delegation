@@ -1,5 +1,5 @@
 /**
- * R385.6 — deterministic owner-side gate for model-selected UPDATE after an
+ * Deterministic owner-side gate for model-selected UPDATE after an
  * independently attested Runner FAIL. A read Task is not proof just because
  * a model reports one: only the original owner supplies signed Task rows,
  * Gateway completion and an independently corroborated source digest.
@@ -8,7 +8,7 @@
 import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 const SHA=/^[a-f0-9]{40}$/u, HASH=/^[a-f0-9]{64}$/u;
 const TASK=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const deny=()=>{throw Error("R385.6 signed diagnostic repair NO-GO");};
+const deny=()=>{throw Error("Signed diagnostic repair NO-GO");};
 export function selectTrustedRepairDiagnosticRead({
  repairTask,failedEpoch,currentHead,readRecords
 }={}){

@@ -1,5 +1,5 @@
 /**
- * R285: durable, fail-closed reservation journal for authority-only root issuance.
+ * Durable, fail-closed reservation journal for authority-only root issuance.
  *
  * Exact session reservation happens BEFORE the first native root issue.
  * A subsequent instance cannot replay the session, even after a crash.

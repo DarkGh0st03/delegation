@@ -60,13 +60,13 @@ async function fixture(){
   runtimeTaskId:runtime,expectedHeadSha:head});
  return {calls,store,stager};
 }
-test("R359.4 owner must attest the first read before any CAS preflight",async()=>{
+test("owner must attest the first read before any CAS preflight",async()=>{
  const f=await fixture();
  await assert.rejects(f.stager.stage("update"),/must precede the write/u);
  assert.deepEqual(f.calls,["begin"]);
  await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
 });
-test("R359.4 one source read, native update and final evidence follow exact order",async()=>{
+test("one source read, native update and final evidence follow exact order",async()=>{
  const f=await fixture();
  await f.stager.stage("read");
  await assert.rejects(f.stager.stage("update"),/out-of-order/u);
@@ -78,12 +78,12 @@ test("R359.4 one source read, native update and final evidence follow exact orde
  await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
  await assert.rejects(f.stager.attestMutation("update"),/duplicate CAS result/u);
 });
-test("R359.4 a foreign source request cannot satisfy the first attestation",async()=>{
+test("a foreign source request cannot satisfy the first attestation",async()=>{
  const f=await fixture();await f.stager.stage("read");
  await assert.rejects(f.stager.attestRead("foreign"),/foreign or duplicate source/u);
  assert.deepEqual(f.calls,["begin","stage_read"]);
 });
-test("R359.4 changed pinned HEAD denies read before any trusted provider operation",async()=>{
+test("changed pinned HEAD denies read before any trusted provider operation",async()=>{
  const f=await fixture();
  const changed=f.store.get("read")!;changed.pinned_revision="b".repeat(40);
  await assert.rejects(f.stager.stage("read"),/expected HEAD/u);
@@ -91,21 +91,21 @@ test("R359.4 changed pinned HEAD denies read before any trusted provider operati
  await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
  assert.deepEqual(f.calls,["begin"]);
 });
-test("R359.4 update on a different file cannot use earlier read evidence",async()=>{
+test("update on a different file cannot use earlier read evidence",async()=>{
  const f=await fixture();await f.stager.stage("read");await f.stager.attestRead("read");
  const changed=f.store.get("update")!;changed.request.arguments.path="other.ts";
  await assert.rejects(f.stager.stage("update"),/independently read in this Task/u);
  assert.deepEqual(f.calls,["begin","stage_read","attest_read"]);
 });
 
-test("R359.7 a missing Gateway Prepare consumes the typed owner slot",async()=>{
+test("a missing Gateway Prepare consumes the typed owner slot",async()=>{
  const f=await fixture();
  await assert.rejects(f.stager.stage("nonexistent"),/original Task, path or expected HEAD/u);
  await assert.rejects(f.stager.stage("read"),/terminated owner effect/u);
  assert.deepEqual(f.calls,["begin"]);
 });
 
-test("R377.7 owner fences an attested read without allowing a late update",async()=>{
+test("owner fences an attested read without allowing a late update",async()=>{
  const f=await fixture();
  assert.throws(()=>f.stager.fenceBeforeWrite(),/independently attested read/u);
  await f.stager.stage("read");
@@ -119,7 +119,7 @@ test("R377.7 owner fences an attested read without allowing a late update",async
  assert.throws(()=>f.stager.fenceBeforeWrite(),/no update attempt/u);
  assert.deepEqual(f.calls,["begin","stage_read","attest_read","fence"]);
 });
-test("R377.7 an in-flight write cannot be classified as a pre-write stop",async()=>{
+test("an in-flight write cannot be classified as a pre-write stop",async()=>{
  const f=await fixture();
  await f.stager.stage("read");
  await f.stager.attestRead("read");
@@ -130,7 +130,7 @@ test("R377.7 an in-flight write cannot be classified as a pre-write stop",async(
  assert.deepEqual(f.calls,["begin","stage_read","attest_read","cas_preflight","stage_update"]);
 });
 
-test("R377.8 no-change signal binds the exact read request to the Gateway fence",async()=>{
+test("no-change signal binds the exact read request to the Gateway fence",async()=>{
  const f=await fixture();
  await f.stager.stage("read");
  await f.stager.attestRead("read");

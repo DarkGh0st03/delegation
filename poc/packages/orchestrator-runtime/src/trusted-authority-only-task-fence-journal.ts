@@ -1,5 +1,5 @@
 /**
- * R293 — dedicated Gateway owner-private, terminal Task/effect-fence journal.
+ * Dedicated Gateway owner-private, terminal Task/effect-fence journal.
  * One flight per Task while provider-effect replay recovery is unimplemented.
  * A completion marker never by itself authorizes an effect or proves a VP.
  */

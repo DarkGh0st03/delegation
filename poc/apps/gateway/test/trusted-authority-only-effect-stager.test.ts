@@ -7,7 +7,7 @@ import {TrustedAuthorityOnlyRunnerPreflight as Runner} from '../src/trusted-auth
 import {TrustedAuthorityOnlyEffectStager as Stager} from '../src/trusted-authority-only-effect-stager.ts';
 
 // Isolated ordering tests: native credential/provider checks belong to the
-// real preflights and R315 E2E. These doubles do not attest authorization.
+// real preflights and E2E. These doubles do not attest authorization.
 function fixture(tool:'read_file'|'update_file'|'run_tests'='update_file') {
  const calls:string[]=[];
  const store=new InMemoryRequestStore();
@@ -80,14 +80,14 @@ test('owner mismatch and unpinned HEAD fail during construction',()=>{
  assert.throws(()=>new Stager({...f.opts,admissions:Object.create(Admissions.prototype)}),/trusted owner/);
 });
 
-test('R358 read-only Task reserves one owner-pinned native flight without mutation intent',async()=>{
+test('read-only Task reserves one owner-pinned native flight without mutation intent',async()=>{
  const f=fixture('read_file');
  assert.equal(f.stager.isForOwnerTask(f.opts.admissions,'task','read_file'),true);
  await f.stager.stage('request');
  assert.deepEqual(f.calls,['flight']);
  await assert.rejects(f.stager.stage('request'),/already attempted/u);
 });
-test('R358 stale read HEAD burns the staging attempt without provider access',async()=>{
+test('stale read HEAD burns the staging attempt without provider access',async()=>{
  const f=fixture('read_file');f.record.pinned_revision='b'.repeat(40);
  await assert.rejects(f.stager.stage('request'),/owner-pinned Gitea HEAD/u);
  await assert.rejects(f.stager.stage('request'),/already attempted/u);

@@ -1,8 +1,7 @@
 /**
- * R384.9: neutral credential data contracts.
+ * Neutral credential data contracts.
  *
- * Types only. Never import the historical HTTP Adapter transport or create
- * Engineer authority by evaluating the public orchestrator-runtime index.
+ * Types only: importing this module never creates Engineer authority.
  */
 import type {DelegatedPermission} from "./delegated-permission.ts";
 
@@ -27,7 +26,7 @@ export interface ChildIssuanceInput {
   validity_seconds: number;
   credential_status: CredentialStatusInput;
   selection: unknown;
-  /** Trusted signed plan Task ID; ignored by the unchanged legacy issuer. */
+  /** Trusted signed plan Task ID (optional). */
   approved_task_id?:string;
 }
 

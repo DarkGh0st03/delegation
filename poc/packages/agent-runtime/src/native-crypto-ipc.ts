@@ -1,6 +1,6 @@
 /**
  * Typed, owner-private facade for the ONE shared Rust IPC wire.
- * R381.3: both this Agent port and the private MCP subprocess use
+ * Both this Agent port and the private MCP subprocess use
  * the same bounded native client. Never expose the bearer to ADK.
  */
 import {invokeNativeCryptoWire}

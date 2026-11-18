@@ -1,5 +1,5 @@
 /**
- * R293 — explicitly owner-injected completion evidence boundary.
+ * Explicitly owner-injected completion evidence boundary.
  *
  * The caller supplies NO proof or success boolean to the Gateway: the
  * observer asks an independently trusted source about exact local pins.

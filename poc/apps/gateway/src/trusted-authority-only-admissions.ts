@@ -3,7 +3,7 @@ import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,read
  isTrustedProjectTestSourceProfile}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
- * R287 — opt-in, in-process Gateway admission of permission-only Engineer
+ * opt-in, in-process Gateway admission of permission-only Engineer
  * authority and trusted dynamic Coordinator Task bindings.
  *
  * IMPORTANT: this is a fail-closed staging registry. Its receipts do NOT
@@ -148,7 +148,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #enrolledChildren=new Map<string,VerifiedStagedChild>();
  readonly #flights=new Map<string,TrustedTaskFlight>();
  readonly #sequential=new Map<string,SequentialTaskProgress>();
- // R376: one-use, owner-pinned HEAD and exact scope for single-file read-only
+ // one-use, owner-pinned HEAD and exact scope for single-file read-only
  // diagnostic Tasks. A model cannot select a revision or install this pin.
  readonly #readPins=new Map<string,Readonly<{
   task_id:string;credential_id:string;epoch:number;expectedHeadSha:string;
@@ -246,7 +246,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  get stagedSequentialTaskCount():number{return this.#sequential.size;}
 
  /**
-  * R323 — private owner-only, read-only proof that a registered Task and
+  * Private owner-only, read-only proof that a registered Task and
   * native-issued Child were enrolled under THIS live Gateway/Coordinator.
   * This is NOT permission to stage, issue or execute an effect. Neither the
   * A2A transport nor an ADK model can invoke this method via public routes.
@@ -267,7 +267,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const bound=this.#tasks.get(runtimeTaskId);
   const child=this.#enrolledChildren.get(runtimeTaskId);
   const mixed=this.#sequential.get(taskId);
-  // R361: the exact typed manifest may already be durably reserved before
+  // The exact typed manifest may already be durably reserved before
   // authenticated A2A/IPC prebind. Permit ONLY its untouched first state.
   // A read-only sequence, active flight, intermediate receipt or final Task
   // must never be eligible for a new remote binding.
@@ -311,7 +311,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  }
 
  /**
-  * R340: owner-private post-POST flight projection for independent FAIL
+  * owner-private post-POST flight projection for independent FAIL
   * corroboration. Cannot be called through ADK, A2A, MCP or HTTP.
   */
  assertTrustedFailedRunnerFlight(taskId:string,runtimeTaskId:string){
@@ -490,7 +490,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#bindingInFlight=false;}
  }
  /**
-  * R291: Gateway independently enrolls a Child previously returned by native
+  * Gateway independently enrolls a Child previously returned by native
   * Rust to THIS Coordinator and ONE already-admitted runtime Task.
   * Never accepts a serialized Child receipt, model-supplied credential ID
   * or agent DID. A separate crash-durable Gateway ledger is mandatory.
@@ -586,7 +586,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    gateway_execution_authorized:false as const});
  }
  /**
-  * R293: reserve exactly ONE Task flight in an independent durable journal.
+  * Reserve exactly ONE Task flight in an independent durable journal.
   * The caller supplies a previously protected local Gateway Prepare record,
   * never permissions or a provider result. This is a staged fence, NOT a
   * replacement for native VP / OPA / provider execution validation.
@@ -624,7 +624,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
   if(pair(allowed.required_permission)!==pair(record.required_permission))
    deny("Task flight request differs from canonical signed grant");
-  // Historical ordinary read preflights remain read-only; R376 source
+  // Historical ordinary read preflights remain read-only; source
   // projection is available ONLY to the new explicitly owner-pinned flow.
   const singleReadPin=this.#readPins.get(record.task_id);
   if(record.request.tool==="read_file"&&singleReadPin){
@@ -710,10 +710,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#flightInFlight=false;}
  }
  /**
-  * R295 owner-only provenance projection. Not an execution permission.
+  * owner-only provenance projection. Not an execution permission.
   * Called exclusively AFTER a real Gateway verifier+OPA decision and a
   * genuine GiteaExecutor success. The latter is separately WeakMap-branded.
-  * Requires R293's durable one-flight reservation and exact enrolled Child.
+  * Requires durable one-flight reservation and exact enrolled Child.
   */
  assertTrustedCompletedReadEvidenceBinding(
   record:PreparedRequestRecord,verified:VerifiedDelegation
@@ -775,7 +775,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
-  * R293: the caller passes IDs only, never an untrusted success claim.
+  * The caller passes IDs only, never an untrusted success claim.
   * A separately owner-injected completion observer must independently
   * inspect provider/Runner evidence against all pinned local fields.
   * This method records a staged completion; it NEVER grants provider I/O.
@@ -873,7 +873,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
  }
- /** R376: re-open only a previously Gateway-completed single-file READ
+ /** re-open only a previously Gateway-completed single-file READ
   * through the same original Task, native Child, signed permission and
   * authenticated completion digest. The returned pins cannot stage effects.
   * Never use A2A text or a caller-provided path to construct this witness. */
@@ -926,7 +926,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
-  * R301: only an owner-controlled process can FIX the number of effects
+  * Only an owner-controlled process can FIX the number of effects
   * before executing any of them. This is NOT an agent-proposed success
   * counter. A manifest cannot be overwritten after a crash or restart.
   */
@@ -980,7 +980,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#flightInFlight=false;}
  }
  /**
-  * R359.2: an owner can reserve exactly one read followed by one update,
+  * An owner can reserve exactly one read followed by one update,
   * only if a single native Child already has BOTH operations for the SAME
   * existing file. The typed manifest is durable before any provider I/O.
   * This does not authorize either effect or expose a model/API operation.
@@ -1037,7 +1037,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#flightInFlight=false;}
  }
  /**
-  * R301: one Gitea read at a time. Before another flight, the previous
+  * One Gitea read at a time. Before another flight, the previous
   * result MUST have been independently corroborated and durably sealed.
   * The provider is never called by this method.
   */
@@ -1120,7 +1120,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#flightInFlight=false;}
  }
  /**
-  * R359.3: the trusted owner admits the second typed effect only after
+  * The trusted owner admits the second typed effect only after
   * independently sealed read evidence and a fresh native CAS preflight.
   * No provider write happens here: Rust/OPA/Gitea execute separately.
   */
@@ -1247,7 +1247,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#completionInFlight=false;}
  }
  /**
-  * R359.3: authenticated independent Gitea CAS evidence must match the
+  * Authenticated independent Gitea CAS evidence must match the
   * original native second flight. A2A/HTTP text cannot finalize a Task.
   */
  async attestTrustedSequentialMutationEffect(taskId:string,runtimeTaskId:string,
@@ -1503,7 +1503,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
-  * R359.6 post-dispatch assertion of TWO independently sealed provider
+  * post-dispatch assertion of TWO independently sealed provider
   * effects. An A2A artifact is never a source of trusted completion.
   */
  assertTrustedCompletedSequentialReadUpdateTask(taskId:string,runtimeTaskId:string):
@@ -1768,8 +1768,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
-  * R303.3 check an ACTUALLY consumed Test Agent Prepare against the
-  * independently Rust-verified native Child and R293 durable effect flight.
+  * Check an ACTUALLY consumed Test Agent Prepare against the
+  * independently Rust-verified native Child and durable effect flight.
   * Invoked only after real OPA allow. Never trusts Runner output on its own.
   */
  assertTrustedCompletedRunnerEvidenceBinding(
@@ -1837,7 +1837,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    agent_did:bound.row.agent_did});
  }
  /**
-  * R303.1 owner-only Test Agent enrollment and original Gateway Prepare.
+  * owner-only Test Agent enrollment and original Gateway Prepare.
   * This yields ONLY a signed Task/Child binding for a future pinned Runner
   * intent; it is not permission to launch Docker or trust a test result.
   */
@@ -1898,7 +1898,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
-  * R302: owner-only read-only preflight for a future atomic-CAS Gitea UPDATE.
+  * owner-only read-only preflight for a future atomic-CAS Gitea UPDATE.
   * This does not permit execution or turn this binding into an authorization.
   * The trusted caller must independently validate the current Gitea HEAD,
   * file blob, durable reservation and Rust/OPA before any future write.
@@ -1964,7 +1964,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
-  * R383.3 private, read-only native CREATE preflight binding. A genuine
+  * Private, read-only native CREATE preflight binding. A genuine
   * original unconsumed Prepare, registered exact-file Task, enrolled
   * native Child and signed Engineer Root are mandatory. This method
   * NEVER verifies an actual Rust VP/OPA decision and NEVER authorizes
@@ -2050,7 +2050,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
-  * R302.4 OWNER-ONLY authenticated UPDATE execution binding.
+  * OWNER-ONLY authenticated UPDATE execution binding.
   * Called strictly after native Rust VP, OPA and durable preflight/Task
   * flight. This verifies the exact Child, root, Task, permission and
   * request challenge binding; it never performs a Gitea write itself.
@@ -2061,7 +2061,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   return this.#assertConsumedEffectBinding(record,verified,"update_file");
  }
  /**
-  * R383.5 — post-native CREATE admission proof, NO provider mutation.
+  * post-native CREATE admission proof, NO provider mutation.
   * Called only by the original Gateway after concrete native Rust VP
   * verification and independent OPA allow. The original consumed
   * Prepare, exact create-only Task/Child and durable flight must match.
@@ -2167,7 +2167,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    agent_did:bound.row.agent_did});
  }
  /**
-  * R288: after the same native VerifierPort and independent OPA, re-check
+  * After the same native VerifierPort and independent OPA, re-check
   * the protected prepared binding against the current trusted Task.
   * Even a valid VP is NOT proof of a Child DC bound to this root yet.
   * This function always throws BEFORE provider execution.
@@ -2188,7 +2188,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      typeof verified.credential_id!=="string"||
      !verified.credential_id.trim())
    deny("verified presenter or Task differs from trusted binding");
-  // R291: A native-verified VP must use exactly the Child enrolled for this
+  // A native-verified VP must use exactly the Child enrolled for this
   // runtime Task. A valid Child issued for another Task or session is denied.
   const child=this.#enrolledChildren.get(record.task_id);
   if(child&&
@@ -2200,7 +2200,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
       child.epoch!==bound.row.epoch||
       this.#now()>=Date.parse(child.expires_at)))
    deny("verified native Child credential differs from enrolled Task");
-  // R289: Rust's verified chain must descend from THIS independently issued
+  // Rust's verified chain must descend from THIS independently issued
   // operational root. A valid but unrelated root is not session authority.
   // No assertion about an issued Task Child DC follows from this check.
   if(verified.root_credential_id!==this.#rootCredentialId||
@@ -2221,11 +2221,11 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   deny("native Child DC authority-only execution not enabled");
  }
  /**
-  * R287 MUST NOT accidentally be passed to the old Gateway execute() gate:
+  * MUST NOT accidentally be passed to the old Gateway execute() gate:
   * that requires a native Rust VP/Child DC, OPA and trusted completion proofs
   * not yet bound to this authority digest.
   */
  assertExecutionReady():never{
-  deny("Gateway provider execution is unavailable on R287 preflight path");
+  deny("Gateway provider execution is unavailable on the admission preflight path");
  }
 }

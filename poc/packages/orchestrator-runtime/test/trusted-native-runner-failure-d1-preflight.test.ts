@@ -110,7 +110,7 @@ function fixture(patch?:{root?:typeof root;row?:typeof row;child?:typeof child;
  return {config:{coordinator,childIssuer:issuer,gateway,failureObserver:observer,
   failedRunnerIntent:intent,candidate},get reads(){return reads;}};
 }
-test("R339 authentic Test FAIL only permits original-ceiling planning preflight",async()=>{
+test("authentic Test FAIL only permits original-ceiling planning preflight",async()=>{
  const f=fixture();
  const output=await preflightNativeD1FailureCandidate(f.config);
  assert.equal(output.status,"native_d1_failure_source_preflight_only");
@@ -124,7 +124,7 @@ test("R339 authentic Test FAIL only permits original-ceiling planning preflight"
  assert.equal(output.recovery_authorized,false);
  assert.equal(f.reads,1);
 });
-test("R339 foreign Child, Test Task, stale HEAD, non-actionable FAIL deny",async()=>{
+test("foreign Child, Test Task, stale HEAD, non-actionable FAIL deny",async()=>{
  for(const bad of [
   {child:{...child,credential_id:"wrong"}},
   {row:{...row,agent_id:"backend"}},
@@ -137,7 +137,7 @@ test("R339 foreign Child, Test Task, stale HEAD, non-actionable FAIL deny",async
    fixture(bad as never).config),/NO-GO/);
  }
 });
-test("R339 D1 cannot expand original signed resource or operation ceiling",async()=>{
+test("D1 cannot expand original signed resource or operation ceiling",async()=>{
  for(const permissions of [
   [{resource:canonicalFileUri(repo,branch,"apps/frontend/src/app.ts"),
     operation:"update_file"}],
@@ -152,7 +152,7 @@ test("R339 D1 cannot expand original signed resource or operation ceiling",async
   } as never),/NO-GO/);
  }
 });
-test("R339 expired original root denies even a valid independent FAIL",async()=>{
+test("expired original root denies even a valid independent FAIL",async()=>{
  const f=fixture({root:{...root,expires_at:
   new Date(Date.now()-60000).toISOString()}});
  await assert.rejects(preflightNativeD1FailureCandidate(f.config),
@@ -160,7 +160,7 @@ test("R339 expired original root denies even a valid independent FAIL",async()=>
  assert.equal(f.reads,0);
 });
 
-test("R340 original Gateway flight must be exact, never model-reconstructed",async()=>{
+test("original Gateway flight must be exact, never model-reconstructed",async()=>{
  for(const bad of [
   {request_id:"foreign"},
   {credential_id:"foreign-child"},
@@ -173,7 +173,7 @@ test("R340 original Gateway flight must be exact, never model-reconstructed",asy
  }
 });
 
-test("R355.3 authentic FAIL source is independently verifiable without a D1 candidate",async()=>{
+test("authentic FAIL source is independently verifiable without a D1 candidate",async()=>{
  const f=fixture();
  const {candidate:unused,...source}=f.config;
  const proof=await observeTrustedNativeTestFailure(source);
@@ -191,7 +191,7 @@ test("R355.3 authentic FAIL source is independently verifiable without a D1 cand
  assert.equal("candidate_permissions_sha256" in proof,false);
  assert.equal(f.reads,1);
 });
-test("R355.3 candidate-free FAIL observation never accepts false provenance",async()=>{
+test("candidate-free FAIL observation never accepts false provenance",async()=>{
  for(const bad of [
   {child:{...child,credential_id:"wrong-child"}},
   {flight:{...flight,request_fingerprint:"wrong"}},
@@ -206,7 +206,7 @@ test("R355.3 candidate-free FAIL observation never accepts false provenance",asy
  }
 });
 
-test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>{
+test("FAIL paths are scoped to the original signed read grants",async()=>{
  const allowed="tests/backend/accounts/account.test.ts";
  const hidden="tests/backend/private.test.ts";
  const f=fixture({
@@ -227,12 +227,12 @@ test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>
  assert.equal(proof.recovery_authorized,false);
 });
 
-/** R384.3: the native R384.2 CREATE effect may be a D1 candidate
+/** The native CREATE effect may be a D1 candidate
  * only when the ORIGINAL Engineer approved that exact operation. The
  * prior Test FAIL is a genuine owner-observed MAC proof in this offline
  * fixture; D1 preflight never performs provider writes or checks absence.
  */
-test("R384.3 authentic Runner FAIL allows create-only Backend/Frontend D1 under original Engineer ceiling",async()=>{
+test("authentic Runner FAIL allows create-only Backend/Frontend D1 under original Engineer ceiling",async()=>{
  const path="apps/backend/src/users/sample-change-created.ts";
  const permission={
   resource:canonicalFileUri(repo,branch,path),operation:"create_file" as const
@@ -258,7 +258,7 @@ test("R384.3 authentic Runner FAIL allows create-only Backend/Frontend D1 under 
   assert.equal(f.reads,1);
  }
 });
-test("R384.3 CREATE recovery cannot expand scope, mix effects, change branch or gain Test role",async()=>{
+test("CREATE recovery cannot expand scope, mix effects, change branch or gain Test role",async()=>{
  const newPath="apps/backend/src/users/sample-change-created.ts";
  const exact={
   resource:canonicalFileUri(repo,branch,newPath),operation:"create_file"
@@ -302,7 +302,7 @@ test("R384.3 CREATE recovery cannot expand scope, mix effects, change branch or 
    "a malformed/excessive CREATE candidate cannot even consume native FAIL observation");
  }
 });
-test("R384.3 native CREATE recovery still rejects forged FAIL, stale HEAD or changed signed root",async()=>{
+test("native CREATE recovery still rejects forged FAIL, stale HEAD or changed signed root",async()=>{
  const permission={
   resource:canonicalFileUri(repo,branch,"apps/backend/src/users/new.ts"),
   operation:"create_file" as const

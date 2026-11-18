@@ -93,7 +93,7 @@ function fixture(options:{
   repository:"sample-app",token:"r3832-owner-only",fetchFn
  });
  const input={branch:BRANCH,path:FILE,content:CONTENT,
-  message:"R3832 private owner staged create",
+  message:"Private owner staged create",
   requestId:"r3832-create-task-1",expectedHeadSha:OLD};
  const run=()=>client.createFileWithHeadCas(input);
  const independent=new GiteaClient({
@@ -111,7 +111,7 @@ function fixture(options:{
   head,stage,stageHead,providerWrites,stageWrites,created,branchCas,calls
  })};
 }
-test("R383.2 absent old source -> isolated file create -> parent proof -> feature HEAD CAS -> committed bytes",async()=>{
+test("absent old source -> isolated file create -> parent proof -> feature HEAD CAS -> committed bytes",async()=>{
  const f=fixture(),result=await f.run();
  assert.equal(result.previous_head_sha,OLD);
  assert.equal(result.commit_sha,NEW);
@@ -135,7 +135,7 @@ test("R383.2 absent old source -> isolated file create -> parent proof -> featur
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().branchCas,1);
 });
-test("R383.2 independent Gitea client reopens parent, old absence, new HEAD, blob and UTF-8",async()=>{
+test("independent Gitea client reopens parent, old absence, new HEAD, blob and UTF-8",async()=>{
  const f=fixture();
  assert.notEqual(f.client,f.independent);
  const change=await f.run();
@@ -151,7 +151,7 @@ test("R383.2 independent Gitea client reopens parent, old absence, new HEAD, blo
   "observer must not send an additional staging ref, mutation or CAS");
 });
 
-test("R383.2 independent observer detects forged blob, changed parent, new bytes and old path existence",async()=>{
+test("independent observer detects forged blob, changed parent, new bytes and old path existence",async()=>{
  for(const mode of ["wrong-blob","parent","bytes","previously-existed"]){
   const options:{forgeParent?:boolean;stagedContent?:string;existing?:boolean}={};
   const f=fixture(options),result=await f.run();
@@ -175,48 +175,48 @@ test("R383.2 independent observer detects forged blob, changed parent, new bytes
  }
 });
 
-test("R383.2 already-existing file at pinned SHA is denied before provider writes",async()=>{
+test("already-existing file at pinned SHA is denied before provider writes",async()=>{
  const f=fixture({existing:true});
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().providerWrites,0);
 });
-test("R383.2 stale HEAD denied before provider writes",async()=>{
+test("stale HEAD denied before provider writes",async()=>{
  const f=fixture({oldHead:"e".repeat(40)});
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().providerWrites,0);
 });
-test("R383.2 503 when probing absence is NOT interpreted as a 404",async()=>{
+test("503 when probing absence is NOT interpreted as a 404",async()=>{
  const f=fixture({unavailableAbsence:true});
  await assert.rejects(f.run(),ProviderUnavailableError);
  assert.equal(f.stats().providerWrites,0);
 });
-test("R383.2 inconsistent staging branch identity cannot create a file",async()=>{
+test("inconsistent staging branch identity cannot create a file",async()=>{
  const f=fixture({maliciousStage:true});
  await assert.rejects(f.run(),/staging ref did not start at pinned HEAD/u);
  assert.equal(f.stats().stageWrites,1);
  assert.equal(f.stats().created,0);
  assert.equal(f.stats().branchCas,0);
 });
-test("R383.2 stale staged source file cannot acquire create rights",async()=>{
+test("stale staged source file cannot acquire create rights",async()=>{
  const f=fixture({stageUnexpectedFile:true});
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().stageWrites,1);
  assert.equal(f.stats().created,0);
  assert.equal(f.stats().branchCas,0);
 });
-test("R383.2 altered staged commit parent stops before feature HEAD CAS",async()=>{
+test("altered staged commit parent stops before feature HEAD CAS",async()=>{
  const f=fixture({forgeParent:true});
  await assert.rejects(f.run(),/unexpected parent/u);
  assert.equal(f.stats().created,1);
  assert.equal(f.stats().branchCas,0);
 });
-test("R383.2 altered staged bytes block feature HEAD CAS",async()=>{
+test("altered staged bytes block feature HEAD CAS",async()=>{
  const f=fixture({stagedContent:"not the owner bytes"});
  await assert.rejects(f.run(),/Staged create file differs/u);
  assert.equal(f.stats().created,1);
  assert.equal(f.stats().branchCas,0);
 });
-test("R383.2 concurrent remote branch advance rejects create CAS",async()=>{
+test("concurrent remote branch advance rejects create CAS",async()=>{
  const f=fixture({raceCas:true});
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().branchCas,1);
@@ -224,7 +224,7 @@ test("R383.2 concurrent remote branch advance rejects create CAS",async()=>{
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().branchCas,1);
 });
-test("R383.2 lost acknowledgement after CAS is AMBIGUOUS, never success",async()=>{
+test("lost acknowledgement after CAS is AMBIGUOUS, never success",async()=>{
  const f=fixture({casUnconfirmed:true});
  await assert.rejects(f.run(),/CAS outcome ambiguous/u);
  assert.equal(f.stats().branchCas,1);
@@ -232,7 +232,7 @@ test("R383.2 lost acknowledgement after CAS is AMBIGUOUS, never success",async()
  // The private staging ref survives for operator reconciliation.
  assert.equal(f.stats().stageHead,NEW);
 });
-test("R383.2 invalid branch/path/content/ID denied with zero IO",async()=>{
+test("invalid branch/path/content/ID denied with zero IO",async()=>{
  const f=fixture();
  const bad=[
   {branch:"main"},

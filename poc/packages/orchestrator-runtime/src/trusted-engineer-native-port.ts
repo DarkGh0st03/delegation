@@ -1,5 +1,5 @@
 /**
- * R171: trusted Software Engineer -> SAME Rust CryptoRuntime through a local
+ * Trusted Software Engineer -> SAME Rust CryptoRuntime through a local
  * Unix-domain socket. No HTTP call, independent issuer or second credential
  * registry. The Rust service enforces Engineer caller role + Core issuer
  * capabilities; policy/approval comes ONLY from TrustedEngineerAuthoritySession.

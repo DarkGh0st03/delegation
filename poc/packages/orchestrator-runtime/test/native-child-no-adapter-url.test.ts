@@ -26,7 +26,7 @@ const request={
  permissions:rights
 };
 
-test("R240 same native Rust Child issuer needs token + Unix socket, no Adapter URL",async t=>{
+test("same native Rust Child issuer needs token + Unix socket, no Adapter URL",async t=>{
  const directory=mkdtempSync(join(tmpdir(),"r240-native-child-"));
  const socket=join(directory,"issuer.sock");
  const observed:Record<string,unknown>[]=[];

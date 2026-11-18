@@ -1,5 +1,5 @@
 /**
- * R322 — authenticated, owner-only Unix control transport.
+ * Authenticated, owner-only Unix control transport.
  * Neither route is HTTP-TCP, A2A, MCP or an ADK FunctionTool. The two
  * directions use DIFFERENT HMAC keys and domain-separated transcripts.
  */
@@ -366,7 +366,7 @@ export class TrustedOwnerEffectStagingRegistry{
  */
 export async function createTrustedOwnerEffectStagingServer(config:{
  socketPath:string;secretFile:string;registry:TrustedOwnerEffectStagingRegistry;
- /** R332 owner-selected role on a role-isolated staging socket. */
+ /** owner-selected role on a role-isolated staging socket. */
  expectedRole?:Role;
  originalScopedEffectRole?:TrustedOriginalScopedEffectRole;
 }){

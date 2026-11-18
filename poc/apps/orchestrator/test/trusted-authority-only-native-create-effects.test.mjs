@@ -47,7 +47,7 @@ async function fixture(t){
   evidenceKey,repository,branch,createIntentDirectory,createReceiptDirectory,
   counts:()=>({gets,posts})};
 }
-test("R383.9 owner preassembles native CREATE preflight CAS and MAC observer without provider I/O",async t=>{
+test("owner preassembles native CREATE preflight CAS and MAC observer without provider I/O",async t=>{
  const f=await fixture(t);
  const effects=assembleTrustedAuthorityOnlyNativeCreateEffects(f);
  assert.equal(effects.preflight instanceof TrustedAuthorityOnlyGiteaCreatePreflight,true);
@@ -62,7 +62,7 @@ test("R383.9 owner preassembles native CREATE preflight CAS and MAC observer wit
  assert.deepEqual(await readdir(f.createIntentDirectory),[]);
  assert.deepEqual(await readdir(f.createReceiptDirectory),[]);
 });
-test("R383.9 cross-owner and non-independent Gitea cannot assemble CREATE capabilities",async t=>{
+test("cross-owner and non-independent Gitea cannot assemble CREATE capabilities",async t=>{
  const f=await fixture(t);
  const foreign=Object.create(TrustedAuthorityOnlyGatewayAdmissions.prototype);
  const fx=assembleTrustedAuthorityOnlyNativeCreateEffects(f);
@@ -88,7 +88,7 @@ test("R383.9 cross-owner and non-independent Gitea cannot assemble CREATE capabi
  }
  assert.deepEqual(f.counts(),{gets:0,posts:0});
 });
-test("R383.9 preflight creation is not admission: absent signed Task denies before provider",async t=>{
+test("preflight creation is not admission: absent signed Task denies before provider",async t=>{
  const f=await fixture(t);
  const fx=assembleTrustedAuthorityOnlyNativeCreateEffects(f);
  assert.throws(()=>fx.preflight.getReservedIntent({

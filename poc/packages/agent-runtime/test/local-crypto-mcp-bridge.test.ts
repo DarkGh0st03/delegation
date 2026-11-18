@@ -26,7 +26,7 @@ const prepared=(request_id:string)=>({request_id,
  }
 });
 
-test("R200 in-process MCP produces one private signed VP; no shared MCP or HTTP worker",async()=>{
+test("in-process MCP produces one private signed VP; no shared MCP or HTTP worker",async()=>{
  const r=registry();let signed=0;
  r.begin("task-local",{invoke:async()=>{throw Error("No Gateway calls");}},undefined,{
   evidenceHandler:{credentialId:"urn:dc:task",presenterId:"did:thesis:backend",
@@ -43,7 +43,7 @@ test("R200 in-process MCP produces one private signed VP; no shared MCP or HTTP 
  await assert.rejects(bridge.createSignedPresentation(prepared("request-2")),/inactive_task/);
 });
 
-test("R200 cancellation prevents signing and hides private Rust failure detail",async()=>{
+test("cancellation prevents signing and hides private Rust failure detail",async()=>{
  const r=registry(),abort=new AbortController();let called=0;
  r.begin("cancel",{invoke:async()=>({})},abort.signal,{
   evidenceHandler:{credentialId:"urn:dc",presenterId:"did:thesis:backend",
@@ -69,7 +69,7 @@ test("R200 cancellation prevents signing and hides private Rust failure detail",
  f.end("fail");
 });
 
-test("R200 local crypto MCP cannot expose repository or Docker tools",async()=>{
+test("local crypto MCP cannot expose repository or Docker tools",async()=>{
  const {readFileSync}=await import("node:fs");
  const src=readFileSync(new URL("../src/local-crypto-mcp-bridge.ts",import.meta.url),"utf8");
  assert.match(src,/registerTool\("delegation_create_presentation"/u);
@@ -82,9 +82,9 @@ test("R200 local crypto MCP cannot expose repository or Docker tools",async()=>{
 
 
 /**
- * R381.5: the original Agent's task-local MCP remains the model-facing
+ * The original Agent's task-local MCP remains the model-facing
  * cryptographic *barrier*. Its trusted registry calls the real presentation
- * handler, which in R381.4 optionally asks a separate private MCP process
+ * handler, which in optionally asks a separate private MCP process
  * to invoke the SAME role-authenticated native Rust socket. Never provide a
  * credential or bearer as an ADK tool argument.
  */
@@ -115,7 +115,7 @@ async function privateNativeSocket(t:import("node:test").TestContext,
  return {socketPath,calls};
 }
 
-test("R381.5 three original Task registries route Gateway challenge through private MCP to one Rust signer",async t=>{
+test("three original Task registries route Gateway challenge through private MCP to one Rust signer",async t=>{
  const rust=await privateNativeSocket(t,request=>({
   ok:true,result:{signed_vp:"private_rust_vp_"+
    (request.body as {credential_id:string}).credential_id}
@@ -167,7 +167,7 @@ test("R381.5 three original Task registries route Gateway challenge through priv
  assert.equal(http,0);
 });
 
-test("R381.5 private Rust denial cannot leak native secrets or trigger HTTP retry",async t=>{
+test("private Rust denial cannot leak native secrets or trigger HTTP retry",async t=>{
  const rust=await privateNativeSocket(t,()=>({
   ok:false,error:"PRIVATE_R3815_NATIVE_KEY_MUST_NOT_LEAK"
  }));

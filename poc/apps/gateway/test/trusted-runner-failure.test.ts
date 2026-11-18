@@ -51,7 +51,7 @@ function harness(payload:unknown){
  });
  return client;
 }
-test("R335 authenticated first failing phase is only a non-authorizing stage",async()=>{
+test("authenticated first failing phase is only a non-authorizing stage",async()=>{
  for(const index of [0,1,3,5]){
   const client=harness(outcome(index)),result=await client.run(request);
   const proof=validateTrustedRunnerFailure(client,request,result,intent);
@@ -63,7 +63,7 @@ test("R335 authenticated first failing phase is only a non-authorizing stage",as
   assert.equal(proof.tested_commit_sha,request.commit_sha);
  }
 });
-test("R335 copied/tampered Runner output or mismatched Task/SHA cannot arm D1",async()=>{
+test("copied/tampered Runner output or mismatched Task/SHA cannot arm D1",async()=>{
  const client=harness(outcome(1)),result=await client.run(request);
  assert.throws(()=>validateTrustedRunnerFailure(client,request,
   structuredClone(result),intent),/provenance/);
@@ -80,7 +80,7 @@ test("R335 copied/tampered Runner output or mismatched Task/SHA cannot arm D1",a
  assert.throws(()=>validateTrustedRunnerFailure(client,request,result,intent),
   /provenance/);
 });
-test("R335 contradictory FAIL, missing/skipped phases, and PASS are refused",async()=>{
+test("contradictory FAIL, missing/skipped phases, and PASS are refused",async()=>{
  const invalid=[
   {...outcome(1),phases:outcome(1).phases.slice(1)},
   {...outcome(1),phases:outcome(1).phases.map((p,i)=>i===3?

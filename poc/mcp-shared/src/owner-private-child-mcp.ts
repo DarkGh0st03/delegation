@@ -1,5 +1,5 @@
 /**
- * R162: ephemeral OWNER-PRIVATE MCP cryptographic service.
+ * Ephemeral OWNER-PRIVATE MCP cryptographic service.
  *
  * This is an in-process MCP SDK transport, NOT the public Agent MCP
  * listener, A2A server, HTTP endpoint or an ADK tool. Only a trusted owner

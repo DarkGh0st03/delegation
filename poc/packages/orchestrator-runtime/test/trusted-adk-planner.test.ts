@@ -624,7 +624,7 @@ test("shape feedback reaches model and permits bounded same-session correction",
  assert.ok(!JSON.stringify(observations).includes("private"));
 });
 
-test("R282 Planner really uses a host-only published approved-plan Agent Card FunctionTool",async()=>{
+test("Planner really uses a host-only published approved-plan Agent Card FunctionTool",async()=>{
  class CardAware extends BaseLlm{
   requests:LlmRequest[]=[];
   constructor(){super({model:"offline-agent-card-discovery"});}
@@ -663,7 +663,7 @@ test("R282 Planner really uses a host-only published approved-plan Agent Card Fu
  assert.ok(!next.includes("private_key"));
 });
 
-test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async()=>{
+test("live ADK Planning reads a host-pinned extra specialist Card",async()=>{
  const docs={did:"did:thesis:docs",card_ref:"trusted:docs",
   capabilities:["read_file"] as const,
   card:{name:"Documentation specialist",description:"Inspect authorized source",

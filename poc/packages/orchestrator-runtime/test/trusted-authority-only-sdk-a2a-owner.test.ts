@@ -1,7 +1,7 @@
 import {withFakeSigner} from "../../agent-runtime/test/fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R327: real HTTP A2A SDK and ADK Runner with authenticated owner/agent
+ * Real HTTP A2A SDK and ADK Runner with authenticated owner/agent
  * Unix IPC. No paid model, live Rust/EVM, Gitea or Docker: those services
  * are deliberately represented by isolated fixtures in this test only.
  */
@@ -125,7 +125,7 @@ async function freePort():Promise<number>{
  return address.port;
 }
 
-test("R327 genuine SDK A2A HTTP -> ADK -> private Unix stage, completion gated independently",async()=>{
+test("genuine SDK A2A HTTP -> ADK -> private Unix stage, completion gated independently",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"r327-authority-only-"));
  const stageSecret=join(dir,"stage.hex"),bindSecret=join(dir,"bind.hex");
  await writeFile(stageSecret,randomBytes(32).toString("hex")+"\n",
@@ -182,7 +182,7 @@ test("R327 genuine SDK A2A HTTP -> ADK -> private Unix stage, completion gated i
       branch,path,commit_sha:sha}
     });
    }
-   throw Error("Unapproved offline R327 endpoint "+u);
+   throw Error("Unapproved offline endpoint "+u);
   }) as typeof fetch;
   const roles=["backend","frontend","test"] as const;
   const urls={} as Record<SpecializedAgentRole,string>;

@@ -4,13 +4,13 @@ import {giteaPermissionCovers as covers} from "../src/gitea-permission-containme
 
 const root="gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change";
 const p=(suffix,operation="read_file")=>({resource:root+"/"+suffix,operation});
-test("R299 exact permissions stay exact and branch/root operations never gain descendants",()=>{
+test("exact permissions stay exact and branch/root operations never gain descendants",()=>{
  assert.equal(covers(p("files/apps/backend/user.ts"),p("files/apps/backend/user.ts")),true);
  assert.equal(covers(p("files/apps/backend/user.ts"),p("files/apps/backend/user2.ts")),false);
  assert.equal(covers({resource:root,operation:"run_tests"},p("files/apps/backend/user.ts","run_tests")),false);
  assert.equal(covers({resource:root,operation:"create_branch"},p("directories","create_branch")),false);
 });
-test("R299 directory grants cover nested directories/files for the SAME operation",()=>{
+test("directory grants cover nested directories/files for the SAME operation",()=>{
  for(const op of ["read_file","update_file","create_file","list_directory"]){
   const parent=p("directories/apps/backend",op);
   assert.equal(covers(parent,p("directories/apps/backend/src",op)),true);
@@ -20,7 +20,7 @@ test("R299 directory grants cover nested directories/files for the SAME operatio
   assert.equal(covers(parent,p("files/apps/backend/src/user.ts","run_tests")),false);
  }
 });
-test("R299 no prefix, branch/repository crossing, traversal, URI aliases or encoded-path expansion",()=>{
+test("no prefix, branch/repository crossing, traversal, URI aliases or encoded-path expansion",()=>{
  const parent=p("directories/apps/backend");
  for(const denied of [
   "files/apps/backend-extra/file.ts",
@@ -44,7 +44,7 @@ test("R299 no prefix, branch/repository crossing, traversal, URI aliases or enco
  assert.equal(covers(parent,{resource:root.replace("feature%2Fsample-change","feature%2fsample-change")+"/files/apps/backend/u.ts",operation:"read_file"}),false);
  assert.equal(covers(p("files/apps/backend"),p("files/apps/backend/u.ts")),false);
 });
-test("R299 file grant, unknown operation or malformed input never create implicit authority",()=>{
+test("file grant, unknown operation or malformed input never create implicit authority",()=>{
  assert.equal(covers(null,p("files/apps/backend/u.ts")),false);
  assert.equal(covers(p("directories/apps/backend","read_file"),p("files/apps/backend/u.ts","update_file")),false);
  assert.equal(covers(p("directories/apps/backend","delete_file"),p("files/apps/backend/u.ts","delete_file")),false);

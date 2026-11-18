@@ -89,7 +89,7 @@ test("Original Rust signer DID is a separate immutable Child presenter pin befor
  }finally{await x.close();}
 });
 
-test("R322 authenticated owner binds remote A2A Task; one prepared Gateway request stages at actual owner",async()=>{
+test("authenticated owner binds remote A2A Task; one prepared Gateway request stages at actual owner",async()=>{
  const x=await fixtures();
  try{
   x.owner.bindTask(runtime,{stage:async id=>{
@@ -107,7 +107,7 @@ test("R322 authenticated owner binds remote A2A Task; one prepared Gateway reque
    /Authenticated private effect operation denied/u);
  }finally{await x.close();}
 });
-test("R322 distinct HMAC secrets and missing owner prebinding cannot stage",async()=>{
+test("distinct HMAC secrets and missing owner prebinding cannot stage",async()=>{
  const x=await fixtures();
  try{
   const wrongBinding=await connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
@@ -123,7 +123,7 @@ test("R322 distinct HMAC secrets and missing owner prebinding cannot stage",asyn
   assert.deepEqual(x.calls,[]);
  }finally{await x.close();}
 });
-test("R322 authenticated fence retires foreign or unfinished Task before any effect",async()=>{
+test("authenticated fence retires foreign or unfinished Task before any effect",async()=>{
  const x=await fixtures();
  try{
   x.owner.bindTask(runtime,{stage:async id=>x.calls.push(id)});
@@ -136,7 +136,7 @@ test("R322 authenticated fence retires foreign or unfinished Task before any eff
   await assert.rejects(x.remote.stage(runtime,"r322-prepare-001"),/operation denied/u);
  }finally{await x.close();}
 });
-test("R322 forged A2A Child cannot claim an authenticated remotely prebound port",async()=>{
+test("forged A2A Child cannot claim an authenticated remotely prebound port",async()=>{
  const x=await fixtures();
  try{
   x.owner.bindTask(runtime,{stage:async id=>x.calls.push(id)});
@@ -149,10 +149,10 @@ test("R322 forged A2A Child cannot claim an authenticated remotely prebound port
  }finally{await x.close();}
 });
 
-// R329.1: production Gateway emits req_<UUIDv4>; the original
+// Production Gateway emits req_<UUIDv4>; the original
 // validation pattern already permits this form. Keep an integrated
 // regression so a fixture-only ID cannot hide a future mismatch.
-test("R329.1 production req_UUID propagates through real owner Unix staging",async()=>{
+test("production req_UUID propagates through real owner Unix staging",async()=>{
  const x=await fixtures();
  try{
   const requestId="req_12345678-1234-4123-8123-1234567890ab";
@@ -168,7 +168,7 @@ test("R329.1 production req_UUID propagates through real owner Unix staging",asy
  }finally{await x.close();}
 });
 
-test("R332 role-keyed stage socket rejects cross-role authenticated HMAC without burning Backend reservation",async()=>{
+test("role-keyed stage socket rejects cross-role authenticated HMAC without burning Backend reservation",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"r332-"));
  const registry=new TrustedOwnerEffectStagingRegistry();
  const backendSecret=join(dir,"be-stage.hex");
@@ -223,7 +223,7 @@ test("R332 role-keyed stage socket rejects cross-role authenticated HMAC without
   await rm(dir,{recursive:true,force:true});
  }
 });
-test("R332 strict role stage refuses untagged legacy Task without granting effects",async()=>{
+test("strict role stage refuses untagged legacy Task without granting effects",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"r332-no-role-"));
  const secretFile=join(dir,"be.hex"),socketPath=join(dir,"be.sock");
  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
@@ -247,7 +247,7 @@ test("R332 strict role stage refuses untagged legacy Task without granting effec
  }
 });
 
-test("R359.5 two authenticated Unix IPC stages require separate independent evidence acks",async()=>{
+test("two authenticated Unix IPC stages require separate independent evidence acks",async()=>{
  const x=await fixtures();
  const calls:string[]=[];
  try{
@@ -304,7 +304,7 @@ test("multi-read Task over authenticated Unix IPC: every signed read attested, t
  }finally{await x.close();}
 });
 
-test("R377.8 role-authenticated no-change uses the original read and closes staging",async()=>{
+test("role-authenticated no-change uses the original read and closes staging",async()=>{
  const x=await fixtures("backend");
  try{
   const calls:string[]=[];
@@ -330,7 +330,7 @@ test("R377.8 role-authenticated no-change uses the original read and closes stag
  }finally{await x.close();}
 });
 
-test("R383.8 private CREATE Task pins travel through HMAC Unix bind and one-use owner stage",async()=>{
+test("private CREATE Task pins travel through HMAC Unix bind and one-use owner stage",async()=>{
  const x=await fixtures("backend");
  try{
   const createPins={...pins,operation:"create_file" as const};
@@ -357,7 +357,7 @@ test("R383.8 private CREATE Task pins travel through HMAC Unix bind and one-use 
   assert.deepEqual(calls,["r3838-create-1"]);
  }finally{await x.close();}
 });
-test("R390 authenticated Test CREATE rejects application source before IPC",async()=>{
+test("authenticated Test CREATE rejects application source before IPC",async()=>{
  const x=await fixtures();
  try{
   // The authenticated private client rejects invalid role/task pins
@@ -368,7 +368,7 @@ test("R390 authenticated Test CREATE rejects application source before IPC",asyn
  }finally{await x.close();}
 });
 
-test("R390 Test CREATE exact source binds through private HMAC and stages once",async()=>{
+test("Test CREATE exact source binds through private HMAC and stages once",async()=>{
  const x=await fixtures("test");
  const testPath="tests/backend/authorized-new.test.ts";
  const testPins={...pins,role:"test" as const,path:testPath,
@@ -406,10 +406,10 @@ test("R390 Test CREATE exact source binds through private HMAC and stages once",
  }finally{await x.close();}
 });
 
-/** R437: an extra role is not an untrusted fallback route. The trusted
+/** An extra role is not an untrusted fallback route. The trusted
  * Owner must provision distinct key+socket and locally pinned binding role.
  * The original Child/Task and Gateway effect rights are still independent. */
-test("R437 provisioned invoice role can bind and stage only on its own private HMAC channels",async()=>{
+test("provisioned invoice role can bind and stage only on its own private HMAC channels",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"r437-invoice-ipc-"));
  const ownerRegistry=new TrustedOwnerEffectStagingRegistry();
  const agentRegistry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES}),effects:string[]=[];
@@ -478,7 +478,7 @@ test("R437 provisioned invoice role can bind and stage only on its own private H
   await rm(dir,{recursive:true,force:true});
  }
 });
-test("R437 extra roles are rejected by an unpinned legacy agent socket",async()=>{
+test("extra roles are rejected by an unpinned legacy agent socket",async()=>{
  const x=await fixtures();
  try{
   const invoice={...pins,role:"invoice",planTaskId:"r437-extra",
@@ -495,7 +495,7 @@ test("R437 extra roles are rejected by an unpinned legacy agent socket",async()=
  }finally{await x.close();}
 });
 
-test("R437 unpinned legacy stage channel cannot execute an extra specialist effect",async()=>{
+test("unpinned legacy stage channel cannot execute an extra specialist effect",async()=>{
  const x=await fixtures();
  try{
   x.owner.bindTask(runtime,{async stage(id){x.calls.push(id);}},"invoice");

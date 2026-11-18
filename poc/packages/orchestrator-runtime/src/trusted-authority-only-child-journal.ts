@@ -1,5 +1,5 @@
 /**
- * R290: trusted, owner-private, durable authority-only Child DC intent ledger.
+ * Trusted, owner-private, durable authority-only Child DC intent ledger.
  * An uncertain Rust IPC result is terminal. Neither intent nor ACK is a VP,
  * Gateway permission, or evidence that EVM/status verification passed.
  */

@@ -1,5 +1,5 @@
 /**
- * R303.1 — owner-pinned Runner/Docker Test intent. No Runner calls.
+ * owner-pinned Runner/Docker Test intent. No Runner calls.
  *
  * Only trusted Gateway owner can pin the actual Gitea commit. Test Agent
  * tool arguments contain branch/profile, never an arbitrary tested SHA.
@@ -79,7 +79,7 @@ export class TrustedAuthorityOnlyRunnerPreflight{
  isForGitea(g:GiteaClient):boolean{return g===this.#gitea;}
  /** The independent observer uses a SEPARATE read-only GiteaClient.
   * Match the original private Runner journal, not the mutation writer.
-  * Original signed branch, HEAD and owner flight are verified by R339. */
+  * Original signed branch, HEAD and owner flight are verified by. */
  isForFailureObserver(observer:AuthenticatedRunnerFailureObserver):boolean{
   return observer instanceof AuthenticatedRunnerFailureObserver &&
    observer.isForJournal(this.#journal);

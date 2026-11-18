@@ -1,5 +1,5 @@
 /**
- * R381.1: original Task/Child issuer uses a separate private MCP process
+ * Original Task/Child issuer uses a separate private MCP process
  * with one-use ACK, while the exact signed Child remains owner-local.
  * Rust cryptography is a controlled offline port fixture here; live EVM,
  * Gateway and OPA are NOT exercised in this test.
@@ -106,7 +106,7 @@ function fixture(transport:"stdio"|"in-process"|"native-stdio"="stdio",
  };
 }
 
-test("R381.1 original Child issuer can opt in to real-process MCP broker without extra authority",async()=>{
+test("original Child issuer can opt in to real-process MCP broker without extra authority",async()=>{
  const f=fixture();
  const issued=await f.issuer.issueForRegisteredTask(taskId,f.parameters);
  assert.equal(issued.status,"native_child_response_verified_staged");
@@ -128,14 +128,14 @@ test("R381.1 original Child issuer can opt in to real-process MCP broker without
  assert.equal(f.issues,1);
 });
 
-test("R381.1 original Child issuer preserves in-process path by default",async()=>{
+test("original Child issuer preserves in-process path by default",async()=>{
  const f=fixture("in-process");
  const issued=await f.issuer.issueForRegisteredTask(taskId,f.parameters);
  assert.equal(issued.credential_id,childId);
  assert.equal(f.issues,1);
 });
 
-test("R381.1 malformed returned Child after stdio ACK fails closed with no retry",async()=>{
+test("malformed returned Child after stdio ACK fails closed with no retry",async()=>{
  const f=fixture("stdio",true);
  await assert.rejects(f.issuer.issueForRegisteredTask(taskId,f.parameters),
    /native Child credential differs/u);
@@ -147,7 +147,7 @@ test("R381.1 malformed returned Child after stdio ACK fails closed with no retry
 });
 
 
-test("R381.3 original trusted issuer selects native MCP service without ACK-only callback",async()=>{
+test("original trusted issuer selects native MCP service without ACK-only callback",async()=>{
  const f=fixture("native-stdio");
  const signed=await f.issuer.issueForRegisteredTask(taskId,f.parameters);
  assert.equal(signed.credential_id,childId);
@@ -159,7 +159,7 @@ test("R381.3 original trusted issuer selects native MCP service without ACK-only
  assert.equal(f.nativeMcpInvocations,1);
 });
 
-test("R381.3 rejects native MCP opt-in when port lacks service capability",()=>{
+test("rejects native MCP opt-in when port lacks service capability",()=>{
  const f=fixture("in-process");
  assert.throws(()=>new TrustedAuthorityOnlyChildIssuer({
   coordinator:f.coordinator,nativeCryptoPort:{
@@ -172,7 +172,7 @@ test("R381.3 rejects native MCP opt-in when port lacks service capability",()=>{
  }),/trusted Coordinator, native Rust issuer and private journal required/u);
 });
 
-test("R455 fourth native Child requires explicit Rust role enrollment and exactly one read grant",async()=>{
+test("fourth native Child requires explicit Rust role enrollment and exactly one read grant",async()=>{
  const key="ADAPTER_ADDITIONAL_SPECIALISTS",identityKey="ADAPTER_ID_REVIEWER";
  const oldRoles=process.env[key],oldDid=process.env[identityKey];
  const did="did:thesis:reviewer-agent";

@@ -37,7 +37,7 @@ const positive=()=>({
  approved:[grant],completed:false,predecessorsComplete:true,
  nowMs:Date.now()
 });
-test("R340 protected original native Test flight is readonly, not a recovered task",()=>{
+test("protected original native Test flight is readonly, not a recovered task",()=>{
  const result=assertOriginalIncompleteTestFlight(positive() as never);
  assert.equal(result.status,"gateway_original_test_flight_preflight_only");
  assert.equal(result.agent_did,row.agent_did);
@@ -45,7 +45,7 @@ test("R340 protected original native Test flight is readonly, not a recovered ta
  assert.equal(result.recovery_authorized,false);
  assert.equal(result.gateway_execution_authorized,false);
 });
-test("R340 foreign Child, Task, scope, exhausted authority or completed Test deny",()=>{
+test("foreign Child, Task, scope, exhausted authority or completed Test deny",()=>{
  const base=positive();
  for(const patch of [
   {completed:true},{predecessorsComplete:false},

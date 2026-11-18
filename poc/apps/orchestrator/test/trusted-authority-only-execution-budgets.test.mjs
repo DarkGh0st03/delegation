@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolveTrustedAuthorityOnlyExecutionBudgets as resolve}
  from '../src/trusted-authority-only-execution-budgets.mjs';
-test('R384.5 default preserves existing owner limits',()=>{
+test('default preserves existing owner limits',()=>{
  assert.deepEqual(resolve({childCount:16}),{maxDecisions:16,maxVerifiedFailures:2});
  assert.equal(Object.isFrozen(resolve({childCount:1})),true);
 });
-test('R384.5 trusted owner may select 24 decisions and 4 verified FAILs',()=>{
+test('trusted owner may select 24 decisions and 4 verified FAILs',()=>{
  assert.deepEqual(resolve({childCount:24,ownerBudget:{maxDecisions:24,maxVerifiedFailures:4}}),
   {maxDecisions:24,maxVerifiedFailures:4});
  assert.deepEqual(resolve({childCount:16,ownerBudget:{maxDecisions:8,maxVerifiedFailures:3}}),
@@ -14,7 +14,7 @@ test('R384.5 trusted owner may select 24 decisions and 4 verified FAILs',()=>{
  assert.deepEqual(resolve({childCount:1,ownerBudget:{maxDecisions:1,maxVerifiedFailures:0}}),
   {maxDecisions:1,maxVerifiedFailures:0});
 });
-test('R385.10 one terminal no-Child decision may follow 24 separately admitted Tasks',()=>{
+test('one terminal no-Child decision may follow 24 separately admitted Tasks',()=>{
  assert.deepEqual(resolve({childCount:24,ownerBudget:{maxDecisions:25,maxVerifiedFailures:4}}),
   {maxDecisions:25,maxVerifiedFailures:4});
  assert.deepEqual(resolve({childCount:16,ownerBudget:{maxDecisions:17,maxVerifiedFailures:2}}),
@@ -22,7 +22,7 @@ test('R385.10 one terminal no-Child decision may follow 24 separately admitted T
  // Existing default still reserves no extra turn without protected owner opt-in.
  assert.deepEqual(resolve({childCount:24}),{maxDecisions:24,maxVerifiedFailures:2});
 });
-test('R384.5 owner budget rejects overrun, injection and malformed settings',()=>{
+test('owner budget rejects overrun, injection and malformed settings',()=>{
  const invalid=[
   {childCount:0},{childCount:25},{childCount:1.5},
   {childCount:1,ownerBudget:{maxDecisions:3,maxVerifiedFailures:1}},

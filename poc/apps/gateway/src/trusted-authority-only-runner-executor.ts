@@ -1,5 +1,5 @@
 /**
- * R303.3 — trusted one-attempt controlled Docker Runner, accessible only
+ * Trusted one-attempt controlled Docker Runner, accessible only
  * through an explicitly enabled authority-only Gateway Execute.
  *
  * Precondition: signed Engineer root, enrolled native Rust Test Child, real

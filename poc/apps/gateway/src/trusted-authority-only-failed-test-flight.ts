@@ -1,5 +1,5 @@
 /**
- * R340: check a trusted Gateway's original *incomplete* native Test flight.
+ * Check a trusted Gateway's original *incomplete* native Test flight.
  * This is a pure validator. Only the Gateway owner may supply its internal
  * flight, enrolled Child and completed-predecessor state.
  * A valid result does NOT prove Docker failure or authorize D1.

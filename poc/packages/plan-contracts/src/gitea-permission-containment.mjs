@@ -1,5 +1,5 @@
 /**
- * R299 — conservative mirror of the canonical Gitea-directory containment
+ * Conservative mirror of the canonical Gitea-directory containment
  * implemented by Core Rust ResourceUri::contains_resource().
  *
  * Preflight only: this function does NOT verify accumulator witnesses, VP
@@ -91,7 +91,7 @@ export function isProjectTestSource(path,profile) {
   filename.endsWith(suffix)&&
   FILE_STEM.test(filename.slice(0,-suffix.length)));
 }
-/** R383.0 — Test may investigate ONLY owner-scoped application test
+/** Test may investigate ONLY owner-scoped application test
  * sources in a dedicated read-only Child. This cannot authorize an edit,
  * Docker acceptance changes, Runner PASS or a broader directory grant. */
 export function isProjectTestReadGrant(permissions,profile) {

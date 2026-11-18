@@ -1,5 +1,5 @@
 /**
- * R302.4 — independent owner-authenticated Gitea atomic update evidence.
+ * Independent owner-authenticated Gitea atomic update evidence.
  *
  * One owner-only writer seals a result AFTER a real conditional Gitea
  * branch-CAS; one separately-injected observer verifies the MAC and the
@@ -199,7 +199,7 @@ export class AuthenticatedGiteaMutationCompletionObserver{
   this.#client=opts.giteaClient;
   this.#nowMs=opts.nowMs??Date.now;
  }
- /** R367: refuse prototype-forged or foreign repository/branch observer. */
+ /** Refuse prototype-forged or foreign repository/branch observer. */
  static isForRepository(value:unknown,repository:string,branch:string):
   value is AuthenticatedGiteaMutationCompletionObserver{
   return value instanceof AuthenticatedGiteaMutationCompletionObserver&&

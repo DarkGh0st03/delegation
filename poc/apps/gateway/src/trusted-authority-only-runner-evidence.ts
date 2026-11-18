@@ -1,5 +1,5 @@
 /**
- * R303.3 — authenticated, owner-only PASS receipt for controlled Docker
+ * Authenticated, owner-only PASS receipt for controlled Docker
  * Runner. Must be called only after real native Rust VP + OPA allow,
  * original immutable Runner intent and durable one-shot attempt.
  *

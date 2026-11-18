@@ -1,7 +1,7 @@
 /**
- * R381.3 — real, owner-private MCP stdio -> SINGLE native Rust CryptoRuntime.
+ * Real, owner-private MCP stdio -> SINGLE native Rust CryptoRuntime.
  *
- * Unlike the R381.0 acknowledgement-only broker, the isolated MCP process
+ * Unlike the acknowledgement-only broker, the isolated MCP process
  * performs the authenticated native Rust socket call and returns its result.
  * No second signer, HTTP listener, A2A route, model FunctionTool or fallback.
  * The owner supplies a role-scoped Rust socket bearer only across its private

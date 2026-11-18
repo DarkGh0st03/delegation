@@ -1,8 +1,8 @@
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R459 scripted Planner -> owner-pinned reviewer -> real private HTTP A2A.
- * Native Rust, Gateway and Gitea remain fixture-only in this test; R458
- * independently tests those systems with real providers. No paid models.
+ * Scripted Planner -> owner-pinned reviewer -> real private HTTP A2A.
+ * Native Rust, Gateway and Gitea remain fixture-only in this test; the local
+ * Docker deployment exercises the real systems. No paid models.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -81,7 +81,7 @@ async function port(){
  await new Promise((ok,bad)=>server.close(err=>err?bad(err):ok()));
  return addr.port;
 }
-test("R459 scripted Planner selects pinned fourth-role real A2A; only fixture-backed Gateway completes",async()=>{
+test("scripted Planner selects pinned fourth-role real A2A; only fixture-backed Gateway completes",async()=>{
  assert.deepEqual(canonicalRoles,["backend","frontend","test"]);
  assert.deepEqual(roles,["backend","frontend","test","reviewer"]);
  assert.equal(process.env.GEMINI_API_KEY,undefined);
@@ -90,7 +90,7 @@ test("R459 scripted Planner selects pinned fourth-role real A2A; only fixture-ba
   {...selected,agent_id:"auditor"},
   {...selected,permissions:[{...grant,operation:"update_file"}]},
   {...selected,depends_on:["invented-prior-task"]}
- ])await assert.rejects(propose(wrong),/R351 authority-only model Task choice denied/u);
+ ])await assert.rejects(propose(wrong),/Authority-only model Task choice denied/u);
  const decision=await propose(selected);
  assert.equal(decision.action,"delegate");
  assert.deepEqual(decision.task,selected);

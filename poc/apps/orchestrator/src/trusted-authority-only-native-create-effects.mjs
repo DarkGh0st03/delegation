@@ -1,5 +1,5 @@
 /**
- * R383.9: compose CREATE_FILE from original privileged Gateway owner only.
+ * Compose CREATE_FILE from original privileged Gateway owner only.
  *
  * No side effects during assembly. Separate owner-private 0700 directories
  * (preprovisioned and validated by canonical bootstrap), a native Child
@@ -22,7 +22,7 @@ import {TrustedGatewayGiteaCreateEvidencePublisher,
  from "../../gateway/src/trusted-authority-only-gitea-create-evidence.ts";
 
 function deny(){
- throw Error("R383.9 owner-native CREATE effects require pinned trusted dependencies");
+ throw Error("Owner-native CREATE effects require pinned trusted dependencies");
 }
 export function assembleTrustedAuthorityOnlyNativeCreateEffects({
  gateway,store,giteaClient,independentGiteaClient,repository,

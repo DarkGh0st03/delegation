@@ -1,4 +1,4 @@
-/** R351.0: first model-driven, permission-only Task choice. Never grants
+/** First model-driven, permission-only Task choice. Never grants
  * authority or issues a Child DC. The original trusted Coordinator is the
  * sole register/validate boundary after this unsigned proposal.
  * No tools, URLs, keys, DIDs, receipts, or model-supplied session pins. */
@@ -13,7 +13,7 @@ import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,read
  from '../../plan-contracts/src/gitea-permission-containment.mjs';
 import {ROLE_SKILLS} from "../../plan-contracts/src/agent-roles.mjs";
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const fail=()=>{throw Error('R351 authority-only model Task choice denied');};
+const fail=()=>{throw Error('Authority-only model Task choice denied');};
 const exact=(obj,fields)=>obj&&typeof obj==='object'&&!Array.isArray(obj)&&
  Object.keys(obj).length===fields.length&&fields.every(k=>Object.hasOwn(obj,k));
 const pair=p=>JSON.stringify([p.operation,p.resource]);
@@ -413,7 +413,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    const exactNativeReadCreate=!!readCreateGrantShape(selected)&&
      (isFileSpecialist(raw.agent_id)||
       (raw.agent_id==='test'&&isProjectTestReadCreateGrant(selected,this.projectTestSourceProfile)));
-   // R383.1: one originally registered native Child has exactly ONE
+   // One originally registered native Child has exactly ONE
    // independently verifiable effect (or the already supported same-file
    // read -> CAS). Distinct files require distinct serial Task/Child
    // admissions, independently pinned HEADs, and fresh Test on the final

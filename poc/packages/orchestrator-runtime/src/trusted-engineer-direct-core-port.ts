@@ -1,5 +1,5 @@
 /**
- * R225: Software Engineer -> Core Rust in its own process through Node-API.
+ * Software Engineer -> Core Rust in its own process through Node-API.
  *
  * NO Adapter HTTP, NO Unix socket and NO MCP are called by this port.
  * The addon owns the one Rust CryptoRuntime on a single Rust thread; a

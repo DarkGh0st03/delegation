@@ -536,7 +536,7 @@ test("malformed attested PR SHA is rejected before any Gitea request",async()=>{
   assert.equal(touches,0);
 });
 
-test("R143 Gitea creates exactly one draft only on accepted SHA; rechecks PR and branch",async()=>{
+test("Gitea creates exactly one draft only on accepted SHA; rechecks PR and branch",async()=>{
  const wanted="a".repeat(40),main="b".repeat(40);
  let posts=0,headReads=0,confirmationReads=0;
  const c=clientWith((async(url,init)=>{
@@ -568,7 +568,7 @@ test("R143 Gitea creates exactly one draft only on accepted SHA; rechecks PR and
    confirmationReads++;
    return new Response(JSON.stringify(pr),{status:200});
   }
-  throw Error("Unapproved R143 Gitea request "+method+" "+u);
+  throw Error("Unapproved Gitea request "+method+" "+u);
  }) as typeof fetch);
  const r=await c.createDraftPullRequest(
   "feature/r143-fix","main","Review corrected tests",wanted,
@@ -580,7 +580,7 @@ test("R143 Gitea creates exactly one draft only on accepted SHA; rechecks PR and
  assert.equal(r.merged,false);assert.equal(r.head_revision,wanted);
  assert.equal(r.number,3);
 });
-test("R150.10.3 Gitea draft title uses WIP protocol once; does not send ignored draft field",async()=>{
+test("Gitea draft title uses WIP protocol once; does not send ignored draft field",async()=>{
  const accepted="a".repeat(40),main="b".repeat(40);
  let submittedTitle=null,posts=0;
  const c=clientWith((async(url,init)=>{
@@ -628,7 +628,7 @@ test("R150.10.3 Gitea draft title uses WIP protocol once; does not send ignored 
  ),ProviderConflictError);
  assert.equal(sent,0);
 });
-test("R143 refuses changed Gitea head before POST and does not open a PR",async()=>{
+test("refuses changed Gitea head before POST and does not open a PR",async()=>{
  let posts=0;const c=clientWith((async(url,init)=>{
   if(init?.method==="POST"){posts++;throw Error("POST not allowed");}
   if(String(url).endsWith("/branches/feature%2Fr143-fix"))
@@ -642,7 +642,7 @@ test("R143 refuses changed Gitea head before POST and does not open a PR",async(
  ),ProviderConflictError);
  assert.equal(posts,0);
 });
-test("R143 refuses non-draft PR response, without a dangerous second POST",async()=>{
+test("refuses non-draft PR response, without a dangerous second POST",async()=>{
  const accepted="a".repeat(40),main="b".repeat(40);let posts=0;
  const c=clientWith((async(url,init)=>{
   const u=String(url);
@@ -661,7 +661,7 @@ test("R143 refuses non-draft PR response, without a dangerous second POST",async
     base:{ref:"main",sha:main}
    }),{status:201});
   }
-  throw Error("Unapproved R143 request");
+  throw Error("Unapproved request");
  }) as typeof fetch);
  await assert.rejects(c.createDraftPullRequest(
   "feature/r143-fix","main","Review",accepted
@@ -670,7 +670,7 @@ test("R143 refuses non-draft PR response, without a dangerous second POST",async
 });
 
 for(const mode of ['valid','closed','merged','not-draft','wrong-number','head-race','base-moved']){
- test('R353.6 independent Draft PR observation '+mode,async()=>{
+ test('independent Draft PR observation '+mode,async()=>{
   const head='a'.repeat(40),base='b'.repeat(40),branch='feature/r3536';
   let headReads=0,prReads=0;
   const c=clientWith((async(url,init)=>{

@@ -1,9 +1,9 @@
 /**
- * R324 — trusted, programmatic authority-only Orchestrator owner bootstrap.
+ * Trusted, programmatic authority-only Orchestrator owner bootstrap.
  *
  * Owner-side Unix staging listener is created here, after the real
  * Engineer/Coordinator and Gateway/Child have been assembled by a trusted
- * host. The existing canonical owner Task binder (R323) derives Task pins
+ * host. The existing canonical owner Task binder derives Task pins
  * from Coordinator, native-issued Child and Gateway; the model cannot supply
  * credentials, expected HEAD, signer or staging port.
  *
@@ -63,14 +63,14 @@ export interface TrustedAuthorityOnlyRemoteEffectBootstrapOptions {
  /** Legacy one-socket stage channel. Accepted for historical deployments. */
  stageSocketPath?:string;
  stageSecretFile?:string;
- /** R333: three distinct authenticated agent->owner staging channels,
+ /** Three distinct authenticated agent->owner staging channels,
   * sharing ONE owner registry and Engineer authority root. */
  stageChannels?:TrustedRoleBindingChannels;
  /** Agent-owned private Unix Task binding socket; agent already running. */
  agentBindingSocketPath?:string;
  /** Separate preprovisioned 0600 owner→agent HMAC bind secret. */
  agentBindingSecretFile?:string;
- /** R328: distinct per-role owner->agent HMAC sockets, ONE staging owner. */
+ /** Distinct per-role owner->agent HMAC sockets, ONE staging owner. */
  agentBindingChannels?:TrustedRoleBindingChannels;
 }
 type ServerHandle=Awaited<ReturnType<typeof createTrustedOwnerEffectStagingServer>>;
@@ -211,7 +211,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   */
  async dispatchApprovedTask<T>(opts:TaskInput &{
   dispatch:()=>Promise<T>;
-  /** Called ONLY after the genuine R323 native/Child/Gateway bind.
+  /** Called ONLY after the genuine native/Child/Gateway bind.
    * Must synchronously return a one-shot model Task retirement closure. */
   onNativeOriginalTaskPrebound?:(
    receipt:TrustedOriginalNativeModelPrebindReceipt
@@ -266,7 +266,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
     // Failed bind may be ambiguous: revoke remote capability if present.
     try{await this.#owner.fence(opts.runtimeTaskId);}catch{
      // No later effect can be staged if owner registration was absent
-     // or the owner port was already fenced by R323.
+     // or the owner port was already fenced by.
     }
    }
    if(this.#modelTaskFenceFailed)
@@ -311,7 +311,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   this.#registry.retireAll(); // synchronously block EVERY future stage
   this.#closing=(async()=>{
    // A denied prebind may never allocate a local owner slot and
-   // cannot be remotely fenced. R323 already made that attempt terminal.
+   // cannot be remotely fenced. already made that attempt terminal.
    // Only ACKed, still-active remote slots require close acknowledgements.
    const names=[...this.#bound];
    const results=await Promise.allSettled([

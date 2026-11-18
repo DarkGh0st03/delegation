@@ -194,7 +194,7 @@ const request=()=>({taskId,runtimeTaskId,
  instruction:"Update the account status handler",
  effectStager:{async stage(){return {provider_write_authorized:false};}}
 });
-test("R325 actual owner handoff transfers native signed Child only after private A2A bind",async()=>{
+test("actual owner handoff transfers native signed Child only after private A2A bind",async()=>{
  const f=fixture();
  const result=await f.owner.dispatchIssuedTask(request());
  assert.equal(result.status,"a2a_report_not_gateway_completed");
@@ -206,14 +206,14 @@ test("R325 actual owner handoff transfers native signed Child only after private
  await assert.rejects(f.owner.dispatchIssuedTask(request()),/closed or malformed owner-selected Task/u);
  assert.equal(f.takes,1);
 });
-test("R325 private binding failure cannot leak native Child into A2A or retry",async()=>{
+test("private binding failure cannot leak native Child into A2A or retry",async()=>{
  const f=fixture({failBind:true});
  await assert.rejects(f.owner.dispatchIssuedTask(request()),/owner private bind denied/u);
  assert.deepEqual(f.calls,["private_bind"]);
  assert.equal(f.takes,0);
  await assert.rejects(f.owner.dispatchIssuedTask(request()),/closed or malformed/u);
 });
-test("R325 signed Task/Child/Gateway mismatch fails before remote binding",async()=>{
+test("signed Task/Child/Gateway mismatch fails before remote binding",async()=>{
  for(const patch of [
   {row:{...row,authority_digest:"f".repeat(64)}},
   {child:{...child,credential_id:"urn:other:child"}},
@@ -230,14 +230,14 @@ test("R325 signed Task/Child/Gateway mismatch fails before remote binding",async
   assert.equal(f.takes,0);
  }
 });
-test("R325 forged signed DC payload is rejected after private binding but before A2A",async()=>{
+test("forged signed DC payload is rejected after private binding but before A2A",async()=>{
  const f=fixture({signed:{...signed,id:"urn:wrong:credential"}});
  await assert.rejects(f.owner.dispatchIssuedTask(request()),
   /native signed Child payload mismatches/u);
  assert.deepEqual(f.calls,["private_bind"]);
  assert.equal(f.takes,1);
 });
-test("R325 untrusted A2A status, extra artifact or bad branch is never Gateway completion",async()=>{
+test("untrusted A2A status, extra artifact or bad branch is never Gateway completion",async()=>{
  const bad=[
   {card:{name:"Backend Agent"},task:{...goodResponse().task,
    status:{state:TaskState.TASK_STATE_FAILED}}},
@@ -254,7 +254,7 @@ test("R325 untrusted A2A status, extra artifact or bad branch is never Gateway c
   assert.deepEqual(f.calls,["private_bind","a2a_send"]);
  }
 });
-test("R325 only Test role may dispatch branch-pinned run_tests",async()=>{
+test("only Test role may dispatch branch-pinned run_tests",async()=>{
  const branchPermission={resource:canonicalBranchUri(repo,branch),
   operation:"run_tests" as const};
  const testRow={...row,agent_id:"test",agent_did:"did:thesis:test-agent",
@@ -271,7 +271,7 @@ test("R325 only Test role may dispatch branch-pinned run_tests",async()=>{
  assert.ok(f.calls.includes("private_bind"));
 });
 
-test("R326 report by itself cannot unlock Gateway dependency; independent observer required",async()=>{
+test("report by itself cannot unlock Gateway dependency; independent observer required",async()=>{
  const f=fixture();
  await assert.rejects(
   f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
@@ -291,14 +291,14 @@ test("R326 report by itself cannot unlock Gateway dependency; independent observ
  await assert.rejects(f.owner.attestIndependentGatewayCompletion(
   taskId,runtimeTaskId),/repeated independent completion/u);
 });
-test("R326 forged Task ID cannot trigger the Gateway completion observer",async()=>{
+test("forged Task ID cannot trigger the Gateway completion observer",async()=>{
  const f=fixture();
  await f.owner.dispatchIssuedTask(request());
  await assert.rejects(f.owner.attestIndependentGatewayCompletion(
   "r325-foreign",runtimeTaskId),/no matching previous A2A report/u);
  assert.deepEqual(f.calls,["private_bind","a2a_send"]);
 });
-test("R326 rejected A2A report never reaches independent Gateway observer",async()=>{
+test("rejected A2A report never reaches independent Gateway observer",async()=>{
  const f=fixture({response:{card:{name:"Bad"},task:{
   ...goodResponse().task,status:{state:TaskState.TASK_STATE_FAILED}
  }}});
@@ -308,7 +308,7 @@ test("R326 rejected A2A report never reaches independent Gateway observer",async
  assert.deepEqual(f.calls,["private_bind","a2a_send"]);
 });
 
-test("R334 Test FAIL report never reaches independent Gateway success observer",async()=>{
+test("Test FAIL report never reaches independent Gateway success observer",async()=>{
  const branchPermission={resource:canonicalBranchUri(repo,branch),
   operation:"run_tests" as const};
  const testDid="did:thesis:test-agent";
@@ -349,7 +349,7 @@ test("R334 Test FAIL report never reaches independent Gateway success observer",
 });
 
 
-test("R385.12 Test read-only Child is not a Test PASS and needs independent Gateway evidence",async()=>{
+test("Test read-only Child is not a Test PASS and needs independent Gateway evidence",async()=>{
  const projectTest="tests/backend/account.test.ts";
  const permission={resource:canonicalFileUri(repo,branch,projectTest),operation:"read_file"};
  const payload={...artifact,role:"test",summary:"Investigated approved application test",
@@ -384,7 +384,7 @@ test("R385.12 Test read-only Child is not a Test PASS and needs independent Gate
 
 for(const mode of ["source-outside-tests","acceptance-source",
  "claims-runner-pass","claims-runner-fail","claims-write"]){
- test("R385.12 Test diagnostic rejects untrusted grant or claim: "+mode,async()=>{
+ test("Test diagnostic rejects untrusted grant or claim: "+mode,async()=>{
   const projectTest=mode==="source-outside-tests"?"apps/backend/src/users/account.ts":
    mode==="acceptance-source"?"poc/runner/acceptance/account.test.ts":
    "tests/backend/account.test.ts";
@@ -422,7 +422,7 @@ for(const mode of ["source-outside-tests","acceptance-source",
 
 for(const mode of ["two-updates","foreign-read-with-update",
  "update-with-foreign-read","runner-with-spare-read"]){
- test("R383.1 original A2A owner denies a multi-effect Child before transport: "+mode,async()=>{
+ test("original A2A owner denies a multi-effect Child before transport: "+mode,async()=>{
   const foreignPath="apps/backend/src/users/audit.ts";
   const foreignUpdate={resource:canonicalFileUri(repo,branch,foreignPath),
    operation:"update_file" as const};
@@ -451,7 +451,7 @@ for(const mode of ["two-updates","foreign-read-with-update",
  });
 }
 
-test("R359.6 a signed mixed A2A report cannot bypass native two-effect finalization",async()=>{
+test("a signed mixed A2A report cannot bypass native two-effect finalization",async()=>{
  const read={...effect,operation:"read_file" as const};
  const permissions=[read,effect];
  const patch={root:{...root,root_permissions:permissions},
@@ -483,7 +483,7 @@ test("R359.6 a signed mixed A2A report cannot bypass native two-effect finalizat
 });
 
 for(const mode of ["project-test","application-source","acceptance","claims-pass"]){
- test("R377.3 Test repair scope and independent completion: "+mode,async()=>{
+ test("Test repair scope and independent completion: "+mode,async()=>{
   const path=mode==="application-source"?file:
    mode==="acceptance"?"poc/runner/acceptance/account.test.ts":"tests/backend/account.test.ts";
   const resource=canonicalFileUri(repo,branch,path);
@@ -557,7 +557,7 @@ function nativeCreateFixture(role:"backend"|"test"="backend",projectTestSource=f
  // Preserve the fixture's live getter counters (object spread freezes them).
  return Object.assign(f,{port});
 }
-test("R384.1 A2A owner accepts exactly one branded native CREATE Child and sends an exact create hint",async()=>{
+test("A2A owner accepts exactly one branded native CREATE Child and sends an exact create hint",async()=>{
  const f=nativeCreateFixture();
  const result=await f.owner.dispatchIssuedTask({
   taskId,runtimeTaskId,instruction:"Create one approved Backend source",
@@ -575,7 +575,7 @@ test("R384.1 A2A owner accepts exactly one branded native CREATE Child and sends
  }),/closed or malformed owner-selected Task/u);
  assert.equal(f.takes,1);
 });
-test("R384.1 A2A owner rejects a forged CREATE stager before any Child disclosure",async()=>{
+test("A2A owner rejects a forged CREATE stager before any Child disclosure",async()=>{
  const f=nativeCreateFixture();
  await assert.rejects(f.owner.dispatchIssuedTask({
   taskId,runtimeTaskId,instruction:"create one file",
@@ -585,7 +585,7 @@ test("R384.1 A2A owner rejects a forged CREATE stager before any Child disclosur
  assert.deepEqual(f.calls,[]);
  assert.equal(f.takes,0);
 });
-test("R384.1 original A2A owner rejects Test role CREATE even when Task and Child appear signed",async()=>{
+test("original A2A owner rejects Test role CREATE even when Task and Child appear signed",async()=>{
  const f=nativeCreateFixture("test");
  await assert.rejects(f.owner.dispatchIssuedTask({
   taskId,runtimeTaskId,instruction:"create forbidden app source",
@@ -595,7 +595,7 @@ test("R384.1 original A2A owner rejects Test role CREATE even when Task and Chil
  assert.equal(f.takes,0);
 });
 
-test("R389 Test CREATE is a signed test-source mutation, never a Runner PASS",async()=>{
+test("Test CREATE is a signed test-source mutation, never a Runner PASS",async()=>{
  const f=nativeCreateFixture("test",true);
  const report=await f.owner.dispatchIssuedTask({
   taskId,runtimeTaskId,instruction:"Create only tests/backend/account.test.ts",

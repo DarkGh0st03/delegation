@@ -1,7 +1,7 @@
 import {giteaPermissionCovers}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
- * R290 — owner-only Child DC issuance tied to Engineer-signed authority
+ * owner-only Child DC issuance tied to Engineer-signed authority
  * and the Coordinator's immutable, already registered Task/epoch.
  *
  * The crypto port MUST point to the SAME native Rust issuer as Engineer.
@@ -118,8 +118,8 @@ export class TrustedAuthorityOnlyChildIssuer {
   return Object.freeze({...child,permissions:Object.freeze(structuredClone(child.permissions))});
  }
  /**
-  * R325: one-use transfer of the EXACT native-issued signed Child to an
-  * owner-side A2A dispatch, after R323's remote Task bind is active.
+  * one-use transfer of the EXACT native-issued signed Child to an
+  * owner-side A2A dispatch, after remote Task bind is active.
   * Native signature/credential is NOT an ADK FunctionTool return value.
   * This method is private to the trusted in-process owner and consumes
   * the credential before returning; failure cannot silently reissue it.

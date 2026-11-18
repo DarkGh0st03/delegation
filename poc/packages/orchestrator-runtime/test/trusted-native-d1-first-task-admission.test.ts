@@ -154,7 +154,7 @@ async function fixture(action:(f:{
   get registered(){return newRow;}});}
  finally{await rm(parent,{recursive:true,force:true});}
 }
-test("R341 genuine failed Test permits ONE new Coordinator Task, not new rights",async()=>{
+test("genuine failed Test permits ONE new Coordinator Task, not new rights",async()=>{
  await fixture(async(f)=>{
   const result=await admitFirstNativeD1RepairTask(f.input);
   assert.equal(result.status,"native_d1_task_registered_without_gateway_or_child");
@@ -176,7 +176,7 @@ test("R341 genuine failed Test permits ONE new Coordinator Task, not new rights"
   assert.equal(f.calls,1);
  });
 });
-test("R341 missing actionability or foreign Engineer ceiling cannot write",async()=>{
+test("missing actionability or foreign Engineer ceiling cannot write",async()=>{
  for(const bad of [
   {failure:{...observed,repair_candidate:false}},
   {failure:{...observed,tested_commit_sha:"e".repeat(40)}},
@@ -191,7 +191,7 @@ test("R341 missing actionability or foreign Engineer ceiling cannot write",async
   },bad as never);
  }
 });
-test("R341 ambiguous Coordinator failure keeps durable one-use reservation",async()=>{
+test("ambiguous Coordinator failure keeps durable one-use reservation",async()=>{
  await fixture(async f=>{
   await assert.rejects(admitFirstNativeD1RepairTask(f.input),
    /simulated crash after reserve/);
@@ -201,7 +201,7 @@ test("R341 ambiguous Coordinator failure keeps durable one-use reservation",asyn
   assert.equal(f.calls,1);
  },{throwRegistration:true});
 });
-test("R341 unsafe shared admission store is fail closed before Task registration",async()=>{
+test("unsafe shared admission store is fail closed before Task registration",async()=>{
  await fixture(async f=>{
   await chmod(f.directory,0o755);
   await assert.rejects(admitFirstNativeD1RepairTask(f.input),/unsafe native D1/);
@@ -209,7 +209,7 @@ test("R341 unsafe shared admission store is fail closed before Task registration
  });
 });
 
-test("R342 original D1 Task is bound, native Child issued, Gateway enrolled, no effect",async()=>{
+test("original D1 Task is bound, native Child issued, Gateway enrolled, no effect",async()=>{
  await fixture(async f=>{
   const a=await admitFirstNativeD1RepairTask(f.input);
   const events:string[]=[];
@@ -264,7 +264,7 @@ test("R342 original D1 Task is bound, native Child issued, Gateway enrolled, no 
   assert.deepEqual(events,["gateway_bind","rust_issue","gateway_enroll"]);
  });
 });
-test("R342 forged R341 admission or reused status cannot reach native Rust",async()=>{
+test("forged admission or reused status cannot reach native Rust",async()=>{
  await fixture(async f=>{
   const a=await admitFirstNativeD1RepairTask(f.input);
   let called=false;
@@ -292,7 +292,7 @@ test("R342 forged R341 admission or reused status cannot reach native Rust",asyn
  });
 });
 
-test("R384.3 native signed CREATE D1 registers exactly one new Task only after original Runner FAIL",async()=>{
+test("native signed CREATE D1 registers exactly one new Task only after original Runner FAIL",async()=>{
  const permission={
   resource:canonicalFileUri(repo,branch,
    "apps/backend/src/users/sample-change-created.ts"),
@@ -325,7 +325,7 @@ test("R384.3 native signed CREATE D1 registers exactly one new Task only after o
   assert.equal(f.calls,1);
  },{root:extendedRoot,candidate:{role:"backend",permissions:[permission]}} as never);
 });
-test("R384.3 CREATE D1 cannot register from a forged Runner FAIL or an unsigned scope",async()=>{
+test("CREATE D1 cannot register from a forged Runner FAIL or an unsigned scope",async()=>{
  const permission={
   resource:canonicalFileUri(repo,branch,"apps/backend/src/users/new.ts"),
   operation:"create_file" as const
@@ -353,7 +353,7 @@ test("R384.3 CREATE D1 cannot register from a forged Runner FAIL or an unsigned 
  }
 });
 
-test("R384.3 original CREATE D1 Child proceeds from signed FAIL through Gateway enrollment, without provider effect",async()=>{
+test("original CREATE D1 Child proceeds from signed FAIL through Gateway enrollment, without provider effect",async()=>{
  const create={
   resource:canonicalFileUri(repo,branch,
    "apps/backend/src/users/sample-change-created.ts"),

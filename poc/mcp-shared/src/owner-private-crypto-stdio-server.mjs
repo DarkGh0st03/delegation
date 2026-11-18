@@ -1,5 +1,5 @@
 /**
- * R381.0 isolated MCP stdio capability broker (zero credentials).
+ * Isolated MCP stdio capability broker (zero credentials).
  *
  * This subprocess receives ONLY the original owner-selected operation and
  * one opaque, randomly generated reference. The trusted parent retains the

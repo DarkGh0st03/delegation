@@ -1,5 +1,5 @@
 /**
- * R286 — Coordinator-private, append-only Task admission ledger.
+ * Coordinator-private, append-only Task admission ledger.
  *
  * Neither this class nor its records authorize a Gateway provider action.
  * Reservations are crash-durable and never replaced: replay/ambiguous

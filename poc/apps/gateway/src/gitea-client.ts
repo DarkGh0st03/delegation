@@ -84,7 +84,7 @@ export interface GiteaHeadCasFileMutation extends GiteaFileMutation {
   staging_branch:string;
   next_content_sha256:string;
 }
-/** R383.2 — CAS-created file; absence, unlike update_file, has no old blob. */
+/** CAS-created file; absence, unlike update_file, has no old blob. */
 export interface GiteaHeadCasCreatedFile extends GiteaFileMutation {
   previous_head_sha:string;
   staging_branch:string;
@@ -464,7 +464,7 @@ export class GiteaClient {
   }
 
   /**
-   * R143 owner-side review-only creation in a disposable or explicitly
+   * owner-side review-only creation in a disposable or explicitly
    * approved repository. This is NOT a Rust DC capability, nor may a
    * signed Test PASS or local Coordinator phase call it automatically.
    *
@@ -638,7 +638,7 @@ export class GiteaClient {
   }
 
   /**
-   * R302.2 trusted provider transport: atomic branch-HEAD CAS via a disposable
+   * Trusted provider transport: atomic branch-HEAD CAS via a disposable
    * isolated staging ref. This is NOT wired to the Gateway's model/HTTP paths.
    *
    * Plain PUT /contents/{filepath} only guards the blob SHA; it cannot
@@ -755,7 +755,7 @@ export class GiteaClient {
   }
 
   /**
-   * R383.2 private Gateway owner transport: create a file that provably did
+   * Private Gateway owner transport: create a file that provably did
    * not exist at the original HEAD, using an isolated staged commit and the
    * same Gitea remote old_commit_id compare-and-swap as update_file.
    *
@@ -881,7 +881,7 @@ export class GiteaClient {
   }
 
   /**
-   * R383.2 read-only verifier. The Gateway must inject a DIFFERENT
+   * read-only verifier. The Gateway must inject a DIFFERENT
    * authenticated GiteaClient and compare this proof against an immutable,
    * durably reserved native create intent before publishing any MAC receipt.
    * Alone this observation is NOT a signed grant, Rust/OPA approval,

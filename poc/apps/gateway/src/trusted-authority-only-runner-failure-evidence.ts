@@ -1,5 +1,5 @@
 /**
- * R336 — durable MAC-protected, native owner Runner FAIL observation.
+ * Durable MAC-protected, native owner Runner FAIL observation.
  * Failure is evidence for *preflight only*, never Gateway completion,
  * D1 authorization, an additional Child, or a successful Test Task.
  */

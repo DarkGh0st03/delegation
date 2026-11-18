@@ -45,7 +45,7 @@ async function fixture(t:import("node:test").TestContext,
  return {path,received};
 }
 
-test("R171 native Engineer root and revocation share one private local Rust port",async t=>{
+test("native Engineer root and revocation share one private local Rust port",async t=>{
  const f=await fixture(t,request=>{
   assert.equal(request.token,"TRUSTED_ENGINEER_LOCAL_BEARER");
   if(request.operation==="issue_root"){
@@ -77,7 +77,7 @@ test("R171 native Engineer root and revocation share one private local Rust port
   {credential_id:issue.credential_id,status_set:true});
 });
 
-test("R171 trust boundary rejects a root with unauthorized amplified permissions",async t=>{
+test("trust boundary rejects a root with unauthorized amplified permissions",async t=>{
  const f=await fixture(t,r=>({ok:true,result:{
   id:r.body.credential_id,issuer:"did:thesis:engineer",
   credentialSubject:{per:[...r.body.permissions,
@@ -91,7 +91,7 @@ test("R171 trust boundary rejects a root with unauthorized amplified permissions
   /Trusted Engineer native Rust issuer unavailable/);
 });
 
-test("R171 native denial masks Rust details and NEVER falls back to HTTP",async t=>{
+test("native denial masks Rust details and NEVER falls back to HTTP",async t=>{
  const f=await fixture(t,()=>({
   ok:false,error:"PRIVATE_ENGINEER_SIGNING_KEY_NEVER_LOG"
  }));
@@ -106,7 +106,7 @@ test("R171 native denial masks Rust details and NEVER falls back to HTTP",async 
  assert.equal(f.received.length,1);
 });
 
-test("R171 canonical owner selects native Unix port when explicitly configured",async t=>{
+test("canonical owner selects native Unix port when explicitly configured",async t=>{
  const f=await fixture(t,r=>({ok:true,result:{
   id:r.body.credential_id,issuer:"did:thesis:engineer",
   credentialSubject:{per:r.body.permissions}

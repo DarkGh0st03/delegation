@@ -182,7 +182,7 @@ test("operational bootstrap reuses the original session store and reserves the R
  }),/bootstrap denied/u);
  assert.equal(typeof prepared.workflow.draftPullRequest.execute,"function");
 
- // R383.9: CREATE is opt-in ONLY when BOTH separately protected owner
+ // CREATE is opt-in ONLY when BOTH separately protected owner
  // directories exist. Reusing UPDATE receipts or an untrusted path is a deny.
  const createIntent=f.at("createIntent"),createReceipts=f.at("createReceipts");
  await mkdir(createIntent,{mode:0o700});

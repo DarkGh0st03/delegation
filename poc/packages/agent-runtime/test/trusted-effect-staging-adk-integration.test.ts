@@ -1,7 +1,7 @@
 import {withFakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R321: actual offline ADK LlmAgent/Runner -> direct Gateway controlled tool
+ * Actual offline ADK LlmAgent/Runner -> direct Gateway controlled tool
  * -> trusted owner per-Task staging -> private signer -> Gateway execute.
  * Synthetic responses, no live network, Rust, EVM, Docker or paid model.
  */
@@ -54,7 +54,7 @@ class ScriptedBackendUpdate extends BaseLlm {
  }
  publicSummary(){return Object.freeze({calls_started:this.requests.length});}
  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
-  return Promise.reject(Error("R321 no live model connection"));
+  return Promise.reject(Error("No live model connection"));
  }
 }
 function fixture(observe?:(w:{task_id:string;credential_id:string;
@@ -114,12 +114,12 @@ function fixture(observe?:(w:{task_id:string;credential_id:string;
       branch:BRANCH,path:PATH,commit_sha:SHA}
     });
    }
-   throw Error("Forbidden offline R321 transport "+u);
+   throw Error("Forbidden offline transport "+u);
   }) as typeof fetch
  }));
  return {handler,model,registry,calls};
 }
-test("R321 owner-prebound A2A Task uses actual ADK Runner without sharing signer or stager with model",async()=>{
+test("owner-prebound A2A Task uses actual ADK Runner without sharing signer or stager with model",async()=>{
  const x=fixture();
  const result=await x.handler(context());
  assert.equal(result.role,"backend");
@@ -138,7 +138,7 @@ test("R321 owner-prebound A2A Task uses actual ADK Runner without sharing signer
   /not prebound or was already dispatched/u);
  assert.equal(x.model.requests.length,2);
 });
-test("R321 malicious A2A task metadata cannot select owner effect port or trigger model",async()=>{
+test("malicious A2A task metadata cannot select owner effect port or trigger model",async()=>{
  for(const forged of [
   {...context(),trusted_gateway_task_id:"dispatch_"+"Z".repeat(22)},
   {...context(),delegation_evidence:{...context().delegation_evidence,

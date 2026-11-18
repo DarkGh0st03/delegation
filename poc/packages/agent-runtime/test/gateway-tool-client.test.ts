@@ -180,7 +180,7 @@ test("trusted prepare categories are allowlisted without changing denial semanti
  }
 });
 
-test("R281 run_tests Gateway execute denials retain only fixed native gate codes",async()=>{
+test("run_tests Gateway execute denials retain only fixed native gate codes",async()=>{
   const known=["verification_rejected","policy_denied","approved_plan_denied"];
   const cases=[
     ...known.map(code=>({code,expected:code,status:403})),
@@ -226,7 +226,7 @@ test("R281 run_tests Gateway execute denials retain only fixed native gate codes
   }
 });
 
-test("R358 authenticated read-only Task stages before signed VP and Gateway execute",async()=>{
+test("authenticated read-only Task stages before signed VP and Gateway execute",async()=>{
  const calls:string[]=[];
  const gateway=new GatewayControlledToolClient({
   gatewayBaseUrl:"http://gateway.local",agentRole:"backend",taskId:"owner-read-only",
@@ -252,7 +252,7 @@ test("R358 authenticated read-only Task stages before signed VP and Gateway exec
  assert.deepEqual(calls,["prepare","stage","execute"]);
 });
 
-test("R359.5 mixed owner client stages and independently attests both provider effects",async()=>{
+test("mixed owner client stages and independently attests both provider effects",async()=>{
  const calls:string[]=[];
  let index=0;
  const client=new GatewayControlledToolClient({
@@ -325,7 +325,7 @@ test("an update identical to the file read in this Task is answered locally as n
  assert.deepEqual(calls.slice(4),["prepare:2","stage:nc-2","execute:nc-2","attest:update_file:nc-2"]);
 });
 
-test("R391 Test CREATE invokes native owner stage and private VP only for exact test source",async()=>{
+test("Test CREATE invokes native owner stage and private VP only for exact test source",async()=>{
  const oldArchitecture=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
  const oldNative=process.env.APPROVED_RUNNER_NATIVE_MCP;
  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";

@@ -259,7 +259,7 @@ export function createAdkSpecializedAgent(
   const schemaFor=(name:SpecializedToolName)=>SCHEMAS[name].extend({
     branch:z.literal(branch)
   });
-  // R120: one failed Runner result terminates this signed Test Task's
+  // One failed Runner result terminates this signed Test Task's
   // ability to call Docker again; shared MCP and FunctionTools share it.
   let terminalTestFailure:AdkControlledToolOutcome["payload"]|null=null;
   const tools = registry.modelTools

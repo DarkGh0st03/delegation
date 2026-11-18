@@ -1,5 +1,5 @@
 /**
- * R371 — original trusted Engineer owner OPERATIONAL branch-first launcher.
+ * Original trusted Engineer owner OPERATIONAL branch-first launcher.
  *
  * This is an in-process composition helper, NOT an HTTP/ADK/MCP capability,
  * service entrypoint, credential issuer, provider bypass or auto-approval.
@@ -33,7 +33,7 @@ function nonempty(value,max){
  * the independently MAC-authenticated latest Test is rechecked before
  * PR admission, stage, provider POST and final Owner completion.
  *
- * R385.13: the trusted owner may request up to 25 ADK decisions. The 25th
+ * The trusted owner may request up to 25 ADK decisions. The 25th
  * is terminal readiness and consumes no additional Child. Signed Child
  * count remains independently capped at 24 by the owner budget/issuer.
  *

@@ -8,7 +8,7 @@ import type {CryptoPresentationPort} from "./crypto-presentation-port.ts";
 import {PrivateMcpTaskRegistry} from "./private-mcp-task-registry.ts";
 
 /**
- * R200: ephemeral, in-process MCP crypto session bound to one active Task.
+ * Ephemeral, in-process MCP crypto session bound to one active Task.
  * No Shared MCP HTTP process, CryptoWorkerRouter or private Worker endpoint.
  * The model cannot see this session or its VP; only the trusted Gateway
  * execution client receives the signed presentation.

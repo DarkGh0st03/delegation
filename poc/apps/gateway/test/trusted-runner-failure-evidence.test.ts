@@ -87,7 +87,7 @@ async function fixture(action:(p:{
   });
  }finally{await rm(temp,{recursive:true,force:true});}
 }
-test("R336 original verified Runner FAIL is durably MAC protected and NOT D1 authority",async()=>{
+test("original verified Runner FAIL is durably MAC protected and NOT D1 authority",async()=>{
  await fixture(async({publisher,observer,runner,directory})=>{
   const result=await runner.run(request);
   const digest=await publisher.publish(intent,binding,request,result,"opa-r336");
@@ -106,7 +106,7 @@ test("R336 original verified Runner FAIL is durably MAC protected and NOT D1 aut
   }),/violates signed Task/);
  });
 });
-test("R355.9 authenticated Runner FAIL retains only bounded TypeScript error codes",async()=>{
+test("authenticated Runner FAIL retains only bounded TypeScript error codes",async()=>{
  await fixture(async({publisher,observer,runner,directory})=>{
   const result=await runner.run(request);
   assert.deepEqual(result.typecheck_error_codes,["TS2322","TS2345"]);
@@ -124,7 +124,7 @@ test("R355.9 authenticated Runner FAIL retains only bounded TypeScript error cod
   await assert.rejects(observer.observe(intent,binding),/MAC invalid/);
  },{...failure(),typecheck_error_codes:["TS2322","TS2345"]});
 });
-test("R336 copied FAIL, moved Gitea and tampered MAC fail closed",async()=>{
+test("copied FAIL, moved Gitea and tampered MAC fail closed",async()=>{
  await fixture(async({publisher,observer,runner,move,directory})=>{
   const result=await runner.run(request);
   await assert.rejects(publisher.publish(intent,binding,request,
@@ -144,7 +144,7 @@ test("R336 copied FAIL, moved Gitea and tampered MAC fail closed",async()=>{
   await assert.rejects(observer.observe(intent,binding),/MAC invalid/);
  });
 });
-test("R336 status PASS cannot publish FAIL evidence",async()=>{
+test("status PASS cannot publish FAIL evidence",async()=>{
  await fixture(async({runner,publisher,directory})=>{
   const result=await runner.run(request);
   await assert.rejects(publisher.publish(intent,binding,request,result,"opa"),
@@ -153,7 +153,7 @@ test("R336 status PASS cannot publish FAIL evidence",async()=>{
  },{...failure(),status:"pass"});
 });
 
-test("R337 missing durable original POST attempt cannot publish or observe FAIL",async()=>{
+test("missing durable original POST attempt cannot publish or observe FAIL",async()=>{
  await fixture(async({runner,publisher,observer,directory})=>{
   const result=await runner.run(request);
   await assert.rejects(publisher.publish(intent,binding,request,result,"opa"),
@@ -187,7 +187,7 @@ test("authenticated FAIL binds the failed test names and messages (MAC-protected
  },body);
 });
 
-test("R377.5 authenticated Backend FAIL binds the sanitized Vitest paths",async()=>{
+test("authenticated Backend FAIL binds the sanitized Vitest paths",async()=>{
  const states=phases.map((phase,i)=>({phase,status:i<2?"pass":i===2?"fail":"skipped"}));
  const path="tests/backend/account.test.ts";
  const body={...failure(),phases:states,

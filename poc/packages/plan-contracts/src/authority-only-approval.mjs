@@ -6,7 +6,7 @@
  * existing signed-plan runtime. An independently authenticated Engineer must
  * control use of the private key; a valid signature alone proves no GUI click.
  *
- * R299 accepts canonical directory grants for file operations; containment
+ * Accepts canonical directory grants for file operations; containment
  * is independently checked during Task binding, Rust VP verification and OPA.
  */
 import {createHash,createPrivateKey,createPublicKey,sign,verify}

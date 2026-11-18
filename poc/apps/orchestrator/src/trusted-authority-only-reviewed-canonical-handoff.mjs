@@ -1,5 +1,5 @@
 /**
- * R382.5 — one-shot, privileged, reviewed Planning -> canonical Executor
+ * one-shot, privileged, reviewed Planning -> canonical Executor
  * handoff in the ORIGINAL authority-only Review Host.
  *
  * This is an in-process owner capability. Never publish it through HTTP,

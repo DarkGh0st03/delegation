@@ -1,5 +1,5 @@
 /**
- * R295 — owner-private, append-only writer for authenticated Gateway
+ * owner-private, append-only writer for authenticated Gateway
  * read_file outcomes. This is NOT a provider executor or an execution gate.
  *
  * Authority-only reads are fail-closed by default. The only intended

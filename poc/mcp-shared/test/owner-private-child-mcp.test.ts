@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {createOwnerPrivateChildMcpSession}
  from "../src/owner-private-child-mcp.ts";
 
-test("R162 private MCP issues once, returns result only via owner memory and rejects replay",async()=>{
+test("private MCP issues once, returns result only via owner memory and rejects replay",async()=>{
  let invokes=0;
  const credential=Object.freeze({id:"urn:issued:child",
    credentialSubject:Object.freeze({per:Object.freeze([
@@ -21,7 +21,7 @@ test("R162 private MCP issues once, returns result only via owner memory and rej
  await service.close();
 });
 
-test("R162 private MCP fails closed on signer failure and never retries",async()=>{
+test("private MCP fails closed on signer failure and never retries",async()=>{
  let attempts=0;
  const service=createOwnerPrivateChildMcpSession(async()=>{
   attempts++;throw Error("PRIVATE_RUST_ADAPTER_TOKEN_AND_CREDENTIAL");
@@ -35,7 +35,7 @@ test("R162 private MCP fails closed on signer failure and never retries",async()
  assert.equal(attempts,1);
 });
 
-test("R162 private MCP does not start an HTTP listener or accept unauthenticated requests",async()=>{
+test("private MCP does not start an HTTP listener or accept unauthenticated requests",async()=>{
  // The only transport is SDK InMemoryTransport; close before first call
  // and ensure a caller cannot construct a second signing opportunity.
  let calls=0;
@@ -47,7 +47,7 @@ test("R162 private MCP does not start an HTTP listener or accept unauthenticated
  assert.equal(calls,0);
 });
 
-test("R164 owner-private MCP accepts root issue and revocation only as separate opaque one-shot calls",async()=>{
+test("owner-private MCP accepts root issue and revocation only as separate opaque one-shot calls",async()=>{
  const {createOwnerPrivateCryptographicMcpSession}=await import(
   "../src/owner-private-child-mcp.ts");
  let calls=0;
@@ -65,7 +65,7 @@ test("R164 owner-private MCP accepts root issue and revocation only as separate 
  await assert.rejects(revoke.invokeOnce(),/root revocation unavailable/);
  assert.equal(calls,2);
 });
-test("R164 private root MCP errors never reveal Adapter secrets",async()=>{
+test("private root MCP errors never reveal Adapter secrets",async()=>{
  const {createOwnerPrivateCryptographicMcpSession}=await import(
   "../src/owner-private-child-mcp.ts");
  const s=createOwnerPrivateCryptographicMcpSession("root_revoke",async()=>{
@@ -77,7 +77,7 @@ test("R164 private root MCP errors never reveal Adapter secrets",async()=>{
  });
 });
 
-test("R378.1 private presentation MCP invokes the signer once",async()=>{
+test("private presentation MCP invokes the signer once",async()=>{
  const {createOwnerPrivateCryptographicMcpSession}=await import(
   "../src/owner-private-child-mcp.ts");
  const result={signed_vp:"owner-only-vp"};

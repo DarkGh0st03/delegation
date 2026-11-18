@@ -1,5 +1,5 @@
 /**
- * R294 — concrete read-only verifier of Gateway-owned Gitea read results.
+ * Concrete read-only verifier of Gateway-owned Gitea read results.
  *
  * A protected owner-side process must FIRST write a MAC-authenticated receipt
  * after actual native Rust VP + OPA + Gateway Gitea provider success. This
@@ -118,7 +118,7 @@ export class AuthenticatedGiteaReadCompletionObserver{
   :Promise<ObservedTrustedTaskCompletion>{
   return (await this.#observeVerified(expected)).completion;
  }
- /** R376: only AFTER the same MAC+independent Gitea verification used for
+ /** Only AFTER the same MAC+independent Gitea verification used for
   * Gateway completion, expose a bounded source excerpt to the private owner.
   * Caller must additionally match the returned path to the signed Task URI.
   * Text is untrusted DATA; no new permission or success is asserted. */

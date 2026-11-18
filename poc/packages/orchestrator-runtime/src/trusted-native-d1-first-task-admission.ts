@@ -1,7 +1,7 @@
 /**
- * R341 — first native D1 Task admission, under the ORIGINAL Engineer grant.
+ * First native D1 Task admission, under the ORIGINAL Engineer grant.
  *
- * This owner-only bridge consumes freshly reverified R338/R340 evidence and
+ * This owner-only bridge consumes freshly reverified evidence and
  * reserves one admission per failed Test. Only the existing Coordinator may
  * register a new Task. No Child, Gateway effect, Docker retry or root issue.
  */
@@ -100,7 +100,7 @@ export class DurableNativeD1FirstTaskAdmissionJournal{
   try{await d.sync();}finally{await d.close();}
  }
  /**
-  * R342: reopen the one-shot source, never trust a serialized Task receipt.
+  * Reopen the one-shot source, never trust a serialized Task receipt.
   * The original file must remain private, exact and non-replaced.
   */
  async assertReservedOriginal(input:{

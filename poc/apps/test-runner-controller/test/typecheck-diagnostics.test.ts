@@ -61,7 +61,7 @@ test("malformed, duplicate or unsorted TypeScript codes fail closed",()=>{
     assert.deepEqual(sanitizeTypecheckErrorCodes(x),[]);
 });
 
-test("R85 normalized real npm workspace TypeScript paths match signed Gitea scope",()=>{
+test("normalized real npm workspace TypeScript paths match signed Gitea scope",()=>{
   const raw=[
     "> @iam/backend@0.1.0 typecheck",
     "> tsc --noEmit",
@@ -82,7 +82,7 @@ test("R85 normalized real npm workspace TypeScript paths match signed Gitea scop
   ]);
   assert.doesNotMatch(JSON.stringify(a),/SECRET_SOURCE_NEVER_LOG/u);
 });
-test("R85 no workspace context means no inferred permission, and traversals stay rejected",()=>{
+test("no workspace context means no inferred permission, and traversals stay rejected",()=>{
   const raw=[
     "src/users/a.ts(1,1): error TS2322: private",
     "> @iam/backend@0.1.0 typecheck",

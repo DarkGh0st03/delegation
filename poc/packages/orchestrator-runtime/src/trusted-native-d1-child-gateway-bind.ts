@@ -1,6 +1,6 @@
 /**
- * R342 — same-root D1 native Child DC + independent Gateway registration.
- * This binds the first R341 Task only. The issued Child cannot be used until
+ * same-root D1 native Child DC + independent Gateway registration.
+ * This binds the first Task only. The issued Child cannot be used until
  * a later owner-controlled A2A Task and canonical Gateway Rust VP/OPA Execute.
  */
 import {randomBytes,createHash} from "node:crypto";

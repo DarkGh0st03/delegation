@@ -1,7 +1,6 @@
 /**
- * R417: canonical Software Engineer Root DC issuance/revocation is Rust only.
- * The separately gated historical HTTP fixture is owned elsewhere and
- * never imported here, whether statically, dynamically or as a type.
+ * Software Engineer Root DC issuance and revocation are Rust only: the
+ * in-process Engineer core, or its native socket. There is no other transport.
  */
 import {createNativeRustEngineerCredentialPort}
  from "./trusted-engineer-native-port.ts";
@@ -12,7 +11,7 @@ import type {TrustedEngineerCoreConfig}
 import type {EngineerCredentialPort}
  from "./trusted-engineer-authority.ts";
 
-/** No Adapter URL, HTTP fetch, in-process private MCP, or legacy fallback. */
+/** No HTTP, no in-process private MCP, no fallback. */
 export function createTrustedEngineerCredentialPort(
  config:TrustedEngineerCoreConfig
 ):EngineerCredentialPort{
@@ -37,7 +36,6 @@ export function createTrustedEngineerCredentialPort(
    ...config,nativeSocketPath:path
   });
  }
- // R415: fail closed even when the separately exported historical HTTP
- // fixture has an explicit opt-in. No canonical HTTP transport fallback.
+ // No native transport configured: fail closed.
  throw Error("Canonical Engineer root requires native Rust issuer socket");
 }

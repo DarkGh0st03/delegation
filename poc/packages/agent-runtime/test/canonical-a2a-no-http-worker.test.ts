@@ -7,7 +7,7 @@ import {startSpecializedAgentServer} from "../src/server.ts";
 import type {AdkA2ATaskHandlerConfig} from "../src/adk-a2a-handler.ts";
 import type {BaseLlm} from "@google/adk";
 
-test("R222 canonical A2A server rejects a remote crypto HTTP worker before listening",async()=>{
+test("canonical A2A server rejects a remote crypto HTTP worker before listening",async()=>{
  const stale={mcpCryptoUrl:"http://127.0.0.1:8097/mcp"};
  await assert.rejects(()=>startSpecializedAgentServer({
   role:"backend",port:38177,
@@ -15,7 +15,7 @@ test("R222 canonical A2A server rejects a remote crypto HTTP worker before liste
  }),/legacy_crypto_http_mcp_retired/u);
 });
 
-test("R223 running canonical A2A server exposes no private MCP HTTP worker route",async()=>{
+test("running canonical A2A server exposes no private MCP HTTP worker route",async()=>{
  const previousFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
  const previousSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  const keys=generateKeyPairSync("ed25519");
@@ -35,7 +35,7 @@ test("R223 running canonical A2A server exposes no private MCP HTTP worker route
     gatewayBaseUrl:"http://127.0.0.1:1",
     presentationSigner:fakeSigner(),
     adapterToken:"R223_PRIVATE_TEST_ONLY",
-    fetchFn:async()=>{throw Error("No network calls in R223 A2A route test");}
+    fetchFn:async()=>{throw Error("No network calls in the A2A route test");}
    }
   });
   const address=active.server.address() as AddressInfo;
@@ -59,7 +59,7 @@ test("R223 running canonical A2A server exposes no private MCP HTTP worker route
 });
 
 
-test("R381.6 private native MCP signer cannot start outside owner-authorized ADK Task registry",async()=>{
+test("private native MCP signer cannot start outside owner-authorized ADK Task registry",async()=>{
  const prior=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
  const base={
   role:"backend" as const,port:0,
@@ -86,7 +86,7 @@ test("R381.6 private native MCP signer cannot start outside owner-authorized ADK
  }
 });
 
-test("R381.6 direct ADK handler cannot bypass original authority-only registries",async()=>{
+test("direct ADK handler cannot bypass original authority-only registries",async()=>{
  const {createAdkA2ATaskHandler}=await import("../src/adk-a2a-handler.ts");
  const prior=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
  try{

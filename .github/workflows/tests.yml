@@ -42,6 +42,8 @@ jobs:
         run: npm --prefix poc run orchestrator:test
       - name: Test Runner
         run: npm --prefix poc run runner:test
+      - name: Private MCP helpers
+        run: npm --prefix poc run mcp-shared:test
 
   opa:
     name: OPA policy tests

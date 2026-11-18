@@ -1,9 +1,9 @@
 /**
- * R325 — authority-only programmatic A2A owner execution entrypoint.
+ * authority-only programmatic A2A owner execution entrypoint.
  *
  * This is the first canonical owner-side bridge that combines genuine
  * Coordinator Task + native-issued signed Child + independently enrolled
- * Gateway + R324 private Unix binding with the Protected A2A SDK port.
+ * Gateway + private Unix binding with the Protected A2A SDK port.
  *
  * No signed-DAG fallback, no model-supplied authority, and NO acceptance
  * of A2A text/status as independent provider completion.
@@ -236,7 +236,7 @@ export class TrustedAuthorityOnlyA2AOwner {
     isProjectTestCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile);
   const signedTestReadCreate=role==="test"&&!hasRunner&&typedMixedCreate&&
     isProjectTestReadCreateGrant(row.permissions,this.#gateway.projectTestSourceProfile);
-  // R383.1: the native Task/Child maps to precisely one provider operation,
+  // The native Task/Child maps to precisely one provider operation,
   // or to N reads (edited file + signed context) followed by ONE CAS update.
   // A spare grant in the signed Task must not be leaked as another
   // approved file permission to an A2A specialist. Multi-file changes
@@ -296,7 +296,7 @@ export class TrustedAuthorityOnlyA2AOwner {
        live.authority_digest!==root.authority_digest||
        live.root_credential_id!==root.root_credential_id)
      deny("Engineer root changed before protected A2A send");
-    // Consume ONLY after R324 confirms private bind; the original
+    // Consume ONLY after confirms private bind; the original
     // native-issued credential is never synthesized from A2A metadata.
     const signed=this.#issuer.takeTrustedIssuedChildCredential(
      input.taskId,this.#coordinator);
@@ -368,7 +368,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   });
  }
  /**
-  * R326: never trust the A2A report to confirm a provider effect. The owner
+  * Never trust the A2A report to confirm a provider effect. The owner
   * must call Gateway's independent completion observer, which reads the
   * original Task flight and independently attested Gitea/Runner evidence.
   * An ambiguous observer failure consumes the attempt and cannot retry.
@@ -387,7 +387,7 @@ export class TrustedAuthorityOnlyA2AOwner {
      reported.status!=="a2a_report_not_gateway_completed"||
      reported.provider_completion_attested!==false)
    deny("no matching previous A2A report to corroborate independently");
-  // R334: Test FAIL is a D1 candidate, not a successful provider effect.
+  // Test FAIL is a D1 candidate, not a successful provider effect.
   // Reject before touching the success observer; D1 needs separate proof.
   if(reported.role==="test"&&!this.#mixedReports.has(runtimeTaskId)&&
      !this.#testReadReports.has(runtimeTaskId)&&
@@ -450,7 +450,7 @@ export async function startTrustedAuthorityOnlyA2AOwner(
 }
 
 /**
- * R327 — canonical production-facing A2A SDK owner factory.
+ * Canonical production-facing A2A SDK owner factory.
  *
  * A trusted owner starts THREE separate ADK/A2A agent processes itself,
  * then supplies the loopback endpoints. Before opening private effect
@@ -482,7 +482,7 @@ export async function startTrustedAuthorityOnlySdkA2AOwner(
     Object.values(urls).some(url=>!/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u.test(url)))
   deny("canonical SDK A2A startup requires distinct loopback role hosts");
  // Card probes use GET with no credential, then the protected SDK client
- // performs the one-shot A2A HTTP send only after R324 private Task bind.
+ // performs the one-shot A2A HTTP send only after private Task bind.
  const verifiedAgentProfiles=await assertTrustedApprovedA2AStartup({
   endpoints:urls as Record<SpecialistRole,string>,
   ...(extra.length?{additionalRolePins:config.additionalRolePins}:{})

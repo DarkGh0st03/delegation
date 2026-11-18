@@ -1,5 +1,5 @@
 /**
- * R383.6 — owner-authenticated CREATE_FILE evidence.
+ * owner-authenticated CREATE_FILE evidence.
  *
  * A success receipt is published only after an independently pinned
  * Gitea read proves: old path absent at the exact parent, new feature

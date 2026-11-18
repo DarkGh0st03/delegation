@@ -14,7 +14,7 @@ const isProjectTestCreateGrant=withProfile(containment.isProjectTestCreateGrant)
 const prefix="gitea://gitea.local/thesis/demo-app/branches/feature%2Fsession-work";
 const permission=(operation,path)=>({operation,resource:prefix+"/files/"+path});
 
-test("R383.0 Test agent may investigate a signed, exact application test file only",()=>{
+test("Test agent may investigate a signed, exact application test file only",()=>{
  for(const path of [
   "tests/backend/account.test.ts","tests/frontend/account.test.tsx",
   "tests/backend/auth/login.test.ts","tests/frontend/forms/suspend.test.tsx",
@@ -29,7 +29,7 @@ test("R383.0 Test agent may investigate a signed, exact application test file on
  }
 });
 
-test("R383.0 project test read denies source files, acceptance tests, directory scopes, writes and extras",()=>{
+test("project test read denies source files, acceptance tests, directory scopes, writes and extras",()=>{
  const source=permission("read_file","apps/backend.ts");
  const acceptance=permission("read_file","tests/acceptance/account.test.ts");
  const wrong=permission("read_file","tests/frontend/account.spec.ts");
@@ -54,7 +54,7 @@ test("R383.0 project test read denies source files, acceptance tests, directory 
  assert.equal(isProjectTestReadGrant([{resource:prefix+"/files/tests/backend/account.test.ts"}]),false);
 });
 
-test("R385.13 dotted project test filenames stay exact and fail closed on aliases",()=>{
+test("dotted project test filenames stay exact and fail closed on aliases",()=>{
  for(const path of ["tests/backend/user.service.test.ts",
   "tests/backend/user.routes.test.ts","tests/frontend/Account.Status.test.tsx"]){
   const read=permission("read_file",path);
@@ -79,7 +79,7 @@ test("R385.13 dotted project test filenames stay exact and fail closed on aliase
  }
 });
 
-test("R386 Test CREATE requires one exact project test source, no extra grants",()=>{
+test("Test CREATE requires one exact project test source, no extra grants",()=>{
  for(const path of ["tests/backend/new.test.ts",
   "tests/frontend/pages/SuspensionForm.test.tsx",
   "tests/backend/user.service.test.ts"])
@@ -99,7 +99,7 @@ test("R386 Test CREATE requires one exact project test source, no extra grants",
  assert.equal(isProjectTestCreateGrant([null]),false);
 });
 
-test("R401 a repository test profile supports its own test layout",()=>{
+test("a repository test profile supports its own test layout",()=>{
  const other=createTrustedProjectTestSourceProfile({
   roots:["src/__tests__","test/unit"],suffixes:[".test.ts",".spec.tsx"]
  });
@@ -126,7 +126,7 @@ test("R401 a repository test profile supports its own test layout",()=>{
   "model-supplied/plain object is not a trusted profile");
 });
 
-test("R401 untrusted/broad test-source profile configuration is rejected",()=>{
+test("untrusted/broad test-source profile configuration is rejected",()=>{
  assert.equal(containment.isProjectTestSource("tests/backend/a.test.ts"),false,
   "without a profile nothing is a project test source");
  for(const invalid of [

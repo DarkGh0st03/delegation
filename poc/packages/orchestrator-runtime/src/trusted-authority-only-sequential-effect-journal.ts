@@ -1,5 +1,5 @@
 /**
- * R301 — independent crash-durable sequential effect ledger.
+ * Independent crash-durable sequential effect ledger.
  *
  * Gateway-owner only. A signed Task/Child/VP/OPA/real provider result is
  * required by its caller. Neither a journal marker nor a signed HMAC by

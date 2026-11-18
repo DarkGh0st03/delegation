@@ -1,5 +1,5 @@
 /**
- * R383.6 — protected, single-attempt native CREATE_FILE transport.
+ * Protected, single-attempt native CREATE_FILE transport.
  *
  * The caller must already have passed an ORIGINAL Gateway consumed Prepare
  * through the real DirectCoreRustVerifier and independent OPA. No legacy

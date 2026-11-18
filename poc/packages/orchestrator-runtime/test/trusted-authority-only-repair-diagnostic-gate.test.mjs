@@ -14,7 +14,7 @@ const fixture=(role="backend",resource=file)=>({
   signed_permissions:[{operation:"read_file",resource}],
   gateway_task_completed:true,evidence_sha256:digest,gateway_evidence_sha256:digest}]
 });
-test("R385.6 independent after-failure source read authorizes only same-role current-HEAD UPDATE",()=>{
+test("independent after-failure source read authorizes only same-role current-HEAD UPDATE",()=>{
  const f=fixture();
  const result=select(f);
  assert.deepEqual(result,{status:"owner_verified_signed_diagnostic_read_for_repair",
@@ -24,7 +24,7 @@ test("R385.6 independent after-failure source read authorizes only same-role cur
  // Test Agent is not a Backend replacement: its exact test source is allowed.
  assert.equal(select(fixture("test",testFile)).agent_id,"test");
 });
-test("R385.6 no read, wrong read time, stale HEAD, or unconfirmed Gateway fails closed",()=>{
+test("no read, wrong read time, stale HEAD, or unconfirmed Gateway fails closed",()=>{
  for(const mutate of [
   x=>{x.readRecords=[];},
   x=>{x.readRecords[0].epoch=2;},
@@ -41,9 +41,9 @@ test("R385.6 no read, wrong read time, stale HEAD, or unconfirmed Gateway fails 
   x=>{x.readRecords[0].task_id="fresh-repair";},
   x=>{x.readRecords.push(structuredClone(x.readRecords[0]));}
  ]){const x=fixture();mutate(x);
-  assert.throws(()=>select(x),/R385\.6 signed diagnostic repair NO-GO/u);}
+  assert.throws(()=>select(x),/Signed diagnostic repair NO-GO/u);}
 });
-test("R385.6 original Engineer Root cannot be expanded by a read candidate",()=>{
+test("original Engineer Root cannot be expanded by a read candidate",()=>{
  for(const mutate of [
   x=>{x.repairTask.agent_id="orchestrator";},
   x=>{x.repairTask.permissions=[{operation:"create_file",resource:file}];},
@@ -54,10 +54,10 @@ test("R385.6 original Engineer Root cannot be expanded by a read candidate",()=>
   x=>{x.currentHead="invalid";},
   x=>{x.readRecords[0].signed_permissions.push({operation:"update_file",resource:file});}
  ]){const x=fixture();mutate(x);
-  assert.throws(()=>select(x),/R385\.6 signed diagnostic repair NO-GO/u);}
+  assert.throws(()=>select(x),/Signed diagnostic repair NO-GO/u);}
 });
-test("R385.6 signed Test repair cannot borrow earlier Backend source read",()=>{
+test("signed Test repair cannot borrow earlier Backend source read",()=>{
  const x=fixture("test",testFile);
  x.readRecords[0].agent_id="backend";
- assert.throws(()=>select(x),/R385\.6 signed diagnostic repair NO-GO/u);
+ assert.throws(()=>select(x),/Signed diagnostic repair NO-GO/u);
 });

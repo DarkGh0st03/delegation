@@ -1,5 +1,5 @@
 /**
- * R339: only a trusted owner can PREFLIGHT a possible D1 task after a
+ * Only a trusted owner can PREFLIGHT a possible D1 task after a
  * durable, independently verified native Runner FAIL. This is not a
  * recovery admission, a new child grant or a successful Test Task.
  */
@@ -56,7 +56,7 @@ type NativeVerifiedFailedTest=Readonly<{
  recovery_authorized:false;child_credential_issued:false;
  gateway_task_completed:false;task_registered:false;
 }>;
-/** R355.3: independently observe a native Test FAIL WITHOUT preselecting
+/** Independently observe a native Test FAIL WITHOUT preselecting
  * a correction role or permissions. No Task/DC is admitted or completed.
  * A2A/provider errors alone do not qualify as authenticated evidence. */
 export async function observeTrustedNativeTestFailure(
@@ -109,7 +109,7 @@ export async function observeTrustedNativeTestFailure(
     keys.some(k=>nativeFlight[k]!==intent[k]))
   deny("Runner FAIL does not match original Gateway Test flight");
  const expected=Object.fromEntries(keys.map(k=>[k,nativeFlight[k]]));
- // R336/R337 observer: original one-shot POST, authenticated FAIL
+ // Observer: original one-shot POST, authenticated FAIL
  // receipt, current exact Gitea HEAD. A2A/model text is not evidence.
  const fail=await input.failureObserver.observe(intent,expected as never);
  if(fail.status!=="owner_authenticated_runner_failure_observed_staged"||

@@ -152,14 +152,14 @@ export class GatewayControlledToolClient {
         "The new content is identical to the file read in this Task, so no change is needed. "+
         "Do not call update_file again with the same content; reply with a short report explaining "+
         "why the file already satisfies the instruction.");
-    // R384.1: A model can request CREATE only through a privately prebound
+    // A model can request CREATE only through a privately prebound
     // single-effect Task/Child selected by the HMAC owner registry. The same
     // native one-shot MCP presentation used by the original A2A Task must
     // be installed before Prepare. No unsigned/legacy presenter fallback.
     const ownerCreate=this.#trustedEffectStager?.stagedTool==="create_file";
     // Reads of the signed context files, then ONE create of a new file.
     const mixedCreate=this.#trustedEffectStager?.stagedTool==="read_then_create";
-    // R391: Test CREATE is not an application-source capability. It needs
+    // Test CREATE is not an application-source capability. It needs
     // the original native single-effect stager AND an exact test source,
     // independently bound to the signed Task by Gateway/Rust/OPA.
     const nativeCreateRoleAllowed=APPLICATION_ROLES.includes(this.#agentRole)||
@@ -243,7 +243,7 @@ export class GatewayControlledToolClient {
     }
 
     this.#signal?.throwIfAborted();
-    // R358: the authenticated owner may additionally select one read-only
+    // The authenticated owner may additionally select one read-only
     // flight. Legacy mutation/Runner ports keep their previous behavior.
     // A read in an update Task is NOT silently converted into a second flight.
     const mixed=this.#trustedEffectStager?.stagedTool==="read_then_update";
@@ -381,7 +381,7 @@ export class GatewayControlledToolClient {
       );
     }
 
-    // R359.5: a model/HTTP claim cannot advance a mixed Task. Check the
+    // A model/HTTP claim cannot advance a mixed Task. Check the
     // exact native Gitea result, then ask the authenticated owner to
     // INDEPENDENTLY inspect the original provider receipt and seal it.
     // If this fails, the one-use owner slot remains terminally consumed.

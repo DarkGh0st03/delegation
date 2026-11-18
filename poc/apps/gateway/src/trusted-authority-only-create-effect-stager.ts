@@ -1,5 +1,5 @@
 /**
- * R383.8 — privileged owner-only CREATE_FILE Prepare -> immutable intent ->
+ * Privileged owner-only CREATE_FILE Prepare -> immutable intent ->
  * durable native Task flight. This is NOT a model FunctionTool, Gitea write,
  * Rust VP, OPA decision or Task completion. One Task, one request, one try.
  *

@@ -82,13 +82,13 @@ function fixture(options:{
   fetchFn
  });
  const run=()=>client.updateFileWithHeadCas({
-  branch,path,content:updatedContent,message:"R302 disposable branch CAS",
+  branch,path,content:updatedContent,message:"Disposable branch CAS",
   requestId:"request-r302",expectedHeadSha:oldSha,expectedBlobSha:oldBlob
  });
  return {client,run,stats:()=>({head,writes,stageWrites,casWrites,
    stagingHead,stagingBranch,calls})};
 }
-test("R302 CAS stages exact-parent Git commit, atomically promotes and reads actual file",async()=>{
+test("CAS stages exact-parent Git commit, atomically promotes and reads actual file",async()=>{
  const v=fixture();
  const result=await v.run();
  assert.equal(result.previous_head_sha,oldSha);
@@ -107,18 +107,18 @@ test("R302 CAS stages exact-parent Git commit, atomically promotes and reads act
  await assert.rejects(v.run(),ProviderConflictError);
  assert.equal(v.stats().casWrites,1);
 });
-test("R302 CAS refuses stale branch HEAD without any provider mutation",async()=>{
+test("CAS refuses stale branch HEAD without any provider mutation",async()=>{
  const v=fixture({startHead:"e".repeat(40)});
  await assert.rejects(v.run(),ProviderConflictError);
  assert.equal(v.stats().writes,0);
  assert.equal(v.stats().casWrites,0);
 });
-test("R302 CAS refuses wrong old blob without staging branch or mutation",async()=>{
+test("CAS refuses wrong old blob without staging branch or mutation",async()=>{
  const v=fixture({oldFileBlob:"f".repeat(40)});
  await assert.rejects(v.run(),ProviderConflictError);
  assert.equal(v.stats().writes,0);
 });
-test("R302 CAS loses remote compare-and-swap if another writer moves HEAD",async()=>{
+test("CAS loses remote compare-and-swap if another writer moves HEAD",async()=>{
  const v=fixture({branchMoveOnCas:true});
  await assert.rejects(v.run(),ProviderConflictError);
  assert.equal(v.stats().head,"e".repeat(40));
@@ -128,12 +128,12 @@ test("R302 CAS loses remote compare-and-swap if another writer moves HEAD",async
  await assert.rejects(v.run(),ProviderConflictError);
  assert.equal(v.stats().casWrites,1);
 });
-test("R302 CAS refuses staged commit with unrelated parent before branch movement",async()=>{
+test("CAS refuses staged commit with unrelated parent before branch movement",async()=>{
  const v=fixture({forgedParent:true});
  await assert.rejects(v.run(),/unexpected parent/);
  assert.equal(v.stats().casWrites,0);
 });
-test("R302 CAS rejects main, staging namespace and invalid paths pre-network",async()=>{
+test("CAS rejects main, staging namespace and invalid paths pre-network",async()=>{
  const v=fixture();
  for(const bad of [
   {...{branch,path,content:updatedContent,message:"change",

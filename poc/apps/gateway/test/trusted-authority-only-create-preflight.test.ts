@@ -94,7 +94,7 @@ async function fixture(t:import("node:test").TestContext,opts:{
   stats:()=>({head,gets,writes,gateCalls})};
 }
 
-test("R383.3 original signed Child + absent HEAD reserves durable one-use NO-WRITE create intent",async t=>{
+test("original signed Child + absent HEAD reserves durable one-use NO-WRITE create intent",async t=>{
  const f=await fixture(t);
  const preflight=f.mkPreflight();
  const stage=await preflight.stageCreate(f.record,HEAD);
@@ -135,7 +135,7 @@ test("R383.3 original signed Child + absent HEAD reserves durable one-use NO-WRI
 
 for(const mode of ["already-exists","stale-head","head-moves",
  "503-is-not-absence","expired","gateway-denies"] as const){
- test("R383.3 fail closed on "+mode+" with no durable intent or provider writes",async t=>{
+ test("fail closed on "+mode+" with no durable intent or provider writes",async t=>{
   const f=await fixture(t,{
    exists:mode==="already-exists",
    head:mode==="stale-head"?NEXT:HEAD,
@@ -153,7 +153,7 @@ for(const mode of ["already-exists","stale-head","head-moves",
    "the original ambiguous preflight must never be repeated");
  });
 }
-test("R383.3 journal rejects replay, altered Child, forged old absence, unsafe directory and path",async t=>{
+test("journal rejects replay, altered Child, forged old absence, unsafe directory and path",async t=>{
  const f=await fixture(t);
  const result=await f.mkPreflight().stageCreate(f.record,HEAD);
  for(const change of [
@@ -178,7 +178,7 @@ test("R383.3 journal rejects replay, altered Child, forged old absence, unsafe d
  await assert.rejects(f.journal.reserve(result.intent),/unsafe shared/u);
  assert.equal(f.stats().writes,0);
 });
-test("R383.3 preflight refuses foreign repository client and unknown original Prepare identity",async t=>{
+test("preflight refuses foreign repository client and unknown original Prepare identity",async t=>{
  const f=await fixture(t);
  assert.equal(Preflight.isNativeForOwner(f.mkPreflight(),f.admissions,
   f.giteaClient,repository,branch),true);
@@ -191,7 +191,7 @@ test("R383.3 preflight refuses foreign repository client and unknown original Pr
  assert.equal(foreign.stats().gets,0);
 });
 
-test("R383.4 create attempt is durable, exactly once and never a provider write",async t=>{
+test("create attempt is durable, exactly once and never a provider write",async t=>{
  const f=await fixture(t);
  const {intent}=await f.mkPreflight().stageCreate(f.record,HEAD);
  await f.journal.reserveAttempt(intent);
@@ -219,7 +219,7 @@ test("R383.4 create attempt is durable, exactly once and never a provider write"
  assert.equal(f.stats().gets,3);
 });
 
-test("R383.4 simultaneous attempt reservations cannot issue two writes",async t=>{
+test("simultaneous attempt reservations cannot issue two writes",async t=>{
  const f=await fixture(t);
  const {intent}=await f.mkPreflight().stageCreate(f.record,HEAD);
  const independent=new Journal(f.dir);
@@ -233,7 +233,7 @@ test("R383.4 simultaneous attempt reservations cannot issue two writes",async t=
  assert.equal(f.stats().writes,0);
 });
 
-test("R383.4 failed preflight cannot reserve a create attempt",async t=>{
+test("failed preflight cannot reserve a create attempt",async t=>{
  const f=await fixture(t,{status:503});
  await assert.rejects(f.mkPreflight().stageCreate(f.record,HEAD));
  const forged={...bound,
@@ -251,12 +251,12 @@ test("R383.4 failed preflight cannot reserve a create attempt",async t=>{
 });
 
 /**
- * R383.5 post-native boundary tests. These are intentionally OFFLINE:
+ * post-native boundary tests. These are intentionally OFFLINE:
  * the admission double enforces its input identity, not a real Rust/OPA
  * cryptographic result or real Task flight. The production method uses the
  * private admission class; executeAuthorization is NOT yet wired for create.
  */
-test("R383.5 immutable preflight joins consumed native Child VP, OPA and original flight without write",async t=>{
+test("immutable preflight joins consumed native Child VP, OPA and original flight without write",async t=>{
  const f=await fixture(t);
  const preflight=f.mkPreflight();
  const {intent}=await preflight.stageCreate(f.record,HEAD);
@@ -289,7 +289,7 @@ test("R383.5 immutable preflight joins consumed native Child VP, OPA and origina
  assert.equal(f.stats().writes,0);
 });
 
-test("R383.5 fails closed on missing native admission, unconsumed request and OPA denial",async t=>{
+test("fails closed on missing native admission, unconsumed request and OPA denial",async t=>{
  const f=await fixture(t);
  const preflight=f.mkPreflight();
  await preflight.stageCreate(f.record,HEAD);
@@ -315,7 +315,7 @@ test("R383.5 fails closed on missing native admission, unconsumed request and OP
  assert.deepEqual((await readdir(f.dir)).length,1);
 });
 
-test("R383.5 rejects mutable source, changed admission binding and tampered on-disk intent",async t=>{
+test("rejects mutable source, changed admission binding and tampered on-disk intent",async t=>{
  const f=await fixture(t);
  const preflight=f.mkPreflight();
  const {intent}=await preflight.stageCreate(f.record,HEAD);
@@ -348,7 +348,7 @@ test("R383.5 rejects mutable source, changed admission binding and tampered on-d
  assert.equal(f.stats().writes,0);
 });
 
-test("R383.5 Gateway never falls through to legacy create_file even after VP and OPA allow",async()=>{
+test("Gateway never falls through to legacy create_file even after VP and OPA allow",async()=>{
  const original=new InMemoryRequestStore();
  const request:PreparedRequestRecord={
   request_id:"req-create-3835",task_id:"task-create-3835",
@@ -408,7 +408,7 @@ test("R383.5 Gateway never falls through to legacy create_file even after VP and
 });
 
 /**
- * R383.6 protected executor composition (OFFLINE: simulated Rust/OPA and
+ * Protected executor composition (OFFLINE: simulated Rust/OPA and
  * transport). The separate receipt tests run the actual Gitea independent
  * read-only verifier. No native EVM/OPA/Docker success is claimed here.
  */
@@ -490,7 +490,7 @@ async function createPipeline(t:import("node:test").TestContext,failWriter=false
  return {...f,intent,preflight,executor,verified,policy,receiptDirectory,
   stats2:()=>({writerCalls,readerCalls})};
 }
-test("R383.6 real create pipeline stages one attempt and two independent MAC observations",async t=>{
+test("real create pipeline stages one attempt and two independent MAC observations",async t=>{
  const f=await createPipeline(t);
  assert.equal(f.executor.isForAdmissions(f.admissions),true);
  const result=await f.executor.executeAfterVerifiedRustOpa(
@@ -513,7 +513,7 @@ test("R383.6 real create pipeline stages one attempt and two independent MAC obs
   f.record,f.verified as never,f.policy as never),/EEXIST/u);
  assert.equal(f.stats2().writerCalls,1);
 });
-test("R383.6 ambiguous create CAS is terminal after a durable one-shot marker",async t=>{
+test("ambiguous create CAS is terminal after a durable one-shot marker",async t=>{
  const f=await createPipeline(t,true);
  await assert.rejects(f.executor.executeAfterVerifiedRustOpa(
   f.record,f.verified as never,f.policy as never),/CAS reply ambiguous/u);
@@ -527,7 +527,7 @@ test("R383.6 ambiguous create CAS is terminal after a durable one-shot marker",a
  assert.equal(f.stats2().writerCalls,1);
  assert.equal(f.stats().writes,0);
 });
-test("R383.6 cannot create after OPA denies or without consumed native Prepare",async t=>{
+test("cannot create after OPA denies or without consumed native Prepare",async t=>{
  const f=await createPipeline(t);
  await assert.rejects(f.executor.executeAfterVerifiedRustOpa(
   f.record,f.verified as never,{allow:false,policy_version:"opa"} as never),
@@ -540,7 +540,7 @@ test("R383.6 cannot create after OPA denies or without consumed native Prepare",
   x.endsWith(".create-attempt.json")),false);
 });
 
-/** R383.7 Gateway dispatch tests use the real native-wrapper classes
+/** Gateway dispatch tests use the real native-wrapper classes
  * with an OFFLINE Rust binding and OPA response. They do not claim that
  * live EVM/Rust, deployed OPA or Gitea have been exercised.
  */
@@ -633,7 +633,7 @@ async function nativeGatewayCreate(t:import("node:test").TestContext,
   counters:()=>({rustCalls,opaCalls,legacyCalls,
    writerCalls:f.stats2().writerCalls,readerCalls:f.stats2().readerCalls})};
 }
-test("R383.7 Gateway native wrapper dispatches CREATE to MAC-verified CAS, never legacy",async t=>{
+test("Gateway native wrapper dispatches CREATE to MAC-verified CAS, never legacy",async t=>{
  const f=await nativeGatewayCreate(t);
  const response=await f.invoke();
  assert.equal(response.decision,"allow");
@@ -650,7 +650,7 @@ test("R383.7 Gateway native wrapper dispatches CREATE to MAC-verified CAS, never
   (event as {provider_result?:string}).provider_result==="success"));
 });
 for(const mode of ["rust-deny","opa-deny"] as const){
- test("R383.7 "+mode+" stops before any create provider attempt",async t=>{
+ test(""+mode+" stops before any create provider attempt",async t=>{
   const f=await nativeGatewayCreate(t,mode);
   await assert.rejects(f.invoke(),{
    code:mode==="rust-deny"?"verification_rejected":"policy_denied"
@@ -664,7 +664,7 @@ for(const mode of ["rust-deny","opa-deny"] as const){
    x.endsWith(".create-attempt.json")),false);
  });
 }
-test("R383.7 missing opt-in and foreign owner do not expose legacy create",async t=>{
+test("missing opt-in and foreign owner do not expose legacy create",async t=>{
  const f=await nativeGatewayCreate(t);
  await assert.rejects(f.invoke({authorityOnlyCreateEnabled:false}),
   /not enabled/u);
@@ -678,7 +678,7 @@ test("R383.7 missing opt-in and foreign owner do not expose legacy create",async
  assert.equal(g.counters().writerCalls,0);
  assert.equal(g.counters().legacyCalls,0);
 });
-test("R383.7 generic verifier and fake OPA cannot use native create owner opt-in",async t=>{
+test("generic verifier and fake OPA cannot use native create owner opt-in",async t=>{
  const f=await nativeGatewayCreate(t);
  await assert.rejects(f.invoke({
   verifier:{verify:async()=>f.verified}
@@ -693,7 +693,7 @@ test("R383.7 generic verifier and fake OPA cannot use native create owner opt-in
  assert.equal(g.counters().legacyCalls,0);
 });
 
-test("R383.8 original owner stages CREATE intent then one native Child flight, never provider write",async t=>{
+test("original owner stages CREATE intent then one native Child flight, never provider write",async t=>{
  const runtimeTaskId="dispatch_"+"C".repeat(22);
  const f=await fixture(t,{runtimeTaskId});
  Object.assign(f.record,{
@@ -739,7 +739,7 @@ test("R383.8 original owner stages CREATE intent then one native Child flight, n
  assert.equal(flights,1);
  assert.equal(f.stats().gets,3);
 });
-test("R383.8 owner CREATE failed or ambiguous absence is terminal before a Task flight",async t=>{
+test("owner CREATE failed or ambiguous absence is terminal before a Task flight",async t=>{
  const runtimeTaskId="dispatch_"+"D".repeat(22);
  const f=await fixture(t,{runtimeTaskId,status:503});
  Object.assign(f.record,{
@@ -762,7 +762,7 @@ test("R383.8 owner CREATE failed or ambiguous absence is terminal before a Task 
  assert.equal(f.stats().writes,0);
  assert.deepEqual(await readdir(f.dir),[]);
 });
-test("R383.8 original native owner refuses wrong Task, consumed request and a mismatched flight",async t=>{
+test("original native owner refuses wrong Task, consumed request and a mismatched flight",async t=>{
  const runtimeTaskId="dispatch_"+"E".repeat(22);
  const f=await fixture(t,{runtimeTaskId});
  Object.assign(f.record,{

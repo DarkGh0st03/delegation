@@ -22,7 +22,7 @@ const props=()=>({
  agents:{test:{capabilities:['read_file']}},previousTasks:[],nextEpoch:1,
  decisionKind:'agent'
 });
-test('R401.1 ADK owner accepts only a provisioned repository test profile',()=>{
+test('ADK owner accepts only a provisioned repository test profile',()=>{
  const alt=createTrustedProjectTestSourceProfile({
   roots:['src/__tests__'],suffixes:['.spec.ts']
  });
@@ -36,10 +36,10 @@ test('R401.1 ADK owner accepts only a provisioned repository test profile',()=>{
   ...props(),projectTestSourceProfile:{
    roots:['src/__tests__'],suffixes:['.spec.ts']
   }
- }),/R351 authority-only model Task choice denied/u);
+ }),/Authority-only model Task choice denied/u);
 });
 
-/** R434: a registered specialist is a trusted Card/Root intersection.
+/** A registered specialist is a trusted Card/Root intersection.
  * No additional agent process, signer, provider or model is created here. */
 class ScriptedChoice extends BaseLlm {
  constructor(choice){super({model:'r434-zero-cost-registered-specialist'});this.choice=choice;this.calls=0;}
@@ -47,7 +47,7 @@ class ScriptedChoice extends BaseLlm {
   this.calls++;
   yield {content:{role:'model',parts:[{text:JSON.stringify(this.choice)}]}};
  }
- connect(){throw Error('R434 scripted test cannot connect to paid inference');}
+ connect(){throw Error('Scripted test cannot connect to paid inference');}
 }
 const fileResource=root+'/files/apps/invoice.ts';
 const permission=(operation,resource=fileResource)=>({resource,operation});
@@ -67,7 +67,7 @@ const config=(proposal,options={})=>({
  executionProgress:{current_head_sha:'a'.repeat(40),completed_work:[]},
  ...options
 });
-test('R434 registered specialist may propose scoped READ, UPDATE, CREATE or same-file CAS',async()=>{
+test('registered specialist may propose scoped READ, UPDATE, CREATE or same-file CAS',async()=>{
  for(const permissions of [
   [permission('read_file')],[permission('update_file')],[permission('create_file')],
   [permission('read_file'),permission('update_file')]
@@ -77,7 +77,7 @@ test('R434 registered specialist may propose scoped READ, UPDATE, CREATE or same
   assert.equal(cfg.model.calls,1);
  }
 });
-test('R434 denies unknown role, self-delegation, Test source escalation and ungranted effects',async()=>{
+test('denies unknown role, self-delegation, Test source escalation and ungranted effects',async()=>{
  const cases=[
   config(choice('unknown',[permission('read_file')])),
   config(choice('orchestrator',[permission('read_file')]),{
@@ -93,9 +93,9 @@ test('R434 denies unknown role, self-delegation, Test source escalation and ungr
  ];
  for(const cfg of cases)
   await assert.rejects(new TrustedAuthorityOnlyAdkDecisionProposer(cfg).propose(),
-   /R351 authority-only model Task choice denied/u);
+   /Authority-only model Task choice denied/u);
 });
-test('R434 source excerpts require registered reader, authentic completed Task and current HEAD',async()=>{
+test('source excerpts require registered reader, authentic completed Task and current HEAD',async()=>{
  const sha='a'.repeat(40),digest='b'.repeat(64);
  const done={task_id:'trusted-read',agent_id:'invoice',
   operation:'read_file',instruction:'Read independently signed current source'};
@@ -116,9 +116,9 @@ test('R434 source excerpts require registered reader, authentic completed Task a
   {...cfg,executionProgress:{...cfg.executionProgress,
    source_observations:[{...observed,agent_id:'unknown'}]}}
  ])assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer(invalid),
-  /R351 authority-only model Task choice denied/u);
+  /Authority-only model Task choice denied/u);
 });
-test('R434 no-change evidence requires a registered specialist (Test included) with read+update',()=>{
+test('no-change evidence requires a registered specialist (Test included) with read+update',()=>{
  const stop={task_id:'read-but-unchanged',agent_id:'invoice',edited_path:'apps/invoice.ts',
   read_revision:'a'.repeat(40),read_evidence_sha256:'f'.repeat(64)};
  const cfg=config({action:'blocked',reason:'Stop'},{
@@ -136,7 +136,7 @@ test('R434 no-change evidence requires a registered specialist (Test included) w
   {...cfg,specialistNoChanges:[stop,stop]},
   {...cfg,specialistNoChanges:[]}
  ])assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer(invalid),
-  /R351 authority-only model Task choice denied/u);
+  /Authority-only model Task choice denied/u);
 });
 
 test('a single dependency written as a string is the same one-element list (session s-107efa00274b)',async()=>{
@@ -151,8 +151,8 @@ test('a single dependency written as a string is the same one-element list (sess
  assert.deepEqual((await proposer('task-11').propose()).depends_on,['task-11']);
  assert.deepEqual((await proposer(['task-11']).propose()).depends_on,['task-11']);
  // Still validated: an unknown dependency or a non-string value is refused.
- await assert.rejects(proposer('task-99').propose(),/R351 authority-only model Task choice denied/u);
- await assert.rejects(proposer(11).propose(),/R351 authority-only model Task choice denied/u);
+ await assert.rejects(proposer('task-99').propose(),/Authority-only model Task choice denied/u);
+ await assert.rejects(proposer(11).propose(),/Authority-only model Task choice denied/u);
 });
 
 test('the Orchestrator sees typecheck errors with their message; malformed ones are refused',async()=>{
@@ -170,7 +170,7 @@ test('the Orchestrator sees typecheck errors with their message; malformed ones 
  assert.match(JSON.stringify(seen),/workEmail/u);
  for(const bad of [[{...err,message:'a\nb'}],[{...err,extra:1}]])
   assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer({...cfg,
-   verifiedFailure:failure({typecheck_errors:bad})}),/R351 authority-only model Task choice denied/u);
+   verifiedFailure:failure({typecheck_errors:bad})}),/Authority-only model Task choice denied/u);
 });
 
 class RawText extends BaseLlm {
@@ -191,5 +191,5 @@ test('a choice wrapped in ONE Markdown JSON fence is the same choice (session s-
   assert.equal((await proposer(text).propose()).task_id,'task-create-pr-1');
  // Anything else around the value is still refused.
  for(const text of ['Here it is:\n```json\n'+json+'\n```','```json\n'+json+'\n```\nDone.','```json\n'+json+'\n```\n```json\n{}\n```'])
-  await assert.rejects(proposer(text).propose(),/R351 authority-only model Task choice denied/u);
+  await assert.rejects(proposer(text).propose(),/Authority-only model Task choice denied/u);
 });

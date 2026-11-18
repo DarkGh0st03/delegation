@@ -89,7 +89,7 @@ export interface PreparedRequestRecord {
   request_fingerprint: string;
   /** Trusted Gateway-only Planning pin, never accepted in caller tool args. */
   pinned_revision?: string;
-  /** R288 trusted, staged authority binding. Not execution authority. */
+  /** Trusted, staged authority binding. Not execution authority. */
   authority_only_digest?: string;
   authority_only_plan_task_id?: string;
   authority_only_agent_did?: string;

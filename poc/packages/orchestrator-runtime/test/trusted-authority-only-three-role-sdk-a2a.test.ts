@@ -1,7 +1,7 @@
 import {withFakeSigner} from "../../agent-runtime/test/fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R328: three real A2A HTTP agents, three actual scripted Google ADK
+ * Three real A2A HTTP agents, three actual scripted Google ADK
  * LlmAgent/Runner instances, three role-pinned owner->agent HMAC channels,
  * one owner authority/staging socket, and independent completion gates.
  *
@@ -106,7 +106,7 @@ class ScriptedAgent extends BaseLlm{
   }]}};
  }
  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
-  return Promise.reject(Error("No paid model transport in R328"));
+  return Promise.reject(Error("No paid model transport"));
  }
 }
 async function port():Promise<number>{
@@ -124,7 +124,7 @@ function roleFromRequestId(id:string):Role{
  if(!role)throw Error("foreign Gateway request_id");
  return role;
 }
-test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role binding and staged completion",async()=>{
+test("Backend -> Frontend -> Test: independent ADK/A2A agents, per-role binding and staged completion",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"r328-"));
  const stageSecret=join(dir,"owner.hex"),stageSocket=join(dir,"owner.sock");
  await writeFile(stageSecret,randomBytes(32).toString("hex")+"\n",
@@ -206,7 +206,7 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
       }
      });
     }
-    throw Error("Forbidden R328 service "+target);
+    throw Error("Forbidden service "+target);
    }) as typeof fetch;
    agents[role]=await startSpecializedAgentServer({
     role,port:await port(),host:"127.0.0.1",
@@ -346,7 +346,7 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    if(role==="test"){
     assert.equal(report.artifact.test_outcome,"pass");
     // An A2A-reported Runner SHA is deliberately not promoted to
-    // verified provider evidence by artifact validation (R326).
+    // verified provider evidence by artifact validation .
     assert.equal(report.artifact.tested_commit_sha,undefined);
     assert.equal(completed.has(role),false);
    }

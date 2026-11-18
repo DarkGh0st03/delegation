@@ -45,7 +45,7 @@ function clientFor(payload:unknown){
  });
  return {client,callCount:()=>calls};
 }
-test("R303.2 complete authenticated PASS is staged but never unlocks a Task",async()=>{
+test("complete authenticated PASS is staged but never unlocks a Task",async()=>{
  const {client,callCount}=clientFor(successful());
  const result=await client.run(request);
  assertTrustedRunnerClientResult(client,request,result);
@@ -63,7 +63,7 @@ test("R303.2 complete authenticated PASS is staged but never unlocks a Task",asy
  result.phases[2].status="fail";
  assert.throws(()=>validateTrustedRunnerPass(client,request,result),/provenance/);
 });
-test("R303.2 untrusted, contradictory or incomplete PASS cannot attest completion",async()=>{
+test("untrusted, contradictory or incomplete PASS cannot attest completion",async()=>{
  const badResults=[
   {...successful(),phases:successful().phases.slice(1)},
   {...successful(),phases:successful().phases.map((p,i)=>i===4?
@@ -82,7 +82,7 @@ test("R303.2 untrusted, contradictory or incomplete PASS cannot attest completio
    /Runner PASS claim|approved project phase|pinned Runner phases|not in the approved project profile/);
  }
 });
-test("R303.2 switched Child's Runner request, SHA or branch is not portable",async()=>{
+test("switched Child's Runner request, SHA or branch is not portable",async()=>{
  const {client}=clientFor(successful());
  const result=await client.run(request);
  for(const foreign of [
@@ -96,7 +96,7 @@ test("R303.2 switched Child's Runner request, SHA or branch is not portable",asy
  }
 });
 
-test("R303.2 contradictory PASS+failure artifacts fails before accepting Runner result",async()=>{
+test("contradictory PASS+failure artifacts fails before accepting Runner result",async()=>{
  const {client}=clientFor({...successful(),
   typecheck_error_codes:["TS2322"]});
  await assert.rejects(client.run(request),

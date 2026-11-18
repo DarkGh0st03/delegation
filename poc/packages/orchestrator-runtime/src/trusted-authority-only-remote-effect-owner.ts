@@ -1,10 +1,10 @@
 /**
- * R323 — actual Coordinator + native Child + Gateway approval are the
+ * Actual Coordinator + native Child + Gateway approval are the
  * ONLY source of remote ADK/A2A effect Task pins.
  *
  * The agent cannot choose Task/Child/perimeter/role/branch/HEAD. This
  * privileged owner call is attempted once, after local native enrollment,
- * and sends only exact source-free pins over R322 HMAC Unix IPC.
+ * and sends only exact source-free pins over HMAC Unix IPC.
  */
 import {isDeepStrictEqual} from "node:util";
 import {canonicalBranchUri,canonicalFileUri}
@@ -227,7 +227,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
     effect.operation as "read_file"|"update_file"|"create_file"|"run_tests",
    ...(path!==undefined?{path}:{})
   };
-  // R328: each role has a separate authenticated owner->agent socket.
+  // Each role has a separate authenticated owner->agent socket.
   // Only the signed Coordinator row selects the route: never an A2A payload.
   const binder=this.#agents?this.#agents[pins.role]:this.#agent;
   if(!validBinder(binder))

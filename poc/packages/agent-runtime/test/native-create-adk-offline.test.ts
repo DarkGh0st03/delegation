@@ -1,9 +1,9 @@
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R384.1 — actual Google ADK LlmAgent/Runner, original prebound A2A Task,
+ * Actual Google ADK LlmAgent/Runner, original prebound A2A Task,
  * one-use owner stage, real task-local MCP token/challenge protocol and
  * GatewayControlledToolClient CREATE. The Rust signer and Gateway are
- * deliberately STUBBED: native provider proof is separately R384.0.
+ * deliberately STUBBED: native provider proof is separately.
  *
  * No live network/model, API charge, provider write or real credential.
  */
@@ -66,7 +66,7 @@ class ScriptedCreate extends BaseLlm{
   ]}};
  }
  override connect(_req:LlmRequest):Promise<BaseLlmConnection>{
-  return Promise.reject(Error("R384.1 prohibits live AI connections"));
+  return Promise.reject(Error("Prohibits live AI connections"));
  }
 }
 function nativeEnvironment(t:import("node:test").TestContext){
@@ -155,12 +155,12 @@ function fixture(options:{wrongResult?:boolean;denyStage?:boolean;repeat?:boolea
      }
     });
    }
-   throw Error("R384.1 forbidden legacy network transport "+endpoint);
+   throw Error("Forbidden legacy network transport "+endpoint);
   }
  });
  return {registry,model,handler,nativeMcp,calls};
 }
-test("R384.1 actual ADK/Local-MCP FunctionTool CREATE runs only on original A2A Task",async t=>{
+test("actual ADK/Local-MCP FunctionTool CREATE runs only on original A2A Task",async t=>{
  nativeEnvironment(t);
  const f=fixture();
  const result=await f.handler(context());
@@ -182,7 +182,7 @@ test("R384.1 actual ADK/Local-MCP FunctionTool CREATE runs only on original A2A 
   /not prebound or was already dispatched/u);
  assert.equal(f.model.requests.length,2);
 });
-test("R384.1 signed A2A cannot swap role, Child or create file hint to gain owner port",async t=>{
+test("signed A2A cannot swap role, Child or create file hint to gain owner port",async t=>{
  nativeEnvironment(t);
  for(const forged of [
   {...context(),role:"test" as const},
@@ -201,7 +201,7 @@ test("R384.1 signed A2A cannot swap role, Child or create file hint to gain owne
   assert.equal(f.nativeMcp.completedCryptoProofs,0);
  }
 });
-test("R384.1 malformed CAS response never becomes a completed ADK Task",async t=>{
+test("malformed CAS response never becomes a completed ADK Task",async t=>{
  nativeEnvironment(t);
  const f=fixture({wrongResult:true});
  await assert.rejects(f.handler(context()),
@@ -211,7 +211,7 @@ test("R384.1 malformed CAS response never becomes a completed ADK Task",async t=
  ]);
  assert.equal(f.nativeMcp.completedCryptoProofs,1);
 });
-test("R384.1 owner CREATE staging rejection prevents both VP and Gateway execute",async t=>{
+test("owner CREATE staging rejection prevents both VP and Gateway execute",async t=>{
  nativeEnvironment(t);
  const f=fixture({denyStage:true});
  await assert.rejects(f.handler(context()),
@@ -219,7 +219,7 @@ test("R384.1 owner CREATE staging rejection prevents both VP and Gateway execute
  assert.deepEqual(f.calls,["gateway_prepare","owner_stage"]);
  assert.equal(f.nativeMcp.completedCryptoProofs,0);
 });
-test("R384.1 repeated ADK CREATE attempts cannot consume owner effect twice",async t=>{
+test("repeated ADK CREATE attempts cannot consume owner effect twice",async t=>{
  nativeEnvironment(t);
  const f=fixture({repeat:true});
  await assert.rejects(f.handler(context()),

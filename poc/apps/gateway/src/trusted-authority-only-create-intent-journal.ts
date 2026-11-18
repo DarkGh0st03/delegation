@@ -1,7 +1,7 @@
 /**
- * R383.3 — crash-durable CREATE_FILE intent (NO provider write).
+ * crash-durable CREATE_FILE intent (NO provider write).
  *
- * Separate from the R302 update journal because file creation has NO
+ * Separate from the update journal because file creation has NO
  * previous blob. The only acceptable precondition is independently
  * observed absence at the exact old branch HEAD. Reservation alone never
  * grants Rust/OPA, permits a provider call or completes a Task.
@@ -158,7 +158,7 @@ export class DurableAuthorityOnlyGiteaCreateIntentJournal {
  }
 
  /**
-  * R383.4 — crash-durable, irrevocable one-shot attempt fence.
+  * crash-durable, irrevocable one-shot attempt fence.
   * Only the trusted owner may invoke this AFTER the Gateway independently
   * verifies the native Rust VP, OPA allow and consumed Task/Child flight.
   * This NO-WRITE marker is NOT an authorization, Gitea result or receipt.
@@ -211,7 +211,7 @@ export class DurableAuthorityOnlyGiteaCreateIntentJournal {
  }
 
  /**
-  * R383.6 — remember ONLY an independently verified signed CREATE receipt.
+  * Remember ONLY an independently verified signed CREATE receipt.
   * An existing attempt marker is necessary; a successful Gitea callback
   * without owner MAC and independent observation is NOT sufficient.
   */

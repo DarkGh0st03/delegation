@@ -1,5 +1,5 @@
 /**
- * R383.3 — owner-private CREATE_FILE preflight, NO provider mutation.
+ * owner-private CREATE_FILE preflight, NO provider mutation.
  * The only permitted Gitea I/O is GET: pin the feature HEAD, prove a
  * genuine old-path 404 at that immutable SHA, pin HEAD again, then
  * durably reserve a non-authorizing intent. Later effects must still
@@ -79,7 +79,7 @@ export class TrustedAuthorityOnlyGiteaCreatePreflight {
   return intent;
  }
  /**
-  * R383.5 — owner-only post-VP/OPA admission, NO Gitea write.
+  * owner-only post-VP/OPA admission, NO Gitea write.
   * The Gateway must supply ONLY its actual native Rust verifier result
   * and real OPA allow for the SAME consumed Prepare. This method does
   * not invoke either service, reserve an attempt or complete a Task.

@@ -311,7 +311,7 @@ test("32,000-token Gemini 3.8 LOW budget reaches each role's native ADK requests
   }
 });
 
-test("R195 Test Agent has exactly one direct Gateway run_tests FunctionTool",()=>{
+test("Test Agent has exactly one direct Gateway run_tests FunctionTool",()=>{
  const built=createAdkSpecializedAgent({...signed("test"),
    role:"test",model:new ScriptedAdkLlm("run_tests",{
      branch:BRANCH,profile:"poc-default"
@@ -398,7 +398,7 @@ test("Signed Test-only Task exposes run_tests but no file read/write tools",()=>
     /tests\/backend\/user\.service\.test\.ts/u);
 });
 
-test("R195 signed Test preparation cannot call Docker until fresh authorization",()=>{
+test("signed Test preparation cannot call Docker until fresh authorization",()=>{
  const path="apps/backend/tests/sample-change.test.ts";
  const pending=createAdkSpecializedAgent({
    role:"test",model:new ScriptedAdkLlm("create_file",{
@@ -444,7 +444,7 @@ test("Signed role refuses path not included in its Task-scoped tool enum",async(
   assert.equal(gatewayCalls,0);
 });
 
-test("R195 signed path hints stay strict and obsolete MCP options fail closed",()=>{
+test("signed path hints stay strict and obsolete MCP options fail closed",()=>{
  const make=(paths:readonly string[])=>createAdkSpecializedAgent({
    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
    gatewayClient:{invoke:async()=>({})} as never,
@@ -457,7 +457,7 @@ test("R195 signed path hints stay strict and obsolete MCP options fail closed",(
  assert.deepEqual(signed.agent.tools.map(t=>t.name),["read_file","update_file"]);
 });
 
-test("R195 signed Test-only Task exposes only direct run_tests",()=>{
+test("signed Test-only Task exposes only direct run_tests",()=>{
  const built=createAdkSpecializedAgent({
    role:"test",model:new ScriptedAdkLlm("run_tests",{
      branch:BRANCH,profile:"poc-default"
@@ -622,7 +622,7 @@ test("Signed Test Task may create a newly approved test path without expanding i
   assert.equal(built.agent.name,"delegated_test");
 });
 
-test("R195 dynamic-branch Gateway FunctionTools follow signed grants",()=>{
+test("dynamic-branch Gateway FunctionTools follow signed grants",()=>{
  const branch="feature/invoice-sort",path="src/billing/invoice.ts";
  const built=createAdkSpecializedAgent({
    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
@@ -694,7 +694,7 @@ test("Signed implementation Tasks include generic type-safety self-review withou
   assert.deepEqual(testAgent.agent.tools.map(tool=>tool.name),["run_tests"]);
 });
 
-test("R157 signed A2A Agent capabilities use generic role tools, not demo path templates",()=>{
+test("signed A2A Agent capabilities use generic role tools, not demo path templates",()=>{
  const target="services/reviews/src/review.ts";
  const signed=({role,rights}:{role:SpecializedAgentRole;
   rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>})=>
@@ -720,7 +720,7 @@ test("R157 signed A2A Agent capabilities use generic role tools, not demo path t
   "signed Test file creation does not inherit Docker Runner authority");
 });
 
-test("R282 signed Backend/Frontend create_file requires exact private approved Task grant",()=>{
+test("signed Backend/Frontend create_file requires exact private approved Task grant",()=>{
  const path="services/billing/src/invoice-helper.ts";
  for(const role of ["backend","frontend"] as const){
   const make=(rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>)=>
@@ -740,7 +740,7 @@ test("R282 signed Backend/Frontend create_file requires exact private approved T
  }
 });
 
-test("R379.2 verified role capabilities are stable while signed Task grants change",()=>{
+test("verified role capabilities are stable while signed Task grants change",()=>{
   for(const role of ["backend","frontend","test"] as const){
     const path=PATHS[role];
     const fromCard=createSpecializedAgentCard(role,"http://127.0.0.1:7001")
@@ -775,7 +775,7 @@ test("R379.2 verified role capabilities are stable while signed Task grants chan
   }
 });
 
-test("R379.2 Test Agent Runner visibility is independent of its published capabilities",()=>{
+test("Test Agent Runner visibility is independent of its published capabilities",()=>{
   const built=createAdkSpecializedAgent({
     role:"test",model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
     gatewayClient:{invoke:async()=>{throw Error("No Runner effect permitted");}} as never,
@@ -789,7 +789,7 @@ test("R379.2 Test Agent Runner visibility is independent of its published capabi
   assert.equal(built.profile.creatable_paths.length,0);
 });
 
-test("R385.15 signed Test FunctionTools never infer Docker Runner grant from role or file permission",()=>{
+test("signed Test FunctionTools never infer Docker Runner grant from role or file permission",()=>{
  const file="tests/backend/user.service.test.ts";
  const gatewayClient={invoke:async()=>{throw Error("unexpected Gateway effect");}} as never;
  const model=new ScriptedAdkLlm("read_file",{branch:BRANCH,path:file});

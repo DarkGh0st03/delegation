@@ -76,7 +76,7 @@ test("direct Core wrapper builds Rust-compatible AuthorizationContext for single
 
 
 
-test("R289 trusted Rust root ancestry is forwarded and malformed provenance fails closed",async()=>{
+test("trusted Rust root ancestry is forwarded and malformed provenance fails closed",async()=>{
   const rootId="urn:authority:operational";
   const valid=new DirectCoreRustVerifier(fakeBinding(()=>
     JSON.stringify({...JSON.parse(result([read])),root_credential_id:rootId})
@@ -89,7 +89,7 @@ test("R289 trusted Rust root ancestry is forwarded and malformed provenance fail
     ),ids);
     await assert.rejects(core.verify(legacy),VerificationUnavailableError);
   }
-  // Historical fixtures without this field remain readable, but R289
+  // Historical fixtures without this field remain readable, but
   // authority-only admission rejects them rather than inferring a root.
   const old=new DirectCoreRustVerifier(fakeBinding(()=>result([read])),ids);
   assert.equal((await old.verify(legacy)).root_credential_id,undefined);
@@ -188,7 +188,7 @@ test("gateway-level integration still requires OPA after direct-mode verifier ou
   assert.ok(!events.includes("provider"));
 });
 
-test("R299 native scope-result corroboration requires explicit trusted opt-in",async()=>{
+test("native scope-result corroboration requires explicit trusted opt-in",async()=>{
  const parent:Permission={
   resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fwork/directories/apps/backend",
   operation:"read_file"
@@ -217,7 +217,7 @@ test("R299 native scope-result corroboration requires explicit trusted opt-in",a
  }
 });
 
-test("R455 native Core accepts extra specialist only with explicit matching DID and Rust VP response",async()=>{
+test("native Core accepts extra specialist only with explicit matching DID and Rust VP response",async()=>{
  const reviewer="did:thesis:reviewer-agent";
  const identities={...ids,reviewer};
  const traces:Record<string,unknown>[]=[];
@@ -254,7 +254,7 @@ test("R455 native Core accepts extra specialist only with explicit matching DID 
    result([read],reviewer)),inherited);
  await assert.rejects(legacyCore.verify(req),VerificationRejectedError);
 });
-test("R455 Gateway Rust signer roster mirrors bounded Engineer deployment variables",()=>{
+test("Gateway Rust signer roster mirrors bounded Engineer deployment variables",()=>{
  const environment={
   ADAPTER_ID_ORCHESTRATOR:ids.orchestrator,
   ADAPTER_ID_BACKEND:ids.backend,

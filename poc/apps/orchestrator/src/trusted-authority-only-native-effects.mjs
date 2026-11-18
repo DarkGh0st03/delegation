@@ -30,7 +30,7 @@ export function assembleTrustedAuthorityOnlyNativeEffects({
  runnerClient,runnerPassObserver:runnerObserver,readObserver,repository,
  branch,evidenceKey,directories,nowMs
 }){
- // R383.9: opt-in only with TWO separately prevalidated 0700 owner folders.
+ // opt-in only with TWO separately prevalidated 0700 owner folders.
  // Never reinterpret UPDATE evidence for a CREATE effect.
  if((Object.hasOwn(directories,"createIntent")!==Object.hasOwn(directories,"createReceipts")))
   throw Error("Native CREATE effects require both independent owner directories");

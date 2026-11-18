@@ -1,6 +1,6 @@
 //! Direct, in-process Software Engineer -> Rust Core cryptography binding.
 //!
-//! R225: this Node-API addon OWNS the one CryptoRuntime in the trusted
+//! This Node-API addon OWNS the one CryptoRuntime in the trusted
 //! Software Engineer process. It does not call an Adapter HTTP service, a
 //! Unix socket or MCP to issue/revoke root Delegation Credentials.
 //!

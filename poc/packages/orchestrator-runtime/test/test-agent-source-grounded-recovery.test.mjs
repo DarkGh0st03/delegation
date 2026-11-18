@@ -1,5 +1,5 @@
 /**
- * R385.11: Test Agent source-grounded repair, real Node TypeScript FAIL/PASS.
+ * Test Agent source-grounded repair, real Node TypeScript FAIL/PASS.
  * A deterministic BaseLlm and simulated owner/Gateway do NOT prove generative
  * autonomy, real Rust/Gitea/Docker effects, or actual PR creation.
  * This is intentionally NOT a native Rust/EVM/Gitea/OPA/MCP E2E and NOT
@@ -91,7 +91,7 @@ class SourceDrivenDecider extends BaseLlm{
    // a different exact edit from the authenticated read excerpt alone.
    const from=prompt.includes("assert.equal(actual.status,")&&prompt.includes("ENABLED")?'"ENABLED"':
      prompt.includes("assert.equal(actual.status,")&&prompt.includes("ACTIVE")?'"ACTIVE"':null;
-   if(!from)throw Error("R385.11 ADK decision has no authenticated source expression");
+   if(!from)throw Error("ADK decision has no authenticated source expression");
    this.selectedFrom=from;result=repair(from);
   }else if(step===3){
    assert.doesNotMatch(prompt,/source_observations/u,
@@ -100,10 +100,10 @@ class SourceDrivenDecider extends BaseLlm{
   }else if(step===4){
    assert.match(prompt,/retest/u);
    result={action:"ready_for_pr",reason:"Independently completed latest Test PASS"};
-  }else throw Error("R385.11 unexpected further ADK decision");
+  }else throw Error("Unexpected further ADK decision");
   yield {content:{role:"model",parts:[{text:JSON.stringify(result)}]}};
  }
- connect(){throw Error("R385.11 network/inference connections are prohibited");}
+ connect(){throw Error("Network/inference connections are prohibited");}
 }
 
 async function fixture(t,source,{forgery=null}={}){
@@ -135,13 +135,13 @@ async function fixture(t,source,{forgery=null}={}){
    out=String(result.stdout??"");
    if(!/^# tests 1$/mu.test(out)||!/^# pass 1$/mu.test(out)||
       !out.includes("suspendUser state transition"))
-    throw Error("R385.11 independent Node PASS has no complete TAP receipt");
+    throw Error("Independent Node PASS has no complete TAP receipt");
    ok=true;
   }catch(error){
    if(error.code!==1||!/^# tests 1$/mu.test(String(error.stdout??""))||
       !/^# fail 1$/mu.test(String(error.stdout??""))||
       !String(error.stdout??"").includes("suspendUser state transition"))
-    throw Error("R385.11 unverifiable nested Node test result",{cause:error});
+    throw Error("Unverifiable nested Node test result",{cause:error});
    out=String(error.stdout??"");
   }
   actualRunnerResults.push(ok?"pass":"fail");
@@ -253,12 +253,12 @@ async function fixture(t,source,{forgery=null}={}){
 }
 
 for(const [index,source] of originals.entries()){
- test("R385.11 actual Node FAIL -> signed read -> source-derived ADK choice -> local CAS -> Node PASS, variant "+index,async t=>{
+ test("actual Node FAIL -> signed read -> source-derived ADK choice -> local CAS -> Node PASS, variant "+index,async t=>{
   const f=await fixture(t,source);
   let outcome;
   try{outcome=await f.run();}
   catch(error){
-   throw Error("R385.11 offline fixture diagnostics "+JSON.stringify({
+   throw Error("Offline fixture diagnostics "+JSON.stringify({
     modelCalls:f.model.calls,prompts:f.model.requestTexts.length,
     events:f.state().events,runnerOutcomes:f.state().actualRunnerResults,
     reason:String(error)
@@ -288,9 +288,9 @@ for(const [index,source] of originals.entries()){
    state.events.indexOf("original_gateway_read_provenance"));
  });
 }
-test("R385.11 forged Gateway read receipt blocks model-derived UPDATE before local CAS and retires Root",async t=>{
+test("forged Gateway read receipt blocks model-derived UPDATE before local CAS and retires Root",async t=>{
  const f=await fixture(t,originals[0],{forgery:"bad-gateway-mac"});
- await assert.rejects(f.run(),/R385\.6 signed diagnostic repair NO-GO/u);
+ await assert.rejects(f.run(),/Signed diagnostic repair NO-GO/u);
  const state=f.state();
  assert.deepEqual(state.actualRunnerResults,["fail"]);
  assert.equal(state.updates,0);
@@ -299,7 +299,7 @@ test("R385.11 forged Gateway read receipt blocks model-derived UPDATE before loc
  assert.ok(!state.completed.some(x=>x.task_id==="repair-test"));
 });
 
-test("R385.11 Test Agent is confined to application test sources, not Runner config",()=>{
+test("Test Agent is confined to application test sources, not Runner config",()=>{
  assert.equal(isProjectTestSource(path,SAMPLE_TEST_SOURCES),true);
  for(const forbidden of ["tests/backend/runner.config.ts",
   "tests/frontend/../backend/suspend.test.ts",

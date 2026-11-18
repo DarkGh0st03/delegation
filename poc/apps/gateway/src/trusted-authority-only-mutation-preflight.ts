@@ -1,10 +1,10 @@
 /**
- * R302.1 — trusted Gateway-side Gitea update preflight, explicitly NO WRITE.
+ * Trusted Gateway-side Gitea update preflight, explicitly NO WRITE.
  *
  * This tool NEVER makes a PUT/POST/DELETE request. A caller may not infer
  * permission to mutate from its output. The Gitea contents PUT API only
  * compares the old blob SHA; it does NOT atomically compare the branch HEAD.
- * R302.2 must use an actual branch-ref CAS before any delegated mutation.
+ * Must use an actual branch-ref CAS before any delegated mutation.
  */
 import {createHash} from "node:crypto";
 import {GiteaClient} from "./gitea-client.ts";

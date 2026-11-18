@@ -127,7 +127,7 @@ export interface ExecuteDependencies {
   /** Owner-only, opt-in atomic HEAD-CAS mutation; never the legacy PUT. */
   authorityOnlyMutationExecutor?:TrustedAuthorityOnlyGiteaMutationExecutor;
   authorityOnlyMutationEnabled?:boolean;
-  /** R383.7 explicit original owner create HEAD-CAS; never legacy POST. */
+  /** Explicit original owner create HEAD-CAS; never legacy POST. */
   authorityOnlyCreateExecutor?:TrustedAuthorityOnlyGiteaCreateExecutor;
   authorityOnlyCreateEnabled?:boolean;
   /** Opt-in owner-controlled native Test Runner; never the legacy Runner. */
@@ -239,19 +239,19 @@ export async function executeAuthorization(
       required_permission: record.required_permission,
       signed_vp: request.signed_vp
     });
-    // R299: scope expansion is confined to the authority-only read flow.
+    // Scope expansion is confined to the authority-only read flow.
     // The concrete native Rust verifier must have explicitly verified the
     // required leaf against a signed directory grant and its chain.
     validateVerifiedDelegation(verified, record,
       dependencies.verifier instanceof DirectCoreRustVerifier&&
       dependencies.verifier.allowsGiteaScopeCoverage&&
       (
-        // Existing R299 authority-only signed Task read, unchanged.
+        // Existing authority-only signed Task read, unchanged.
         (!!record.authority_only_digest&&
          dependencies.authorityOnlyReadEnabled===true&&
          dependencies.authorityOnlyAdmissions!==undefined&&
          record.request.tool==="read_file")||
-        // R380.3 separately bounded ORIGINAL preliminary Planning Root.
+        // Separately bounded ORIGINAL preliminary Planning Root.
         // No operational-approved Task can inherit this ancestor scope.
         (!!record.pinned_revision&&
          dependencies.planningRevisions!==undefined&&
@@ -566,7 +566,7 @@ export async function executeAuthorization(
     throw new GatewayError(503, "provider_unavailable", "Protected provider failed");
   }
 
-  // R295: owner-only provenance publication must happen AFTER a *real*
+  // owner-only provenance publication must happen AFTER a *real*
   // GiteaExecutor success (it carries a private WeakMap result witness).
   // Only the explicitly enabled read gate above can reach this hook.
   if(record.authority_only_digest){

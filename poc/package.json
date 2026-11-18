@@ -23,6 +23,7 @@
     "runner:test": "npm run test -w @thesis/test-runner-controller",
     "orchestrator:test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test ./apps/orchestrator/test/*.test.mjs",
     "plan-contracts:test": "node --test ./packages/plan-contracts/test/*.test.mjs",
+    "mcp-shared:test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test ./mcp-shared/test/*.test.ts ./mcp-shared/test/*.test.mjs",
     "opa:test": "bash ./scripts/opa-policy-test.sh"
   },
   "dependencies": {

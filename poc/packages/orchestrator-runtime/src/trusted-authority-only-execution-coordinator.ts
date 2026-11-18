@@ -1,7 +1,7 @@
 import {giteaPermissionCovers}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
- * R286 — authority-only operational Coordinator, opt-in admission preflight.
+ * authority-only operational Coordinator, opt-in admission preflight.
  *
  * An authenticated Engineer signs authority; only the trusted Coordinator
  * chooses Task/agent/epoch within that ceiling. Neither a Task proposal nor

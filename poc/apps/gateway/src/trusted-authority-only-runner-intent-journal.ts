@@ -1,5 +1,5 @@
 /**
- * R303.1 — irrevocable owner-only Test Task / Runner commit reservation.
+ * Irrevocable owner-only Test Task / Runner commit reservation.
  *
  * NEVER authorizes Docker execution. Runner launch requires a separate
  * native Rust VP, real OPA, enrolled Child DC and verified runner result.
@@ -163,7 +163,7 @@ export class DurableAuthorityOnlyRunnerIntentJournal{
    deny("Runner intent differs from original durable commitment");
  }
  /**
-  * R337: independent, read-only exact-Task proof of the original one-shot
+  * Independent, read-only exact-Task proof of the original one-shot
   * Runner POST reservation. A prepared intent alone is insufficient.
   */
  async #assertOriginalAttempt(intent:TrustedAuthorityOnlyRunnerIntent):Promise<void>{

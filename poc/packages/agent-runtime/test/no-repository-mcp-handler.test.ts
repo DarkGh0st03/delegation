@@ -5,7 +5,7 @@ import {createAdkA2ATaskHandler} from "../src/adk-a2a-handler.ts";
 const base={model:{} as never,gatewayBaseUrl:"http://127.0.0.1:0",
  presentationSigner:fakeSigner(),adapterToken:"offline"};
 
-test("R194 ADK Task rejects stale repository MCP options",()=>{
+test("ADK Task rejects stale repository MCP options",()=>{
  for(const option of [
   {mcpSharedUrl:"http://127.0.0.1:8097/mcp"},
   {mcpSharedUrl:""},
@@ -17,11 +17,11 @@ test("R194 ADK Task rejects stale repository MCP options",()=>{
     /legacy_repository_mcp_retired/);
  }
 });
-test("R241 obsolete private crypto-MCP HTTP endpoint is rejected, even with a Task registry",()=>{
+test("obsolete private crypto-MCP HTTP endpoint is rejected, even with a Task registry",()=>{
  assert.throws(()=>createAdkA2ATaskHandler({
   ...base,mcpCryptoUrl:"http://127.0.0.1:8097/mcp"
  }),/legacy_crypto_http_mcp_retired/);
 });
-test("R194 direct Gateway Task handler needs no repository MCP",()=>{
+test("direct Gateway Task handler needs no repository MCP",()=>{
  assert.equal(typeof createAdkA2ATaskHandler(base),"function");
 });

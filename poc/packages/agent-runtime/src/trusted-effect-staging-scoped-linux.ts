@@ -1,5 +1,5 @@
 /**
- * Opt-in, Linux cross-UID file boundary for the ORIGINAL R322 private
+ * Opt-in, Linux cross-UID file boundary for the ORIGINAL private
  * stage/bind IPC. No chmod/chown, new signer, network listener or paid API.
  *
  * Stage socket directory: owner UID / dedicated role GID / mode 2750.
@@ -11,7 +11,7 @@
  *
  * These are necessary Unix file access checks. HMAC proves a role-scoped
  * channel, not an original signed Child/Task, Rust DID or mount isolation.
- * Default R322 transports remain 0700/0600 unless explicitly opted in.
+ * Default transports remain 0700/0600 unless explicitly opted in.
  */
 import {constants} from "node:fs";
 import {open,lstat,readdir,realpath} from "node:fs/promises";

@@ -217,7 +217,7 @@ test("session end during VP/OPA checks denies before provider I/O",async()=>{
   assert.equal(f.providerCalls,0);
 });
 
-test("R380.3 native ancestor proof covers only original pinned read-only Planning, never default Gateway",async()=>{
+test("native ancestor proof covers only original pinned read-only Planning, never default Gateway",async()=>{
   const f=fixture();
   await f.revisions.begin(taskId,600_000);
   const parent={

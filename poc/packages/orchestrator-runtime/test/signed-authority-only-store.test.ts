@@ -55,7 +55,7 @@ async function fixture(run){
  try{return await run({dir,store,save});}
  finally{await rm(dir,{force:true,recursive:true});}
 }
-test("R284 trusted receipt store loads only Engineer-signed authority, not signed Task DAG",async()=>{
+test("trusted receipt store loads only Engineer-signed authority, not signed Task DAG",async()=>{
  await fixture(async({store,save})=>{
   await save("session-authority");
   const trusted=await store().loadAuthenticatedAuthority("session-authority");
@@ -68,7 +68,7 @@ test("R284 trusted receipt store loads only Engineer-signed authority, not signe
   assert.equal(trusted.authority_digest.length,64);
  });
 });
-test("R284 store rejects wrong session, private-key mismatch, tampering and expiry",async()=>{
+test("store rejects wrong session, private-key mismatch, tampering and expiry",async()=>{
  await fixture(async({store,save})=>{
   await save("different-session",receipt("session-authority"));
   await assert.rejects(store().loadAuthenticatedAuthority("different-session"),/session differs/);
@@ -84,7 +84,7 @@ test("R284 store rejects wrong session, private-key mismatch, tampering and expi
   }).loadAuthenticatedAuthority("session-authority"),/untrusted/);
  });
 });
-test("R284 store rejects untrusted paths and insecure receipt filesystem objects",async()=>{
+test("store rejects untrusted paths and insecure receipt filesystem objects",async()=>{
  await fixture(async({dir,store,save})=>{
   await assert.rejects(store().loadAuthenticatedAuthority("../outside"),/Invalid authority session/);
   await save("session-authority",receipt(),0o644);

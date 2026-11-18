@@ -1,6 +1,6 @@
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
- * R359.8 cost-free protocol integration: native owner state machine, real
+ * cost-free protocol integration: native owner state machine, real
  * authenticated Unix bind/stage channels and the controlled Gateway client.
  * The Gateway, Rust/OPA/signing and Gitea results are simulated fixtures.
  * This test is NEVER native provider E2E or independent security approval.
@@ -177,7 +177,7 @@ async function fixture(){
   throw error;
  }
 }
-test("R359.8 source and CAS cross real authenticated Unix channels in strict order",async()=>{
+test("source and CAS cross real authenticated Unix channels in strict order",async()=>{
  const f=await fixture();
  try{
   const source=await f.gatewayClient.invoke("read_file",{branch,path});
@@ -193,7 +193,7 @@ test("R359.8 source and CAS cross real authenticated Unix channels in strict ord
   ]);
  }finally{await f.close();}
 });
-test("R359.8 signed update before read never reaches VP or provider",async()=>{
+test("signed update before read never reaches VP or provider",async()=>{
  const f=await fixture();
  try{
   await assert.rejects(f.gatewayClient.invoke("update_file",{

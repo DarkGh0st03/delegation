@@ -112,7 +112,7 @@ test("canonical authority-only runtime fails closed without explicit native veri
   /requires mutable Gitea/u);
 });
 
-test("R357.3 native read receipt cannot be enabled without matching original Gateway publisher",()=>{
+test("native read receipt cannot be enabled without matching original Gateway publisher",()=>{
  const gate=Object.create(
   TrustedAuthorityOnlyGatewayAdmissions.prototype
  ) as TrustedAuthorityOnlyGatewayAdmissions;

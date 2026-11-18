@@ -37,7 +37,7 @@ async function fixture(fn:(v:{
    directory)});
  }finally{await rm(dir,{recursive:true,force:true});}
 }
-test("R303 intent is immutable, single-Task and never launches Docker",async()=>{
+test("intent is immutable, single-Task and never launches Docker",async()=>{
  await fixture(async({directory,journal})=>{
   await journal.reserve(intent);
   const files=await readdir(directory);
@@ -57,7 +57,7 @@ test("R303 intent is immutable, single-Task and never launches Docker",async()=>
   await assert.rejects(restarted.reserveAttempt(intent),/EEXIST/);
  });
 });
-test("R303 partial reservation after crash cannot relaunch Runner",async()=>{
+test("partial reservation after crash cannot relaunch Runner",async()=>{
  await fixture(async({directory,journal})=>{
   await journal.reserve(intent);
   await journal.reserveAttempt(intent);
@@ -67,7 +67,7 @@ test("R303 partial reservation after crash cannot relaunch Runner",async()=>{
    request_fingerprint:"d".repeat(64)}),/EEXIST/);
  });
 });
-test("R303 concurrent duplicate launch is admitted at most once",async()=>{
+test("concurrent duplicate launch is admitted at most once",async()=>{
  await fixture(async({directory,journal})=>{
   await journal.reserve(intent);
   const other=new DurableAuthorityOnlyRunnerIntentJournal(directory);
@@ -79,7 +79,7 @@ test("R303 concurrent duplicate launch is admitted at most once",async()=>{
   assert.equal(results.filter(x=>x.status==="rejected").length,1);
  });
 });
-test("R303 refuses missing, malformed or shared trusted owner stores",async()=>{
+test("refuses missing, malformed or shared trusted owner stores",async()=>{
  await fixture(async({directory,journal})=>{
   await chmod(directory,0o755);
   await assert.rejects(journal.reserve(intent),/unsafe shared/);
@@ -104,7 +104,7 @@ test("R303 refuses missing, malformed or shared trusted owner stores",async()=>{
  });
 });
 
-test("R303.3 verified PASS may finish exactly once after durable POST attempt",async()=>{
+test("verified PASS may finish exactly once after durable POST attempt",async()=>{
  await fixture(async({directory,journal})=>{
   await journal.reserve(intent);
   await assert.rejects(journal.reserveCompletedEvidence(intent,
@@ -128,7 +128,7 @@ test("R303.3 verified PASS may finish exactly once after durable POST attempt",a
  });
 });
 
-test("R337 exact durable POST attempt is required and PASS excludes FAIL",async()=>{
+test("exact durable POST attempt is required and PASS excludes FAIL",async()=>{
  await fixture(async({journal})=>{
   await journal.reserve(intent);
   await assert.rejects(journal.assertAttempted(intent),/ENOENT|no such file/);
@@ -144,7 +144,7 @@ test("R337 exact durable POST attempt is required and PASS excludes FAIL",async(
 });
 
 
-test("R353.1 completed Test read requires original POST and exact protected completion",async()=>{
+test("completed Test read requires original POST and exact protected completion",async()=>{
  await fixture(async({directory,journal})=>{
   await journal.reserve(intent);
   await assert.rejects(journal.assertCompleted(intent),/ENOENT/);

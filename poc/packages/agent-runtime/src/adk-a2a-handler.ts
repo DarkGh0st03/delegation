@@ -313,7 +313,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       throw Error("A2A Task is not a signed Task");
     const grants=context.subtask.approved_file_permissions;
     const taskRef=safeSignedTaskRef(context.trusted_gateway_task_id);
-    // R385.15: a Test Task receives Runner ONLY when the original owner
+    // A Test Task receives Runner ONLY when the original owner
     // explicitly attested run_tests; the Gateway remains authoritative.
     const mayRunTests=context.role==="test"&&
       context.subtask.approved_run_tests===true;
@@ -340,7 +340,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const evidenceHandler = new DelegationEvidenceHandler({
       adapterToken: config.adapterToken,
       evidence: context.delegation_evidence,
-      // R204: trusted signed Tasks sign their VP natively, in the WALLET of
+      // Trusted signed Tasks sign their VP natively, in the WALLET of
       // this agent's role (only its own key). Native failure is terminal.
       ...(roleWalletSocket(context.role)
         ?{nativeSocketPath:roleWalletSocket(context.role)!}
@@ -487,7 +487,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const filesModified = new Set<string>();
     const filesCreated = new Set<string>();
     const errors: string[] = [];
-    // R120: a Test FAIL is terminal for this signed Task. Repair requires
+    // A Test FAIL is terminal for this signed Task. Repair requires
     // a fresh Task/child, never an erasure by later model output.
     let outstandingTestFailure = false;
     let revision: string | null = null;

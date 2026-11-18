@@ -39,7 +39,7 @@ function signing(){
   signingPublicKeyPem:keys.publicKey.export({type:"spki",format:"pem"}).toString()
  };
 }
-test("R382.3 real Rust/ethr DID is published for each canonical agent role",t=>{
+test("real Rust/ethr DID is published for each canonical agent role",t=>{
  nativeEnvironment(t);
  roles.forEach((role,i)=>{
   const native=did(i+2);
@@ -47,7 +47,7 @@ test("R382.3 real Rust/ethr DID is published for each canonical agent role",t=>{
   assert.notEqual(native,agentDid(role),"legacy demonstration DID must not be used");
  });
 });
-test("R382.3 foreign or malformed native signer DID cannot impersonate a trusted card",t=>{
+test("foreign or malformed native signer DID cannot impersonate a trusted card",t=>{
  nativeEnvironment(t);
  assert.throws(()=>cardDid("backend",did(3)),
   /Trusted native A2A Agent Card signer DID mismatch/u);
@@ -63,7 +63,7 @@ test("R382.3 foreign or malformed native signer DID cannot impersonate a trusted
  assert.throws(()=>cardDid("backend",did(2)),
   /Trusted native A2A Agent Card signer DID mismatch/u);
 });
-test("R382.3 native MCP A2A server rejects missing native Card DID before listening",async t=>{
+test("native MCP A2A server rejects missing native Card DID before listening",async t=>{
  nativeEnvironment(t);
  const base={role:"backend" as const,port:0,host:"127.0.0.1",
   mcpTaskSigning:signing(),
@@ -80,7 +80,7 @@ test("R382.3 native MCP A2A server rejects missing native Card DID before listen
   /original ADK Task host/u);
 });
 
-test("R386 native Agent Cards advertise Test CREATE as non-authorizing capability",t=>{
+test("native Agent Cards advertise Test CREATE as non-authorizing capability",t=>{
  nativeEnvironment(t);
  for(const [index,role] of roles.entries()){
   const card=createSpecializedAgentCard(role,"http://127.0.0.1:61001",{

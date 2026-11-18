@@ -124,7 +124,7 @@ test("R5 role card profile and advertised private transport cannot be downgraded
   }
 });
 
-test("R379 verified Agent Card capability subset stays scoped to the declared role",async()=>{
+test("verified Agent Card capability subset stays scoped to the declared role",async()=>{
  const endpoints={
   backend:"http://127.0.0.1:60001",frontend:"http://127.0.0.1:60002",
   test:"http://127.0.0.1:60003"
@@ -142,7 +142,7 @@ test("R379 verified Agent Card capability subset stays scoped to the declared ro
 });
 
 
-test("R382.3 trusted startup probe matches each Agent Card to original native Rust role DID",async()=>{
+test("trusted startup probe matches each Agent Card to original native Rust role DID",async()=>{
  const names=["APPROVED_RUNNER_NATIVE_MCP","DELEGATION_GATEWAY_ARCHITECTURE",
   "ADAPTER_TRUST_PROFILE",...ROLES.map(role=>"ADAPTER_ID_"+role.toUpperCase())];
  const prior=new Map(names.map(name=>[name,process.env[name]]));
@@ -176,7 +176,7 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
   assert.equal(readCount,3,"one role-pinned Card probe per specialist");
   for(const role of ROLES)
    assert.equal(profiles[role].did,identities[role]);
-  // R386: native Test cards publish create_file as discovery metadata,
+  // Native Test cards publish create_file as discovery metadata,
   // but actual creation remains restricted to signed project-test sources
   // through the original Gateway/owner. Card forgery cannot expand scope.
   const nativeTestCard=createSpecializedAgentCard("test",endpoints.test,{
@@ -232,10 +232,10 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
  }
 });
 
-/** R436: additional-role Card verification is intentionally read-only.
+/** additional-role Card verification is intentionally read-only.
  * It cannot start a signer/Agent, bind a Child, admit Gateway effects or
  * bypass the still-three-role protected SDK dispatcher. */
-test("R436 provisioned additional role requires its exact DID, Card skill and capability ceiling",async()=>{
+test("provisioned additional role requires its exact DID, Card skill and capability ceiling",async()=>{
  const endpoints={
   backend:"http://127.0.0.1:61021",frontend:"http://127.0.0.1:61022",
   test:"http://127.0.0.1:61023",invoice:"http://127.0.0.1:61024"
@@ -310,7 +310,7 @@ test("R436 provisioned additional role requires its exact DID, Card skill and ca
   }),/pinned localhost role-card verification denied/u);
  }
 });
-test("R436 reject extra-role spoofing, missing or overprivileged trusted pins before any HTTP",async()=>{
+test("reject extra-role spoofing, missing or overprivileged trusted pins before any HTTP",async()=>{
  const endpoints={
   backend:"http://127.0.0.1:61021",frontend:"http://127.0.0.1:61022",
   test:"http://127.0.0.1:61023",invoice:"http://127.0.0.1:61024"

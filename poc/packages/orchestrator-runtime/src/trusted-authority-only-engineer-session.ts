@@ -1,5 +1,5 @@
 /**
- * R285 opt-in migration: Engineer issues an independent operational Rust root
+ * opt-in migration: Engineer issues an independent operational Rust root
  * from PERMISSIONS ONLY, never from an approved Task/Agent/DAG.
  *
  * Not exposed as an ADK tool, public HTTP handler, MCP root issuer or

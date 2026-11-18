@@ -120,7 +120,7 @@ function deferred(){
  return {promise,resolve,reject};
 }
 
-test("R382.5 original Engineer review -> one Root -> native MCP admission -> canonical Branch/Executor",async t=>{
+test("original Engineer review -> one Root -> native MCP admission -> canonical Branch/Executor",async t=>{
  const f=fixture(t);
  assert.equal(f.handoff.status,"awaiting_human_review");
  const ready=await f.handoff.reviewReadiness();
@@ -138,7 +138,7 @@ test("R382.5 original Engineer review -> one Root -> native MCP admission -> can
  assert.deepEqual(f.events,["root","admission","prepare-effects","bind","canonical","retire"]);
 });
 
-test("R382.5 unsigned review is retryable before any Rust Root or Gitea effect",async t=>{
+test("unsigned review is retryable before any Rust Root or Gitea effect",async t=>{
  const f=fixture(t);
  f.setSigned(false);
  await assert.rejects(f.handoff.runApprovedCanonical(),/No signed Engineer review on disk/u);
@@ -150,7 +150,7 @@ test("R382.5 unsigned review is retryable before any Rust Root or Gitea effect",
  await f.handoff.close();
 });
 
-test("R382.5 mismatched immutable Planning digest or Engineer DID denies before owner provision",async t=>{
+test("mismatched immutable Planning digest or Engineer DID denies before owner provision",async t=>{
  const f=fixture(t,{proofOverride:{...proof(),plan_digest:"0".repeat(64)}});
  await assert.rejects(f.handoff.runApprovedCanonical(),
   /Engineer-signed immutable Planning review mismatched/u);
@@ -159,7 +159,7 @@ test("R382.5 mismatched immutable Planning digest or Engineer DID denies before 
  await f.handoff.close();
 });
 
-test("R382.5 malformed private native MCP port cannot activate Root",async t=>{
+test("malformed private native MCP port cannot activate Root",async t=>{
  const broken=dependencies();broken.nativeCryptoPort={issueChild:async()=>({})};
  const f=fixture(t,{provisionOverride:{root:root(),
   dependencies:broken,workflow:workflow(),prepareNativeEffects:async()=>({})}});
@@ -170,7 +170,7 @@ test("R382.5 malformed private native MCP port cannot activate Root",async t=>{
  assert.throws(()=>f.handoff.runApprovedCanonical(),/already attempted/u);
 });
 
-test("R382.5 native provider failure retires original Root once and never retries",async t=>{
+test("native provider failure retires original Root once and never retries",async t=>{
  const f=fixture(t,{failCanonical:true});
  await assert.rejects(f.handoff.runApprovedCanonical(),
   /original Gateway provider failed/u);
@@ -181,7 +181,7 @@ test("R382.5 native provider failure retires original Root once and never retrie
  assert.throws(()=>f.handoff.runApprovedCanonical(),/already attempted/u);
 });
 
-test("R382.5 uncertain original Root retirement cannot be reported as successful",async t=>{
+test("uncertain original Root retirement cannot be reported as successful",async t=>{
  const f=fixture(t,{failCanonical:true,failRetire:true});
  await assert.rejects(f.handoff.runApprovedCanonical(),
   /original Root retirement unconfirmed after ambiguous execution/u);
@@ -189,7 +189,7 @@ test("R382.5 uncertain original Root retirement cannot be reported as successful
  assert.deepEqual(f.events,["root","admission","prepare-effects","bind","canonical","retire"]);
 });
 
-test("R382.5 shutdown racing signed review prevents later Root activation",async t=>{
+test("shutdown racing signed review prevents later Root activation",async t=>{
  const pendingReview=deferred();
  const f=fixture(t,{pendingReview});
  const running=f.handoff.runApprovedCanonical();
@@ -201,7 +201,7 @@ test("R382.5 shutdown racing signed review prevents later Root activation",async
  assert.deepEqual(f.events,["retire"]);
 });
 
-test("R382.5 refuses legacy/no-native host before reading any signature",t=>{
+test("refuses legacy/no-native host before reading any signature",t=>{
  const f=fixture(t);
  process.env.DELEGATION_GATEWAY_ARCHITECTURE="legacy-signed-dag";
  assert.throws(()=>f.handoff.runApprovedCanonical(),/already attempted/u);
@@ -210,7 +210,7 @@ test("R382.5 refuses legacy/no-native host before reading any signature",t=>{
  assert.throws(()=>f.handoff.runApprovedCanonical(),/already attempted/u);
 });
 
-test("R382.8 native Gateway binding failure prevents Branch and retires the original Host",async t=>{
+test("native Gateway binding failure prevents Branch and retires the original Host",async t=>{
  const f=fixture(t,{failBinding:true,installAuthorization:true});
  await assert.rejects(f.handoff.runApprovedCanonical(),/foreign native Gateway effects/u);
  assert.deepEqual(f.events,["root","admission","prepare-effects","bind","retire"]);

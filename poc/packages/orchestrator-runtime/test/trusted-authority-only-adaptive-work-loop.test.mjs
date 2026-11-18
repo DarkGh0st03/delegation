@@ -54,7 +54,7 @@ function fixture({a2aOnly=false,failTask=false}={}){
  return {hooks,verified,events,move:()=>{head='f'.repeat(40);},get retired(){return retired;}};
 }
 for(const roles of [['frontend','backend','test'],['backend','test']]){
- test('R355 model selects work order '+roles.join(' -> '),async()=>{
+ test('model selects work order '+roles.join(' -> '),async()=>{
   const f=fixture(),model=new Decisions([...roles.map((r,i)=>candidate(r,i)),{action:'ready_for_pr',reason:'Validation is complete'}]);
   const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
   assert.equal(result.status,'owner_adaptive_work_ready_for_pr');assert.equal(result.pr_created,false);
@@ -66,7 +66,7 @@ for(const roles of [['frontend','backend','test'],['backend','test']]){
  });
 }
 for(const mode of ['premature','stale-test','a2a-only','provider-failed','scope-escalation','branch-child','head-race','budget','aborted','extra-fields']){
- test('R355 adaptive loop fails closed '+mode,async()=>{
+ test('adaptive loop fails closed '+mode,async()=>{
   const f=fixture({a2aOnly:mode==='a2a-only',failTask:mode==='provider-failed'}),abort=new AbortController();
   let sequence=[candidate('backend',0),{action:'ready_for_pr',reason:'Request PR'}];
   if(mode==='premature')sequence=[{action:'ready_for_pr',reason:'Premature'}];
@@ -83,7 +83,7 @@ for(const mode of ['premature','stale-test','a2a-only','provider-failed','scope-
   if(mode==='a2a-only')assert.equal(model.calls,1,'unattested A2A output cannot unlock another model turn');
  });
 }
-test('R383.1 one adaptive owner can modify three different files via distinct signed Child Tasks and retest latest HEAD',async()=>{
+test('one adaptive owner can modify three different files via distinct signed Child Tasks and retest latest HEAD',async()=>{
  const f=fixture();
  const backendSecondary={operation:'update_file',
   resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-handler.ts'};
@@ -126,13 +126,13 @@ test('R383.1 one adaptive owner can modify three different files via distinct si
 
 for(const mode of ['two-writes','read-foreign-then-write',
  'write-then-read-foreign','read-and-run-tests']){
- test('R383.1 adaptive model cannot mix unrelated native effects: '+mode,async()=>{
+ test('adaptive model cannot mix unrelated native effects: '+mode,async()=>{
   const f=fixture(),base=grant('backend');
   const foreign={operation:'update_file',
    resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-other.ts'};
   const readSame={operation:'read_file',resource:base.resource};
   const readForeign={operation:'read_file',resource:foreign.resource};
-  // R384.3 CREATE has its own authorized, single-effect test below.
+  // CREATE has its own authorized, single-effect test below.
   const cases={
    'two-writes':[base,foreign],
    'read-foreign-then-write':[readForeign,base],
@@ -157,14 +157,14 @@ for(const mode of ['two-writes','read-foreign-then-write',
  });
 }
 
-test('R355 model can stop blocked without fabricating completion',async()=>{
+test('model can stop blocked without fabricating completion',async()=>{
  const f=fixture(),model=new Decisions([{action:'blocked',reason:'Required authority is unavailable'}]);
  const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
  assert.equal(result.status,'owner_adaptive_work_blocked');assert.equal(result.executed_tasks,0);
  assert.equal(f.retired,true);assert.equal(result.pr_created,false);
 });
 
-/** R355.2: the simulated owner is the ONLY party allowed to convert the
+/** The simulated owner is the ONLY party allowed to convert the
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
 function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCount=1,failAfter=0,failingTestFiles,testFailures,maxVerifiedFailures=2}={}){
@@ -243,7 +243,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
  };
  return {hooks,done,events,get retired(){return retired;}};
 }
-test('R355.2 independently verified Test FAIL is observable, not a completed dependency',async()=>{
+test('independently verified Test FAIL is observable, not a completed dependency',async()=>{
  const f=verifiedFailureFixture();
  const backend=candidate('backend',1);
  backend.task.depends_on=[];
@@ -267,7 +267,7 @@ test('R355.2 independently verified Test FAIL is observable, not a completed dep
   f.events.indexOf('dispatch:task-1'));
 });
 for(const forgery of ['wrong-status','wrong-head','wrong-digest']){
- test('R355.2 forged Test FAIL cannot unlock model continuation: '+forgery,async()=>{
+ test('forged Test FAIL cannot unlock model continuation: '+forgery,async()=>{
   const f=verifiedFailureFixture({forgery});
   const model=new Decisions([candidate('test',0),candidate('backend',1)]);
   await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
@@ -277,7 +277,7 @@ for(const forgery of ['wrong-status','wrong-head','wrong-digest']){
   assert.equal(f.done.length,0);
  });
 }
-test('R355.2 Backend tool failure cannot masquerade as recoverable Test FAIL',async()=>{
+test('Backend tool failure cannot masquerade as recoverable Test FAIL',async()=>{
  const f=verifiedFailureFixture({failRole:'backend'});
  const model=new Decisions([candidate('backend',0),candidate('test',1)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
@@ -286,7 +286,7 @@ test('R355.2 Backend tool failure cannot masquerade as recoverable Test FAIL',as
  assert.equal(f.retired,true);
  assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
 });
-test('R355.6 untrusted thrown Test A2A failure cannot invoke recovery observer',async()=>{
+test('untrusted thrown Test A2A failure cannot invoke recovery observer',async()=>{
  const f=verifiedFailureFixture({throwTest:true});
  const model=new Decisions([candidate('test',0),candidate('backend',1)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
@@ -295,7 +295,7 @@ test('R355.6 untrusted thrown Test A2A failure cannot invoke recovery observer',
  assert.equal(f.retired,true);
  assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
 });
-test('R376.0 verified Runner FAIL admits bounded read-only diagnosis before repair',async()=>{
+test('verified Runner FAIL admits bounded read-only diagnosis before repair',async()=>{
  const f=verifiedFailureFixture();
  const inspect=candidate('backend',1,[diagnosticRead()]);
  inspect.task.depends_on=[];
@@ -318,7 +318,7 @@ test('R376.0 verified Runner FAIL admits bounded read-only diagnosis before repa
  assert.match(afterRead,/independently_gateway_completed_tasks/u);
  assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
 });
-test('R385.6 strict native D1 refuses repair UPDATE with no independently completed diagnostic read',async()=>{
+test('strict native D1 refuses repair UPDATE with no independently completed diagnostic read',async()=>{
  const f=verifiedFailureFixture();
  let called=0;
  f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('original signed diagnostic read missing');};
@@ -332,7 +332,7 @@ test('R385.6 strict native D1 refuses repair UPDATE with no independently comple
   'an UPDATE cannot cause provider effects before signed diagnostic evidence');
  assert.equal(f.retired,true,'ambiguous diagnostic source must retire the original root');
 });
-test('R385.6 strict native D1 accepts separate signed current-HEAD read before Backend correction',async()=>{
+test('strict native D1 accepts separate signed current-HEAD read before Backend correction',async()=>{
  const f=verifiedFailureFixture();
  const inspect=candidate('backend',1,[diagnosticRead()]);inspect.task.depends_on=[];
  const repair=candidate('backend',2);repair.task.depends_on=['task-1'];
@@ -365,7 +365,7 @@ test('R385.6 strict native D1 accepts separate signed current-HEAD read before B
  assert.equal(f.retired,false);
  assert.ok(f.events.indexOf('dispatch:task-1')<f.events.indexOf('dispatch:task-2'));
 });
-test('R385.6 strict post-FAIL policy cannot be bypassed through CREATE',async()=>{
+test('strict post-FAIL policy cannot be bypassed through CREATE',async()=>{
  const f=verifiedFailureFixture();
  let called=0;
  f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('not applicable');};
@@ -386,7 +386,7 @@ test('R385.6 strict post-FAIL policy cannot be bypassed through CREATE',async()=
  assert.equal(f.events.includes('dispatch:task-1'),false);
  assert.equal(f.retired,true);
 });
-test('R385.6 missing owner verifier is rejected before first model or Child',async()=>{
+test('missing owner verifier is rejected before first model or Child',async()=>{
  const f=verifiedFailureFixture();
  const model=new Decisions([candidate('test',0)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
@@ -395,7 +395,7 @@ test('R385.6 missing owner verifier is rejected before first model or Child',asy
  assert.equal(model.calls,0);
  assert.equal(f.events.length,0);
 });
-test('R385.6 strict diagnostic policy does not invent a read requirement before the first failure',async()=>{
+test('strict diagnostic policy does not invent a read requirement before the first failure',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  let called=0;
  f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('not expected for D0');};
@@ -409,7 +409,7 @@ test('R385.6 strict diagnostic policy does not invent a read requirement before 
  assert.equal(f.retired,false);
 });
 
-test('R376.2 independently attested source excerpt reaches next ADK repair decision only at current HEAD',async()=>{
+test('independently attested source excerpt reaches next ADK repair decision only at current HEAD',async()=>{
  const f=verifiedFailureFixture();
  const read=f.hooks.readContext;
  const excerpt='export const accountPending = true; // untrusted source DATA';
@@ -442,7 +442,7 @@ test('R376.2 independently attested source excerpt reaches next ADK repair decis
   'stale diagnostic bytes cannot follow a mutation to a different HEAD');
 });
 for(const kind of ['foreign-task','wrong-head','bad-digest','over-budget']){
- test('R376.2 malformed source observation cannot reach ADK: '+kind,async()=>{
+ test('malformed source observation cannot reach ADK: '+kind,async()=>{
   const f=verifiedFailureFixture();
   const orig=f.hooks.readContext;
   f.hooks.readContext=async()=>{
@@ -471,7 +471,7 @@ for(const kind of ['foreign-task','wrong-head','bad-digest','over-budget']){
   assert.equal(f.retired,true);
  });
 }
-test('R377.0 read-only investigation before any failure informs the next model turn',async()=>{
+test('read-only investigation before any failure informs the next model turn',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const orig=f.hooks.readContext;
  const excerpt='export function suspendAccount() { return false; }';
@@ -506,7 +506,7 @@ test('R377.0 read-only investigation before any failure informs the next model t
  assert.ok(!JSON.stringify(model.requests).includes('independently_verified_test_failures'),
   'no failure can be fabricated to authorize an investigation');
 });
-test('R377.0 pre-failure read outside signed Engineer root is denied',async()=>{
+test('pre-failure read outside signed Engineer root is denied',async()=>{
  const f=fixture();
  const read=f.hooks.readContext;
  f.hooks.readContext=async()=>{
@@ -522,7 +522,7 @@ test('R377.0 pre-failure read outside signed Engineer root is denied',async()=>{
  assert.equal(f.verified.length,0);
  assert.equal(f.retired,true);
 });
-test('R383.0 Test agent reads its signed project test source before any failure, then only a real Test run proves PR readiness',async()=>{
+test('Test agent reads its signed project test source before any failure, then only a real Test run proves PR readiness',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const testPath='tests/backend/account.test.ts';
  const resource=repo+'/branches/feature%2Fsample-change/files/'+testPath;
@@ -568,7 +568,7 @@ test('R383.0 Test agent reads its signed project test source before any failure,
 });
 
 for(const mode of ['missing-signed-root','missing-test-capability','directory-scope']){
- test('R383.0 Test read cannot bypass '+mode,async()=>{
+ test('Test read cannot bypass '+mode,async()=>{
   const f=verifiedFailureFixture({failCount:0});
   // The Test agent reads ONE exact signed file, never a whole directory.
   const readGrant={operation:'read_file',resource:repo+'/branches/feature%2Fsample-change/'+
@@ -588,7 +588,7 @@ for(const mode of ['missing-signed-root','missing-test-capability','directory-sc
  });
 }
 
-test('R383.0 forged Test source observation cannot reach a later ADK decision',async()=>{
+test('forged Test source observation cannot reach a later ADK decision',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const target='tests/backend/account.test.ts';
  const readGrant={operation:'read_file',
@@ -640,7 +640,7 @@ test('Test agent may read a signed application source to write tests for it',asy
   [['read_file'],['run_tests']]);
  assert.equal(f.retired,false);
 });
-test('R376.1 a Test-role read cannot replace signed run_tests authority',async()=>{
+test('a Test-role read cannot replace signed run_tests authority',async()=>{
  const f=verifiedFailureFixture();
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
@@ -658,7 +658,7 @@ test('R376.1 a Test-role read cannot replace signed run_tests authority',async()
  assert.equal(model.calls,3);
  assert.equal(f.retired,true);
 });
-test('R376.0 diagnostic read outside immutable Engineer root is denied',async()=>{
+test('diagnostic read outside immutable Engineer root is denied',async()=>{
  const f=verifiedFailureFixture();
  const inspect=candidate('backend',1,[{
   operation:'read_file',resource:repo+'/branches/main/files/private.ts'}]);
@@ -670,7 +670,7 @@ test('R376.0 diagnostic read outside immutable Engineer root is denied',async()=
  assert.equal(f.done.length,0);
  assert.equal(f.retired,true);
 });
-test('R355.7 adaptive Test FAIL twice, two different corrections, final Test PASS',async()=>{
+test('adaptive Test FAIL twice, two different corrections, final Test PASS',async()=>{
  const f=verifiedFailureFixture({failCount:2});
  const backend=candidate('backend',1);
  backend.task.depends_on=[];
@@ -698,7 +698,7 @@ test('R355.7 adaptive Test FAIL twice, two different corrections, final Test PAS
  assert.ok(fourth.includes('independently_verified_test_failures'));
  assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
 });
-test('R384.5 owner permits three verified FAILs, distinct repairs and latest-head retest',async()=>{
+test('owner permits three verified FAILs, distinct repairs and latest-head retest',async()=>{
  const f=verifiedFailureFixture({failCount:3,maxVerifiedFailures:3});
  const b1=candidate('backend',1);b1.task.depends_on=[];
  const f2=candidate('frontend',3);f2.task.depends_on=['task-1'];
@@ -722,7 +722,7 @@ test('R384.5 owner permits three verified FAILs, distinct repairs and latest-hea
  assert.ok(JSON.stringify(model.requests[5]).includes('e'.repeat(64)));
  assert.equal(JSON.stringify(model.requests).includes('A2A Test FAILED'),false);
 });
-test('R355.7 third Test FAIL exceeds owner recovery budget and retires root',async()=>{
+test('third Test FAIL exceeds owner recovery budget and retires root',async()=>{
  const f=verifiedFailureFixture({failCount:3});
  const backend=candidate('backend',1);
  backend.task.depends_on=[];
@@ -743,7 +743,7 @@ for(const [field,value] of [
  ['failed_task_id','other-test'],
  ['tested_commit_sha','f'.repeat(40)]
 ]){
- test('R377.2 owner proof must match appended failure history: '+field,async()=>{
+ test('owner proof must match appended failure history: '+field,async()=>{
   const f=verifiedFailureFixture();
   const read=f.hooks.readContext;
   f.hooks.readContext=async()=>{
@@ -758,7 +758,7 @@ for(const [field,value] of [
   assert.equal(f.retired,true);
  });
 }
-test('R377.2 recovery cannot reuse a failed Task ID',async()=>{
+test('recovery cannot reuse a failed Task ID',async()=>{
  const f=verifiedFailureFixture();
  const model=new Decisions([candidate('test',0),candidate('backend',0)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
@@ -766,7 +766,7 @@ test('R377.2 recovery cannot reuse a failed Task ID',async()=>{
  assert.equal(f.events.filter(x=>x==='dispatch:task-0').length,1);
  assert.equal(f.retired,true);
 });
-test('R377.2 a newer FAIL invalidates an earlier PASS on the same HEAD',async()=>{
+test('a newer FAIL invalidates an earlier PASS on the same HEAD',async()=>{
  const f=verifiedFailureFixture({failAfter:1});
  const model=new Decisions([candidate('test',0),candidate('test',1),
   {action:'ready_for_pr',reason:'Use the earlier PASS'}]);
@@ -776,11 +776,11 @@ test('R377.2 a newer FAIL invalidates an earlier PASS on the same HEAD',async()=
  assert.equal(f.events.includes('independent_latest_runner_pass'),false);
  assert.equal(f.retired,true);
 });
-// R366: no PR readiness from an older/forged Test receipt or a HEAD
+// No PR readiness from an older/forged Test receipt or a HEAD
 // change while the original owner awaits independent verification.
 for(const mode of ['foreign-test-id','wrong-tested-head','head-moved-during-proof',
  'missing-runtime-task-id']){
- test('R366 adaptive ready proof stays bound to latest Test and current owner: '+mode,async()=>{
+ test('adaptive ready proof stays bound to latest Test and current owner: '+mode,async()=>{
   const f=fixture();
   const original=f.hooks.confirmReady;
   f.hooks.confirmReady=async()=>{
@@ -801,13 +801,13 @@ for(const mode of ['foreign-test-id','wrong-tested-head','head-moved-during-proo
   assert.equal(f.verified.length,1,'valid prior Test stays in the completion ledger');
  });
 }
-test('R355 retirement failure is reported as unconfirmed',async()=>{
+test('retirement failure is reported as unconfirmed',async()=>{
  const f=fixture(),model=new Decisions([{action:'ready_for_pr',reason:'Premature'}]);
  f.hooks.retire=async()=>{throw Error('native unavailable');};
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),/retirement unconfirmed/);
 });
 
-test('R375 owner can complete 15 separately verified decisions without widening any Task',async()=>{
+test('owner can complete 15 separately verified decisions without widening any Task',async()=>{
  const f=fixture();
  const sequence=[
   ...Array.from({length:13},(_,i)=>candidate('backend',i)),
@@ -823,7 +823,7 @@ test('R375 owner can complete 15 separately verified decisions without widening 
  assert.equal(f.retired,false);
  assert.equal(result.pr_created,false);
 });
-test('R384.5 owner can allocate twenty separate changes plus final Test and readiness',async()=>{
+test('owner can allocate twenty separate changes plus final Test and readiness',async()=>{
  const f=fixture();
  const tasks=[...Array.from({length:20},(_,i)=>candidate('backend',i)),
   candidate('test',20),{action:'ready_for_pr',reason:'Test PASS independently attested'}];
@@ -835,7 +835,7 @@ test('R384.5 owner can allocate twenty separate changes plus final Test and read
  assert.equal(f.verified.length,21);
  assert.equal(f.retired,false);
 });
-test('R385.10 original owner admits 24 signed Tasks then a separate terminal readiness decision',async()=>{
+test('original owner admits 24 signed Tasks then a separate terminal readiness decision',async()=>{
  const f=fixture();
  const sequence=[...Array.from({length:23},(_,i)=>candidate('backend',i)),
   candidate('test',23),
@@ -850,7 +850,7 @@ test('R385.10 original owner admits 24 signed Tasks then a separate terminal rea
  assert.equal(f.verified.length,24);
  assert.equal(f.retired,false);
 });
-test('R385.10 original adaptive owner rejects unbudgeted 26th decision',async()=>{
+test('original adaptive owner rejects unbudgeted 26th decision',async()=>{
  const f=fixture();
  const model=new Decisions([candidate('backend',0)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({
@@ -860,7 +860,7 @@ test('R385.10 original adaptive owner rejects unbudgeted 26th decision',async()=
  assert.equal(f.verified.length,0);
 });
 
-test('R377.3 verified FAIL can select a separate signed Test repair and then retest',async()=>{
+test('verified FAIL can select a separate signed Test repair and then retest',async()=>{
  const f=verifiedFailureFixture();
  const resource=repo+'/branches/feature%2Fsample-change/files/tests/backend/account.test.ts';
  const permissions=['read_file','update_file'].map(operation=>({resource,operation}));
@@ -883,7 +883,7 @@ test('R377.3 verified FAIL can select a separate signed Test repair and then ret
 
 
 for(const authorized of [true,false]){
- test('R377.5 ADK Vitest path requires an original signed read: '+authorized,async()=>{
+ test('ADK Vitest path requires an original signed read: '+authorized,async()=>{
   const path='tests/frontend/account.test.tsx';
   const f=verifiedFailureFixture({failingTestFiles:[path]});
   const read=f.hooks.readContext;
@@ -937,7 +937,7 @@ for(const valid of [true,false]){
 }
 
 for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete','premature-pr']){
- test('R377.9 adaptive specialist no-change '+mode,async()=>{
+ test('adaptive specialist no-change '+mode,async()=>{
   const f=fixture();
   const update=grant('backend'),read={...update,operation:'read_file'};
   const task=candidate('backend',0,[read,update]);
@@ -982,12 +982,12 @@ for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete',
  });
 }
 
-/** R384.3: owner decision is only a recommendation. A real CREATE still
- * requires R384.2's prebound native Child, pinned absent path, Rust VP,
+/** Owner decision is only a recommendation. A real CREATE still
+ * requires prebound native Child, pinned absent path, Rust VP,
  * OPA, Gitea CAS, independent MAC and completion before a Test can run.
  * This fixture simulates owner hook completions; it is NOT an E2E proof.
  */
-test('R384.3 adaptive owner permits exactly one signed CREATE Task followed by new Test on created HEAD',async()=>{
+test('adaptive owner permits exactly one signed CREATE Task followed by new Test on created HEAD',async()=>{
  const f=fixture();
  const create={operation:'create_file',
   resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-created.ts'};
@@ -1024,7 +1024,7 @@ for(const mode of [
  'no-signed-create','no-role-capability','test-cannot-create',
  'two-creates','create-plus-update','create-plus-read','create-wrong-branch'
 ]){
- test('R384.3 adaptive model CREATE is denied before any owner effect: '+mode,async()=>{
+ test('adaptive model CREATE is denied before any owner effect: '+mode,async()=>{
   const f=fixture(),original=f.hooks.readContext;
   const create={operation:'create_file',
    resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-created.ts'};
@@ -1061,7 +1061,7 @@ for(const mode of [
  });
 }
 
-test('R384.3 adaptive CREATE selected after independently authenticated Test FAIL requires new Test before PR readiness',async()=>{
+test('adaptive CREATE selected after independently authenticated Test FAIL requires new Test before PR readiness',async()=>{
  const f=verifiedFailureFixture();
  const created={operation:'create_file',
   resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-new-d1.ts'};
@@ -1104,9 +1104,9 @@ test('R384.3 adaptive CREATE selected after independently authenticated Test FAI
  assert.equal(f.retired,false);
 });
 
-/** R386 owner-hook simulation, not native provider evidence. Real CREATE
+/** owner-hook simulation, not native provider evidence. Real CREATE
  * still requires independent signed Root/Child, VP/OPA, absent file and CAS. */
-test('R386 adaptive Test CREATE uses one exact project-test source Task then retests',async()=>{
+test('adaptive Test CREATE uses one exact project-test source Task then retests',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const create={operation:'create_file',
   resource:repo+'/branches/feature%2Fsample-change/files/tests/backend/new-account.test.ts'};
@@ -1134,7 +1134,7 @@ test('R386 adaptive Test CREATE uses one exact project-test source Task then ret
  assert.equal(f.retired,false);
 });
 
-test('R434 owner may execute a registered specialist file Task, then only verified Test readiness',async()=>{
+test('owner may execute a registered specialist file Task, then only verified Test readiness',async()=>{
  const f=fixture(),role='invoice',source=grant(role);
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
@@ -1157,7 +1157,7 @@ test('R434 owner may execute a registered specialist file Task, then only verifi
  assert.equal(result.pr_created,false);
  assert.equal(f.retired,false);
 });
-test('R434 dynamic specialist no-change never completes a Task or grants Test authority',async()=>{
+test('dynamic specialist no-change never completes a Task or grants Test authority',async()=>{
  for(const invalid of [false,true]){
   const f=fixture(),role='invoice',update=grant(role),read={...update,operation:'read_file'};
   const original=f.hooks.readContext;

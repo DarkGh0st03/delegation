@@ -17,7 +17,7 @@ const root=(id:string,index:string,seconds:number)=>({
  }
 });
 
-test("R218 canonical Root DC fails closed without a native Rust socket",()=>{
+test("canonical Root DC fails closed without a native Rust socket",()=>{
  const previousFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
  const previousSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
@@ -34,7 +34,7 @@ test("R218 canonical Root DC fails closed without a native Rust socket",()=>{
  }
 });
 
-test("R225 Engineer directly calls embedded Rust API for prelim/operational roots and revocation",async()=>{
+test("Engineer directly calls embedded Rust API for prelim/operational roots and revocation",async()=>{
  const calls:{op:string;token:string;body:Record<string,unknown>}[]=[];
  const secret="PRIVATE_ENGINEER_BEARER";
  const binding={
@@ -73,7 +73,7 @@ test("R225 Engineer directly calls embedded Rust API for prelim/operational root
  assert.ok(calls.every(c=>c.token===secret));
 });
 
-test("R225 direct Rust Engineer rejects changed grants and private signer failures without HTTP fallback",async()=>{
+test("direct Rust Engineer rejects changed grants and private signer failures without HTTP fallback",async()=>{
  const config={bearerToken:"PRIVATE_ENGINEER_BEARER"};
  const initial={...root("urn:r225:root","927",600),
   permissions:[{operation:"read_repository" as const,resource:uri}]};
@@ -95,7 +95,7 @@ test("R225 direct Rust Engineer rejects changed grants and private signer failur
   });
 });
 
-test("R225 direct Engineer selector never silently downgrades when native addon is unavailable",()=>{
+test("direct Engineer selector never silently downgrades when native addon is unavailable",()=>{
  const previousMode=process.env.ENGINEER_CORE_NATIVE_MODE;
  const previousSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  try{
@@ -112,7 +112,7 @@ test("R225 direct Engineer selector never silently downgrades when native addon 
  }
 });
 
-test("R415 canonical Engineer never chooses HTTP, native direct still needs a socket",()=>{
+test("canonical Engineer never chooses HTTP, native direct still needs a socket",()=>{
  const priorMode=process.env.ENGINEER_CORE_NATIVE_MODE;
  const priorSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  const priorFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
@@ -138,8 +138,8 @@ test("R415 canonical Engineer never chooses HTTP, native direct still needs a so
  }
 });
 
-// R428.2: the operator-owned socket must not be overridden by ambient state.
-test("R428.2 pinned native Engineer socket is accepted only without conflicting global mode",()=>{
+// The operator-owned socket must not be overridden by ambient state.
+test("pinned native Engineer socket is accepted only without conflicting global mode",()=>{
  const keys=["ADAPTER_ENGINEER_NATIVE_SOCKET","ENGINEER_CORE_NATIVE_MODE"];
  const old=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
  try{

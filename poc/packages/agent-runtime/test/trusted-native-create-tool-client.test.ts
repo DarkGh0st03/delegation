@@ -1,6 +1,6 @@
 /**
- * R384.1 — signed owner CREATE FunctionTool gating, OFFLINE ONLY.
- * Actual Rust/EVM/OPA/Gitea/MAC success is separately attested by R384.0.
+ * Signed owner CREATE FunctionTool gating, OFFLINE ONLY.
+ * Actual Rust/EVM/OPA/Gitea/MAC success is separately attested by.
  * No model inference, provider network or credentials in this test.
  */
 import test from "node:test";
@@ -91,7 +91,7 @@ function fixture(options:{
  };
  return {calls,gateway:new GatewayControlledToolClient(config as never)};
 }
-test("R384.1 exact Backend native owner stages before MCP VP, then accepts a verified-shape CAS",async t=>{
+test("exact Backend native owner stages before MCP VP, then accepts a verified-shape CAS",async t=>{
  nativeEnvironment(t);
  const f=fixture();
  const out=await f.gateway.invoke("create_file",args);
@@ -105,7 +105,7 @@ test("R384.1 exact Backend native owner stages before MCP VP, then accepts a ver
    e.kind==="tool_unavailable"&&e.message==="Trusted effect staging failed");
  assert.deepEqual(f.calls.slice(-2),["gateway_prepare","owner_stage"]);
 });
-test("R384.1 native owner can stage one exact Frontend CREATE",async t=>{
+test("native owner can stage one exact Frontend CREATE",async t=>{
  nativeEnvironment(t);
  const f=fixture({role:"frontend"});
  const out=await f.gateway.invoke("create_file",args) as {commit_sha:string};
@@ -115,7 +115,7 @@ test("R384.1 native owner can stage one exact Frontend CREATE",async t=>{
 });
 for(const mode of ["no-mcp","wrong-owner-tool","test-role",
  "not-native-mode","not-native-signer"] as const){
- test("R384.1 "+mode+" denies CREATE before Prepare or any provider",async t=>{
+ test(""+mode+" denies CREATE before Prepare or any provider",async t=>{
   nativeEnvironment(t);
   const f=fixture({
    ...(mode==="no-mcp"?{nativeCrypto:false}:{}),
@@ -130,7 +130,7 @@ for(const mode of ["no-mcp","wrong-owner-tool","test-role",
   assert.deepEqual(f.calls,[]);
  });
 }
-test("R384.1 create-only Task cannot access UPDATE/READ/Runner tools",async t=>{
+test("create-only Task cannot access UPDATE/READ/Runner tools",async t=>{
  nativeEnvironment(t);
  const f=fixture();
  for(const tool of ["read_file","update_file","run_tests"] as const){
@@ -143,7 +143,7 @@ test("R384.1 create-only Task cannot access UPDATE/READ/Runner tools",async t=>{
 for(const variant of ["wrong-path","wrong-branch","wrong-tool",
  "wrong-revision","wrong-blob","wrong-request","absent-allow",
  "missing-provider","unexpected-secret"] as const){
- test("R384.1 reject unauthenticated create response "+variant,async t=>{
+ test("reject unauthenticated create response "+variant,async t=>{
   nativeEnvironment(t);
   const valid={
    request_id:sha,decision:"allow",
