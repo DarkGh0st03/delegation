@@ -224,7 +224,8 @@ export function createAdkSpecializedAgent(
       "Keep the existing structure, language and tone of the document; change only the parts the instruction concerns."
     ]:[]),
     ...(config.role==="frontend"?[
-      "New or changed UI must look like the rest of the application: reuse the existing CSS classes, components and spacing you read; never leave unstyled controls. If new styles are needed and the stylesheet is granted, add them there in the same visual style (colours, radius, spacing).",
+      "New or changed UI must look like the rest of the application. First look in the stylesheet you read for reusable classes (for example a toolbar/row class for filters and a field class for a labelled control, documented in its comments) and give the new elements those classes; reuse existing components and spacing. Never leave raw, unstyled controls or inline styles.",
+      "When the stylesheet itself is the edited file of your Task, add the styles the page needs in the same visual language as the existing rules (same colour variables, radius, spacing, font weights), reusing its custom properties.",
       "Give every input a visible label and a placeholder; place filters together in one row above the list they filter.",
       "Filters over a small closed set of values (department, status, role) are a select with an 'All' option, built from the values in the loaded data; free-text search matches as you type, case-insensitive, on partial text."
     ]:[]),
