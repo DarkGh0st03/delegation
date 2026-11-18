@@ -18,7 +18,7 @@ async function fixture(){
  const store=new InMemoryRequestStore();
  for(const [requestId,tool] of [["read","read_file"],["update","update_file"]] as const)
   store.put({request_id:requestId,task_id:runtime,
-   request:{tool,arguments:{branch:"feature/account-suspension",path,
+   request:{tool,arguments:{branch:"feature/sample-change",path,
     ...(tool==="update_file"?{content:"const a=true;"}:{})}},
    pinned_revision:head,consumed:false,expires_at_ms:Date.now()+60_000} as never);
  const admissions=Object.assign(Object.create(Admissions.prototype),{

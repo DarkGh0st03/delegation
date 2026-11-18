@@ -14,25 +14,25 @@ import {
 const repository = {
   authority: "gitea.local",
   owner: "thesis",
-  repository: "iam-console-poc"
+  repository: "sample-app"
 };
 
 test("builds the frozen canonical repository, branch and file URIs", () => {
   assert.equal(
     canonicalRepositoryUri(repository),
-    "gitea://gitea.local/thesis/iam-console-poc"
+    "gitea://gitea.local/thesis/sample-app"
   );
   assert.equal(
-    canonicalBranchUri(repository, "feature/account-suspension"),
-    "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension"
+    canonicalBranchUri(repository, "feature/sample-change"),
+    "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change"
   );
   assert.equal(
     canonicalFileUri(
       repository,
-      "feature/account-suspension",
+      "feature/sample-change",
       "apps/backend/src/users/user.service.ts"
     ),
-    "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts"
+    "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/src/users/user.service.ts"
   );
 });
 
@@ -42,13 +42,13 @@ test("maps tools to Gateway-derived operations and resource scopes", () => {
     agent_role: "backend",
     tool: "read_file",
     arguments: {
-      branch: "feature/account-suspension",
+      branch: "feature/sample-change",
       path: "apps/backend/src/users/user.service.ts"
     }
   });
   assert.deepEqual(deriveRequiredPermission(repository, read.request), {
     resource:
-      "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts",
+      "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/src/users/user.service.ts",
     operation: "read_file"
   });
 
@@ -56,10 +56,10 @@ test("maps tools to Gateway-derived operations and resource scopes", () => {
     task_id: "task-2",
     agent_role: "orchestrator",
     tool: "create_branch",
-    arguments: { base_branch: "main", branch: "feature/account-suspension" }
+    arguments: { base_branch: "main", branch: "feature/sample-change" }
   });
   assert.deepEqual(deriveRequiredPermission(repository, createBranch.request), {
-    resource: "gitea://gitea.local/thesis/iam-console-poc",
+    resource: "gitea://gitea.local/thesis/sample-app",
     operation: "create_branch"
   });
 
@@ -67,11 +67,11 @@ test("maps tools to Gateway-derived operations and resource scopes", () => {
     task_id: "task-3",
     agent_role: "test",
     tool: "run_tests",
-    arguments: { branch: "feature/account-suspension" }
+    arguments: { branch: "feature/sample-change" }
   });
   assert.deepEqual(deriveRequiredPermission(repository, tests.request), {
     resource:
-      "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension",
+      "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change",
     operation: "run_tests"
   });
 });
@@ -83,7 +83,7 @@ test("rejects traversal, malformed branches and unknown argument fields", () => 
       agent_role: "backend",
       tool: "read_file",
       arguments: {
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         path: "../security/security-config.ts"
       }
     })
@@ -95,7 +95,7 @@ test("rejects traversal, malformed branches and unknown argument fields", () => 
       agent_role: "backend",
       tool: "read_file",
       arguments: {
-        branch: "feature//account-suspension",
+        branch: "feature//sample-change",
         path: "apps/backend/src/app.ts"
       }
     })
@@ -107,7 +107,7 @@ test("rejects traversal, malformed branches and unknown argument fields", () => 
       agent_role: "backend",
       tool: "read_file",
       arguments: {
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         path: "apps/backend/src/app.ts",
         operation: "update_file"
       }
@@ -123,7 +123,7 @@ test("rejects caller-supplied authority fields", () => {
         agent_role: "backend",
         tool: "read_file",
         arguments: {
-          branch: "feature/account-suspension",
+          branch: "feature/sample-change",
           path: "apps/backend/src/app.ts"
         },
         resource_uri: "gitea://attacker/repo"

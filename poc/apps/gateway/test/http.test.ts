@@ -21,7 +21,7 @@ const config = {
     repository: {
       authority: "gitea.local",
       owner: "thesis",
-      repository: "iam-console-poc"
+      repository: "sample-app"
     }
   },
   opa_url: "http://unused",
@@ -154,7 +154,7 @@ test("AUD-010: Gateway disconnect reaches an authorized Runner execution",async(
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({
         task_id:"task-cancel-runner",agent_role:"test",tool:"run_tests",
-        arguments:{branch:"feature/account-suspension",profile:"poc-default"}
+        arguments:{branch:"feature/sample-change",profile:"poc-default"}
       })
     });
     assert.equal(prepared.status,201);

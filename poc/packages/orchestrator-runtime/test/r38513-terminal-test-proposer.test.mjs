@@ -13,9 +13,9 @@ import {TrustedAuthorityOnlyAdkDecisionProposer as ProposerBase}
 /** Test default: the sample repository test-source profile. */
 class Proposer extends ProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
 
-const branch="feature/account-suspension";
-const repo="gitea://gitea.local/thesis/iam-console-poc";
-const root=repo+"/branches/feature%2Faccount-suspension";
+const branch="feature/sample-change";
+const repo="gitea://gitea.local/thesis/sample-app";
+const root=repo+"/branches/feature%2Fsample-change";
 const runner={resource:root,operation:"run_tests"};
 const failedTask="r375-test-task",lastCas="r375-functional-file-10";
 const digest="f".repeat(64),commit="a".repeat(40);
@@ -48,7 +48,7 @@ function config(choice){
  }
  assert.equal(previousTasks.length,23);
  const model=new OneChoice(choice);
- return {model,requirement:"Implement account suspension with independent validation",
+ return {model,requirement:"Implement user export with independent validation",
   branch,rootPermissions:[runner],
   agents:{orchestrator:{capabilities:["create_branch"]},
    backend:{capabilities:["read_file","update_file"]},

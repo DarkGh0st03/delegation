@@ -34,8 +34,6 @@ test("Agent Cards advertise reusable skills, never Task permissions", () => {
     assert.equal(card.skills.length,1);
     assert.ok(card.skills[0]?.tags?.includes("delegated-authorization"));
     assert.ok(card.skills[0]?.tags?.includes(role));
-    assert.ok(!JSON.stringify(card).includes("Account Suspension"));
-    assert.ok(!JSON.stringify(card).includes("account-suspension"));
     assert.ok(!JSON.stringify(card).includes("user.service.ts"));
     const extension=card.capabilities.extensions?.find(x=>
       x.uri===DELEGATED_AUTHORIZATION_EXTENSION_URI);

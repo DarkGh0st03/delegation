@@ -5,8 +5,8 @@ import {ProviderConflictError,ProviderNotFoundError,
  ProviderUnavailableError} from "../src/errors.ts";
 
 const OLD="a".repeat(40),NEW="b".repeat(40),BLOB="c".repeat(40);
-const BRANCH="feature/account-suspension";
-const FILE="apps/backend/new-account-suspension.ts";
+const BRANCH="feature/sample-change";
+const FILE="apps/backend/new-sample-change.ts";
 const CONTENT='export const suspend = (id:string) => ({id,active:false});\n';
 function fixture(options:{
  oldHead?:string;existing?:boolean;forgeParent?:boolean;
@@ -26,7 +26,7 @@ function fixture(options:{
   const headers=init?.headers as Record<string,string>;
   assert.equal(headers?.authorization,"token r3832-owner-only");
   calls.push(method+" "+url.pathname+"?"+url.searchParams.toString());
-  const base="/api/v1/repos/thesis/iam-console-poc";
+  const base="/api/v1/repos/thesis/sample-app";
   if(url.pathname===base+"/branches/"+encodeURIComponent(BRANCH)&&
      method==="GET")return json({name:BRANCH,commit:{id:head}});
   if(stage&&url.pathname===base+"/branches/"+encodeURIComponent(stage)&&
@@ -90,7 +90,7 @@ function fixture(options:{
  }) as typeof fetch;
  const client=new GiteaClient({
   baseUrl:"http://gitea.local:3000",owner:"thesis",
-  repository:"iam-console-poc",token:"r3832-owner-only",fetchFn
+  repository:"sample-app",token:"r3832-owner-only",fetchFn
  });
  const input={branch:BRANCH,path:FILE,content:CONTENT,
   message:"R3832 private owner staged create",
@@ -98,7 +98,7 @@ function fixture(options:{
  const run=()=>client.createFileWithHeadCas(input);
  const independent=new GiteaClient({
   baseUrl:"http://gitea.local:3000",owner:"thesis",
-  repository:"iam-console-poc",token:"r3832-owner-only",fetchFn
+  repository:"sample-app",token:"r3832-owner-only",fetchFn
  });
  const verify=(change:Awaited<ReturnType<typeof run>>)=>independent
   .verifyCreatedFileHeadCas({
@@ -130,7 +130,7 @@ test("R383.2 absent old source -> isolated file create -> parent proof -> featur
  const posts=f.stats().calls.filter(c=>c.startsWith("POST "));
  assert.equal(posts.length,2);
  assert.equal(f.stats().calls.some(c=>c.startsWith(
-  "POST /api/v1/repos/thesis/iam-console-poc/contents/")),true);
+  "POST /api/v1/repos/thesis/sample-app/contents/")),true);
  // A second request may NOT re-create the old path after HEAD moves.
  await assert.rejects(f.run(),ProviderConflictError);
  assert.equal(f.stats().branchCas,1);

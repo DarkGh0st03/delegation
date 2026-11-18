@@ -298,7 +298,7 @@ mod tests {
         };
         let mut crypto = CryptoRuntime::new(&config.callers).unwrap();
         let permission = Permission::new(
-            "gitea://gitea.local/thesis/iam-console-poc".to_string(),
+            "gitea://gitea.local/thesis/sample-app".to_string(),
             Operation::ReadFile,
         )
         .unwrap();

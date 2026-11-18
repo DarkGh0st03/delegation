@@ -9,9 +9,9 @@ import {
 
 const allowedOperations=new Set(["create_branch","create_pull_request",
  "read_repository","read_file","update_file","create_file","run_tests","list_directory"]);
-const repository={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const repository={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
 const branch="feature/session-work";
-const root="gitea://gitea.local/thesis/iam-console-poc";
+const root="gitea://gitea.local/thesis/sample-app";
 const branchUri=root+"/branches/feature%2Fsession-work";
 const file=branchUri+"/files/apps/backend/src/users/user.service.ts";
 const other=branchUri+"/files/apps/backend/src/users/unauthorized.ts";
@@ -80,7 +80,7 @@ test("Authority decision cannot approve an unrequested pair or duplicate an auth
  duplicated.requested_permissions.push({...duplicated.requested_permissions[0]});
  assert.throws(()=>validateAuthorityProposal(duplicated,{allowedOperations}),/duplicate/);
  const outOfRepo=proposal();
- outOfRepo.requested_permissions[1].resource="gitea://evil.local/thesis/iam-console-poc";
+ outOfRepo.requested_permissions[1].resource="gitea://evil.local/thesis/sample-app";
  assert.throws(()=>validateAuthorityProposal(outOfRepo,{allowedOperations}),/outside repository/);
  const badKind=proposal();
  badKind.requested_permissions[1].resource=root;
@@ -122,10 +122,10 @@ test("an already authenticated grant expires before any later admission",()=>{
 test("the project profile digest is carried from the proposal into the signed grant", async () => {
   const {selectAuthorityOnlyGrant, authorityOnlyDigest, validateAuthorityProposal} =
     await import("../src/authority-only-approval.mjs");
-  const repository = {authority: "gitea.local", owner: "thesis", repository: "iam-console-poc"};
+  const repository = {authority: "gitea.local", owner: "thesis", repository: "sample-app"};
   const base = {schema_version: "1.0.0", session_id: "s-profile", repository,
     branch: "feature/s-profile", base_revision: "a".repeat(40), requirement: "Add a feature",
-    requested_permissions: [{operation: "create_branch", resource: "gitea://gitea.local/thesis/iam-console-poc"}]};
+    requested_permissions: [{operation: "create_branch", resource: "gitea://gitea.local/thesis/sample-app"}]};
   const withProfile = sha => ({...base, project_profile_sha256: sha});
   const g1 = selectAuthorityOnlyGrant(withProfile("1".repeat(64)), base.requested_permissions, {allowedOperations});
   const g2 = selectAuthorityOnlyGrant(withProfile("2".repeat(64)), base.requested_permissions, {allowedOperations});

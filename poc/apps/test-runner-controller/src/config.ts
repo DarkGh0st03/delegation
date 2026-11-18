@@ -51,18 +51,18 @@ function branchPrefix(value: string): string {
 }
 
 export function runnerConfigFromEnv(): RunnerServiceConfig {
+  if (!process.env.TEST_RUNNER_BRANCH && !process.env.TEST_RUNNER_BRANCH_PREFIX) {
+    throw new Error("Set TEST_RUNNER_BRANCH or TEST_RUNNER_BRANCH_PREFIX");
+  }
   const bind = bindAddress(process.env.TEST_RUNNER_BIND_ADDR ?? "0.0.0.0:8095");
   return {
     bind_host: bind.host,
     bind_port: bind.port,
     gateway_token: required("TEST_RUNNER_GATEWAY_TOKEN"),
     contract: {
-      repository:
-        process.env.TEST_RUNNER_REPOSITORY_URI ??
-        "gitea://gitea.local/thesis/iam-console-poc",
-      branch:
-        process.env.TEST_RUNNER_BRANCH ??
-        "feature/account-suspension",
+      repository: required("TEST_RUNNER_REPOSITORY_URI"),
+      ...(process.env.TEST_RUNNER_BRANCH
+        ? {branch: process.env.TEST_RUNNER_BRANCH} : {}),
       ...(process.env.TEST_RUNNER_BRANCH_PREFIX
         ? {branch_prefix: branchPrefix(process.env.TEST_RUNNER_BRANCH_PREFIX)} : {}),
       ...(process.env.TEST_RUNNER_REPOSITORY_PREFIX

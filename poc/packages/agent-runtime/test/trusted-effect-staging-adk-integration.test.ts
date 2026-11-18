@@ -15,12 +15,12 @@ import type {AgentTaskContext} from "../src/contracts.ts";
 
 const RUNTIME="dispatch_"+"K".repeat(22);
 const PLAN="r321-backend-file-task";
-const BRANCH="feature/account-suspension";
+const BRANCH="feature/sample-change";
 const PATH="apps/backend/src/users/account.ts";
 const CHILD="urn:r321:backend:child";
 const PRESENTER="did:thesis:backend-agent";
 const BASE_URL="http://gateway.r321.invalid";
-const RESOURCE="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+PATH;
+const RESOURCE="gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/"+PATH;
 const SHA="a".repeat(40);
 const SECRET="R321_PRIVATE_SIGNING_TOKEN";
 const VP="R321_PRIVATE_SIGNED_VP";

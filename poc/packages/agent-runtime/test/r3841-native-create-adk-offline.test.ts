@@ -21,13 +21,13 @@ import type {AgentTaskContext} from "../src/contracts.ts";
 
 const RUNTIME="dispatch_"+"N".repeat(22);
 const PLAN="r3841-backend-create-task";
-const BRANCH="feature/account-suspension";
-const PATH="apps/backend/src/users/account-suspension-created.ts";
+const BRANCH="feature/sample-change";
+const PATH="apps/backend/src/users/sample-change-created.ts";
 const CONTENT="export const accountSuspended = true;\n";
 const CHILD="urn:r3841:child:backend";
 const DID="did:thesis:backend-agent";
 const REQUEST="r3841-backend-create-prepare";
-const RESOURCE="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+PATH;
+const RESOURCE="gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/"+PATH;
 const COMMIT="a".repeat(40),BLOB="b".repeat(40);
 const SIGNED="r3841-native-mcp-synthetic-signed-vp";
 const context=():AgentTaskContext=>({
@@ -36,7 +36,7 @@ const context=():AgentTaskContext=>({
  role:"backend",trusted_gateway_task_id:RUNTIME,
  subtask:{
   subtask_id:PLAN,branch:BRANCH,
-  instruction:"Create only the signed backend account suspension source",
+  instruction:"Create only the signed backend user export source",
   relevant_paths:[PATH],
   approved_file_permissions:[{path:PATH,operation:"create_file"}],
   approved_run_tests:false

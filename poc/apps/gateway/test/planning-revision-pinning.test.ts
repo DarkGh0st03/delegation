@@ -11,8 +11,8 @@ import { GatewayError } from "../src/errors.ts";
 import type {PolicyPort,VerifierPort} from "../src/types.ts";
 
 const A="a".repeat(40), B="b".repeat(40);
-const base="http://gitea:3000/api/v1/repos/thesis/iam-console-poc";
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const base="http://gitea:3000/api/v1/repos/thesis/sample-app";
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
 const config={audience:"cloud-access-gateway",request_ttl_ms:120_000,repository:repo};
 const response=(data:unknown)=>new Response(JSON.stringify(data),{status:200});
 const taskId="session-pinned-1";
@@ -22,14 +22,14 @@ function fixture(){
   let now=1_800_000_000_000;
   const client=new GiteaClient({
     baseUrl:"http://gitea:3000",token:"gateway-secret",
-    owner:"thesis",repository:"iam-console-poc",
+    owner:"thesis",repository:"sample-app",
     fetchFn:(async (url,init)=>{
       assert.equal((init?.headers as Record<string,string>).authorization,"token gateway-secret");
       const s=String(url);
       urls.push(s);
       if(s===base){
-        return response({name:"iam-console-poc",owner:{login:"thesis"},
-          default_branch:"main",full_name:"thesis/iam-console-poc"});
+        return response({name:"sample-app",owner:{login:"thesis"},
+          default_branch:"main",full_name:"thesis/sample-app"});
       }
       if(s===base+"/branches/main"){
         return response({name:"main",commit:{id:movingSha}});
@@ -185,7 +185,7 @@ test("Gitea registration rejects malformed SHA, duplicate sessions and long TTL"
   await promise;
   await assert.rejects(a.revisions.begin(taskId,1000),/already registered/);
   const badClient={
-    async readRepository(){return {full_name:"thesis/iam-console-poc",
+    async readRepository(){return {full_name:"thesis/sample-app",
       default_branch:"main",revision:"not-a-sha"};}
   };
   const bad=new TrustedPlanningRevisions(badClient);
@@ -221,7 +221,7 @@ test("R380.3 native ancestor proof covers only original pinned read-only Plannin
   const f=fixture();
   await f.revisions.begin(taskId,600_000);
   const parent={
-    resource:"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories/apps/backend",
+    resource:"gitea://gitea.local/thesis/sample-app/branches/main/directories/apps/backend",
     operation:"read_file" as const
   };
   const native={

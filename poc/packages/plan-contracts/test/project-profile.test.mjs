@@ -32,7 +32,7 @@ test("test sources of a profile drive the Test agent write scope", () => {
     testSourceProfileOf(IAM_CONSOLE_PROJECT_PROFILE)), true);
 });
 
-test("the example profile keeps the historical phases of iam-console-poc", () => {
+test("the example profile keeps the historical phases of sample-app", () => {
   assert.deepEqual(IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => p.name), ["dependency_install",
     "typecheck", "backend_tests", "frontend_tests", "build", "playwright_e2e"]);
   assert.deepEqual(IAM_CONSOLE_PROJECT_PROFILE.phases.filter(p => p.failure_report).map(p => p.name),

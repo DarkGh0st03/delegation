@@ -10,18 +10,18 @@ const input: PolicyInput = {
   agent_role: "backend",
   tool: "read_file",
   arguments: {
-    branch: "feature/account-suspension",
+    branch: "feature/sample-change",
     path: "apps/backend/src/users/user.service.ts"
   },
   required_permission: {
     resource:
-      "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts",
+      "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/src/users/user.service.ts",
     operation: "read_file"
   },
   repository: {
     authority: "gitea.local",
     owner: "thesis",
-    repository: "iam-console-poc"
+    repository: "sample-app"
   },
   verified_delegation: {
     presenter_id: "did:thesis:backend-agent",

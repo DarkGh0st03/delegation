@@ -9,7 +9,7 @@ import {createNativeRustEngineerCredentialPort}
 import {createTrustedEngineerCredentialPort}
  from "../src/trusted-engineer-crypto-port.ts";
 
-const resource="gitea://gitea.local/thesis/iam-console-poc";
+const resource="gitea://gitea.local/thesis/sample-app";
 const issue={
  credential_id:"urn:trusted:engineer-root",
  valid_from:"2026-11-04T06:00:00Z",

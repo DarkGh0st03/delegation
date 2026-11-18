@@ -14,8 +14,8 @@ const config = {
   bind_port: 0,
   gateway_token: "gateway-runner-secret",
   contract: {
-    repository: "gitea://gitea.local/thesis/iam-console-poc",
-    branch: "feature/account-suspension"
+    repository: "gitea://gitea.local/thesis/sample-app",
+    branch: "feature/sample-change"
   }
 };
 

@@ -12,8 +12,8 @@ import {TrustedAuthorityOnlyEngineerSession} from '../src/trusted-authority-only
 import {TrustedPlanningGatewayReadPort} from '../src/trusted-planning-gateway-port.ts';
 import {selectAuthorityOnlyGrant} from '../../plan-contracts/src/authority-only-approval.mjs';
 import {RUST_OPERATIONS} from '../../../apps/gateway/src/operation-catalog.ts';
-const snapshot={session_id:'authority-review',repository:{authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'},base_revision:'a'.repeat(40),directories:['','apps'],files:['apps/user.ts']};
-const proposal={...compileAuthorityOnlyPlanningProposal({requested_permissions:[{operation:'update_file',resource_type:'directory',path:'apps'}],assumptions:[],uncertainties:[]},{snapshot,requirement:'Suspend accounts',workBranch:'feature/account-suspension'}),verified_source_reads:1};
+const snapshot={session_id:'authority-review',repository:{authority:'gitea.local',owner:'thesis',repository:'sample-app'},base_revision:'a'.repeat(40),directories:['','apps'],files:['apps/user.ts']};
+const proposal={...compileAuthorityOnlyPlanningProposal({requested_permissions:[{operation:'update_file',resource_type:'directory',path:'apps'}],assumptions:[],uncertainties:[]},{snapshot,requirement:'Suspend accounts',workBranch:'feature/sample-change'}),verified_source_reads:1};
 const keys=generateKeyPairSync('ed25519');
 const privatePem=keys.privateKey.export({format:'pem',type:'pkcs8'}).toString();
 const publicPem=keys.publicKey.export({format:'pem',type:'spki'}).toString();

@@ -12,7 +12,7 @@ const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 import {TrustedGatewayRunnerFailEvidencePublisher,
  AuthenticatedRunnerFailureObserver}
  from "../src/trusted-authority-only-runner-failure-evidence.ts";
-const branch="feature/account-suspension",sha="a".repeat(40);
+const branch="feature/sample-change",sha="a".repeat(40);
 const binding={
  session_id:"r336-session",authority_digest:"b".repeat(64),
  root_credential_id:"root-r336",task_id:"test-r336",
@@ -23,7 +23,7 @@ const binding={
 const intent={
  schema:"authority-only-runner-intent-v1" as const,
  kind:"runner_test_commit_preflight_only" as const,
- ...binding,repository:"thesis/iam-console-poc",branch,
+ ...binding,repository:"thesis/sample-app",branch,
  expected_head_sha:sha,runner_profile:"poc-default" as const,
  prepared_at_ms:1762400000000,runner_execution_authorized:false as const
 };
@@ -57,7 +57,7 @@ async function fixture(action:(p:{
  let head=sha;
  const gitea=new GiteaClient({
   baseUrl:"http://gitea.local:3000",token:"independent-only",
-  owner:"thesis",repository:"iam-console-poc",
+  owner:"thesis",repository:"sample-app",
   fetchFn:(async(_url:URL|string,init?:RequestInit)=>{
    assert.equal(init?.method,"GET");
    return new Response(JSON.stringify({name:branch,commit:{id:head}}));

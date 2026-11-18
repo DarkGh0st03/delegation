@@ -29,7 +29,7 @@ function dependencies(){
  };
 }
 function workflow(){
- return {createBranch:{model:{},branch:"feature/account-suspension",
+ return {createBranch:{model:{},branch:"feature/sample-change",
   baseBranch:"main",permission:{operation:"create_branch",resource:"gitea://r3825"},
   prepare:async()=>{},execute:async()=>{}},
   sdk:{agentBaseUrls:{},stageChannels:{},agentBindingChannels:{}},

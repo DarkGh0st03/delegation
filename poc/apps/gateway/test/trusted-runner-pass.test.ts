@@ -9,8 +9,8 @@ import {validateTrustedRunnerPass}
 
 const commit="a".repeat(40);
 const request={
- request_id:"r303-request-1",repository:"gitea://gitea.local/thesis/iam-console-poc",
- branch:"feature/account-suspension",commit_sha:commit,
+ request_id:"r303-request-1",repository:"gitea://gitea.local/thesis/sample-app",
+ branch:"feature/sample-change",commit_sha:commit,
  profile:"poc-default" as const
 };
 const fixed=[

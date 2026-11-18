@@ -37,10 +37,10 @@ class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayA
 
 const roles=["backend","frontend","test"] as const;
 type Role=(typeof roles)[number];
-const branch="feature/account-suspension";
+const branch="feature/sample-change";
 const taskId="r333-backend-task",runtimeTaskId="dispatch_"+"Z".repeat(22);
 const file="apps/backend/src/users/account.ts";
-const repository={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const repository={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
 const permission={resource:canonicalFileUri(repository,branch,file),
  operation:"update_file" as const};
 const root={

@@ -5,8 +5,8 @@ import {compileAuthorityOnlyPlanningProposal as compile} from '../src/authority-
 import {TrustedAdkReadOnlyPlanner} from '../src/trusted-adk-planner.ts';
 import {selectAuthorityOnlyGrant} from '../../plan-contracts/src/authority-only-approval.mjs';
 import {RUST_OPERATIONS} from '../../../apps/gateway/src/operation-catalog.ts';
-const snapshot={session_id:'authority-planning',repository:{authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'},base_revision:'a'.repeat(40),directories:['','apps','apps/backend'],files:['apps/backend/user.ts']};
-const cfg={snapshot,requirement:'Implement Account Suspension',workBranch:'feature/account-suspension'};
+const snapshot={session_id:'authority-planning',repository:{authority:'gitea.local',owner:'thesis',repository:'sample-app'},base_revision:'a'.repeat(40),directories:['','apps','apps/backend'],files:['apps/backend/user.ts']};
+const cfg={snapshot,requirement:'Implement User Export',workBranch:'feature/sample-change'};
 const draft=()=>({requested_permissions:[{operation:'update_file',resource_type:'directory',path:'apps/backend'}],assumptions:[],uncertainties:[]});
 test('permission-only proposal feeds existing Engineer selection with no signed DAG',()=>{
  const r=compile(draft(),cfg);

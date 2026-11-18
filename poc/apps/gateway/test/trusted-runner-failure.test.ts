@@ -17,8 +17,8 @@ const intent={
  runtime_task_id:"dispatch_"+"Q".repeat(22),epoch:3,
  agent_did:"did:thesis:test",credential_id:"child-r335",
  request_id:"request-r335",request_fingerprint:"b".repeat(64),
- repository:"thesis/iam-console-poc",
- branch:"feature/account-suspension",
+ repository:"thesis/sample-app",
+ branch:"feature/sample-change",
  expected_head_sha:"c".repeat(40),runner_profile:"poc-default" as const,
  prepared_at_ms:1762400000000,runner_execution_authorized:false as const
 };

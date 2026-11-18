@@ -8,11 +8,11 @@ import {SAMPLE_TEST_SOURCES} from '../../plan-contracts/test/fixtures/test-sourc
 /** Test default: the sample repository test-source profile. */
 const runTrustedAuthorityOnlyAdaptiveWorkLoop=options=>runLoop({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...options});
 import {selectTrustedRepairDiagnosticRead} from '../src/trusted-authority-only-repair-diagnostic-gate.mjs';
-const branch='feature/account-suspension',repo='gitea://gitea.local/thesis/iam-console-poc';
+const branch='feature/sample-change',repo='gitea://gitea.local/thesis/sample-app';
 const grant=role=>({operation:role==='test'?'run_tests':'update_file',
- resource:repo+'/branches/feature%2Faccount-suspension'+(role==='test'?'':'/files/apps/'+role+'.ts')});
+ resource:repo+'/branches/feature%2Fsample-change'+(role==='test'?'':'/files/apps/'+role+'.ts')});
 const diagnosticRead=()=>({operation:'read_file',
- resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend.ts'});
+ resource:repo+'/branches/feature%2Fsample-change/files/apps/backend.ts'});
 const candidate=(role,index,permissions=[grant(role)])=>({action:'delegate',task:{
  task_id:'task-'+index,agent_id:role,depends_on:index?['task-'+(index-1)]:[],permissions,
  instruction:'Perform '+role+' approved work'}});
@@ -28,7 +28,7 @@ class Decisions extends BaseLlm{
 function fixture({a2aOnly=false,failTask=false}={}){
  const verified=[],events=[];let head='a'.repeat(40),retired=false;
  const hooks={
-  async readContext(){if(retired)throw Error('retired');return {requirement:'Implement Account Suspension',branch,
+  async readContext(){if(retired)throw Error('retired');return {requirement:'Implement User Export',branch,
    rootPermissions:['backend','frontend','test'].map(grant),
    agents:Object.fromEntries(['backend','frontend','test'].map(agent_id=>[agent_id,{capabilities:[grant(agent_id).operation]}])),
    previousTasks:verified.map(p=>({task_id:p.task_id,agent_id:p.agent_id})),nextEpoch:verified.length+1,
@@ -86,7 +86,7 @@ for(const mode of ['premature','stale-test','a2a-only','provider-failed','scope-
 test('R383.1 one adaptive owner can modify three different files via distinct signed Child Tasks and retest latest HEAD',async()=>{
  const f=fixture();
  const backendSecondary={operation:'update_file',
-  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-handler.ts'};
+  resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-handler.ts'};
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
   const ctx=await original();
@@ -129,7 +129,7 @@ for(const mode of ['two-writes','read-foreign-then-write',
  test('R383.1 adaptive model cannot mix unrelated native effects: '+mode,async()=>{
   const f=fixture(),base=grant('backend');
   const foreign={operation:'update_file',
-   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-other.ts'};
+   resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-other.ts'};
   const readSame={operation:'read_file',resource:base.resource};
   const readForeign={operation:'read_file',resource:foreign.resource};
   // R384.3 CREATE has its own authorized, single-effect test below.
@@ -173,7 +173,7 @@ function verifiedFailureFixture({forgery,failRole='test',throwTest=false,failCou
  const hooks={
   async readContext(){if(retired)throw Error('retired');
    return {
-    requirement:'Implement Account Suspension',branch,maxVerifiedFailures,
+    requirement:'Implement User Export',branch,maxVerifiedFailures,
     rootPermissions:[...['backend','frontend','test'].map(permission),diagnosticRead()],
     agents:Object.fromEntries(['backend','frontend','test'].map(agent_id=>[
      agent_id,{capabilities:[permission(agent_id).operation,
@@ -370,7 +370,7 @@ test('R385.6 strict post-FAIL policy cannot be bypassed through CREATE',async()=
  let called=0;
  f.hooks.verifyRepairDiagnostic=async()=>{called++;throw Error('not applicable');};
  const fresh=candidate('backend',1,[{operation:'create_file',
-  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/new-handler.ts'}]);
+  resource:repo+'/branches/feature%2Fsample-change/files/apps/new-handler.ts'}]);
  fresh.task.depends_on=[];
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{const x=await original();
@@ -525,10 +525,10 @@ test('R377.0 pre-failure read outside signed Engineer root is denied',async()=>{
 test('R383.0 Test agent reads its signed project test source before any failure, then only a real Test run proves PR readiness',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const testPath='tests/backend/account.test.ts';
- const resource=repo+'/branches/feature%2Faccount-suspension/files/'+testPath;
+ const resource=repo+'/branches/feature%2Fsample-change/files/'+testPath;
  const readGrant={operation:'read_file',resource};
  const original=f.hooks.readContext;
- const excerpt='test("account suspension", () => { assert.equal(1, 2); });';
+ const excerpt='test("user export", () => { assert.equal(1, 2); });';
  f.hooks.readContext=async()=>{
   const ctx=await original();
   ctx.rootPermissions.push(readGrant);
@@ -560,7 +560,7 @@ test('R383.0 Test agent reads its signed project test source before any failure,
  assert.equal(f.retired,false);
  const next=JSON.stringify(model.requests[1]);
  assert.match(next,/source_observations/u);
- assert.match(next,/account suspension/u,
+ assert.match(next,/user export/u,
   'the independently observed project test body reaches the next ADK decision');
  // JSON encodes quote marks in the LLM request twice; do not compare
  // the raw unescaped TypeScript source to the serialized request bytes.
@@ -571,7 +571,7 @@ for(const mode of ['missing-signed-root','missing-test-capability','directory-sc
  test('R383.0 Test read cannot bypass '+mode,async()=>{
   const f=verifiedFailureFixture({failCount:0});
   // The Test agent reads ONE exact signed file, never a whole directory.
-  const readGrant={operation:'read_file',resource:repo+'/branches/feature%2Faccount-suspension/'+
+  const readGrant={operation:'read_file',resource:repo+'/branches/feature%2Fsample-change/'+
    (mode==='directory-scope'?'directories/apps':'files/tests/backend/account.test.ts')};
   const original=f.hooks.readContext;
   f.hooks.readContext=async()=>{
@@ -592,7 +592,7 @@ test('R383.0 forged Test source observation cannot reach a later ADK decision',a
  const f=verifiedFailureFixture({failCount:0});
  const target='tests/backend/account.test.ts';
  const readGrant={operation:'read_file',
-  resource:repo+'/branches/feature%2Faccount-suspension/files/'+target};
+  resource:repo+'/branches/feature%2Fsample-change/files/'+target};
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
   const ctx=await original();
@@ -862,7 +862,7 @@ test('R385.10 original adaptive owner rejects unbudgeted 26th decision',async()=
 
 test('R377.3 verified FAIL can select a separate signed Test repair and then retest',async()=>{
  const f=verifiedFailureFixture();
- const resource=repo+'/branches/feature%2Faccount-suspension/files/tests/backend/account.test.ts';
+ const resource=repo+'/branches/feature%2Fsample-change/files/tests/backend/account.test.ts';
  const permissions=['read_file','update_file'].map(operation=>({resource,operation}));
  const read=f.hooks.readContext;
  f.hooks.readContext=async()=>{
@@ -990,7 +990,7 @@ for(const mode of ['recover','changed-head','reuse-task','depend-on-incomplete',
 test('R384.3 adaptive owner permits exactly one signed CREATE Task followed by new Test on created HEAD',async()=>{
  const f=fixture();
  const create={operation:'create_file',
-  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created.ts'};
+  resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-created.ts'};
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
   const ctx=await original();
@@ -1027,9 +1027,9 @@ for(const mode of [
  test('R384.3 adaptive model CREATE is denied before any owner effect: '+mode,async()=>{
   const f=fixture(),original=f.hooks.readContext;
   const create={operation:'create_file',
-   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created.ts'};
+   resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-created.ts'};
   const create2={operation:'create_file',
-   resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-created2.ts'};
+   resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-created2.ts'};
   const read={operation:'read_file',resource:create.resource};
   const update={operation:'update_file',resource:create.resource};
   f.hooks.readContext=async()=>{
@@ -1064,7 +1064,7 @@ for(const mode of [
 test('R384.3 adaptive CREATE selected after independently authenticated Test FAIL requires new Test before PR readiness',async()=>{
  const f=verifiedFailureFixture();
  const created={operation:'create_file',
-  resource:repo+'/branches/feature%2Faccount-suspension/files/apps/backend-new-d1.ts'};
+  resource:repo+'/branches/feature%2Fsample-change/files/apps/backend-new-d1.ts'};
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
   const ctx=await original();
@@ -1109,7 +1109,7 @@ test('R384.3 adaptive CREATE selected after independently authenticated Test FAI
 test('R386 adaptive Test CREATE uses one exact project-test source Task then retests',async()=>{
  const f=verifiedFailureFixture({failCount:0});
  const create={operation:'create_file',
-  resource:repo+'/branches/feature%2Faccount-suspension/files/tests/backend/new-account.test.ts'};
+  resource:repo+'/branches/feature%2Fsample-change/files/tests/backend/new-account.test.ts'};
  const original=f.hooks.readContext;
  f.hooks.readContext=async()=>{
   const ctx=await original();

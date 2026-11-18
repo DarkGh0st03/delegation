@@ -59,13 +59,13 @@ import type {DelegatedPermission} from "../src/delegated-permission.ts";
 import type {IssuedDelegationCredential} from "../src/trusted-credential-contracts.ts";
 
 const now="2026-11-05T07:10:00Z",nowMs=Date.parse(now);
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
 const sessionId="authority-session-s1";
-const requirement="Implement requested account suspension with signed limits";
+const requirement="Implement requested user export with signed limits";
 const hash="a".repeat(40);
-const root="gitea://gitea.local/thesis/iam-console-poc";
-const branch="feature/account-suspension";
-const file=root+"/branches/feature%2Faccount-suspension/files/apps/backend/user.ts";
+const root="gitea://gitea.local/thesis/sample-app";
+const branch="feature/sample-change";
+const file=root+"/branches/feature%2Fsample-change/files/apps/backend/user.ts";
 const did="did:thesis:engineer",keyId="trusted-engineer-1";
 const pairs=[
  {resource:root,operation:"create_branch"},
@@ -1210,7 +1210,7 @@ test("R295 owner-only writer seals genuine GiteaExecutor read result and reader 
    assert.equal((init?.headers as Record<string,string>)?.authorization,
     "token private-read-only-gitea");
    const u=new URL(String(url));
-   if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
+   if(u.pathname.endsWith("/branches/feature%2Fsample-change"))
     return new Response(JSON.stringify({
      name:branch,commit:{id:hash}
     }));
@@ -1227,7 +1227,7 @@ test("R295 owner-only writer seals genuine GiteaExecutor read result and reader 
   };
   const client=new GiteaClient({
    baseUrl:"http://gitea.local:3000",token:"private-read-only-gitea",
-   owner:"thesis",repository:"iam-console-poc",
+   owner:"thesis",repository:"sample-app",
    fetchFn:fetchFn as typeof fetch
   });
   const key=Buffer.alloc(32,81);
@@ -1237,7 +1237,7 @@ test("R295 owner-only writer seals genuine GiteaExecutor read result and reader 
    taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
    effectFenceJournal,
    completionObserver:new AuthenticatedGiteaReadCompletionObserver({
-    directory:evidenceDir,key,repository:"thesis/iam-console-poc",
+    directory:evidenceDir,key,repository:"thesis/sample-app",
     branch,giteaClient:client,nowMs:()=>nowMs
    }).toTrustedObserver(),nowMs:()=>nowMs
   });
@@ -1259,7 +1259,7 @@ test("R295 owner-only writer seals genuine GiteaExecutor read result and reader 
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory:evidenceDir,key,admissions:gate,
    independentGiteaClient:client,
-   repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+   repository:"thesis/sample-app",branch,nowMs:()=>nowMs
   });
   const fakePolicy={allow:true,policy_version:"offline-opa-stub"};
   const verified={
@@ -1343,9 +1343,9 @@ test("R295 a configured publisher never bypasses authority-only terminal Gateway
    // real client is nonetheless mandatory even for the disabled path.
    independentGiteaClient:new GiteaClient({
     baseUrl:"http://gitea.local:3000",owner:"thesis",
-    repository:"iam-console-poc",token:"unused-read-only"
+    repository:"sample-app",token:"unused-read-only"
    }),
-   repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+   repository:"thesis/sample-app",branch,nowMs:()=>nowMs
   });
   await assert.rejects(executeAuthorization({
    request_id:request.request_id,signed_vp:"synthetic-vp"
@@ -1391,7 +1391,7 @@ test("R296 opt-in Gateway read publishes evidence and denies replay",async()=>{
    assert.equal((init?.headers as Record<string,string>)?.authorization,
     "token private-read-only-gitea");
    const u=new URL(String(url));
-   if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
+   if(u.pathname.endsWith("/branches/feature%2Fsample-change"))
     return new Response(JSON.stringify({
      name:branch,commit:{id:hash}
     }));
@@ -1408,7 +1408,7 @@ test("R296 opt-in Gateway read publishes evidence and denies replay",async()=>{
   };
   const client=new GiteaClient({
    baseUrl:"http://gitea.local:3000",token:"private-read-only-gitea",
-   owner:"thesis",repository:"iam-console-poc",
+   owner:"thesis",repository:"sample-app",
    fetchFn:fetchFn as typeof fetch
   });
   const key=Buffer.alloc(32,81);
@@ -1418,7 +1418,7 @@ test("R296 opt-in Gateway read publishes evidence and denies replay",async()=>{
    taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
    effectFenceJournal,
    completionObserver:new AuthenticatedGiteaReadCompletionObserver({
-    directory:evidenceDir,key,repository:"thesis/iam-console-poc",
+    directory:evidenceDir,key,repository:"thesis/sample-app",
     branch,giteaClient:client,nowMs:()=>nowMs
    }).toTrustedObserver(),nowMs:()=>nowMs
   });
@@ -1440,7 +1440,7 @@ test("R296 opt-in Gateway read publishes evidence and denies replay",async()=>{
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory:evidenceDir,key,admissions:gate,
    independentGiteaClient:client,
-   repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+   repository:"thesis/sample-app",branch,nowMs:()=>nowMs
   });
   const fakePolicy={allow:true,policy_version:"offline-opa-stub"};
   const verified={
@@ -1500,7 +1500,7 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
    assert.equal((init?.headers as Record<string,string>)?.authorization,
     "token private-read-only-gitea");
    const u=new URL(String(url));
-   if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
+   if(u.pathname.endsWith("/branches/feature%2Fsample-change"))
     return new Response(JSON.stringify({
      name:branch,commit:{id:hash}
     }));
@@ -1517,7 +1517,7 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
   };
   const client=new GiteaClient({
    baseUrl:"http://gitea.local:3000",token:"private-read-only-gitea",
-   owner:"thesis",repository:"iam-console-poc",
+   owner:"thesis",repository:"sample-app",
    fetchFn:fetchFn as typeof fetch
   });
   const key=Buffer.alloc(32,81);
@@ -1527,7 +1527,7 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
    taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
    effectFenceJournal,
    completionObserver:new AuthenticatedGiteaReadCompletionObserver({
-    directory:evidenceDir,key,repository:"thesis/iam-console-poc",
+    directory:evidenceDir,key,repository:"thesis/sample-app",
     branch,giteaClient:client,nowMs:()=>nowMs
    }).toTrustedObserver(),nowMs:()=>nowMs
   });
@@ -1549,7 +1549,7 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory:evidenceDir,key,admissions:gate,
    independentGiteaClient:client,
-   repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+   repository:"thesis/sample-app",branch,nowMs:()=>nowMs
   });
   const fakePolicy={allow:true,policy_version:"offline-opa-stub"};
   const verified={
@@ -1576,7 +1576,7 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
 });
 
 test("R299 signed Engineer directory grant permits narrower trusted Task, enrolled Child and Gateway read preflight",async()=>{
- const scope={resource:root+"/branches/feature%2Faccount-suspension/directories/apps/backend",
+ const scope={resource:root+"/branches/feature%2Fsample-change/directories/apps/backend",
   operation:"read_file"};
  const draft={schema_version:"1.0.0",session_id:sessionId,
   repository:{...repo},branch,base_revision:hash,requirement,
@@ -1633,7 +1633,7 @@ test("R299 signed Engineer directory grant permits narrower trusted Task, enroll
 });
 
 test("R299 signed directory grant cannot authorize sibling Task scope",async()=>{
- const scope={resource:root+"/branches/feature%2Faccount-suspension/directories/apps/backend",
+ const scope={resource:root+"/branches/feature%2Fsample-change/directories/apps/backend",
   operation:"read_file"};
  const draft={schema_version:"1.0.0",session_id:sessionId,
   repository:{...repo},branch,base_revision:hash,requirement,
@@ -1652,7 +1652,7 @@ test("R299 signed directory grant cannot authorize sibling Task scope",async()=>
   await coordinator.activate();
   await assert.rejects(coordinator.registerTask({
    ...nextTask(),permissions:[{
-    resource:root+"/branches/feature%2Faccount-suspension/files/apps/backend-extra/user.ts",
+    resource:root+"/branches/feature%2Fsample-change/files/apps/backend-extra/user.ts",
     operation:"read_file"
    }]
   }),/Task attempts authority escalation/);
@@ -1662,7 +1662,7 @@ test("R299 signed directory grant cannot authorize sibling Task scope",async()=>
 
 test("R301 two read-only effects are durably sequenced before a dependent Task can run",async()=>{
  const grant={resource:root+
-  "/branches/feature%2Faccount-suspension/directories/apps/backend",
+  "/branches/feature%2Fsample-change/directories/apps/backend",
   operation:"read_file"};
  const draft={schema_version:"1.0.0",session_id:sessionId,
   repository:{...repo},branch,base_revision:hash,requirement,
@@ -1817,14 +1817,14 @@ test("R302 signed update_file Task pins HEAD/blob and reserves immutable intent 
   const client=new GiteaClient({
    baseUrl:"http://gitea.local:3000",
    token:"private-r302-readonly",
-   owner:"thesis",repository:"iam-console-poc",
+   owner:"thesis",repository:"sample-app",
    fetchFn:(async(url:URL|string,init?:RequestInit)=>{
     const u=new URL(String(url));
     if(init?.method!=="GET"){writes++;throw Error("unexpected Gitea mutation");}
     reads++;
     assert.equal((init.headers as Record<string,string>).authorization,
      "token private-r302-readonly");
-    if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
+    if(u.pathname.endsWith("/branches/feature%2Fsample-change"))
      return new Response(JSON.stringify({name:branch,commit:{id:head}}));
     if(u.pathname.endsWith("/contents/apps/backend/user.ts")){
      assert.equal(u.searchParams.get("ref"),hash);
@@ -1844,7 +1844,7 @@ test("R302 signed update_file Task pins HEAD/blob and reserves immutable intent 
    const journal=new DurableAuthorityOnlyGiteaMutationIntentJournal(directory);
    const stager=new TrustedAuthorityOnlyGiteaMutationPreflight({
     admissions:gate,giteaClient:client,journal,
-    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+    repository:"thesis/sample-app",branch,nowMs:()=>nowMs
    });
    await assert.rejects(stager.stageUpdate(record,"c".repeat(40)),
     /owner-pinned HEAD changed/);
@@ -1873,7 +1873,7 @@ test("R302 signed update_file Task pins HEAD/blob and reserves immutable intent 
    const restarted=new TrustedAuthorityOnlyGiteaMutationPreflight({
     admissions:gate,giteaClient:client,
     journal:new DurableAuthorityOnlyGiteaMutationIntentJournal(directory),
-    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+    repository:"thesis/sample-app",branch,nowMs:()=>nowMs
    });
    await assert.rejects(restarted.stageUpdate(record,hash),/EEXIST/u);
    assert.equal(writes,0);
@@ -1922,7 +1922,7 @@ test("R302 unbound mutation and caller-supplied HEAD fail before any provider I/
 
 test("R303 Test Agent may reserve only exact native Child-signed Runner profile and immutable Gitea SHA; Docker remains denied",async()=>{
  const permission={
-  resource:root+"/branches/feature%2Faccount-suspension",
+  resource:root+"/branches/feature%2Fsample-change",
   operation:"run_tests"
  };
  const draft={schema_version:"1.0.0",session_id:sessionId,
@@ -1980,14 +1980,14 @@ test("R303 Test Agent may reserve only exact native Child-signed Runner profile 
   let head=hash,reads=0,runnerPosts=0;
   const client=new GiteaClient({
    baseUrl:"http://gitea.local:3000",token:"test-owner-read",
-   owner:"thesis",repository:"iam-console-poc",
+   owner:"thesis",repository:"sample-app",
    fetchFn:(async(raw:URL|string,init?:RequestInit)=>{
     if(init?.method!=="GET"){runnerPosts++;throw Error("forbidden provider call");}
     reads++;
     const u=new URL(String(raw));
     assert.equal((init.headers as Record<string,string>).authorization,
      "token test-owner-read");
-    assert.ok(u.pathname.endsWith("/branches/feature%2Faccount-suspension"));
+    assert.ok(u.pathname.endsWith("/branches/feature%2Fsample-change"));
     return new Response(JSON.stringify({
      name:branch,commit:{id:head}
     }));
@@ -2000,7 +2000,7 @@ test("R303 Test Agent may reserve only exact native Child-signed Runner profile 
    const journal=new DurableAuthorityOnlyRunnerIntentJournal(dir);
    const preflight=new TrustedAuthorityOnlyRunnerPreflight({
     admissions:gate,giteaClient:client,journal,
-    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+    repository:"thesis/sample-app",branch,nowMs:()=>nowMs
    });
    await assert.rejects(preflight.stageRunner(record,"d".repeat(40)),
     /Gitea Test branch changed/);
@@ -2140,7 +2140,7 @@ for(const mode of ['pass','no-stage','foreign-root','child-depth','opa-denied','
       return Response.json({name:branch,commit:{id:mode==='wrong-post-sha'?'f'.repeat(40):hash}});
      }
      if(path.endsWith('/branches/main'))return Response.json({name:'main',commit:{id:main}});
-     assert.ok(path.endsWith('/branches/feature%2Faccount-suspension'));
+     assert.ok(path.endsWith('/branches/feature%2Fsample-change'));
      if(!exists)return Response.json({message:'not found'},{status:404});
      return Response.json({name:branch,commit:{id:head}});
     }) as typeof fetch});

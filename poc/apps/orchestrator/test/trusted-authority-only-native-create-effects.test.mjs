@@ -20,8 +20,8 @@ import {assembleTrustedAuthorityOnlyNativeCreateEffects}
 class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
  get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
-const repository="thesis/iam-console-poc";
-const branch="feature/account-suspension";
+const repository="thesis/sample-app";
+const branch="feature/sample-change";
 async function fixture(t){
  const dir=await mkdtemp(join(tmpdir(),"r3839-owner-create-"));
  const createIntentDirectory=join(dir,"createIntent");
@@ -32,7 +32,7 @@ async function fixture(t){
  let gets=0,posts=0;
  const client=(owner="thesis")=>new GiteaClient({
   baseUrl:"http://gitea.local:3000",
-  owner,repository:"iam-console-poc",token:"private-credential",
+  owner,repository:"sample-app",token:"private-credential",
   fetchFn:async(_url,init)=>{
    if((init?.method??"GET")==="GET")gets++;
    else posts++;
@@ -71,16 +71,16 @@ test("R383.9 cross-owner and non-independent Gitea cannot assemble CREATE capabi
   {...f,independentGiteaClient:f.giteaClient},
   {...f,independentGiteaClient:new GiteaClient({
    baseUrl:"http://gitea.local:3000",owner:"foreign",
-   repository:"iam-console-poc",token:"other"
+   repository:"sample-app",token:"other"
   })},
   {...f,giteaClient:new GiteaClient({
    baseUrl:"http://gitea.local:3000",owner:"foreign",
-   repository:"iam-console-poc",token:"other"
+   repository:"sample-app",token:"other"
   })},
   {...f,evidenceKey:Buffer.alloc(16)},
   {...f,branch:"main"},
   {...f,createReceiptDirectory:f.createIntentDirectory},
-  {...f,repository:"other/iam-console-poc"}
+  {...f,repository:"other/sample-app"}
  ];
  for(const bad of cases){
   assert.throws(()=>assembleTrustedAuthorityOnlyNativeCreateEffects(bad),

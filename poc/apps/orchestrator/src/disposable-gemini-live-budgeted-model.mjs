@@ -67,9 +67,8 @@ function nextBeforeAbort(iterator,signal){
  * SHA-256 of the successfully committed UTF-8 content. A future original
  * owner may reconcile the two only AFTER independent receipt verification.
  */
-// Default kept for the historical fixed-branch pilots; console sessions pass
-// their own Engineer-approved work branch.
-const LEGACY_WRITE_BRANCH="feature/account-suspension";
+// Console sessions pass their Engineer-approved work branch; without one,
+// every model-proposed write is refused.
 const WRITE_BRANCH=/^feature\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u;
 function fingerprintModelWrites(buffered,phase,callIndex,writeBranch){
  const observed=[];
@@ -200,7 +199,7 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
  #writeBranch;
  constructor({
   delegate,phase,maxCalls,maxReportedTokens,maxPerCallTokens,sessionBudget,
-  writeBranch=LEGACY_WRITE_BRANCH
+  writeBranch
  }={}){
   if(!(delegate instanceof BaseLlm)||typeof delegate.model!=="string"||
      !delegate.model||!PHASES.has(phase)||
@@ -209,8 +208,8 @@ export class DisposablePrivateBudgetedAdkModel extends BaseLlm{
      maxPerCallTokens>maxReportedTokens||
      (sessionBudget!==undefined&&
       !(sessionBudget instanceof DisposablePrivateSessionUsageBudget))||
-     typeof writeBranch!=="string"||!WRITE_BRANCH.test(writeBranch)||
-     writeBranch.endsWith(".lock"))
+     (writeBranch!==undefined&&(typeof writeBranch!=="string"||
+      !WRITE_BRANCH.test(writeBranch)||writeBranch.endsWith(".lock"))))
    deny();
   super({model:delegate.model});
   this.#delegate=delegate;

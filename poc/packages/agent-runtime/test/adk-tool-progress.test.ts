@@ -3,11 +3,11 @@ import test from "node:test";
 import {AdkToolProgress} from "../src/adk-tool-progress.ts";
 
 const ok=(name:"read_file"|"update_file",path:string)=>({
-  name,arguments:{branch:"feature/account-suspension",path},
+  name,arguments:{branch:"feature/sample-change",path},
   payload:{ok:true as const,result:{provider:"synthetic"}}
 });
 const fail=(name:"read_file"|"update_file",path:string)=>({
-  name,arguments:{branch:"feature/account-suspension",path},
+  name,arguments:{branch:"feature/sample-change",path},
   payload:{ok:false as const,error:{kind:"invalid_tool_call" as const,message:"synthetic error"}}
 });
 

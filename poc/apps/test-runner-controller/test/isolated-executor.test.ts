@@ -10,8 +10,8 @@ import {
 
 const request = {
   request_id: "req-run-6b",
-  repository: "gitea://gitea.local/thesis/iam-console-poc",
-  branch: "feature/account-suspension",
+  repository: "gitea://gitea.local/thesis/sample-app",
+  branch: "feature/sample-change",
   commit_sha: "a".repeat(40),
   profile: "poc-default" as const,
   project_profile: IAM_CONSOLE_PROJECT_PROFILE,
@@ -420,7 +420,7 @@ test("A real Playwright command failure produces sanitized locations on exact SH
   const result=await worker.run(request);
   assert.equal(result.tested_commit_sha,request.commit_sha);
   assert.equal(result.phases.find(p=>p.phase==="playwright_e2e")?.status,"fail");
-  assert.equal(result.project_e2e_failure?.locations[0]?.check_id,"baseline_user_profile");
+  assert.equal(result.project_e2e_failure?.locations[0]?.check_id,"user-profile");
   assert.equal(cleaned,true);
   assert.doesNotMatch(JSON.stringify(result),/PRIVATE_SOURCE|PRIVATE_CREDENTIAL/);
 });

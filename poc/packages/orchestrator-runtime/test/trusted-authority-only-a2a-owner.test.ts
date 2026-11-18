@@ -26,8 +26,8 @@ import {TrustedAuthorityOnlyA2AOwner}
 class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
  get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const branch="feature/account-suspension",file="apps/backend/src/users/account.ts";
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
+const branch="feature/sample-change",file="apps/backend/src/users/account.ts";
 const taskId="r325-backend",runtimeTaskId="dispatch_"+"G".repeat(22);
 const id="urn:r325:native:child",did="did:thesis:backend-agent";
 const effect={resource:canonicalFileUri(repo,branch,file),
@@ -539,19 +539,19 @@ function nativeCreateFixture(role:"backend"|"test"="backend",projectTestSource=f
   receipt:nativeReceipt as never,signed:nativeSigned as never,response});
  const writer=new GiteaClient({
   baseUrl:"http://gitea.local:3000",owner:"thesis",
-  repository:"iam-console-poc",token:"disposable-owner-fixture",
+  repository:"sample-app",token:"disposable-owner-fixture",
   fetchFn:async()=>{throw Error("No Gitea calls during A2A owner admission");}
  });
  const preflight=new TrustedAuthorityOnlyGiteaCreatePreflight({
   admissions:f.gateway,giteaClient:writer,
   journal:new DurableAuthorityOnlyGiteaCreateIntentJournal(
    "/tmp/r3841-opaque-unused-intent"),
-  repository:"thesis/iam-console-poc",branch
+  repository:"thesis/sample-app",branch
  });
  const port=new TrustedAuthorityOnlyCreateEffectStager({
   store:new InMemoryRequestStore(),admissions:f.gateway,
   preflight,giteaClient:writer,
-  repository:"thesis/iam-console-poc",branch,
+  repository:"thesis/sample-app",branch,
   planTaskId:taskId,runtimeTaskId,expectedHeadSha:"b".repeat(40)
  });
  // Preserve the fixture's live getter counters (object spread freezes them).

@@ -14,10 +14,10 @@ class NeverCalledModel extends BaseLlm {
  async *generateContentAsync(){throw Error('Never call inference in constructor test');}
  connect(){throw Error('Streaming disabled');}
 }
-const root='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension';
+const root='gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change';
 const props=()=>({
  model:new NeverCalledModel(),requirement:'Verify one regression',
- branch:'feature/account-suspension',
+ branch:'feature/sample-change',
  rootPermissions:[{resource:root+'/files/tests/backend/one.test.ts',operation:'read_file'}],
  agents:{test:{capabilities:['read_file']}},previousTasks:[],nextEpoch:1,
  decisionKind:'agent'
@@ -57,7 +57,7 @@ const choice=(agent_id,permissions)=>({action:'delegate',task:{
 }});
 const config=(proposal,options={})=>({
  model:new ScriptedChoice(proposal),requirement:'Update signed invoice code',
- branch:'feature/account-suspension',decisionKind:'adaptive',
+ branch:'feature/sample-change',decisionKind:'adaptive',
  rootPermissions:[permission('read_file'),permission('update_file'),
   permission('create_file'),permission('run_tests',root)],
  agents:{orchestrator:{capabilities:['create_branch']},
@@ -140,12 +140,12 @@ test('R434 no-change evidence requires a registered specialist (Test included) w
 });
 
 test('a single dependency written as a string is the same one-element list (session s-107efa00274b)',async()=>{
- const repo='gitea://gitea.local/thesis/iam-console-poc';
+ const repo='gitea://gitea.local/thesis/sample-app';
  const pr={resource:repo,operation:'create_pull_request'};
  const proposer=dependsOn=>new TrustedAuthorityOnlyAdkDecisionProposer({
   model:new ScriptedChoice({task_id:'task-12',agent_id:'orchestrator',depends_on:dependsOn,
    permissions:[pr],instruction:'Open the Draft PR for the tested commit'}),
-  requirement:'Search users',branch:'feature/account-suspension',
+  requirement:'Search users',branch:'feature/sample-change',
   rootPermissions:[pr],agents:{orchestrator:{capabilities:['create_pull_request']},test:{capabilities:['run_tests']}},
   previousTasks:[{task_id:'task-11',agent_id:'test'}],nextEpoch:2,decisionKind:'pull_request'});
  assert.deepEqual((await proposer('task-11').propose()).depends_on,['task-11']);
@@ -179,12 +179,12 @@ class RawText extends BaseLlm {
  connect(){throw Error('offline');}
 }
 test('a choice wrapped in ONE Markdown JSON fence is the same choice (session s-690b35c5d886)',async()=>{
- const repo='gitea://gitea.local/thesis/iam-console-poc';
+ const repo='gitea://gitea.local/thesis/sample-app';
  const pr={resource:repo,operation:'create_pull_request'};
  const json=JSON.stringify({task_id:'task-create-pr-1',agent_id:'orchestrator',depends_on:['task-run-tests-2'],
   permissions:[pr],instruction:'Open the Draft PR for the tested commit'},null,2);
  const proposer=text=>new TrustedAuthorityOnlyAdkDecisionProposer({model:new RawText(text),
-  requirement:'Search users',branch:'feature/account-suspension',rootPermissions:[pr],
+  requirement:'Search users',branch:'feature/sample-change',rootPermissions:[pr],
   agents:{orchestrator:{capabilities:['create_pull_request']},test:{capabilities:['run_tests']}},
   previousTasks:[{task_id:'task-run-tests-2',agent_id:'test'}],nextEpoch:2,decisionKind:'pull_request'});
  for(const text of ['```json\n'+json+'\n```','```\n'+json+'\n```',json])

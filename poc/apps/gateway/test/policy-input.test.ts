@@ -6,7 +6,7 @@ import type { PreparedRequestRecord, VerifiedDelegation } from "../src/types.ts"
 const repository = {
   authority: "gitea.local",
   owner: "thesis",
-  repository: "iam-console-poc"
+  repository: "sample-app"
 };
 
 const verified: VerifiedDelegation = {
@@ -16,7 +16,7 @@ const verified: VerifiedDelegation = {
   permissions: [
     {
       resource:
-        "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts",
+        "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/src/users/user.service.ts",
       operation: "update_file"
     }
   ],
@@ -32,7 +32,7 @@ test("policy input is built from server state and strips source content", () => 
     request: {
       tool: "update_file",
       arguments: {
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         path: "apps/backend/src/users/user.service.ts",
         content: "sensitive source body"
       }
@@ -49,7 +49,7 @@ test("policy input is built from server state and strips source content", () => 
   const input = buildPolicyInput(record, repository, verified);
 
   assert.deepEqual(input.arguments, {
-    branch: "feature/account-suspension",
+    branch: "feature/sample-change",
     path: "apps/backend/src/users/user.service.ts"
   });
   assert.equal("content" in input.arguments, false);
@@ -70,14 +70,14 @@ test("pull request policy input omits title and body", () => {
     request: {
       tool: "create_pull_request",
       arguments: {
-        head_branch: "feature/account-suspension",
+        head_branch: "feature/sample-change",
         base_branch: "main",
         title: "Sensitive title",
         body: "Sensitive description"
       }
     },
     required_permission: {
-      resource: "gitea://gitea.local/thesis/iam-console-poc",
+      resource: "gitea://gitea.local/thesis/sample-app",
       operation: "create_pull_request"
     },
     audience: "cloud-access-gateway",
@@ -90,7 +90,7 @@ test("pull request policy input omits title and body", () => {
 
   const input = buildPolicyInput(record, repository, verified);
   assert.deepEqual(input.arguments, {
-    head_branch: "feature/account-suspension",
+    head_branch: "feature/sample-change",
     base_branch: "main"
   });
 });

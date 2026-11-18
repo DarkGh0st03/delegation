@@ -4,8 +4,8 @@ import {TrustedPlanningDiscoveryLedger}
   from "../src/trusted-planning-discovery-ledger.ts";
 import {preliminaryReadPermissions} from "../src/trusted-engineer-authority.ts";
 
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const rootUri="gitea://gitea.local/thesis/iam-console-poc";
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
+const rootUri="gitea://gitea.local/thesis/sample-app";
 const MAIN_FILE="apps/backend/user.ts";
 
 function snapshot(){

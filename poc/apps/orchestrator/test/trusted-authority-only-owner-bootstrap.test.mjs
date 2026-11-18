@@ -91,8 +91,8 @@ async function fixture(t){
  const config={
   schema:"r3827-original-authority-only-v1",
   source_sha:SHA,snapshot,
-  requirement:"Implement account suspension through signed original Reviewer",
-  workBranch:"feature/account-suspension",preliminaryRoot,
+  requirement:"Implement user export through signed original Reviewer",
+  workBranch:"feature/sample-change",preliminaryRoot,
   planner:{planId:"r3827-authority-only"},
   trustedAgentRegistry,
   gateway:{gatewayBaseUrl:"http://127.0.0.1:8130",

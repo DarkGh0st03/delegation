@@ -35,9 +35,9 @@ function fakeOwner(status='owner_adaptive_work_ready_for_pr'){
  return {owner,events};
 }
 const prConfig=()=>({
- model:{},headBranch:'feature/account-suspension',baseBranch:'main',
+ model:{},headBranch:'feature/sample-change',baseBranch:'main',
  title:'Review approved changes',body:'Independently attested Runner PASS',
- permission:{resource:'gitea://gitea.local/thesis/iam-console-poc',
+ permission:{resource:'gitea://gitea.local/thesis/sample-app',
   operation:'create_pull_request'},
  prepare:()=>{throw Error('provider should not be called');},
  execute:()=>{throw Error('provider should not be called');}
@@ -206,8 +206,8 @@ test('R370 one-shot private root PR follows Gateway Prepare, durable stage, nati
 });
 
 const branchCfg=()=>({
- model:{},branch:'feature/account-suspension',baseBranch:'main',
- permission:{resource:'gitea://gitea.local/thesis/iam-console-poc',
+ model:{},branch:'feature/sample-change',baseBranch:'main',
+ permission:{resource:'gitea://gitea.local/thesis/sample-app',
   operation:'create_branch'},
  prepare:()=>{throw Error('unreachable branch Prepare');},
  execute:()=>{throw Error('unreachable native branch execute');}

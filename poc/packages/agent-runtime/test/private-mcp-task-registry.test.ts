@@ -158,7 +158,7 @@ test("R329.2 native owner 20-minute Gateway challenge is signed exactly once (no
    challenge:"r329-20minute-native-gateway-challenge",
    expires_at:new Date(Date.now()+1_200_000).toISOString(),
    required_permission:{
-    resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/users/account.ts",
+    resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/users/account.ts",
     operation:"update_file"
    }
   };

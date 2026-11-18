@@ -42,7 +42,7 @@ test("Gateway wrapper hides prepare -> presentation -> execute from the model-vi
             challenge: "phase8a-challenge",
             required_permission: {
               resource:
-                "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts",
+                "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/src/users/user.service.ts",
               operation: "read_file"
             },
             expires_at: "2026-10-05T18:00:00.000Z"
@@ -62,7 +62,7 @@ test("Gateway wrapper hides prepare -> presentation -> execute from the model-vi
             provider: "gitea",
             performed: true,
             tool: "read_file",
-            branch: "feature/account-suspension",
+            branch: "feature/sample-change",
             path: "apps/backend/src/users/user.service.ts",
             content: "export class UserService {}"
           }
@@ -73,7 +73,7 @@ test("Gateway wrapper hides prepare -> presentation -> execute from the model-vi
   });
 
   const result = await gateway.invoke("read_file", {
-    branch: "feature/account-suspension",
+    branch: "feature/sample-change",
     path: "apps/backend/src/users/user.service.ts"
   });
 
@@ -86,7 +86,7 @@ test("Gateway wrapper hides prepare -> presentation -> execute from the model-vi
     provider: "gitea",
     performed: true,
     tool: "read_file",
-    branch: "feature/account-suspension",
+    branch: "feature/sample-change",
     path: "apps/backend/src/users/user.service.ts",
     content: "export class UserService {}"
   });
@@ -110,7 +110,7 @@ test("Gateway wrapper converts Runner failure into a controlled tests_failed out
             challenge: "challenge",
             required_permission: {
               resource:
-                "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension",
+                "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change",
               operation: "run_tests"
             },
             expires_at: "2026-10-05T18:00:00.000Z"
@@ -144,7 +144,7 @@ test("Gateway wrapper converts Runner failure into a controlled tests_failed out
   await assert.rejects(
     () =>
       gateway.invoke("run_tests", {
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         profile: "poc-default"
       }),
     (error: unknown) =>
@@ -165,7 +165,7 @@ test("prepare diagnostics preserve rejection semantics and never execute",async(
     return new Response(JSON.stringify({error:"PRIVATE"}),{status});}
   });
   await assert.rejects(client.invoke("read_file",{
-   branch:"feature/account-suspension",path:"apps/frontend/src/Profile.tsx"
+   branch:"feature/sample-change",path:"apps/frontend/src/Profile.tsx"
   }),(e:any)=>e.reason===(status>=500||status===0?"upstream_unavailable":"gateway_prepare_rejected"));
   assert.equal(calls,1);
  }
@@ -178,7 +178,7 @@ test("trusted prepare categories are allowlisted without changing denial semanti
   const client=new GatewayControlledToolClient({gatewayBaseUrl:"http://gateway.local",agentRole:"frontend",
    taskId:"diagnostic",evidenceHandler:evidenceHandler(),fetchFn:async()=>{calls++;
     return new Response(JSON.stringify({error:"trusted_operation_denied",prepare_reason:reason}),{status:403});}});
-  await assert.rejects(client.invoke("read_file",{branch:"feature/account-suspension",path:"apps/frontend/src/Profile.tsx"}),
+  await assert.rejects(client.invoke("read_file",{branch:"feature/sample-change",path:"apps/frontend/src/Profile.tsx"}),
    (e:any)=>e.kind==="invalid_tool_call"&&e.reason===(reason==="PRIVATE"?"gateway_prepare_rejected":reason));
   assert.equal(calls,1);
  }
@@ -215,7 +215,7 @@ test("R281 run_tests Gateway execute denials retain only fixed native gate codes
       }
     });
     await assert.rejects(client.invoke("run_tests",{
-      branch:"feature/account-suspension",profile:"poc-default"
+      branch:"feature/sample-change",profile:"poc-default"
     }),(error:unknown)=>{
       assert.ok(error instanceof ControlledToolError);
       assert.equal(error.kind,status>=500?"tool_unavailable":"authorization_denied");
@@ -252,7 +252,7 @@ test("R358 authenticated read-only Task stages before signed VP and Gateway exec
     execution:{provider:"gitea",performed:true,tool:"read_file",content:"ok"}}),{status:200});
   }
  });
- await gateway.invoke("read_file",{branch:"feature/account-suspension",path:"source.ts"});
+ await gateway.invoke("read_file",{branch:"feature/sample-change",path:"source.ts"});
  assert.deepEqual(calls,["prepare","stage","execute"]);
 });
 
@@ -278,18 +278,18 @@ test("R359.5 mixed owner client stages and independently attests both provider e
    return Response.json({request_id:body.request_id,decision:"allow",
     execution:{provider:"gitea",performed:true,
      tool:read?"read_file":"update_file",
-     branch:"feature/account-suspension",path:"source.ts",
+     branch:"feature/sample-change",path:"source.ts",
      ...(read?{revision:"a".repeat(40),content:"old"}:
       {commit_sha:"b".repeat(40)})}});
   }
  });
- await client.invoke("read_file",{branch:"feature/account-suspension",path:"source.ts"});
- await client.invoke("update_file",{branch:"feature/account-suspension",
+ await client.invoke("read_file",{branch:"feature/sample-change",path:"source.ts"});
+ await client.invoke("update_file",{branch:"feature/sample-change",
   path:"source.ts",content:"new"});
  assert.deepEqual(calls,["prepare:1","stage:r359-1","execute:r359-1",
   "attest:read_file:r359-1","prepare:2","stage:r359-2","execute:r359-2",
   "attest:update_file:r359-2"]);
- await assert.rejects(client.invoke("run_tests",{branch:"feature/account-suspension"}),
+ await assert.rejects(client.invoke("run_tests",{branch:"feature/sample-change"}),
   /Mixed native Task supports only/u);
 });
 
@@ -335,7 +335,7 @@ test("R391 Test CREATE invokes native owner stage and private VP only for exact 
  process.env.DELEGATION_GATEWAY_ARCHITECTURE="authority-only";
  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
  try{
-  const branch="feature/account-suspension";
+  const branch="feature/sample-change";
   const source="tests/backend/new-account.test.ts";
   const events:string[]=[];
   const client=new GatewayControlledToolClient({
@@ -361,7 +361,7 @@ test("R391 Test CREATE invokes native owner stage and private VP only for exact 
      assert.equal(body.arguments.path,source);
      return Response.json({request_id:"r391-prepared",
       audience:"cloud-access-gateway",challenge:"nonce",
-      required_permission:{resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+source,operation:"create_file"},
+      required_permission:{resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/"+source,operation:"create_file"},
       expires_at:"2099-01-01T00:00:00Z"},{status:201});
     }
     events.push("execute");

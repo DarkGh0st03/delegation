@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {selectTrustedRepairDiagnosticRead as select}
  from "../src/trusted-authority-only-repair-diagnostic-gate.mjs";
-const branch="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";
+const branch="gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change";
 const file=branch+"/files/apps/backend.ts",testFile=branch+"/files/tests/backend/generated.test.ts";
 const sha="a".repeat(40),digest="c".repeat(64);
 const fixture=(role="backend",resource=file)=>({

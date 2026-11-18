@@ -81,7 +81,7 @@ function fakeBoundary(role: SpecializedAgentRole, deny = false,
         request_id:"phase3-prepared-" + prepareCalls,
         audience:"cloud-access-gateway",
         challenge:"challenge-" + prepareCalls,
-        required_permission:{resource:"https://gitea.local/thesis/iam-console-poc",operation:"read_file"},
+        required_permission:{resource:"https://gitea.local/thesis/sample-app",operation:"read_file"},
         expires_at:"2026-12-01T00:00:00Z"
       });
     }

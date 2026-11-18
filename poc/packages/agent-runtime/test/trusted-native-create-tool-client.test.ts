@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {GatewayControlledToolClient} from "../src/gateway-tool-client.ts";
 import {ControlledToolError} from "../src/controlled-errors.ts";
 
-const branch="feature/account-suspension";
+const branch="feature/sample-change";
 const path="apps/backend/src/users/create-suspension.ts";
 const content="export const isSuspended = true;\n";
 const commit="a".repeat(40),blob="b".repeat(40);
@@ -79,7 +79,7 @@ function fixture(options:{
      expires_at:new Date(Date.now()+60000).toISOString(),
      required_permission:{
       operation:"create_file",resource:
-       "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path
+       "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/"+path
      }
     },{status:201});
    }

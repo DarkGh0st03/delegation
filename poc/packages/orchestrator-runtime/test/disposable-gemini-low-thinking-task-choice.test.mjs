@@ -8,8 +8,8 @@ import {TrustedAuthorityOnlyAdkDecisionProposer as TrustedAuthorityOnlyAdkDecisi
 /** Test default: the sample repository test-source profile. */
 class TrustedAuthorityOnlyAdkDecisionProposer extends TrustedAuthorityOnlyAdkDecisionProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
 
-const BRANCH="feature/account-suspension";
-const P={resource:"gitea://gitea.local/thesis/iam-console-poc",
+const BRANCH="feature/sample-change";
+const P={resource:"gitea://gitea.local/thesis/sample-app",
  operation:"create_branch"};
 const select=()=>{
  return {

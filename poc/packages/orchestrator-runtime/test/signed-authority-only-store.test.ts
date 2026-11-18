@@ -9,10 +9,10 @@ import {SignedAuthorityOnlyFileStore}
 import {selectAuthorityOnlyGrant,signAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 
-const REPO={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const ROOT="gitea://gitea.local/thesis/iam-console-poc";
-const BRANCH="feature/account-suspension";
-const FILE=ROOT+"/branches/feature%2Faccount-suspension/files/apps/backend/src/user.ts";
+const REPO={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
+const ROOT="gitea://gitea.local/thesis/sample-app";
+const BRANCH="feature/sample-change";
+const FILE=ROOT+"/branches/feature%2Fsample-change/files/apps/backend/src/user.ts";
 const OPERATIONS=new Set(["create_branch","read_file","update_file"]);
 const KEY_ID="trusted-key",DID="did:example:engineer";
 const KEYS=generateKeyPairSync("ed25519");

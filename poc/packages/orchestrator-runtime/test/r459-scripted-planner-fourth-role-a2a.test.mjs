@@ -38,8 +38,8 @@ class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayA
 
 const canonicalRoles=Object.freeze(["backend","frontend","test"]);
 const roles=Object.freeze([...canonicalRoles,"reviewer"]);
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const branch="feature/account-suspension",path="README.md",sha="a".repeat(40);
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
+const branch="feature/sample-change",path="README.md",sha="a".repeat(40);
 const taskId="r459-selected-reviewer",runtimeTaskId="dispatch_"+"R".repeat(22);
 const did="did:thesis:owner-pinned-reviewer",childId="urn:r459:scripted-read-child";
 const grant={resource:canonicalFileUri(repo,branch,path),operation:"read_file"};

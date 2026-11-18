@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {giteaPermissionCovers as covers} from "../src/gitea-permission-containment.mjs";
 
-const root="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";
+const root="gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change";
 const p=(suffix,operation="read_file")=>({resource:root+"/"+suffix,operation});
 test("R299 exact permissions stay exact and branch/root operations never gain descendants",()=>{
  assert.equal(covers(p("files/apps/backend/user.ts"),p("files/apps/backend/user.ts")),true);
@@ -38,10 +38,10 @@ test("R299 no prefix, branch/repository crossing, traversal, URI aliases or enco
  ]){
   assert.equal(covers(parent,p(denied)),false,denied);
  }
- assert.equal(covers(parent,{resource:"gitea://gitea.local/thesis/other/branches/feature%2Faccount-suspension/files/apps/backend/u.ts",operation:"read_file"}),false);
- assert.equal(covers(parent,{resource:"gitea://other.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/u.ts",operation:"read_file"}),false);
- assert.equal(covers(parent,{resource:"gitea://gitea.local/thesis/iam-console-poc/branches/main/files/apps/backend/u.ts",operation:"read_file"}),false);
- assert.equal(covers(parent,{resource:root.replace("feature%2Faccount-suspension","feature%2faccount-suspension")+"/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(parent,{resource:"gitea://gitea.local/thesis/other/branches/feature%2Fsample-change/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(parent,{resource:"gitea://other.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(parent,{resource:"gitea://gitea.local/thesis/sample-app/branches/main/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(parent,{resource:root.replace("feature%2Fsample-change","feature%2fsample-change")+"/files/apps/backend/u.ts",operation:"read_file"}),false);
  assert.equal(covers(p("files/apps/backend"),p("files/apps/backend/u.ts")),false);
 });
 test("R299 file grant, unknown operation or malformed input never create implicit authority",()=>{
@@ -53,7 +53,7 @@ test("R299 file grant, unknown operation or malformed input never create implici
 
 test("read+update grant shape: N distinct exact reads including the edited file, then ONE update",async()=>{
  const {readUpdateGrantShape,MAX_TASK_READS}=await import("../src/gitea-permission-containment.mjs");
- const base="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fx/files/";
+ const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fx/files/";
  const p=(operation,path)=>({operation,resource:base+path});
  const edit="apps/backend/src/a.ts",dep="apps/backend/src/b.ts";
  const ok=readUpdateGrantShape([p("read_file",edit),p("read_file",dep),p("update_file",edit)]);
@@ -75,7 +75,7 @@ test("read+update grant shape: N distinct exact reads including the edited file,
 
 test("readGrantsCoverPath: exact file or containing directory read grants only",async()=>{
  const {readGrantsCoverPath}=await import("../src/gitea-permission-containment.mjs");
- const base="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fx/";
+ const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fx/";
  const read=r=>({operation:"read_file",resource:base+r});
  assert.equal(readGrantsCoverPath([read("files/apps/a.ts")],"apps/a.ts"),true);
  assert.equal(readGrantsCoverPath([read("directories/apps")],"apps/sub/a.ts"),true);
@@ -92,7 +92,7 @@ test("reads + one create: the new file is created from distinct EXISTING files i
  const {SAMPLE_TEST_SOURCES}=await import("./fixtures/test-sources.mjs");
  const isProjectTestReadCreateGrant=async (perms)=>(await import("../src/gitea-permission-containment.mjs"))
   .isProjectTestReadCreateGrant(perms,SAMPLE_TEST_SOURCES);
- const base="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1/files/";
+ const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fs-1/files/";
  const r=path=>({operation:"read_file",resource:base+path});
  const c=path=>({operation:"create_file",resource:base+path});
  const page="apps/frontend/src/pages/UserListPage.tsx",test="tests/frontend/UserListPage.test.tsx";

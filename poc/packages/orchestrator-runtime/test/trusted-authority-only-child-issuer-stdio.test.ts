@@ -13,8 +13,8 @@ import {DurableAuthorityOnlyChildJournal}
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
 
-const uri="gitea://gitea.local/thesis/iam-console-poc/"+
- "branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.ts";
+const uri="gitea://gitea.local/thesis/sample-app/"+
+ "branches/feature%2Fsample-change/files/apps/backend/src/users/user.ts";
 const permission={resource:uri,operation:"update_file"} as const;
 const taskId="r381-verified-child";
 const childId="urn:delegation:r381:child";

@@ -17,8 +17,8 @@ import {preflightNativeD1FailureCandidate,observeTrustedNativeTestFailure}
 class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
  get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const branch="feature/account-suspension";
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
+const branch="feature/sample-change";
 const uri=canonicalBranchUri(repo,branch);
 const approved=[
  {resource:uri+"/directories/apps/backend",operation:"update_file" as const},
@@ -33,7 +33,7 @@ const intent={
  runtime_task_id:"dispatch_"+"V".repeat(22),epoch:3,
  agent_did:"did:thesis:test",credential_id:"child-r339",
  request_id:"req-r339",request_fingerprint:"b".repeat(64),
- repository:"thesis/iam-console-poc",branch,
+ repository:"thesis/sample-app",branch,
  expected_head_sha:"c".repeat(40),runner_profile:"poc-default" as const,
  prepared_at_ms:1762400000000,runner_execution_authorized:false as const
 };
@@ -233,7 +233,7 @@ test("R377.5 FAIL paths are scoped to the original signed read grants",async()=>
  * fixture; D1 preflight never performs provider writes or checks absence.
  */
 test("R384.3 authentic Runner FAIL allows create-only Backend/Frontend D1 under original Engineer ceiling",async()=>{
- const path="apps/backend/src/users/account-suspension-created.ts";
+ const path="apps/backend/src/users/sample-change-created.ts";
  const permission={
   resource:canonicalFileUri(repo,branch,path),operation:"create_file" as const
  };
@@ -259,7 +259,7 @@ test("R384.3 authentic Runner FAIL allows create-only Backend/Frontend D1 under 
  }
 });
 test("R384.3 CREATE recovery cannot expand scope, mix effects, change branch or gain Test role",async()=>{
- const newPath="apps/backend/src/users/account-suspension-created.ts";
+ const newPath="apps/backend/src/users/sample-change-created.ts";
  const exact={
   resource:canonicalFileUri(repo,branch,newPath),operation:"create_file"
  };

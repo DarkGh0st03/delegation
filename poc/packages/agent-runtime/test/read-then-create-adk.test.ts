@@ -83,7 +83,7 @@ function fixture(){
     gateway.push("prepare:"+body.tool+":"+body.arguments.path);
     return Response.json({request_id:id,audience:"cloud-access-gateway",challenge:"ch-"+id,
      expires_at:new Date(Date.now()+60000).toISOString(),
-     required_permission:{resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-search/files/"+body.arguments.path,operation:body.tool}},{status:201});
+     required_permission:{resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fs-search/files/"+body.arguments.path,operation:body.tool}},{status:201});
    }
    if(u.endsWith("/v1/authorization/execute")){
     const p=prepared.get(body.request_id)!;

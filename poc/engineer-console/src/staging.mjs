@@ -52,7 +52,7 @@ export function stagingProfileDigest(profile) {
 
 /** Known default of the example repository (backend + built frontend). */
 const DEFAULTS = Object.freeze({
-  "iam-console-poc": validateStagingProfile({
+  "sample-app": validateStagingProfile({
     version: 1, enabled: true, image: "node:22.15.0-bookworm",
     // --include=dev: the build tools are devDependencies (also with NODE_ENV=production).
     build: "npm ci --include=dev --no-audit --no-fund && npm run build -w @iam/frontend",

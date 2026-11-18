@@ -20,7 +20,7 @@ import type {
 const config = {
   audience: "cloud-access-gateway",
   request_ttl_ms: 120_000,
-  repository: { authority: "gitea.local", owner: "thesis", repository: "iam-console-poc" }
+  repository: { authority: "gitea.local", owner: "thesis", repository: "sample-app" }
 };
 const now = 1_800_000_000_000;
 const PINNED = "a".repeat(40);

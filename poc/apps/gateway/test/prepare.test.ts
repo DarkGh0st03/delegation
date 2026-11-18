@@ -15,7 +15,7 @@ const config = {
   repository: {
     authority: "gitea.local",
     owner: "thesis",
-    repository: "iam-console-poc"
+    repository: "sample-app"
   }
 };
 
@@ -29,7 +29,7 @@ test("prepare binds task, role, tool arguments, permission, audience and challen
       agent_role: "backend",
       tool: "update_file",
       arguments: {
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         path: "apps/backend/src/users/user.service.ts",
         content: "updated source"
       }
@@ -54,7 +54,7 @@ test("prepare binds task, role, tool arguments, permission, audience and challen
     challenge: "challenge-fixed",
     required_permission: {
       resource:
-        "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts",
+        "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/src/users/user.service.ts",
       operation: "update_file"
     },
     expires_at: new Date(1_800_000_120_000).toISOString()
@@ -92,7 +92,7 @@ test("prepare generates independent one-time bindings for repeated tool requests
     task_id: "task-test-1",
     agent_role: "test",
     tool: "run_tests",
-    arguments: { branch: "feature/account-suspension" }
+    arguments: { branch: "feature/sample-change" }
   };
 
   const first = prepareAuthorization(input, config, deps);
@@ -113,9 +113,9 @@ test("R360 owner-authenticated operational Prepare inherits its exact Gitea HEAD
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const sha="a".repeat(40),path="apps/backend/users/account.ts";
  const task={task_id:"r360-runtime",agent_role:"backend",tool:"read_file",
-  arguments:{branch:"feature/account-suspension",path}};
+  arguments:{branch:"feature/sample-change",path}};
  const permission={resource:
-  "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path,
+  "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/"+path,
   operation:"read_file"};
  const trustedOwner={preflightCanonicalRequest:()=>({
   status:"gateway_permission_preflight_only",
@@ -138,9 +138,9 @@ test("R360 owner-authenticated operational Prepare inherits its exact Gitea HEAD
 test("R454 additional specialist cannot prepare outside a native Owner read-only binding",()=>{
  const path="apps/backend/src/users/user.service.ts";
  const task={task_id:"runtime-reviewer",agent_role:"reviewer",tool:"read_file",
-  arguments:{branch:"feature/account-suspension",path}};
+  arguments:{branch:"feature/sample-change",path}};
  const expected={
-  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path,
+  resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/"+path,
   operation:"read_file"
  };
  assert.throws(()=>validatePrepareAuthorizationRequest(task),
@@ -186,7 +186,7 @@ test("R454 additional specialist cannot prepare outside a native Owner read-only
  for(const bad of [
   {...task,tool:"update_file",arguments:{...task.arguments,content:"forbidden"}},
   {...task,tool:"create_file",arguments:{...task.arguments,content:"forbidden"}},
-  {...task,tool:"run_tests",arguments:{branch:"feature/account-suspension",profile:"poc-default"}},
+  {...task,tool:"run_tests",arguments:{branch:"feature/sample-change",profile:"poc-default"}},
   {...task,agent_role:"orchestrator.hidden"},
   {...task,agent_role:"__proto__"}
  ]){

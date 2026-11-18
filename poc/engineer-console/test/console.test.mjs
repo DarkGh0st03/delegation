@@ -13,7 +13,7 @@ import {checkEnvironment} from "../src/health.mjs";
 import {defaultPolicy, validatePolicy} from "../src/policy.mjs";
 import {ConsoleStore} from "../src/store.mjs";
 
-const REPO = {owner: "thesis", name: "iam-console-poc", default_branch: "main",
+const REPO = {owner: "thesis", name: "sample-app", default_branch: "main",
   head_sha: "a".repeat(40), protected_branches: ["main"]};
 
 class FakeGitea {
@@ -34,7 +34,7 @@ class FakeGitea {
 class FakeGitHub {
   configured = true; owner = "DarkGh0st03";
   cloneCredentials = undefined;
-  async listRepositories() { return [{name: "iam-console-poc", private: false}, {name: "greeter-lib", private: false}]; }
+  async listRepositories() { return [{name: "sample-app", private: false}, {name: "greeter-lib", private: false}]; }
   async cloneUrlFor(name) {
     if (!(await this.listRepositories()).some(r => r.name === name)) throw Error("not one of the owner's repositories");
     return `https://github.com/${this.owner}/${name}.git`;
@@ -187,10 +187,10 @@ test("repositories are imported ONLY from the configured GitHub account", async 
   const cookie = await login();
   const list = await (await call("GET", "/api/github/repos", {cookie})).json();
   assert.equal(list.owner, "DarkGh0st03");
-  assert.deepEqual(list.repositories.map(r => r.name), ["iam-console-poc", "greeter-lib"]);
+  assert.deepEqual(list.repositories.map(r => r.name), ["sample-app", "greeter-lib"]);
   // A repository of another account, a URL or a traversal name is refused.
   for (const body of [{github_repo: "someone-else-repo"}, {clone_url: "https://github.com/a/b.git"},
-    {github_repo: "../iam-console-poc"}]) {
+    {github_repo: "../sample-app"}]) {
     const r = await call("POST", "/api/repos/import", {cookie, body});
     assert.equal(r.status, 400, JSON.stringify(body));
   }
@@ -206,10 +206,10 @@ test("repositories are imported ONLY from the configured GitHub account", async 
 });
 
 test("a repository can be deleted, except while a session is running on it", async (t) => {
-  const busy = {list: () => [{repository: {name: "iam-console-poc"}, phase: "executing"}]};
+  const busy = {list: () => [{repository: {name: "sample-app"}, phase: "executing"}]};
   const {call, login, gitea} = await startConsole(t, {sessions: busy});
   const cookie = await login();
-  assert.equal((await call("DELETE", "/api/repos/iam-console-poc", {cookie})).status, 409);
+  assert.equal((await call("DELETE", "/api/repos/sample-app", {cookie})).status, 409);
   assert.equal((await call("DELETE", "/api/repos/greeter-lib", {cookie})).status, 200);
   assert.equal((await call("DELETE", "/api/repos/..%2Fx", {cookie})).status, 400);
   assert.deepEqual(gitea.deleted, ["greeter-lib"]);
@@ -221,7 +221,7 @@ test("the console starts only Gemini sessions (free modes are test-only)", async
   const {call, login} = await startConsole(t, {sessions});
   const cookie = await login();
   const request = await (await call("POST", "/api/requests", {cookie,
-    body: {repository: "iam-console-poc", requirement: "Allow searching users by name"}})).json();
+    body: {repository: "sample-app", requirement: "Allow searching users by name"}})).json();
   const previous = process.env.DELEGATION_FREE_MODES;
   delete process.env.DELEGATION_FREE_MODES;
   t.after(() => { if (previous !== undefined) process.env.DELEGATION_FREE_MODES = previous; });
@@ -406,11 +406,11 @@ test("saving a policy publishes the parameters to OPA as data, keyed by reposito
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "http://opa:8181/v1/data/thesis/console_repositories");
   const sent = JSON.parse(calls[0].init.body);
-  assert.deepEqual(Object.keys(sent), ["gitea://gitea.local/thesis/iam-console-poc"]);
-  assert.deepEqual(sent["gitea://gitea.local/thesis/iam-console-poc"], {
+  assert.deepEqual(Object.keys(sent), ["gitea://gitea.local/thesis/sample-app"]);
+  assert.deepEqual(sent["gitea://gitea.local/thesis/sample-app"], {
     base_branch: "main", protected_branches: ["main"], work_branch_prefix: "feature/",
     forbidden_path_prefixes: ["security/"], runner_profile: "poc-default", allow_pull_request: true});
-  assert.ok(!("agents_may_merge" in sent["gitea://gitea.local/thesis/iam-console-poc"]));
+  assert.ok(!("agents_may_merge" in sent["gitea://gitea.local/thesis/sample-app"]));
   assert.deepEqual(opaDocument([]), {});
 });
 
@@ -474,7 +474,7 @@ test("approval needs the Engineer password again and forwards only permission ID
 test("simulated execution plans only from APPROVED permissions, one Task per read+update file", async () => {
   const {simulatedExecutionPlan, roleForPath, simulatedMarker, lastReadContent, ScriptedDecisionModel} =
     await import("../src/scripted-execution-models.mjs");
-  const repo = "gitea://gitea.local/thesis/iam-console-poc";
+  const repo = "gitea://gitea.local/thesis/sample-app";
   const file = path => `${repo}/branches/feature%2Fs-1/files/${path.split("/").map(encodeURIComponent).join("/")}`;
   const approved = [
     {operation: "create_branch", resource: repo},
@@ -601,7 +601,7 @@ test("paid models are budgeted and every call (or discard) is recorded for the E
 
 test("free modes: app work, then ONE Test Task reads the changed app files and edits the test, then run_tests", async () => {
   const {simulatedExecutionPlan, ScriptedWorkerModel} = await import("../src/scripted-execution-models.mjs");
-  const base = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1";
+  const base = "gitea://gitea.local/thesis/sample-app/branches/feature%2Fs-1";
   const rw = path => [{operation: "read_file", resource: `${base}/files/${path}`},
     {operation: "update_file", resource: `${base}/files/${path}`}];
   const plan = simulatedExecutionPlan([...rw("apps/backend/src/a.ts"), ...rw("apps/frontend/src/B.tsx"),
@@ -633,7 +633,7 @@ test("free modes: app work, then ONE Test Task reads the changed app files and e
 
 test("free modes: a CREATED test reads the changed files in the same Task (reads + one create)", async () => {
   const {simulatedExecutionPlan} = await import("../src/scripted-execution-models.mjs");
-  const base = "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1";
+  const base = "gitea://gitea.local/thesis/sample-app/branches/feature%2Fs-1";
   const plan = simulatedExecutionPlan([
     {operation: "read_file", resource: `${base}/files/apps/backend/src/a.ts`},
     {operation: "update_file", resource: `${base}/files/apps/backend/src/a.ts`},
@@ -671,7 +671,7 @@ test("policy v2 carries the project profile; v1 policies migrate to the reposito
   const {validatePolicy, defaultPolicy, toOpaRepositoryConfig, NPM_PROJECT_PROFILE_TEMPLATE} =
     await import("../src/policy.mjs");
   const {IAM_CONSOLE_PROJECT_PROFILE} = await import("../../packages/plan-contracts/src/project-profile.mjs");
-  const example = {owner: "thesis", name: "iam-console-poc", default_branch: "main"};
+  const example = {owner: "thesis", name: "sample-app", default_branch: "main"};
   const other = {owner: "thesis", name: "todo-api", default_branch: "main"};
   assert.deepEqual(defaultPolicy(example).project_profile.phases.map(p => p.name),
     IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => p.name));

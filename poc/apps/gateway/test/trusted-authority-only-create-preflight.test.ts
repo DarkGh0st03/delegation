@@ -27,9 +27,9 @@ import {AuthenticatedGiteaCreateCompletionObserver as CreateObserver,
  from "../src/trusted-authority-only-gitea-create-evidence.ts";
 
 const HEAD="a".repeat(40),NEXT="b".repeat(40);
-const branch="feature/account-suspension";
+const branch="feature/sample-change";
 const path="apps/backend/src/new-handler.ts";
-const repository="thesis/iam-console-poc";
+const repository="thesis/sample-app";
 const content="export const suspend = true;\n";
 const bound=Object.freeze({
  session_id:"r3833-owner",authority_digest:"c".repeat(64),
@@ -52,7 +52,7 @@ async function fixture(t:import("node:test").TestContext,opts:{
   const method=init?.method??"GET";
   if(method!=="GET"){writes++;throw Error("No Gitea writes during create intent reservation");}
   gets++;
-  const root="/api/v1/repos/thesis/iam-console-poc";
+  const root="/api/v1/repos/thesis/sample-app";
   const json=(body:object,status=200)=>new Response(JSON.stringify(body),{
    status,headers:{"content-type":"application/json"}
   });
@@ -70,7 +70,7 @@ async function fixture(t:import("node:test").TestContext,opts:{
  }) as typeof fetch;
  const giteaClient=new GiteaClient({
   baseUrl:"http://gitea.local:3000",owner:opts.foreignGitea?"other":"thesis",
-  repository:"iam-console-poc",token:"owner-private",fetchFn
+  repository:"sample-app",token:"owner-private",fetchFn
  });
  const runtimeId=opts.runtimeTaskId??bound.runtime_task_id;
  const record={
@@ -357,7 +357,7 @@ test("R383.5 Gateway never falls through to legacy create_file even after VP and
    branch,path,content
   }},
   required_permission:{
-   resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/"+path,
+   resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/"+path,
    operation:"create_file"
   },
   audience:"cloud-access-gateway",
@@ -395,7 +395,7 @@ test("R383.5 Gateway never falls through to legacy create_file even after VP and
   policy:{async evaluate(){opaCalls++;return {
    allow:true,policy_version:"offline-allow"
   };}},
-  repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"},
+  repository:{authority:"gitea.local",owner:"thesis",repository:"sample-app"},
   executor:{provider:"gitea",async execute(){providerCalls++;
    throw Error("LEGACY GITEA CREATE MUST NEVER RUN");
   }},
@@ -436,7 +436,7 @@ async function createPipeline(t:import("node:test").TestContext,failWriter=false
  const makeReader=(token:string)=>{
   const client=new GiteaClient({
    baseUrl:"http://gitea.local:3000",token,owner:"thesis",
-   repository:"iam-console-poc",fetchFn:async()=>{throw Error("GET stub");}
+   repository:"sample-app",fetchFn:async()=>{throw Error("GET stub");}
   });
   Object.assign(client,{async verifyCreatedFileHeadCas(x:{
    branch:string;path:string;expectedHeadSha:string;
@@ -621,7 +621,7 @@ async function nativeGatewayCreate(t:import("node:test").TestContext,
   store,audit:{emit:(event:unknown)=>{auditEvents.push(event);}},
   verifier,policy,
   repository:{authority:"gitea.local",owner:"thesis",
-   repository:"iam-console-poc"},
+   repository:"sample-app"},
   executor:legacy,authorityOnlyAdmissions:f.admissions,
   authorityOnlyCreateEnabled:true,
   authorityOnlyCreateExecutor:f.executor

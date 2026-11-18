@@ -17,7 +17,7 @@ const PREFIX = /^[a-z0-9][a-z0-9._-]{0,30}\/$/u;
 export const RUNNER_CONTRACT_LABEL = "poc-default";
 export const POLICY_VERSION = 2;
 /** Example repository of the thesis: its known test setup. */
-export const EXAMPLE_REPOSITORY = "iam-console-poc";
+export const EXAMPLE_REPOSITORY = "sample-app";
 /** Starting point for any other repository: a plain npm project. The
  * Engineer reviews and adapts it before Planning (it is part of what they sign). */
 export const NPM_PROJECT_PROFILE_TEMPLATE = validateProjectProfile({

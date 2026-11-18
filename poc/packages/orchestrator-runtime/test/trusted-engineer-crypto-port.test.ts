@@ -7,7 +7,7 @@ import {createOwnerPrivateMcpChildCryptographyPort}
 import {createDirectRustEngineerCredentialPort}
  from "../src/trusted-engineer-direct-core-port.ts";
 
-const uri="gitea://gitea.local/thesis/iam-console-poc";
+const uri="gitea://gitea.local/thesis/sample-app";
 const file=uri+"/branches/feature%2Freview/files/apps/backend/user.ts";
 const time="2026-10-21T09:00:00Z";
 const root=(id:string,index:string,seconds:number)=>({

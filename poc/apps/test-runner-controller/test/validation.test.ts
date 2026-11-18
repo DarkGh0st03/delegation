@@ -4,8 +4,8 @@ import test from "node:test";
 import { validateRunnerRunRequest } from "../src/validation.ts";
 
 const config = {
-  repository: "gitea://gitea.local/thesis/iam-console-poc",
-  branch: "feature/account-suspension"
+  repository: "gitea://gitea.local/thesis/sample-app",
+  branch: "feature/sample-change"
 };
 
 const valid = {
@@ -35,7 +35,7 @@ test("Runner contract rejects caller-controlled command and shell fields", () =>
 
 test("Runner contract rejects moving refs, foreign repositories and profiles", () => {
   assert.throws(
-    () => validateRunnerRunRequest({ ...valid, commit_sha: "feature/account-suspension" }, config),
+    () => validateRunnerRunRequest({ ...valid, commit_sha: "feature/sample-change" }, config),
     /commit_sha/u
   );
   assert.throws(

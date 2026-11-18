@@ -4,10 +4,10 @@ import rego.v1
 import data.thesis.gateway.allow
 import data.thesis.gateway.decision
 
-repo_uri := "gitea://gitea.local/thesis/iam-console-poc"
-feature_uri := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work"
-backend_file := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work/files/apps/backend/src/users/user.service.ts"
-main_file := "gitea://gitea.local/thesis/iam-console-poc/branches/main/files/apps/backend/src/users/user.service.ts"
+repo_uri := "gitea://gitea.local/thesis/sample-app"
+feature_uri := "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsession-work"
+backend_file := "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsession-work/files/apps/backend/src/users/user.service.ts"
+main_file := "gitea://gitea.local/thesis/sample-app/branches/main/files/apps/backend/src/users/user.service.ts"
 
 # Parameters the console would publish for the default test repository.
 default_repos := {repo_uri: {
@@ -33,7 +33,7 @@ make_input(tool, resource, arguments) := {
 	"repository": {
 		"authority": "gitea.local",
 		"owner": "thesis",
-		"repository": "iam-console-poc",
+		"repository": "sample-app",
 	},
 	"verified_delegation": {
 		"presenter_id": "did:thesis:backend-agent",
@@ -66,10 +66,10 @@ test_allow_update_file_on_feature_branch if {
 test_allow_create_file_on_feature_branch if {
 	allow with input as make_input(
 		"create_file",
-		"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work/files/tests/e2e/account-suspension.spec.ts",
+		"gitea://gitea.local/thesis/sample-app/branches/feature%2Fsession-work/files/tests/e2e/sample-change.spec.ts",
 		{
 			"branch": "feature/session-work",
-			"path": "tests/e2e/account-suspension.spec.ts",
+			"path": "tests/e2e/sample-change.spec.ts",
 			"content": "test",
 		},
 	) with data.thesis.console_repositories as default_repos
@@ -126,7 +126,7 @@ test_allow_exact_pull_request_direction if {
 		{
 			"head_branch": "feature/session-work",
 			"base_branch": "main",
-			"title": "Account suspension",
+			"title": "User export",
 		},
 	) with data.thesis.console_repositories as default_repos
 }
@@ -154,7 +154,7 @@ test_allow_run_tests_only_on_feature_branch_with_fixed_profile if {
 test_deny_run_tests_on_main if {
 	not allow with input as make_input(
 		"run_tests",
-		"gitea://gitea.local/thesis/iam-console-poc/branches/main",
+		"gitea://gitea.local/thesis/sample-app/branches/main",
 		{"branch": "main", "profile": "poc-default"},
 	) with data.thesis.console_repositories as default_repos
 }
@@ -185,7 +185,7 @@ test_deny_uncontrolled_repository if {
 		"repository": {
 			"authority": "gitea.local",
 			"owner": "attacker",
-			"repository": "iam-console-poc",
+			"repository": "sample-app",
 		},
 	})
 	not allow with input as bad with data.thesis.console_repositories as default_repos
@@ -247,7 +247,7 @@ test_deny_repository_discovery_on_wrong_resource if {
 test_allow_orchestrator_main_directory_root if {
 	base := make_input(
 		"list_directory",
-		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories",
+		"gitea://gitea.local/thesis/sample-app/branches/main/directories",
 		{"branch": "main", "path": ""},
 	)
 	planning := object.union(base, {"agent_role": "orchestrator"})
@@ -257,7 +257,7 @@ test_allow_orchestrator_main_directory_root if {
 test_allow_orchestrator_main_nested_directory if {
 	base := make_input(
 		"list_directory",
-		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories/apps/backend",
+		"gitea://gitea.local/thesis/sample-app/branches/main/directories/apps/backend",
 		{"branch": "main", "path": "apps/backend"},
 	)
 	planning := object.union(base, {"agent_role": "orchestrator"})
@@ -267,7 +267,7 @@ test_allow_orchestrator_main_nested_directory if {
 test_deny_backend_main_directory if {
 	not allow with input as make_input(
 		"list_directory",
-		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories",
+		"gitea://gitea.local/thesis/sample-app/branches/main/directories",
 		{"branch": "main", "path": ""},
 	) with data.thesis.console_repositories as default_repos
 }
@@ -477,7 +477,7 @@ test_allow_new_specialists_update_on_feature_branch if {
 	every role in ["docs", "data", "devops"] {
 		allow with input as object.union(make_input(
 			"update_file",
-			"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fsession-work/files/README.md",
+			"gitea://gitea.local/thesis/sample-app/branches/feature%2Fsession-work/files/README.md",
 			{"branch": "feature/session-work", "path": "README.md", "content": "updated"},
 		), {"agent_role": role}) with data.thesis.console_repositories as default_repos
 	}

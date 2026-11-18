@@ -70,9 +70,10 @@ export interface RunnerExecutor {
 
 export interface RunnerContractConfig {
   repository: string;
-  branch: string;
-  /** Optional: accept any safe branch under this prefix instead of the
-   * single fixed branch (one Runner serving per-session work branches).
+  /** A single fixed branch; required when no branch_prefix is set. */
+  branch?: string;
+  /** Accept any safe branch under this prefix instead of the single fixed
+   * branch (one Runner serving per-session work branches).
    * The Gateway still binds every run_tests to the exact signed branch. */
   branch_prefix?: string;
   /** Optional: accept every repository of one Gitea organization, e.g.

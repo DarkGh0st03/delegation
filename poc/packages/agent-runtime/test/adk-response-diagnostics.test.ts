@@ -10,7 +10,7 @@ test("safe response diagnostic reports max-token truncation and counts only",()=
       {text:"NEVER_LOG_PRIVATE_REASONING"},
       {functionCall:{name:"update_file",args:{
         content:"NEVER_LOG_PRIVATE_REPOSITORY_CONTENT",
-        branch:"feature/account-suspension",
+        branch:"feature/sample-change",
         path:"NEVER_LOG_PRIVATE_PATH"
       }}}
     ]}} as LlmResponse;

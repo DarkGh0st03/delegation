@@ -26,8 +26,8 @@ import {isProjectTestSource}
 
 const exec=promisify(execFile),digest=s=>createHash("sha256").update(s).digest("hex");
 const head=s=>createHash("sha1").update(s).digest("hex");
-const branch="feature/account-suspension";
-const base="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";
+const branch="feature/sample-change";
+const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change";
 const path="tests/backend/suspend.test.ts",resource=base+"/files/"+path;
 const grant=(operation,res=resource)=>({operation,resource:res});
 // Two independent, deliberately wrong project tests. The model sees neither
@@ -160,7 +160,7 @@ async function fixture(t,source,{forgery=null}={}){
     source_bytes:evidence.source_bytes,excerpt:evidence.excerpt,
     excerpt_truncated:false,evidence_sha256:evidence.evidence_sha256
    }]:[];
-   return {requirement:"Implement Account Suspension with exact signed permissions",
+   return {requirement:"Implement User Export with exact signed permissions",
     branch,maxVerifiedFailures:2,rootPermissions:roots,
     agents:capabilities,
     previousTasks:completed.map(p=>({task_id:p.task_id,agent_id:p.agent_id})),

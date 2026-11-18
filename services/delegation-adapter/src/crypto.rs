@@ -980,7 +980,7 @@ mod tests {
 
     fn permission(operation: Operation) -> Permission {
         Permission::new(
-            String::from("gitea://gitea.local/thesis/iam-console-poc"),
+            String::from("gitea://gitea.local/thesis/sample-app"),
             operation,
         )
         .unwrap()

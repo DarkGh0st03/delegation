@@ -137,7 +137,7 @@ test("gateway direct-mode startup has no Adapter fallback or fake cryptographic 
     bind_host:"127.0.0.1",bind_port:0,
     prepare:{
       audience:"cloud-access-gateway",request_ttl_ms:120_000,
-      repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"}
+      repository:{authority:"gitea.local",owner:"thesis",repository:"sample-app"}
     },
     verifier_mode:"core-rust" as const,
     opa_url:"http://unused",opa_timeout_ms:2000,
@@ -161,7 +161,7 @@ test("gateway-level integration still requires OPA after direct-mode verifier ou
     bind_host:"127.0.0.1",bind_port:0,
     prepare:{
       audience:"cloud-access-gateway",request_ttl_ms:120_000,
-      repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"}
+      repository:{authority:"gitea.local",owner:"thesis",repository:"sample-app"}
     },
     verifier_mode:"core-rust" as const,
     opa_url:"http://unused",opa_timeout_ms:2000,
@@ -190,11 +190,11 @@ test("gateway-level integration still requires OPA after direct-mode verifier ou
 
 test("R299 native scope-result corroboration requires explicit trusted opt-in",async()=>{
  const parent:Permission={
-  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fwork/directories/apps/backend",
+  resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fwork/directories/apps/backend",
   operation:"read_file"
  };
  const file:Permission={
-  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fwork/files/apps/backend/src/user.ts",
+  resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fwork/files/apps/backend/src/user.ts",
   operation:"read_file"
  };
  const req:VerificationRequest={...legacy,required_permission:file};

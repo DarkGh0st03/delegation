@@ -11,9 +11,9 @@ import type {
   PreparedRequestRecord, VerifiedDelegation, VerifierPort, PolicyPort
 } from "../src/types.ts";
 
-const repository = {authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const repository = {authority:"gitea.local",owner:"thesis",repository:"sample-app"};
 const prepareConfig={audience:"cloud-access-gateway",request_ttl_ms:120_000,repository};
-const base="http://gitea:3000/api/v1/repos/thesis/iam-console-poc";
+const base="http://gitea:3000/api/v1/repos/thesis/sample-app";
 const SHA="a".repeat(40);
 const answer=(body:unknown)=>new Response(JSON.stringify(body),{status:200});
 const branch=(name:string)=>({name,commit:{id:SHA}});
@@ -21,7 +21,7 @@ function clientWith(fetchFn:typeof fetch){
   return new GiteaClient({
     baseUrl:"http://gitea:3000",
     token:"gateway-secret",
-    owner:"thesis",repository:"iam-console-poc",fetchFn
+    owner:"thesis",repository:"sample-app",fetchFn
   });
 }
 
@@ -49,14 +49,14 @@ test("repository discovery pins default-branch revision and validates configured
     assert.equal((init?.headers as Record<string,string>).authorization,"token gateway-secret");
     urls.push(String(url));
     if(String(url)===base) return answer({
-      name:"iam-console-poc",owner:{login:"thesis"},default_branch:"main",
+      name:"sample-app",owner:{login:"thesis"},default_branch:"main",
       object_format_name:"sha1"
     });
     if(String(url)===base+"/branches/main")return answer(branch("main"));
     throw Error("unexpected URL "+String(url));
   }) as typeof fetch);
   assert.deepEqual(await client.readRepository(),{
-    full_name:"thesis/iam-console-poc",
+    full_name:"thesis/sample-app",
     default_branch:"main",object_format_name:"sha1",revision:SHA
   });
   assert.deepEqual(urls,[base,base+"/branches/main"]);
@@ -119,7 +119,7 @@ test("read-only provider supports just three discovery tools; all mutations fail
   const calls:string[]=[];
   const client={
     async readRepository(){calls.push("repository");return {
-      full_name:"thesis/iam-console-poc",default_branch:"main",revision:SHA
+      full_name:"thesis/sample-app",default_branch:"main",revision:SHA
     };},
     async listDirectory(){calls.push("directory");return {
       branch:"main",path:"apps/backend",revision:SHA,entries:[]
@@ -139,7 +139,7 @@ test("normal Gitea executor also supports planning reads without calling mutatio
   const calls:string[]=[];
   const client={
     async readRepository(){calls.push("repo");return {
-      full_name:"thesis/iam-console-poc",default_branch:"main",revision:SHA
+      full_name:"thesis/sample-app",default_branch:"main",revision:SHA
     };},
     async listDirectory(){calls.push("list");return {
       branch:"main",path:"apps/backend",revision:SHA,entries:[]
@@ -155,7 +155,7 @@ test("normal Gitea executor also supports planning reads without calling mutatio
 test("canonical scope stays narrow and main reading still requires verifier and OPA",async()=>{
   const permission=deriveRequiredPermission(repository,record("list_directory").request);
   assert.deepEqual(permission,{
-    resource:"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories/apps/backend",
+    resource:"gitea://gitea.local/thesis/sample-app/branches/main/directories/apps/backend",
     operation:"list_directory"
   });
   const request=prepareAuthorization({

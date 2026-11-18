@@ -30,7 +30,7 @@ class OfflineDelegate extends BaseLlm{
 }
 const wrapped=(delegate,options={})=>new DisposablePrivateBudgetedAdkModel({
  delegate,phase:"backend",maxCalls:2,maxReportedTokens:40,
- maxPerCallTokens:24,...options
+ maxPerCallTokens:24,writeBranch:"feature/session-work",...options
 });
 async function collect(model){
  const out=[];
@@ -392,7 +392,7 @@ test("complete metered ADK write records only SHA-256, not source code or fake G
  const source="export const accountSuspended = true;\n";
  const write={content:{role:"model",parts:[{functionCall:{
   id:"not-logged",name:"update_file",
-  args:{branch:"feature/account-suspension",
+  args:{branch:"feature/session-work",
    path:"apps/backend/src/users/user.service.ts",content:source}
  }}]},usageMetadata:reported(3,5)};
  const model=wrapped(new OfflineDelegate(async function*(){yield write;}));
@@ -407,7 +407,7 @@ test("complete metered ADK write records only SHA-256, not source code or fake G
  assert.equal(record.role,"backend");
  assert.equal(record.call_index,1);
  assert.equal(record.operation,"update_file");
- assert.equal(record.branch,"feature/account-suspension");
+ assert.equal(record.branch,"feature/session-work");
  assert.equal(record.source_bytes,Buffer.byteLength(source,"utf8"));
  assert.equal(record.source_sha256,
   createHash("sha256").update(source,"utf8").digest("hex"));
@@ -425,7 +425,7 @@ test("complete metered ADK write records only SHA-256, not source code or fake G
 
 test("unmetered or aborted tool proposal is never recorded as a completed model output",async()=>{
  const proposed={content:{role:"model",parts:[{functionCall:{
-  name:"update_file",args:{branch:"feature/account-suspension",
+  name:"update_file",args:{branch:"feature/session-work",
    path:"apps/frontend/src/api/users-api.ts",content:"attempted"}
  }}]}};
  for(const failure of ["missing-usage","provider-exception"]){
@@ -442,7 +442,7 @@ test("unmetered or aborted tool proposal is never recorded as a completed model 
 });
 
 test("invalid model write arguments and orchestrator writes deny before any ADK tool effect",async()=>{
- const good={branch:"feature/account-suspension",
+ const good={branch:"feature/session-work",
   path:"packages/shared/src/account-status.ts",content:"valid"};
  const variants=[
   {phase:"backend",args:{...good,branch:"main"}},
@@ -468,7 +468,7 @@ test("invalid model write arguments and orchestrator writes deny before any ADK 
 test("late MAX_TOKENS, safety and malformed finish reasons fence an earlier model write",async()=>{
  const proposal={content:{role:"model",parts:[{functionCall:{
   id:"must-not-be-executed",name:"update_file",
-  args:{branch:"feature/account-suspension",
+  args:{branch:"feature/session-work",
    path:"apps/backend/src/users/user.service.ts",
    content:"export const attempted = true;\n"}
  }}]},usageMetadata:reported(3,4)};

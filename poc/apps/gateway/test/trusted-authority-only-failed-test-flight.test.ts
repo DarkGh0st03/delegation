@@ -4,8 +4,8 @@ import {canonicalBranchUri} from "../src/canonical.ts";
 import {assertOriginalIncompleteTestFlight}
  from "../src/trusted-authority-only-failed-test-flight.ts";
 
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const branch="feature/account-suspension";
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
+const branch="feature/sample-change";
 const grant={resource:canonicalBranchUri(repo,branch),operation:"run_tests" as const};
 const root={
  session_id:"session-r340",authority_digest:"a".repeat(64),

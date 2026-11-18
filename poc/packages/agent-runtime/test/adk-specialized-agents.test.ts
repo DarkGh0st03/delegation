@@ -330,9 +330,9 @@ test("Engineer-approved branch is exposed as an exact ADK tool argument, not as 
   assert.deepEqual(calls,[{name:"read_file",args:{branch:b,path:PATHS.backend}}]);
   assert.equal(model.requests.length,2);
   assert.match(built.profile.system_prompt,/feature\/engineer-approved-42/);
-  assert.doesNotMatch(built.profile.system_prompt,/feature\/account-suspension/);
+  assert.doesNotMatch(built.profile.system_prompt,/feature\/sample-change/);
   const denied=await exercise("backend","read_file",{
-    branch:"feature/account-suspension",path:PATHS.backend
+    branch:"feature/sample-change",path:PATHS.backend
   },async()=>({content:"must not be read"}),undefined,false,b);
   assert.deepEqual(denied.calls,[]);
 });
@@ -399,7 +399,7 @@ test("Signed Test-only Task exposes run_tests but no file read/write tools",()=>
 });
 
 test("R195 signed Test preparation cannot call Docker until fresh authorization",()=>{
- const path="apps/backend/tests/account-suspension.test.ts";
+ const path="apps/backend/tests/sample-change.test.ts";
  const pending=createAdkSpecializedAgent({
    role:"test",model:new ScriptedAdkLlm("create_file",{
      branch:BRANCH,path,content:"test content"
@@ -556,7 +556,6 @@ test("Signed Backend plan on an unrelated repository is scoped by exact permissi
     /A read from a previous Task is not evidence for this Task/u);
   assert.match(built.profile.system_prompt,
     /If that read is not authorized, fails, or the source is unavailable, do not attempt to write/u);
-  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
   assert.ok(!built.profile.system_prompt.includes("apps/backend/src/users/user.service.ts"));
   const service=new InMemorySessionService();
   const runner=new Runner({agent:built.agent,appName:"other-repository",
@@ -595,7 +594,6 @@ test("Signed non-demo Frontend read grant never permits a write to its context",
   });
   assert.deepEqual(built.profile.read_only_paths,[context]);
   assert.deepEqual(built.profile.writable_paths,[target]);
-  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension/u);
   const service=new InMemorySessionService();
   const runner=new Runner({agent:built.agent,appName:"signed-frontend",
     sessionService:service});
@@ -621,7 +619,6 @@ test("Signed Test Task may create a newly approved test path without expanding i
   assert.deepEqual(built.agent.tools.map(x=>x.name),["create_file"]);
   assert.deepEqual(built.profile.creatable_paths,[path]);
   assert.deepEqual(built.profile.read_only_paths,[]);
-  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension/u);
   assert.equal(built.agent.name,"delegated_test");
 });
 
@@ -638,7 +635,6 @@ test("R195 dynamic-branch Gateway FunctionTools follow signed grants",()=>{
  assert.deepEqual(built.profile.writable_paths,[path]);
  assert.equal(built.agent.name,"delegated_backend");
  assert.match(built.profile.system_prompt,/feature\/invoice-sort/);
- assert.doesNotMatch(built.profile.system_prompt,/account suspension/i);
 });
 
 test("shared MCP ADK tool telemetry keeps only role, operation and outcome",()=>{
@@ -687,7 +683,6 @@ test("Signed implementation Tasks include generic type-safety self-review withou
     assert.deepEqual(built.profile.writable_paths,[file]);
     assert.deepEqual(built.profile.read_only_paths,[]);
     assert.deepEqual(built.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
-    assert.doesNotMatch(prompt,/Account Suspension/u);
   }
   const testAgent=createAdkSpecializedAgent({
     role:"test",model:new ScriptedAdkLlm("run_tests",{branch,profile:"poc-default"}),
@@ -717,14 +712,12 @@ test("R157 signed A2A Agent capabilities use generic role tools, not demo path t
    {operation:"update_file",path:target}]});
   assert.deepEqual(built.profile.tools,["read_file","update_file","create_file"]);
   assert.deepEqual(built.profile.writable_paths,[target]);
-  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
   assert.ok(!built.profile.system_prompt.includes("user.service.ts"));
  }
  const testAgent=signed({role:"test",rights:[{operation:"create_file",path:target}]});
  assert.deepEqual(testAgent.profile.tools,["read_file","update_file","create_file","run_tests"]);
  assert.deepEqual(testAgent.agent.tools.map(t=>t.name),["create_file"],
   "signed Test file creation does not inherit Docker Runner authority");
- assert.doesNotMatch(testAgent.profile.system_prompt,/Account Suspension|account-suspension/u);
 });
 
 test("R282 signed Backend/Frontend create_file requires exact private approved Task grant",()=>{

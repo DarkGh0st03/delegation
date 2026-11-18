@@ -40,8 +40,8 @@ class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayA
 
 const roles=["backend","frontend","test"] as const;
 type Role=(typeof roles)[number];
-const branch="feature/account-suspension";
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const branch="feature/sample-change";
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
 const PATHS={
  backend:"apps/backend/src/users/account.ts",
  frontend:"apps/frontend/src/pages/UserDetailPage.tsx"

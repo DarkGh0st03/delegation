@@ -5,7 +5,7 @@ import {ProviderConflictError} from "../src/errors.ts";
 
 const oldSha="a".repeat(40),newSha="c".repeat(40),
  oldBlob="b".repeat(40),newBlob="d".repeat(40);
-const branch="feature/account-suspension";
+const branch="feature/sample-change";
 const path="apps/backend/user.ts";
 const oldContent="export const suspended = false;\n";
 const updatedContent="export const suspended = true;\n";
@@ -26,7 +26,7 @@ function fixture(options:{
   const json=(value:object,status=200)=>new Response(JSON.stringify(value),
     {status,headers:{"content-type":"application/json"}});
   const body=init?.body?JSON.parse(String(init.body)):{};
-  if(u.pathname.endsWith("/branches/feature%2Faccount-suspension")&&method==="GET")
+  if(u.pathname.endsWith("/branches/feature%2Fsample-change")&&method==="GET")
    return json({name:branch,commit:{id:head}});
   if(stagingBranch&&u.pathname.endsWith(
     "/branches/"+encodeURIComponent(stagingBranch))&&method==="GET")
@@ -63,7 +63,7 @@ function fixture(options:{
    return json({sha:newSha,parents:[{
     sha:options.forgedParent?"f".repeat(40):oldSha
    }]});
-  if(u.pathname.endsWith("/branches/feature%2Faccount-suspension")&&
+  if(u.pathname.endsWith("/branches/feature%2Fsample-change")&&
      method==="PUT"){
    writes++;casWrites++;
    assert.equal(body.old_commit_id,oldSha);
@@ -78,7 +78,7 @@ function fixture(options:{
  }) as typeof fetch;
  const client=new GiteaClient({
   baseUrl:"http://gitea.local:3000",owner:"thesis",
-  repository:"iam-console-poc",token:"owner-gitea-cas",
+  repository:"sample-app",token:"owner-gitea-cas",
   fetchFn
  });
  const run=()=>client.updateFileWithHeadCas({
@@ -103,7 +103,7 @@ test("R302 CAS stages exact-parent Git commit, atomically promotes and reads act
  assert.deepEqual(v.stats().stageWrites,1);
  assert.deepEqual(v.stats().writes,3);
  assert.ok(v.stats().calls.some(x=>x.startsWith("PUT ")&&
-  x.includes("feature%2Faccount-suspension")));
+  x.includes("feature%2Fsample-change")));
  await assert.rejects(v.run(),ProviderConflictError);
  assert.equal(v.stats().casWrites,1);
 });

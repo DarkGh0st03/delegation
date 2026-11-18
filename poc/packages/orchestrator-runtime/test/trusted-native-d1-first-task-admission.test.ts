@@ -23,8 +23,8 @@ import {DurableNativeD1FirstTaskAdmissionJournal,
 class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
  get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
-const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const branch="feature/account-suspension",branchUri=canonicalBranchUri(repo,branch);
+const repo={authority:"gitea.local",owner:"thesis",repository:"sample-app"};
+const branch="feature/sample-change",branchUri=canonicalBranchUri(repo,branch);
 const testPerm={resource:branchUri,operation:"run_tests" as const};
 const writePerm={resource:canonicalFileUri(repo,branch,
  "apps/backend/src/users/user.service.ts"),operation:"update_file" as const};
@@ -38,7 +38,7 @@ const intent={
  runtime_task_id:"dispatch_"+"X".repeat(22),epoch:3,
  agent_did:"did:thesis:test",credential_id:"child-r341",
  request_id:"request-r341",request_fingerprint:"b".repeat(64),
- repository:"thesis/iam-console-poc",branch,
+ repository:"thesis/sample-app",branch,
  expected_head_sha:"c".repeat(40),runner_profile:"poc-default" as const,
  prepared_at_ms:1762400000000,runner_execution_authorized:false as const
 };
@@ -295,7 +295,7 @@ test("R342 forged R341 admission or reused status cannot reach native Rust",asyn
 test("R384.3 native signed CREATE D1 registers exactly one new Task only after original Runner FAIL",async()=>{
  const permission={
   resource:canonicalFileUri(repo,branch,
-   "apps/backend/src/users/account-suspension-created.ts"),
+   "apps/backend/src/users/sample-change-created.ts"),
   operation:"create_file" as const
  };
  const extendedRoot={...root,root_permissions:[
@@ -356,7 +356,7 @@ test("R384.3 CREATE D1 cannot register from a forged Runner FAIL or an unsigned 
 test("R384.3 original CREATE D1 Child proceeds from signed FAIL through Gateway enrollment, without provider effect",async()=>{
  const create={
   resource:canonicalFileUri(repo,branch,
-   "apps/backend/src/users/account-suspension-created.ts"),
+   "apps/backend/src/users/sample-change-created.ts"),
   operation:"create_file" as const
  };
  const grantedRoot={...root,root_permissions:[

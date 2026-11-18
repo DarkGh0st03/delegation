@@ -3,7 +3,7 @@
  *
  * This type does NOT grant authority. The active Engineer-signed plan,
  * scoped Rust DC/VP, Gateway and OPA independently enforce authorization.
- * No static Account Suspension role-permission templates are authorized.
+ * No static role-permission templates are authorized.
  */
 export type TemplateOperation =
   | "read_repository"

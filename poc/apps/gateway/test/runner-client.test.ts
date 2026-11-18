@@ -6,8 +6,8 @@ const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 
 const request = {
   request_id: "req-runner-client",
-  repository: "gitea://gitea.local/thesis/iam-console-poc",
-  branch: "feature/account-suspension",
+  repository: "gitea://gitea.local/thesis/sample-app",
+  branch: "feature/sample-change",
   commit_sha: "a".repeat(40),
   profile: "poc-default" as const
 };

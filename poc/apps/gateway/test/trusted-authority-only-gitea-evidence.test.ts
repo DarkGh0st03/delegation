@@ -45,8 +45,8 @@ async function fixture(fn:(arg:{
  const record=()=>({
   schema:"authority-only-gitea-read-evidence-v1",
   kind:"gateway_read_file_completed",...expected,
-  repository:"thesis/iam-console-poc",
-  branch:"feature/account-suspension",path:"apps/backend/user.ts",
+  repository:"thesis/sample-app",
+  branch:"feature/sample-change",path:"apps/backend/user.ts",
   revision,blob_sha:blobSha,source_sha256:sha(contents),
   source_bytes:Buffer.byteLength(contents),
   policy_version:"test-only-opa-v1",
@@ -69,8 +69,8 @@ async function fixture(fn:(arg:{
     "token trusted-gitea-read-only");
    const u=new URL(String(url));
    const returnedRev=opts.revision??revision;
-   if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
-    return new Response(JSON.stringify({name:"feature/account-suspension",
+   if(u.pathname.endsWith("/branches/feature%2Fsample-change"))
+    return new Response(JSON.stringify({name:"feature/sample-change",
      commit:{id:returnedRev}}));
    if(u.pathname.endsWith("/contents/apps/backend/user.ts")){
     assert.equal(u.searchParams.get("ref"),revision);
@@ -83,11 +83,11 @@ async function fixture(fn:(arg:{
   };
   return new AuthenticatedGiteaReadCompletionObserver({
    directory,key:opts.key??key,
-   repository:"thesis/iam-console-poc",
-   branch:"feature/account-suspension",
+   repository:"thesis/sample-app",
+   branch:"feature/sample-change",
    giteaClient:new GiteaClient({
     baseUrl:"http://gitea.local:3000",owner:"thesis",
-    repository:"iam-console-poc",token:"trusted-gitea-read-only",
+    repository:"sample-app",token:"trusted-gitea-read-only",
     fetchFn:fetchFn as typeof fetch
    }),nowMs:()=>Date.parse("2026-11-05T10:01:00Z")
   });
@@ -102,8 +102,8 @@ function sourceClient(token:string,head=revision,data=contents){
  const fetchFn=async(url:URL|string,init?:RequestInit)=>{
   assert.equal((init?.headers as Record<string,string>)?.authorization,"token "+token);
   const u=new URL(String(url));
-  if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
-   return new Response(JSON.stringify({name:"feature/account-suspension",commit:{id:head}}));
+  if(u.pathname.endsWith("/branches/feature%2Fsample-change"))
+   return new Response(JSON.stringify({name:"feature/sample-change",commit:{id:head}}));
   if(u.pathname.endsWith("/contents/apps/backend/user.ts"))
    return new Response(JSON.stringify({type:"file",path:"apps/backend/user.ts",
     encoding:"base64",content:Buffer.from(data).toString("base64"),
@@ -111,7 +111,7 @@ function sourceClient(token:string,head=revision,data=contents){
   throw Error("Unexpected Gitea URI "+u.pathname);
  };
  return new GiteaClient({
-  baseUrl:"http://gitea.local:3000",owner:"thesis",repository:"iam-console-poc",
+  baseUrl:"http://gitea.local:3000",owner:"thesis",repository:"sample-app",
   token,fetchFn:fetchFn as typeof fetch
  });
 }
@@ -119,10 +119,10 @@ function originalReadRecord():PreparedRequestRecord{
  return {
   request_id:expected.request_id,task_id:expected.runtime_task_id,
   agent_role:"backend",
-  request:{tool:"read_file",arguments:{branch:"feature/account-suspension",
+  request:{tool:"read_file",arguments:{branch:"feature/sample-change",
    path:"apps/backend/user.ts"}},
   required_permission:{operation:"read_file",
-   resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/user.ts"},
+   resource:"gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/user.ts"},
   audience:"cloud-access-gateway",challenge:"r3573-local",
   request_fingerprint:expected.request_fingerprint,
   pinned_revision:revision,authority_only_digest:expected.authority_digest,
@@ -135,7 +135,7 @@ const verifiedRead:VerifiedDelegation={
  presenter_id:expected.agent_did,credential_id:expected.credential_id,
  issuer_id:"did:thesis:engineer",root_credential_id:expected.root_credential_id,
  permissions:[{operation:"read_file",resource:
-  "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/user.ts"}],
+  "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/user.ts"}],
  hierarchy_depth:1,expiration:"999999999999"
 };
 function fakeReadAdmission(){
@@ -156,7 +156,7 @@ test("R357.3 exact witnessed Gitea read publishes only owner-authenticated bytes
   const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
    directory,key,admissions:gate,
    independentGiteaClient:sourceClient("separate-read-only"),
-   repository:"thesis/iam-console-poc",branch:"feature/account-suspension",
+   repository:"thesis/sample-app",branch:"feature/sample-change",
    nowMs:()=>Date.parse("2026-11-05T10:00:00Z")
   });
   assert.equal(publisher.isForAdmissions(gate),true);
@@ -185,7 +185,7 @@ test("R357.3 missing HEAD pin, forged result or moved independent Gitea HEAD nev
   const gate=fakeReadAdmission(),record=originalReadRecord();
   const real=await new GiteaExecutor(sourceClient("trusted-gateway")).execute(record);
   const opts={directory,key,admissions:gate,
-   repository:"thesis/iam-console-poc",branch:"feature/account-suspension",
+   repository:"thesis/sample-app",branch:"feature/sample-change",
    nowMs:()=>Date.parse("2026-11-05T10:00:00Z")};
   const live=new TrustedGatewayGiteaReadEvidencePublisher({
    ...opts,independentGiteaClient:sourceClient("read-only")
@@ -263,9 +263,9 @@ test("R376.2 only the independent authenticated read exposes a bounded source ob
  await fixture(async({record,sign,save,reader})=>{
   await save(sign(record()));
   const observer=reader();
-  assert.equal(observer.isForRepository("thesis/iam-console-poc","feature/account-suspension"),true);
-  assert.equal(observer.isForRepository("foreign/iam-console-poc","feature/account-suspension"),false);
-  assert.equal(observer.isForRepository("thesis/iam-console-poc","feature/another"),false);
+  assert.equal(observer.isForRepository("thesis/sample-app","feature/sample-change"),true);
+  assert.equal(observer.isForRepository("foreign/sample-app","feature/sample-change"),false);
+  assert.equal(observer.isForRepository("thesis/sample-app","feature/another"),false);
   const value=await observer.observeSource(expected);
   assert.equal(value.status,"owner_verified_bounded_gitea_source_observation");
   assert.equal(value.task_id,expected.task_id);
@@ -283,7 +283,7 @@ test("R376.2 spoofed read-observer prototype cannot authenticate repository or s
   await save(sign(record()));
   const fake=Object.create(AuthenticatedGiteaReadCompletionObserver.prototype);
   assert.throws(()=>AuthenticatedGiteaReadCompletionObserver.prototype
-   .isForRepository.call(fake,"thesis/iam-console-poc","feature/account-suspension"),
+   .isForRepository.call(fake,"thesis/sample-app","feature/sample-change"),
    TypeError);
   await assert.rejects(AuthenticatedGiteaReadCompletionObserver.prototype
    .observeSource.call(fake,expected),TypeError);
@@ -329,8 +329,8 @@ test("R294 symlinked evidence file cannot impersonate Gateway-owned record",asyn
 test("R294 evidence reader cannot construct from a non-private or unpinned source",async()=>{
  await fixture(async({directory})=>{
   assert.throws(()=>new AuthenticatedGiteaReadCompletionObserver({
-   directory:"relative",key,repository:"thesis/iam-console-poc",
-   branch:"feature/account-suspension",giteaClient:{} as never
+   directory:"relative",key,repository:"thesis/sample-app",
+   branch:"feature/sample-change",giteaClient:{} as never
   }),/independent Gitea reader/);
  });
 });

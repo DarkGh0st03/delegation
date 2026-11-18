@@ -12,8 +12,8 @@ import {TrustedAuthorityOnlyAdkDecisionProposer as ProposerBase}
 /** Test default: the sample repository test-source profile. */
 class Proposer extends ProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
 
-const branch="feature/account-suspension";
-const root="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";
+const branch="feature/sample-change";
+const root="gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change";
 const file=path=>root+"/files/"+path;
 const edit="apps/backend/src/users/account.ts",dep="apps/backend/src/users/types.ts";
 const testFile="tests/backend/account.test.ts";
@@ -32,7 +32,7 @@ class OneChoice extends BaseLlm{
 }
 const decision=(agent_id,permissions)=>({action:"delegate",task:{task_id:"t-"+agent_id+"-1",
  agent_id,depends_on:["root-branch"],permissions,instruction:"Implement the change in the edited file"}});
-const config=choice=>({model:new OneChoice(choice),requirement:"Add account suspension",branch,
+const config=choice=>({model:new OneChoice(choice),requirement:"Add user export",branch,
  rootPermissions,agents:{orchestrator:{capabilities:["create_branch"]},
   backend:{capabilities:["read_file","update_file","create_file"]},
   frontend:{capabilities:["read_file","update_file"]},

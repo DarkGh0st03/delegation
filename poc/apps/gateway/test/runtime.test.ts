@@ -15,7 +15,7 @@ const baseConfig = {
     repository: {
       authority: "gitea.local",
       owner: "thesis",
-      repository: "iam-console-poc"
+      repository: "sample-app"
     }
   },
   opa_url: "http://unused",

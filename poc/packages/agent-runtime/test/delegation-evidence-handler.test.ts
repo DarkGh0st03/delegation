@@ -9,7 +9,7 @@ const prepared = {
   challenge: "phase8a-challenge",
   required_permission: {
     resource:
-      "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/src/users/user.service.ts",
+      "gitea://gitea.local/thesis/sample-app/branches/feature%2Fsample-change/files/apps/backend/src/users/user.service.ts",
     operation: "read_file"
   },
   expires_at: "2026-10-05T18:00:00.000Z"

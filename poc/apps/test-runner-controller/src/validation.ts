@@ -69,7 +69,7 @@ export function validateRunnerRunRequest(
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(rest) || rest.endsWith(".lock")) {
       throw new Error("branch is outside the controlled Runner branch prefix");
     }
-  } else if (branch !== config.branch) {
+  } else if (config.branch === undefined || branch !== config.branch) {
     throw new Error("branch is outside the controlled Runner branch");
   }
   if (!/^[0-9a-f]{40}$/u.test(commitSha)) {

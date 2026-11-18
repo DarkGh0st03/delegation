@@ -30,7 +30,7 @@ const config = {
   repository: {
     authority: "gitea.local",
     owner: "thesis",
-    repository: "iam-console-poc"
+    repository: "sample-app"
   }
 };
 
@@ -43,7 +43,7 @@ function prepared(now = 1_800_000_000_000) {
       agent_role: "backend",
       tool: "read_file",
       arguments: {
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         path: "apps/backend/src/users/user.service.ts"
       }
     },
@@ -358,7 +358,7 @@ test("successful Gitea mutation records resulting provider identifiers without s
         provider: "gitea",
         performed: true,
         tool: "update_file",
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         path: "apps/backend/src/users/user.service.ts",
         revision: "commit-after",
         commit_sha: "commit-after",
@@ -398,7 +398,7 @@ test("successful Gitea pull request records structured PR audit identifiers", as
         pull_request_id: 77,
         pull_request_number: 5,
         url: "http://gitea/pulls/5",
-        head_branch: "feature/account-suspension",
+        head_branch: "feature/sample-change",
         base_branch: "main",
         revision: "head123"
       };
@@ -431,7 +431,7 @@ test("successful Controlled Runner execution records Runner-specific audit metad
       agent_role: "test",
       tool: "run_tests",
       arguments: {
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         profile: "poc-default"
       }
     },
@@ -456,7 +456,7 @@ test("successful Controlled Runner execution records Runner-specific audit metad
         provider: "runner",
         performed: true,
         tool: "run_tests",
-        branch: "feature/account-suspension",
+        branch: "feature/sample-change",
         revision: "d".repeat(40),
         tested_commit_sha: "d".repeat(40),
         runner_profile: "poc-default",

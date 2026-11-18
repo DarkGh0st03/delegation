@@ -1,7 +1,8 @@
-/** Fixed demo check IDs and numeric locations only. Never echo test output,
- * source, paths, titles, expected/received values or credentials. Diagnostic
- * observations are untrusted and do not authorize repair. */
-const IDS={"user-profile":"baseline_user_profile","account-suspension":"account_suspension"};
+/** Bounded spec-file slugs and numeric locations only. Never echo test
+ * output, source, full paths, titles, expected/received values or
+ * credentials. Diagnostic observations are untrusted and do not authorize
+ * repair. */
+const CHECK_ID=/^[a-z0-9][a-z0-9_-]{0,63}$/u;
 const KINDS=["visibility","url","strict_locator","connection_refused","startup_port_timeout","test_timeout"];
 const exact=(x,keys)=>x&&typeof x==="object"&&!Array.isArray(x)&&
   Object.keys(x).sort().join(",")===keys.slice().sort().join(",");
@@ -14,7 +15,7 @@ export function safeProjectE2eFailureDiagnostic(raw){
      typeof raw.timed_out!=="boolean"||typeof raw.unclassified_failure!=="boolean"||
      raw.unclassified_failure!==(raw.locations.length===0||raw.failure_kinds.length===0)||
      raw.locations.some(x=>!exact(x,["check_id","line","column"])||
-       !Object.values(IDS).includes(x.check_id)||
+       typeof x.check_id!=="string"||!CHECK_ID.test(x.check_id)||
        !Number.isSafeInteger(x.line)||x.line<1||x.line>100000||
        !Number.isSafeInteger(x.column)||x.column<1||x.column>10000))return null;
   return Object.freeze({locations:Object.freeze(raw.locations.map(x=>
@@ -26,8 +27,8 @@ export function extractProjectE2eFailureDiagnostic(stdout,stderr,timedOut){
   const text=(String(stdout)+"\n"+String(stderr)).slice(0,120000)
     .replace(/\x1b\[[0-9;]*m/gu,"");
   const locations=[];
-  for(const m of text.matchAll(/(?:^|[\s/(])(?:tests\/e2e\/)?(user-profile|account-suspension)\.spec\.ts:(\d{1,6}):(\d{1,5})(?=\D|$)/gu)){
-    const row={check_id:IDS[m[1]],line:Number(m[2]),column:Number(m[3])};
+  for(const m of text.matchAll(/(?:^|[\s/(])(?:[\w.-]+\/)*([a-z0-9][a-z0-9_-]{0,63})\.spec\.tsx?:(\d{1,6}):(\d{1,5})(?=\D|$)/gu)){
+    const row={check_id:m[1],line:Number(m[2]),column:Number(m[3])};
     if(row.line<1||row.line>100000||row.column<1||row.column>10000)continue;
     if(!locations.some(x=>JSON.stringify(x)===JSON.stringify(row)))locations.push(row);
     if(locations.length===8)break;

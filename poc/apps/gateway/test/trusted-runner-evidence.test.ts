@@ -12,11 +12,11 @@ import {TrustedGatewayRunnerPassEvidencePublisher,
 import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
 const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 
-const branch="feature/account-suspension";
+const branch="feature/sample-change";
 const head="a".repeat(40);
 const request={
  request_id:"request-r303",
- repository:"gitea://gitea.local/thesis/iam-console-poc",
+ repository:"gitea://gitea.local/thesis/sample-app",
  branch,commit_sha:head,profile:"poc-default" as const
 };
 const expected={
@@ -29,7 +29,7 @@ const expected={
 const intent={
  schema:"authority-only-runner-intent-v1" as const,
  kind:"runner_test_commit_preflight_only" as const,
- ...expected,repository:"thesis/iam-console-poc",branch,
+ ...expected,repository:"thesis/sample-app",branch,
  expected_head_sha:head,runner_profile:"poc-default" as const,
  prepared_at_ms:1762340000000,runner_execution_authorized:false as const
 };
@@ -61,11 +61,11 @@ async function fixture(fn:(x:{
  let actualHead=head;
  const gitea=new GiteaClient({
   baseUrl:"http://gitea.local:3000",token:"independent-only",
-  owner:"thesis",repository:"iam-console-poc",
+  owner:"thesis",repository:"sample-app",
   fetchFn:(async(raw:URL|string,init?:RequestInit)=>{
    assert.equal(init?.method,"GET");
    assert.ok(new URL(String(raw)).pathname.endsWith(
-    "/branches/feature%2Faccount-suspension"));
+    "/branches/feature%2Fsample-change"));
    return new Response(JSON.stringify({name:branch,
     commit:{id:actualHead}}));
   }) as typeof fetch
@@ -87,11 +87,11 @@ async function fixture(fn:(x:{
    publisher:new TrustedGatewayRunnerPassEvidencePublisher({
     directory:dir,key,runnerClient:runner,
     independentGiteaClient:gitea,
-    repository:"thesis/iam-console-poc",branch,nowMs
+    repository:"thesis/sample-app",branch,nowMs
    }),
    observer:new AuthenticatedRunnerCompletionObserver({
     directory:dir,key,giteaClient:gitea,
-    repository:"thesis/iam-console-poc",branch,nowMs
+    repository:"thesis/sample-app",branch,nowMs
    }),
    setHead:value=>{actualHead=value;}
   });
@@ -162,7 +162,7 @@ test("R353.0 original authenticated PASS exposes only independently current test
   const digest=await publisher.publish(intent,expected,request,result,"opa");
   const proof=await observer.observeTestedHead(expected);
   assert.equal(proof.tested_commit_sha,head);
-  assert.equal(proof.repository,"thesis/iam-console-poc");
+  assert.equal(proof.repository,"thesis/sample-app");
   assert.equal(proof.branch,branch);
   assert.equal(proof.project_tests,"pass");
   assert.equal(proof.completion.evidence_sha256,digest);
@@ -190,14 +190,14 @@ test("R353.0 a tampered PASS cannot provide a PR tested SHA",async()=>{
 test("R353.0 observer owner binding rejects foreign repository, branch and prototype spoof",async()=>{
  await fixture(async({observer})=>{
   assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
-   observer,"thesis/iam-console-poc",branch),true);
+   observer,"thesis/sample-app",branch),true);
   assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
    observer,"thesis/other",branch),false);
   assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
-   observer,"thesis/iam-console-poc","feature/other"),false);
+   observer,"thesis/sample-app","feature/other"),false);
   assert.equal(AuthenticatedRunnerCompletionObserver.isForRepository(
    Object.create(AuthenticatedRunnerCompletionObserver.prototype),
-   "thesis/iam-console-poc",branch),false);
+   "thesis/sample-app",branch),false);
  });
 });
 

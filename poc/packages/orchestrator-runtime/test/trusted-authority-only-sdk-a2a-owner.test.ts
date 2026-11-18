@@ -38,8 +38,8 @@ class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayA
  get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const repo={authority:"gitea.local",owner:"thesis",
- repository:"iam-console-poc"};
-const branch="feature/account-suspension";
+ repository:"sample-app"};
+const branch="feature/sample-change";
 const path="apps/backend/src/users/account.ts";
 const permission={resource:canonicalFileUri(repo,branch,path),
  operation:"update_file" as const};
