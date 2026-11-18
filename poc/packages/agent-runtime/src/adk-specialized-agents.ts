@@ -223,6 +223,14 @@ export function createAdkSpecializedAgent(
       "Document only what the code and files you read in this Task show: never describe features, commands or options that do not exist.",
       "Keep the existing structure, language and tone of the document; change only the parts the instruction concerns."
     ]:[]),
+    ...(config.role==="frontend"?[
+      "New or changed UI must look like the rest of the application: reuse the existing CSS classes, components and spacing you read; never leave unstyled controls. If new styles are needed and the stylesheet is granted, add them there in the same visual style (colours, radius, spacing).",
+      "Give every input a visible label and a placeholder; place filters together in one row above the list they filter.",
+      "Filters over a small closed set of values (department, status, role) are a select with an 'All' option, built from the values in the loaded data; free-text search matches as you type, case-insensitive, on partial text."
+    ]:[]),
+    ...(config.role==="backend"?[
+      "Text filters on list endpoints match partial text case-insensitively unless the instruction says exact; filters on a closed set of values (e.g. department) compare case-insensitively on the whole value."
+    ]:[]),
     ...(config.role==="data"?[
       "Keep data files syntactically valid (e.g. well-formed JSON, CSV with the same columns) and consistent with the types and code that read them.",
       "Add or change only the records and fields the instruction asks for; never remove or rewrite existing records."
