@@ -126,7 +126,8 @@ test("multi-read Planning proposes only the permission scope, pinned to the exac
           id:"trusted-discovery-"+this.turns,name:step.name,args:step.args
         }}]}};return;
       }
-      yield {content:{role:"model",parts:[{text:JSON.stringify(proposed)}]}};
+      // Gemini often wraps the JSON in one Markdown fence: accepted as is.
+      yield {content:{role:"model",parts:[{text:"```json\n"+JSON.stringify(proposed,null,2)+"\n```"}]}};
     }
     override connect():Promise<BaseLlmConnection>{
       return Promise.reject(Error("No paid model in offline tests"));

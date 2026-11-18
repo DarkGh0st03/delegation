@@ -604,7 +604,13 @@ export class TrustedAdkReadOnlyPlanner {
         fail("no verified read-only grounded proposal");
       }
       let proposed:unknown;
-      try{proposed=JSON.parse(finalText);}catch{
+      // One JSON value, optionally wrapped in a single Markdown code fence
+      // (session s-f7477d387106: three drafts came as ```json ... ```). Only
+      // the exact surrounding fence is removed; the value is then validated
+      // exactly as any other draft (same rule as the Task decisions).
+      const fenced=/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```$/u.exec(finalText);
+      const jsonText=fenced?fenced[1]!.trim():finalText;
+      try{proposed=JSON.parse(jsonText);}catch{
         const rejection={stage:"json" as const,reason:"invalid_json" as const};
         cfg.onObservation?.(Object.freeze({kind:"plan_rejection",...rejection}));
         if(revisions<maxRevisions&&model.turns<model.limit&&!planningDeadline.aborted){
