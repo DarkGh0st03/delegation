@@ -8,7 +8,7 @@ import {execFileSync} from "node:child_process";
 import {ConsoleAuth, hashPassword} from "../src/auth.mjs";
 import {createConsoleHandler} from "../src/app.mjs";
 import {ConsoleStore} from "../src/store.mjs";
-import {StagingStore, defaultStagingProfile, stagingProfileDigest, validateStagingProfile} from "../src/staging.mjs";
+import {StagingStore, stagingProfileDigest, validateStagingProfile} from "../src/staging.mjs";
 import {StagingDeployer} from "../../../deploy/staging/deployer.mjs";
 
 const SHA1 = "1".repeat(40), SHA2 = "2".repeat(40);
@@ -27,19 +27,14 @@ test("staging profile: explicit image version, both commands, valid port", () =>
     {...PROFILE, build: " "}, {...PROFILE, start: ""}, {...PROFILE, port: 0}, {...PROFILE, port: 70000},
     {...PROFILE, enabled: "yes"}, {...PROFILE, extra: 1}, {...PROFILE, version: 2}
   ]) assert.throws(() => validateStagingProfile(bad), /Profilo di staging non valido/u);
-  // The example repository has a known default; others have none.
-  assert.equal(defaultStagingProfile("sample-app").port, 5173);
-  assert.equal(defaultStagingProfile("other"), undefined);
   assert.notEqual(stagingProfileDigest(PROFILE), stagingProfileDigest({...PROFILE, port: 3001}));
 });
 
-test("staging store: default seeded once, saved profile kept, status read from the deployer", (t) => {
+test("staging store: no name-based default, saved profile kept, status read from the deployer", (t) => {
   const dir = tempDir(t);
   const store = new StagingStore(dir);
-  assert.equal(store.profile("sample-app").source, "default");
-  store.ensureDefault("sample-app");
-  store.save("sample-app", {...defaultStagingProfile("sample-app"), enabled: false});
-  store.ensureDefault("sample-app");                 // does not overwrite
+  assert.equal(store.profile("sample-app").source, "none");
+  store.save("sample-app", {...PROFILE, enabled: false});
   assert.equal(store.profile("sample-app").profile.enabled, false);
   assert.equal(store.summary("greeter").configured, false);
   assert.throws(() => store.save("../x", PROFILE), /Invalid repository name/u);
@@ -246,17 +241,18 @@ test("console API: App column, staging profile edit, delete removes the profile"
 
   const repos = await (await call("GET", "/api/repos", undefined, cookie)).json();
   assert.equal(repos.staging_available, true);
-  assert.equal(repos.repositories[0].staging.enabled, true, "known default seeded");
-  assert.equal(staging.profile("sample-app").source, "saved");
+  assert.equal(repos.repositories[0].staging.configured, false, "no name-based default");
+  assert.equal(staging.profile("sample-app").source, "none");
 
   const bad = await call("PUT", "/api/repos/sample-app/staging", {...PROFILE, image: "node:latest"}, cookie);
   assert.equal(bad.status, 400);
   const saved = await (await call("PUT", "/api/repos/sample-app/staging", PROFILE, cookie)).json();
   assert.equal(saved.profile.start, "node server.js");
+  assert.equal(staging.profile("sample-app").source, "saved");
   assert.equal((await call("PUT", "/api/repos/unknown/staging", PROFILE, cookie)).status, 404);
 
   assert.equal((await call("DELETE", "/api/repos/sample-app", undefined, cookie)).status, 200);
-  assert.equal(staging.profile("sample-app").source, "default", "saved profile removed with the repository");
+  assert.equal(staging.profile("sample-app").source, "none", "saved profile removed with the repository");
 });
 
 test("deployer: several repositories run side by side, each on its own port and image", async (t) => {

@@ -1,4 +1,5 @@
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,readFile,readdir,rm} from "node:fs/promises";
@@ -28,7 +29,7 @@ test("private Vitest diagnostics retain failed IDs/messages of canonical project
 test("Runner keeps machine-readable assertions exclusively in private SHA-bound manifest",async()=>{
  const root=await mkdtemp(join(tmpdir(),"private-vitest-"));
  try{
-  const request={request_id:"r",repository:"gitea://fixture/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)};
+  const request={request_id:"r",repository:"gitea://fixture/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const,project_profile:SAMPLE_PROJECT_PROFILE,project_profile_sha256:projectProfileDigest(SAMPLE_PROJECT_PROFILE)};
   const commands:string[][]=[];
   const runner=new IsolatedDockerRunnerExecutor({gitea_base_url:"http://fixture.invalid",gitea_token:"private-token",phase_timeout_ms:1000,log_dir:join(root,"logs"),failure_evidence_dir:join(root,"evidence")},{
    fetch_fn:async url=>String(url).includes("/archive/")?new Response("exact archive"):new Response(JSON.stringify({commit:{id:request.commit_sha}})),
@@ -55,7 +56,7 @@ test("Runner keeps machine-readable assertions exclusively in private SHA-bound 
 test("Runner FAIL response names the failed tests with their cleaned error message",async()=>{
  const root=await mkdtemp(join(tmpdir(),"runner-test-failures-"));
  try{
-  const request={request_id:"r",repository:"gitea://fixture/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)};
+  const request={request_id:"r",repository:"gitea://fixture/o/r",branch:"feature/test",commit_sha:"a".repeat(40),profile:"poc-default" as const,project_profile:SAMPLE_PROJECT_PROFILE,project_profile_sha256:projectProfileDigest(SAMPLE_PROJECT_PROFILE)};
   // No private evidence directory: the messages still reach the response.
   const runner=new IsolatedDockerRunnerExecutor({gitea_base_url:"http://fixture.invalid",gitea_token:"private-token",phase_timeout_ms:1000,log_dir:join(root,"logs")},{
    fetch_fn:async url=>String(url).includes("/archive/")?new Response("exact archive"):new Response(JSON.stringify({commit:{id:request.commit_sha}})),

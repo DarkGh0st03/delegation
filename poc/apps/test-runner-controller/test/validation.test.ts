@@ -1,4 +1,5 @@
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { validateRunnerRunRequest } from "../src/validation.ts";
@@ -14,8 +15,8 @@ const valid = {
   branch: config.branch,
   commit_sha: "a".repeat(40),
   profile: "poc-default",
-  project_profile: IAM_CONSOLE_PROJECT_PROFILE,
-  project_profile_sha256: projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)
+  project_profile: SAMPLE_PROJECT_PROFILE,
+  project_profile_sha256: projectProfileDigest(SAMPLE_PROJECT_PROFILE)
 };
 
 test("Runner contract accepts only the frozen repository, branch, exact SHA and profile", () => {
@@ -65,7 +66,7 @@ test("Runner branch prefix accepts per-session branches and nothing else", () =>
 test("Runner runs only the Engineer-approved profile it was sent, bound by digest", () => {
   assert.throws(() => validateRunnerRunRequest({ ...valid, project_profile_sha256: "0".repeat(64) }, config),
     /does not match the project profile/u);
-  const weakened = structuredClone(IAM_CONSOLE_PROJECT_PROFILE) as {phases: {command: string}[]};
+  const weakened = structuredClone(SAMPLE_PROJECT_PROFILE) as {phases: {command: string}[]};
   weakened.phases[2].command = "true";
   assert.throws(() => validateRunnerRunRequest({ ...valid, project_profile: weakened }, config),
     /does not match the project profile/u, "a changed command no longer matches the signed digest");

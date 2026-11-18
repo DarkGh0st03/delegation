@@ -1,8 +1,9 @@
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { RunnerClient } from "../src/runner-client.ts";
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
-const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(SAMPLE_PROJECT_PROFILE);
 
 const request = {
   request_id: "req-runner-client",
@@ -16,7 +17,7 @@ test("RunnerClient sends the exact authorized SHA and validates the response bin
   let observedBody: unknown;
   let observedAuthorization = "";
 
-  const client = new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const client = new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl: "http://runner.internal:8095/",
     gatewayToken: "gateway-runner-secret",
     fetchFn: async (_url, init) => {
@@ -47,14 +48,14 @@ test("RunnerClient sends the exact authorized SHA and validates the response bin
   const result = await client.run(request);
 
   assert.equal(observedAuthorization, "Bearer gateway-runner-secret");
-  assert.deepEqual(observedBody,{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
+  assert.deepEqual(observedBody,{...request,project_profile:SAMPLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
   assert.equal(result.tested_commit_sha, request.commit_sha);
   assert.equal(result.status, "pass");
   assert.equal(result.project_tests?.status, "pass");
 });
 
 test("RunnerClient fails closed on a mismatched tested SHA", async () => {
-  const client = new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const client = new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl: "http://runner.internal:8095",
     gatewayToken: "gateway-runner-secret",
     fetchFn: async () =>
@@ -79,7 +80,7 @@ test("RunnerClient fails closed on a mismatched tested SHA", async () => {
 });
 
 test("RunnerClient maps Runner failures to provider unavailability", async () => {
-  const client = new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const client = new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl: "http://runner.internal:8095",
     gatewayToken: "gateway-runner-secret",
     fetchFn: async () =>
@@ -100,7 +101,7 @@ test("AUD-010: Gateway caller abort reaches outgoing authenticated Runner HTTP r
   let requestStarted!:()=>void;
   const started=new Promise<void>(resolve=>{requestStarted=resolve;});
   let receivedSignal:AbortSignal|undefined;
-  const client=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const client=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",
     gatewayToken:"gateway-runner-secret",
     fetchFn:async(_url,init)=>{
@@ -125,7 +126,7 @@ test("AUD-010: already aborted Gateway signal prevents a Runner HTTP call",async
   const aborter=new AbortController();
   aborter.abort();
   let calls=0;
-  const client=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const client=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",
     gatewayToken:"gateway-runner-secret",
     fetchFn:async()=>{calls++;return new Response("{}");}
@@ -135,7 +136,7 @@ test("AUD-010: already aborted Gateway signal prevents a Runner HTTP call",async
 });
 
 test("RunnerClient accepts only bounded Vitest paths in a genuine failure",async()=>{
-  const client=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const client=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",
     gatewayToken:"private-runner-token",
     fetchFn:async()=>new Response(JSON.stringify({
@@ -172,7 +173,7 @@ test("RunnerClient carries failed test messages only for kept failing files",asy
     phases:[{phase:"frontend_tests",status:"fail"}],
     project_tests:{status:"fail",phases:[{phase:"frontend_tests",status:"fail"}]},
     failing_test_files:["tests/frontend/access.test.tsx","src/outside-profile.test.ts"],test_failures});
-  const run=(test_failures:unknown)=>new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const run=(test_failures:unknown)=>new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
     fetchFn:async()=>new Response(JSON.stringify(body(test_failures)),{status:200})}).run(request);
   assert.deepEqual((await run([ok])).test_failures,[ok]);
@@ -180,7 +181,7 @@ test("RunnerClient carries failed test messages only for kept failing files",asy
   for(const bad of [[{...ok,file:"src/outside-profile.test.ts"}],[{...ok,message:"x\n    at y"}],"text"])
     assert.equal((await run(bad)).test_failures,undefined);
   // A PASS can never carry failure messages.
-  const pass=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const pass=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
     fetchFn:async()=>new Response(JSON.stringify({...body([ok]),status:"pass",failing_test_files:undefined}),{status:200})});
   await assert.rejects(pass.run(request),/contradictory failure evidence/u);
@@ -189,7 +190,7 @@ test("RunnerClient carries failed test messages only for kept failing files",asy
 test("RunnerClient carries compiler error messages only for a failed typecheck",async()=>{
   const error={file:"apps/backend/src/users/user.service.ts",line:41,code:"TS2339",
     message:"Property 'workEmail' does not exist on type 'UserSummary'."};
-  const run=(phase:string)=>new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const run=(phase:string)=>new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
     fetchFn:async()=>new Response(JSON.stringify({request_id:request.request_id,
       repository:request.repository,branch:request.branch,tested_commit_sha:request.commit_sha,
@@ -207,7 +208,7 @@ test("RunnerClient carries only valid fileless TypeScript codes",async()=>{
     runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
     phases:[{phase:"typecheck",status:"fail"}],
     typecheck_error_codes:["TS2304","TS2688"],private_message:secret};
-  const run=async data=>new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+  const run=async data=>new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
     fetchFn:async()=>new Response(JSON.stringify(data),{status:200})
   }).run(request);

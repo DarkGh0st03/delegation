@@ -1,10 +1,11 @@
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {RunnerClient} from "../src/runner-client.ts";
 import {validateTrustedRunnerFailure}
  from "../src/trusted-authority-only-runner-failure.ts";
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
-const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(SAMPLE_PROJECT_PROFILE);
 const names=[
  "dependency_install","typecheck","backend_tests","frontend_tests",
  "build","playwright_e2e"
@@ -40,11 +41,11 @@ function outcome(failedAt:number){
  };
 }
 function harness(payload:unknown){
- const client=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,baseUrl:"http://runner.test",
+ const client=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,baseUrl:"http://runner.test",
   gatewayToken:"private-test",
   fetchFn:(async(_url:URL|string,init?:RequestInit)=>{
    assert.equal(init?.method,"POST");
-   assert.deepEqual(JSON.parse(String(init?.body)),{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
+   assert.deepEqual(JSON.parse(String(init?.body)),{...request,project_profile:SAMPLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
    return new Response(JSON.stringify(payload),{status:200});
   }) as typeof fetch
  });

@@ -1,4 +1,5 @@
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolve } from "node:path";
@@ -14,11 +15,11 @@ const request = {
   branch: "feature/sample-change",
   commit_sha: "a".repeat(40),
   profile: "poc-default" as const,
-  project_profile: IAM_CONSOLE_PROJECT_PROFILE,
-  project_profile_sha256: projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)
+  project_profile: SAMPLE_PROJECT_PROFILE,
+  project_profile_sha256: projectProfileDigest(SAMPLE_PROJECT_PROFILE)
 };
 // A Vitest phase also writes its JSON report (source of failed test messages).
-const runnerFixedPhaseCommands = IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => ({phase: p.name,
+const runnerFixedPhaseCommands = SAMPLE_PROJECT_PROFILE.phases.map(p => ({phase: p.name,
   command: p.failure_report === "vitest"
     ? `${p.command} --reporter=default --reporter=json --outputFile=/tmp/runner-${p.name}-vitest.json`
     : p.command}));
@@ -53,8 +54,8 @@ test("Phase 6B Playwright phase boots the controlled app services before E2E", (
     (entry) => entry.phase === "playwright_e2e"
   )?.command;
   assert.ok(command);
-  assert.match(command, /npm run start -w @iam\/backend/u);
-  assert.match(command, /npm run dev -w @iam\/frontend/u);
+  assert.match(command, /npm run start -w @sample\/backend/u);
+  assert.match(command, /npm run dev -w @sample\/frontend/u);
   assert.match(command, /wait_port 3000/u);
   assert.match(command, /wait_port 5173/u);
   // One shared mutable Backend is used by all project specs. Baseline

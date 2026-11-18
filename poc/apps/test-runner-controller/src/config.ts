@@ -54,13 +54,17 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
   if (!process.env.TEST_RUNNER_BRANCH && !process.env.TEST_RUNNER_BRANCH_PREFIX) {
     throw new Error("Set TEST_RUNNER_BRANCH or TEST_RUNNER_BRANCH_PREFIX");
   }
+  if (!process.env.TEST_RUNNER_REPOSITORY_URI && !process.env.TEST_RUNNER_REPOSITORY_PREFIX) {
+    throw new Error("Set TEST_RUNNER_REPOSITORY_URI or TEST_RUNNER_REPOSITORY_PREFIX");
+  }
   const bind = bindAddress(process.env.TEST_RUNNER_BIND_ADDR ?? "0.0.0.0:8095");
   return {
     bind_host: bind.host,
     bind_port: bind.port,
     gateway_token: required("TEST_RUNNER_GATEWAY_TOKEN"),
     contract: {
-      repository: required("TEST_RUNNER_REPOSITORY_URI"),
+      ...(process.env.TEST_RUNNER_REPOSITORY_URI
+        ? {repository: process.env.TEST_RUNNER_REPOSITORY_URI} : {}),
       ...(process.env.TEST_RUNNER_BRANCH
         ? {branch: process.env.TEST_RUNNER_BRANCH} : {}),
       ...(process.env.TEST_RUNNER_BRANCH_PREFIX

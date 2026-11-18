@@ -1,9 +1,10 @@
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {RunnerClient,assertTrustedRunnerClientResult}
  from "../src/runner-client.ts";
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
-const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(SAMPLE_PROJECT_PROFILE);
 import {validateTrustedRunnerPass}
  from "../src/trusted-authority-only-runner-pass.ts";
 
@@ -31,14 +32,14 @@ const successful=()=>({
 });
 function clientFor(payload:unknown){
  let calls=0;
- const client=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+ const client=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
   baseUrl:"http://runner.local:3001",gatewayToken:"owner-only",
   fetchFn:(async(_url:URL|string,init?:RequestInit)=>{
    calls++;
    assert.equal(init?.method,"POST");
    assert.equal((init.headers as Record<string,string>).authorization,
     "Bearer owner-only");
-   assert.deepEqual(JSON.parse(String(init.body)),{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
+   assert.deepEqual(JSON.parse(String(init.body)),{...request,project_profile:SAMPLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
    return new Response(JSON.stringify(payload),{status:200});
   }) as typeof fetch
  });

@@ -12,7 +12,6 @@ const gitea = parseEnvFile(readFileSync("/config/gitea.env", "utf8"));
 for (const [key, value] of Object.entries({
   TEST_RUNNER_BIND_ADDR: "0.0.0.0:8095",
   TEST_RUNNER_GATEWAY_TOKEN: local.RUNNER_GATEWAY_TOKEN,
-  TEST_RUNNER_REPOSITORY_URI: `gitea://gitea.local/${local.GITEA_ORG}/${local.GITEA_REPOSITORY}`,
   // Any repository of the organization (the console makes the Runner a
   // read-only collaborator of each imported repository).
   TEST_RUNNER_REPOSITORY_PREFIX: `gitea://gitea.local/${local.GITEA_ORG}/`,

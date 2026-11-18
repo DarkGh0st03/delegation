@@ -49,6 +49,8 @@ services:
       CONFIG_DIR: /config
       ENGINEER_USERNAME: ${ENGINEER_USERNAME:-engineer}
       ENGINEER_PASSWORD: ${ENGINEER_PASSWORD:?Copy .env.example to .env and set ENGINEER_PASSWORD}
+      INITIAL_REPOSITORY_URL: ${INITIAL_REPOSITORY_URL:-}
+      INITIAL_REPOSITORY_SHA: ${INITIAL_REPOSITORY_SHA:-}
     volumes:
       - config:/config
     restart: "no"
@@ -173,7 +175,7 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
       # The ONLY import source: this GitHub account. The optional read-only
       # token (private repositories) stays in this service.
-      GITHUB_OWNER: ${GITHUB_OWNER:-DarkGh0st03}
+      GITHUB_OWNER: ${GITHUB_OWNER:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       STAGING_DIR: /staging
     volumes:

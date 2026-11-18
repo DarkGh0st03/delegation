@@ -157,7 +157,6 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
         return send(res, 200, await health());
       if (method === "GET" && path === "/api/repos") {
         const repositories = await gitea.listRepositories();
-        for (const r of repositories) { try { staging?.ensureDefault(r.name); } catch { /* invalid name */ } }
         // First view of a repository without a staging profile: detect it.
         await Promise.all(repositories.filter(r => !r.empty).map(r =>
           detectRepository(r.name).catch(() => undefined)));
@@ -188,7 +187,6 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
         try {
           const repository = await gitea.importRepository({cloneUrl, name,
             credentials: github.cloneCredentials});
-          staging?.ensureDefault(repository.name);
           detectRepository(repository.name).catch(() => undefined);
           return send(res, 201, {repository});
         } catch (error) {

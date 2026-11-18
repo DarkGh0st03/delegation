@@ -1,9 +1,10 @@
 /**
- * One-shot, idempotent Gitea preparation (replaces poc/scripts/bootstrap-gitea.sh
- * for the Compose deployment):
- *  - organization and example repository imported at the pinned baseline SHA;
- *  - default branch protected (no direct push, approvals required);
- *  - Gateway account = write collaborator, Runner account = read collaborator;
+ * One-shot, idempotent Gitea preparation (Compose deployment):
+ *  - organization;
+ *  - optional initial repository (setup.mjs: INITIAL_REPOSITORY_URL), imported
+ *    at its pinned SHA when given, with main protected (no direct push,
+ *    approvals required), Gateway = write and Runner = read collaborator.
+ *    Repositories imported later from the console get the same setup;
  *  - read-only team "staging-deploy" (all repositories) for the staging deployer;
  *  - repository-scoped API tokens for Gateway, Runner and deployer in /config/gitea.env.
  */
@@ -45,51 +46,57 @@ if ((await call("GET", `/orgs/${ORG}`, {ok: [200, 404]})).status === 404) {
     description: "Repositories protected by the delegated-authorization PoC", visibility: "private"}});
 }
 
-const repoPath = `/repos/${ORG}/${REPO}`;
-let imported = false;
-if ((await call("GET", repoPath, {ok: [200, 404]})).status === 404) {
-  console.log("Importing", cfg.GITEA_SOURCE_REPO);
-  imported = true;
-  await call("POST", "/repos/migrate", {ok: [201], body: {
-    clone_addr: cfg.GITEA_SOURCE_REPO, repo_owner: ORG, repo_name: REPO, service: "git",
-    mirror: false, private: true, issues: false, labels: false, milestones: false,
-    pull_requests: false, releases: false, wiki: false, lfs: false}});
-}
-
-let mainSha;
-for (let i = 0; i < 90 && !mainSha; i++) {
-  const branch = await call("GET", `${repoPath}/branches/main`, {ok: [200, 404]});
-  mainSha = branch.json?.commit?.id;
-  if (!mainSha) await sleep(2000);
-}
-// A fresh import must be exactly the pinned baseline. Later, main moves on
-// only through pull requests the Engineer merged: the baseline must still
-// be in its history (it is not replaced or force-pushed).
-if (imported || mainSha === cfg.GITEA_BASELINE_SHA) {
-  if (mainSha !== cfg.GITEA_BASELINE_SHA)
-    throw Error(`Imported main is ${mainSha}, expected pinned baseline ${cfg.GITEA_BASELINE_SHA}`);
-  console.log("Baseline verified:", mainSha);
-} else {
-  let found = false;
-  for (let page = 1; page <= 100 && !found; page++) {
-    const history = (await call("GET", `${repoPath}/commits?sha=main&limit=50&page=${page}` +
-      "&stat=false&verification=false&files=false")).json ?? [];
-    found = history.some(c => c.sha === cfg.GITEA_BASELINE_SHA);
-    if (history.length < 50) break;
+if (REPO && cfg.GITEA_SOURCE_REPO) {
+  const repoPath = `/repos/${ORG}/${REPO}`;
+  let imported = false;
+  if ((await call("GET", repoPath, {ok: [200, 404]})).status === 404) {
+    console.log("Importing", cfg.GITEA_SOURCE_REPO);
+    imported = true;
+    await call("POST", "/repos/migrate", {ok: [201], body: {
+      clone_addr: cfg.GITEA_SOURCE_REPO, repo_owner: ORG, repo_name: REPO, service: "git",
+      mirror: false, private: true, issues: false, labels: false, milestones: false,
+      pull_requests: false, releases: false, wiki: false, lfs: false}});
   }
-  if (!found)
-    throw Error(`main (${mainSha}) does not descend from the pinned baseline ${cfg.GITEA_BASELINE_SHA}`);
-  console.log(`main is ${mainSha}: merged work on top of the pinned baseline (kept).`);
-}
 
-if ((await call("GET", `${repoPath}/branch_protections/main`, {ok: [200, 404]})).status === 404) {
-  console.log("Protecting main");
-  await call("POST", `${repoPath}/branch_protections`, {ok: [201], body: {
-    branch_name: "main", enable_push: false, enable_force_push: false, required_approvals: 1,
-    block_admin_merge_override: true, dismiss_stale_approvals: true, block_on_outdated_branch: true}});
+  let mainSha;
+  for (let i = 0; i < 90 && !mainSha; i++) {
+    const branch = await call("GET", `${repoPath}/branches/main`, {ok: [200, 404]});
+    mainSha = branch.json?.commit?.id;
+    if (!mainSha) await sleep(2000);
+  }
+  // A fresh import must be exactly the pinned baseline. Later, main moves on
+  // only through pull requests the Engineer merged: the baseline must still
+  // be in its history (it is not replaced or force-pushed).
+  if (!cfg.GITEA_BASELINE_SHA) {
+    console.log("Initial repository main:", mainSha);
+  } else if (imported || mainSha === cfg.GITEA_BASELINE_SHA) {
+    if (mainSha !== cfg.GITEA_BASELINE_SHA)
+      throw Error(`Imported main is ${mainSha}, expected pinned baseline ${cfg.GITEA_BASELINE_SHA}`);
+    console.log("Baseline verified:", mainSha);
+  } else {
+    let found = false;
+    for (let page = 1; page <= 100 && !found; page++) {
+      const history = (await call("GET", `${repoPath}/commits?sha=main&limit=50&page=${page}` +
+        "&stat=false&verification=false&files=false")).json ?? [];
+      found = history.some(c => c.sha === cfg.GITEA_BASELINE_SHA);
+      if (history.length < 50) break;
+    }
+    if (!found)
+      throw Error(`main (${mainSha}) does not descend from the pinned baseline ${cfg.GITEA_BASELINE_SHA}`);
+    console.log(`main is ${mainSha}: merged work on top of the pinned baseline (kept).`);
+  }
+
+  if ((await call("GET", `${repoPath}/branch_protections/main`, {ok: [200, 404]})).status === 404) {
+    console.log("Protecting main");
+    await call("POST", `${repoPath}/branch_protections`, {ok: [201], body: {
+      branch_name: "main", enable_push: false, enable_force_push: false, required_approvals: 1,
+      block_admin_merge_override: true, dismiss_stale_approvals: true, block_on_outdated_branch: true}});
+  }
+  await call("PUT", `${repoPath}/collaborators/${cfg.GITEA_GATEWAY_USER}`, {ok: [204], body: {permission: "write"}});
+  await call("PUT", `${repoPath}/collaborators/${cfg.GITEA_RUNNER_USER}`, {ok: [204], body: {permission: "read"}});
+} else {
+  console.log("No initial repository: import repositories from the console.");
 }
-await call("PUT", `${repoPath}/collaborators/${cfg.GITEA_GATEWAY_USER}`, {ok: [204], body: {permission: "write"}});
-await call("PUT", `${repoPath}/collaborators/${cfg.GITEA_RUNNER_USER}`, {ok: [204], body: {permission: "read"}});
 
 // Staging deployer: read-only on EVERY repository of the organisation
 // (current and imported later) through a team, so imports need no extra step.
@@ -125,7 +132,7 @@ const deployerToken = await token(cfg.GITEA_DEPLOYER_USER, cfg.GITEA_DEPLOYER_PA
 
 writeFileSync(tokensPath, [
   "# Generated by deploy/bootstrap/gitea-bootstrap.mjs. Private.",
-  `GITEA_BASE_URL=${BASE}`, `GITEA_OWNER=${ORG}`, `GITEA_REPOSITORY=${REPO}`,
+  `GITEA_BASE_URL=${BASE}`, `GITEA_OWNER=${ORG}`,
   `GITEA_GATEWAY_USER=${cfg.GITEA_GATEWAY_USER}`, `GITEA_GATEWAY_TOKEN=${gatewayToken}`,
   `GITEA_RUNNER_USER=${cfg.GITEA_RUNNER_USER}`, `GITEA_RUNNER_TOKEN=${runnerToken}`,
   `GITEA_DEPLOYER_USER=${cfg.GITEA_DEPLOYER_USER}`, `GITEA_DEPLOYER_TOKEN=${deployerToken}`, ""

@@ -27,6 +27,21 @@ const {Wallet} = createRequire(join(ROOT, "blockchain/did-client/package.json"))
 export const ROLES = Object.freeze(["ENGINEER", "ORCHESTRATOR", ...SPECIALIST_ROLES.map(roleEnvKey)]);
 const CHAIN_HEX = "0x7a69"; // 31337, the local Anvil chain
 
+/**
+ * Optional repository imported into Gitea at the first start
+ * (INITIAL_REPOSITORY_URL, a public https://github.com/<owner>/<name> URL,
+ * optionally pinned to INITIAL_REPOSITORY_SHA). Without it Gitea starts
+ * empty and repositories are imported from the console.
+ */
+function initialRepositoryLines(url, sha) {
+  if (!url) return [];
+  const match = /^https:\/\/github\.com\/[A-Za-z0-9-]{1,39}\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/u.exec(url);
+  if (!match || match[1].startsWith(".")) throw Error("INITIAL_REPOSITORY_URL must be https://github.com/<owner>/<name>");
+  if (sha && !/^[0-9a-f]{40}$/u.test(sha)) throw Error("INITIAL_REPOSITORY_SHA must be a full commit SHA");
+  return [`GITEA_REPOSITORY=${match[1]}`, `GITEA_SOURCE_REPO=${url}`,
+    ...(sha ? [`GITEA_BASELINE_SHA=${sha}`] : [])];
+}
+
 const localEnv = join(CONFIG, "local.env");
 if (!existsSync(localEnv)) {
   const lines = [
@@ -43,9 +58,7 @@ if (!existsSync(localEnv)) {
     `GITEA_RUNNER_PASSWORD=${hex()}`,
     "GITEA_RUNNER_EMAIL=test-runner@example.invalid",
     "GITEA_ORG=thesis",
-    "GITEA_REPOSITORY=iam-console-poc",
-    "GITEA_SOURCE_REPO=https://github.com/DarkGh0st03/iam-console-poc.git",
-    "GITEA_BASELINE_SHA=405748b1e77992b6bd8630a3ab6f990658d32f6b",
+    ...initialRepositoryLines(process.env.INITIAL_REPOSITORY_URL, process.env.INITIAL_REPOSITORY_SHA),
     `ADAPTER_CALLER_ENGINEER=${hex(32)}`,
     `ADAPTER_CALLER_GATEWAY=${hex(32)}`,
     `ADAPTER_CALLER_ORCHESTRATOR=${hex(32)}`,

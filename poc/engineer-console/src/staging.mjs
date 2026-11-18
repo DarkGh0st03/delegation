@@ -50,20 +50,6 @@ export function stagingProfileDigest(profile) {
   return createHash("sha256").update(JSON.stringify([p.image, p.build, p.start, p.port])).digest("hex");
 }
 
-/** Known default of the example repository (backend + built frontend). */
-const DEFAULTS = Object.freeze({
-  "sample-app": validateStagingProfile({
-    version: 1, enabled: true, image: "node:22.15.0-bookworm",
-    // --include=dev: the build tools are devDependencies (also with NODE_ENV=production).
-    build: "npm ci --include=dev --no-audit --no-fund && npm run build -w @iam/frontend",
-    // Backend on 3000 (internal); the frontend preview proxies /api to it.
-    start: "npm run start -w @iam/backend & exec npm run preview -w @iam/frontend -- " +
-      "--host 0.0.0.0 --port 5173 --strictPort",
-    port: 5173
-  })
-});
-export function defaultStagingProfile(name) { return DEFAULTS[name]; }
-
 /** A deploy-status entry as written by the deployer (sanitised on read). */
 function cleanStatus(raw) {
   if (!raw || typeof raw !== "object") return undefined;
@@ -93,15 +79,14 @@ export class StagingStore {
 
   #path(name) { return join(this.#dir, "profiles", validateRepoName(name) + ".json"); }
 
-  /** Saved profile, or the known default (not yet saved), or undefined. */
+  /** Saved profile, or undefined. */
   profile(name) {
     const path = this.#path(name);
     if (existsSync(path)) {
       try { return {profile: this.#read(path).profile, source: "saved"}; }
       catch { return {profile: undefined, source: "invalid"}; }
     }
-    const fallback = defaultStagingProfile(name);
-    return fallback ? {profile: fallback, source: "default"} : {profile: undefined, source: "none"};
+    return {profile: undefined, source: "none"};
   }
 
   #read(path) {
@@ -117,11 +102,6 @@ export class StagingStore {
     writeFileSync(tmp, JSON.stringify({...profile, saved_at: new Date().toISOString()}, null, 2) + "\n");
     renameSync(tmp, path);
     return profile;
-  }
-
-  /** Write the known default for a repository that has no profile yet. */
-  ensureDefault(name) {
-    if (!existsSync(this.#path(name)) && defaultStagingProfile(name)) this.save(name, defaultStagingProfile(name));
   }
 
   delete(name) {

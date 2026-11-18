@@ -1,8 +1,7 @@
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import {validateProjectProfile, projectProfileDigest, canonicalProjectProfileJson,
-  testSourceProfileOf, IAM_CONSOLE_PROJECT_PROFILE, MAX_PROJECT_PHASES}
-  from "../src/project-profile.mjs";
+import {validateProjectProfile,projectProfileDigest,canonicalProjectProfileJson,testSourceProfileOf,MAX_PROJECT_PHASES} from "../src/project-profile.mjs";
 import {isProjectTestSource} from "../src/gitea-permission-containment.mjs";
 
 const python = () => ({version: 1, image: "python:3.12.7-slim",
@@ -29,15 +28,15 @@ test("test sources of a profile drive the Test agent write scope", () => {
   assert.equal(isProjectTestSource("tests/api.test.js", rule), true);
   assert.equal(isProjectTestSource("src/api.test.js", rule), false);
   assert.equal(isProjectTestSource("tests/backend/a.test.ts",
-    testSourceProfileOf(IAM_CONSOLE_PROJECT_PROFILE)), true);
+    testSourceProfileOf(SAMPLE_PROJECT_PROFILE)), true);
 });
 
 test("the example profile keeps the historical phases of sample-app", () => {
-  assert.deepEqual(IAM_CONSOLE_PROJECT_PROFILE.phases.map(p => p.name), ["dependency_install",
+  assert.deepEqual(SAMPLE_PROJECT_PROFILE.phases.map(p => p.name), ["dependency_install",
     "typecheck", "backend_tests", "frontend_tests", "build", "playwright_e2e"]);
-  assert.deepEqual(IAM_CONSOLE_PROJECT_PROFILE.phases.filter(p => p.failure_report).map(p => p.name),
+  assert.deepEqual(SAMPLE_PROJECT_PROFILE.phases.filter(p => p.failure_report).map(p => p.name),
     ["backend_tests", "frontend_tests"]);
-  assert.equal(IAM_CONSOLE_PROJECT_PROFILE.image, "node:22.15.0-bookworm");
+  assert.equal(SAMPLE_PROJECT_PROFILE.image, "node:22.15.0-bookworm");
 });
 
 test("invalid profiles are refused", () => {

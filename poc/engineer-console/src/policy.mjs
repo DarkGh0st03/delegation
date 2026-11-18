@@ -7,8 +7,7 @@
  * These parameters are later published to OPA as a data document; the
  * Rego rules that consume them are a separate, reviewed artifact.
  */
-import {validateProjectProfile, IAM_CONSOLE_PROJECT_PROFILE}
-  from "../../packages/plan-contracts/src/project-profile.mjs";
+import {validateProjectProfile} from "../../packages/plan-contracts/src/project-profile.mjs";
 
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u;
 const PREFIX = /^[a-z0-9][a-z0-9._-]{0,30}\/$/u;
@@ -16,10 +15,8 @@ const PREFIX = /^[a-z0-9][a-z0-9._-]{0,30}\/$/u;
  * actual commands are in the Engineer's project profile (bound by digest). */
 export const RUNNER_CONTRACT_LABEL = "poc-default";
 export const POLICY_VERSION = 2;
-/** Example repository of the thesis: its known test setup. */
-export const EXAMPLE_REPOSITORY = "sample-app";
-/** Starting point for any other repository: a plain npm project. The
- * Engineer reviews and adapts it before Planning (it is part of what they sign). */
+/** Starting point for every repository: a plain npm project. The Engineer
+ * reviews and adapts it before Planning (it is part of what they sign). */
 export const NPM_PROJECT_PROFILE_TEMPLATE = validateProjectProfile({
   version: 1,
   image: "node:22.15.0-bookworm",
@@ -28,9 +25,8 @@ export const NPM_PROJECT_PROFILE_TEMPLATE = validateProjectProfile({
   test_sources: {roots: ["test", "tests"], suffixes: [".test.js", ".test.ts", ".spec.js", ".spec.ts"]}
 });
 const plainProfile = profile => JSON.parse(JSON.stringify(profile));
-export function defaultProjectProfile(repository) {
-  return plainProfile(repository.name === EXAMPLE_REPOSITORY
-    ? IAM_CONSOLE_PROJECT_PROFILE : NPM_PROJECT_PROFILE_TEMPLATE);
+export function defaultProjectProfile() {
+  return plainProfile(NPM_PROJECT_PROFILE_TEMPLATE);
 }
 
 export const DEFAULT_FORBIDDEN_PATHS = Object.freeze([".github/", "security/"]);
@@ -44,7 +40,7 @@ export function defaultPolicy(repository) {
     protected_branches: [repository.default_branch],
     work_branch_prefix: SUPPORTED_WORK_BRANCH_PREFIX,
     forbidden_path_prefixes: [...DEFAULT_FORBIDDEN_PATHS],
-    project_profile: defaultProjectProfile(repository),
+    project_profile: defaultProjectProfile(),
     allow_pull_request: true,
     agents_may_merge: false
   };
@@ -65,11 +61,11 @@ function safePathPrefix(value) {
 
 /** Strict validation: unknown fields and weakening of fixed rules are refused. */
 export function validatePolicy(raw, repository) {
-  // Version 1 had only a profile label: migrate it to the repository's
-  // default project profile (same commands the Runner always ran).
+  // Version 1 had only a profile label: migrate it to the default project
+  // profile, which the Engineer then reviews.
   if (raw && typeof raw === "object" && raw.version === 1 && raw.runner_profile === RUNNER_CONTRACT_LABEL) {
     const {runner_profile: _label, ...rest} = raw;
-    raw = {...rest, version: POLICY_VERSION, project_profile: defaultProjectProfile(repository)};
+    raw = {...rest, version: POLICY_VERSION, project_profile: defaultProjectProfile()};
   }
   const allowed = ["version", "repository", "base_branch", "protected_branches",
     "work_branch_prefix", "forbidden_path_prefixes", "project_profile",

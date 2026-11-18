@@ -73,10 +73,6 @@ const github = new GitHubSource({owner: process.env.GITHUB_OWNER, token: process
 // Staging ("Apri l'app"): profiles written here, deploy status from the
 // separate deployer service (shared volume). Absent outside Compose.
 const staging = process.env.STAGING_DIR ? new StagingStore(process.env.STAGING_DIR) : undefined;
-if (staging) {
-  try { for (const repo of await gitea.listRepositories()) staging.ensureDefault(repo.name); }
-  catch { /* Gitea not ready yet: the default is also applied on first use */ }
-}
 
 const handler = createConsoleHandler({
   auth: new ConsoleAuth({users}),

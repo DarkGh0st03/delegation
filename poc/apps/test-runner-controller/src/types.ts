@@ -69,7 +69,8 @@ export interface RunnerExecutor {
 }
 
 export interface RunnerContractConfig {
-  repository: string;
+  /** A single fixed repository; required when no repository_prefix is set. */
+  repository?: string;
   /** A single fixed branch; required when no branch_prefix is set. */
   branch?: string;
   /** Accept any safe branch under this prefix instead of the single fixed

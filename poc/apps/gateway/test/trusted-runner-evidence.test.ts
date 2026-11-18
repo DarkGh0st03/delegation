@@ -1,3 +1,4 @@
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
@@ -9,8 +10,8 @@ import {GiteaClient} from "../src/gitea-client.ts";
 import {TrustedGatewayRunnerPassEvidencePublisher,
  AuthenticatedRunnerCompletionObserver}
  from "../src/trusted-authority-only-runner-evidence.ts";
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
-const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(SAMPLE_PROJECT_PROFILE);
 
 const branch="feature/sample-change";
 const head="a".repeat(40);
@@ -70,14 +71,14 @@ async function fixture(fn:(x:{
     commit:{id:actualHead}}));
   }) as typeof fetch
  });
- const runner=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+ const runner=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
   baseUrl:"http://runner.internal:8095",
   gatewayToken:"owner-private-token",
   fetchFn:(async(_raw:URL|string,init?:RequestInit)=>{
    assert.equal(init?.method,"POST");
    assert.equal((init.headers as Record<string,string>).authorization,
     "Bearer owner-private-token");
-   assert.deepEqual(JSON.parse(String(init.body)),{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
+   assert.deepEqual(JSON.parse(String(init.body)),{...request,project_profile:SAMPLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
    return new Response(JSON.stringify(payload),{status:200});
   }) as typeof fetch
  });

@@ -1,4 +1,5 @@
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {request as httpRequest} from "node:http";
@@ -25,8 +26,8 @@ const validRequest = {
   branch: config.contract.branch,
   commit_sha: "b".repeat(40),
   profile: "poc-default",
-  project_profile: IAM_CONSOLE_PROJECT_PROFILE,
-  project_profile_sha256: projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE)
+  project_profile: SAMPLE_PROJECT_PROFILE,
+  project_profile_sha256: projectProfileDigest(SAMPLE_PROJECT_PROFILE)
 };
 
 class RecordingExecutor implements RunnerExecutor {

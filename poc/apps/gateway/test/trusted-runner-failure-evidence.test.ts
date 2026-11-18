@@ -1,3 +1,4 @@
+import {SAMPLE_PROJECT_PROFILE} from "../../../packages/plan-contracts/test/fixtures/sample-project-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,mkdir,rm,readdir,readFile,writeFile} from "node:fs/promises";
@@ -7,8 +8,8 @@ import {RunnerClient} from "../src/runner-client.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
 import {DurableAuthorityOnlyRunnerIntentJournal}
  from "../src/trusted-authority-only-runner-intent-journal.ts";
-import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
-const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
+import {projectProfileDigest} from "../../../packages/plan-contracts/src/project-profile.mjs";
+const PROFILE_SHA=projectProfileDigest(SAMPLE_PROJECT_PROFILE);
 import {TrustedGatewayRunnerFailEvidencePublisher,
  AuthenticatedRunnerFailureObserver}
  from "../src/trusted-authority-only-runner-failure-evidence.ts";
@@ -63,11 +64,11 @@ async function fixture(action:(p:{
    return new Response(JSON.stringify({name:branch,commit:{id:head}}));
   }) as typeof fetch
  });
- const runner=new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
+ const runner=new RunnerClient({projectProfile:SAMPLE_PROJECT_PROFILE,
   baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner",
   fetchFn:(async(_url:URL|string,init?:RequestInit)=>{
    assert.equal(init?.method,"POST");
-   assert.deepEqual(JSON.parse(String(init?.body)),{...request,project_profile:IAM_CONSOLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
+   assert.deepEqual(JSON.parse(String(init?.body)),{...request,project_profile:SAMPLE_PROJECT_PROFILE,project_profile_sha256:PROFILE_SHA});
    return new Response(JSON.stringify(body),{status:200});
   }) as typeof fetch
  });
