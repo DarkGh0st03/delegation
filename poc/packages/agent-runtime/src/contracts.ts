@@ -21,16 +21,16 @@ export interface DeterministicSubtask {
   instruction: string;
   branch: string;
   relevant_paths: string[];
-  /** Present only on trusted approved-plan A2A dispatch. */
-  approved_file_permissions?: ApprovedTaskFilePermission[];
-  /** Trusted signed-plan Task permission hint, never supplied by the model. */
-  approved_run_tests?: boolean;
+  /** Exact file grants of the signed Task (model visibility only). */
+  approved_file_permissions: ApprovedTaskFilePermission[];
+  /** Whether the signed Task holds run_tests; never supplied by the model. */
+  approved_run_tests: boolean;
 }
 
 export interface AgentTaskContext {
   task_id: string;
-  /** Opt-in private Gateway binding preallocated BEFORE A2A dispatch. */
-  trusted_gateway_task_id?: string;
+  /** Private Gateway binding preallocated BEFORE A2A dispatch. */
+  trusted_gateway_task_id: string;
   context_id: string;
   role: SpecializedAgentRole;
   subtask: DeterministicSubtask;

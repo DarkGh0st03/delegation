@@ -175,7 +175,7 @@ test("R459 scripted Planner selects pinned fourth-role real A2A; only fixture-ba
    let p=await port();while(usedPorts.has(p))p=await port();
    usedPorts.add(p);
    const server=await startSpecializedAgentServer({
-    role,port:p,host:"127.0.0.1",capabilityProfile:"approved-plan",
+    role,port:p,host:"127.0.0.1",
     delegatedAuthorization:true,
     ...(role==="reviewer"?{ownerAdditionalCardPin:additionalRolePins.reviewer}:{}),
     taskHandler:async context=>{

@@ -21,9 +21,8 @@ import {
   type ApprovedTaskFilePermission,
   type SpecializedAgentRole
 } from "./contracts.ts";
-import { buildDeterministicArtifactPayload } from "./artifact-builder.ts";
 import { InMemoryAgentTaskContextStore } from "./task-context.ts";
-import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
+import {validatePrivateApprovedBranch} from "./approved-branch.ts";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -75,16 +74,11 @@ function subtask(message: Message): DeterministicSubtask {
     throw new Error("Protected A2A message requires an application/json data part");
   }
   const raw = object(dataPart.content.value, "subtask");
-  // Backward compatible legacy endpoint. A different branch is allowed
-  // ONLY with a private, preallocated Gateway Task binding. This does not
-  // authenticate the caller; subsequent Gateway Rust/VP/OPA checks do.
+  // Every Task is bound to a private, preallocated Gateway dispatch. This
+  // does not authenticate the caller; Gateway Rust/VP/OPA checks do.
   const privateId=trustedGatewayTaskId(message);
-  const branch=privateId
-    ? validatePrivateApprovedBranch(raw.branch)
-    : raw.branch;
-  if(!privateId && branch!==LEGACY_A2A_BRANCH) {
-    throw new Error("Legacy unbound A2A task must use feature/account-suspension");
-  }
+  if(!privateId)throw new Error("A2A Task requires a trusted Gateway Task binding");
+  const branch=validatePrivateApprovedBranch(raw.branch);
   if (
     !Array.isArray(raw.relevant_paths) ||
     !raw.relevant_paths.every((entry) => typeof entry === "string")
@@ -95,11 +89,11 @@ function subtask(message: Message): DeterministicSubtask {
   // This metadata is NOT a source of delegated authority. Gateway
   // independently checks the actual Engineer-approved Task and signed VP.
   // Reject malformed/forged additions before allocating any model runtime.
-  let approvedFilePermissions:ApprovedTaskFilePermission[]|undefined;
-  if(raw.approved_file_permissions!==undefined){
-    if(!privateId || !Array.isArray(raw.approved_file_permissions) ||
+  let approvedFilePermissions:ApprovedTaskFilePermission[];
+  {
+    if(!Array.isArray(raw.approved_file_permissions) ||
        raw.approved_file_permissions.length>32){
-      throw new Error("File permission hints require trusted Gateway Task binding");
+      throw new Error("A2A Task requires its signed file permission hints");
     }
     const keys=new Set<string>();
     approvedFilePermissions=raw.approved_file_permissions.map(value=>{
@@ -125,27 +119,18 @@ function subtask(message: Message): DeterministicSubtask {
   // NOT gain a Runner capability from its role or from another Test Task.
   // This metadata is never itself an authorization; Gateway checks the plan.
   const approvedRunTests=raw.approved_run_tests;
-  if(approvedRunTests!==undefined&&
-     (!privateId||approvedFilePermissions===undefined||
-      typeof approvedRunTests!=="boolean")){
-    throw new Error("Runner task hint requires trusted signed Task metadata");
+  if(typeof approvedRunTests!=="boolean"){
+    throw new Error("A2A Task requires its signed Runner hint");
   }
   return {
     subtask_id: string(raw.subtask_id, "subtask.subtask_id"),
     instruction: string(raw.instruction, "subtask.instruction"),
     branch:branch as string,
     relevant_paths: raw.relevant_paths as string[],
-    ...(approvedFilePermissions!==undefined
-       ? {approved_file_permissions:approvedFilePermissions}:{}),
-    ...(approvedRunTests!==undefined
-       ?{approved_run_tests:approvedRunTests as boolean}:{})
+    approved_file_permissions:approvedFilePermissions,
+    approved_run_tests:approvedRunTests
   };
 }
-
-export type DeterministicArtifactPayloadBuilder = (
-  role: SpecializedAgentRole,
-  task: DeterministicSubtask
-) => AgentArtifactPayload;
 
 export type DeterministicTaskHandler = (
   context: AgentTaskContext,
@@ -155,21 +140,19 @@ export type DeterministicTaskHandler = (
 export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
   readonly #role: SpecializedAgentRole;
   readonly #contexts: InMemoryAgentTaskContextStore;
-  readonly #artifactBuilder: DeterministicArtifactPayloadBuilder;
-  readonly #taskHandler?: DeterministicTaskHandler;
+  readonly #taskHandler: DeterministicTaskHandler;
   #executionCount = 0;
   readonly #running = new Map<string, AbortController>();
 
   constructor(
     role: SpecializedAgentRole,
-    contexts: InMemoryAgentTaskContextStore = new InMemoryAgentTaskContextStore(),
-    artifactBuilder: DeterministicArtifactPayloadBuilder =
-      buildDeterministicArtifactPayload,
-    taskHandler?: DeterministicTaskHandler
+    taskHandler: DeterministicTaskHandler,
+    contexts: InMemoryAgentTaskContextStore = new InMemoryAgentTaskContextStore()
   ) {
+    if(typeof taskHandler!=="function")
+      throw new Error("A2A executor requires a Task handler");
     this.#role = role;
     this.#contexts = contexts;
-    this.#artifactBuilder = artifactBuilder;
     this.#taskHandler = taskHandler;
   }
 
@@ -206,7 +189,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
 
     const taskContext: AgentTaskContext = {
       task_id: requestContext.taskId,
-      ...(trustedGatewayId?{trusted_gateway_task_id:trustedGatewayId}:{}),
+      trusted_gateway_task_id:trustedGatewayId!,
       context_id: requestContext.contextId,
       role: this.#role,
       subtask: taskInput,
@@ -251,18 +234,16 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
 
     try {
       const artifactPayload =
-        this.#taskHandler === undefined
-          ? this.#artifactBuilder(this.#role, taskInput)
-          : await this.#taskHandler(structuredClone(taskContext), controller.signal);
+        await this.#taskHandler(structuredClone(taskContext), controller.signal);
 
       // Cancellation is terminal even if a slow LLM returns a late result.
       if (controller.signal.aborted) return;
 
       const artifact: Artifact = {
         artifactId: crypto.randomUUID(),
-        name: `${this.#role}-deterministic-result`,
+        name: `${this.#role}-task-result`,
         description:
-          "Phase 7 deterministic result. Delegation Evidence is intentionally excluded.",
+          "Task result. Delegation Evidence is intentionally excluded.",
         parts: [
           {
             content: {

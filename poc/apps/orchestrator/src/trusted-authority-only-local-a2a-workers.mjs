@@ -101,7 +101,7 @@ export async function startTrustedAuthorityOnlyLocalA2AWorkers({
    await binder.start();
    const keys=generateKeyPairSync("ed25519");
    const server=await startSpecializedAgentServer({
-    role,port,host:"127.0.0.1",capabilityProfile:"approved-plan",delegatedAuthorization:true,
+    role,port,host:"127.0.0.1",delegatedAuthorization:true,
     ...(pin?{ownerAdditionalCardPin:pin}:{}),
     ...(native?{nativeSignerDid:did}:{}),
     adk:{...adk,trustedEffectTaskRegistry:registry,

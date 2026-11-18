@@ -33,7 +33,6 @@ import {
 } from "./trusted-authority-only-remote-effect-bootstrap.ts";
 import {validateWorkflowArtifact,type ValidatedWorkflowArtifact}
  from "./artifact-validation.ts";
-import type {ProtectedA2AClientPort} from "./a2a-workflow.ts";
 import type {TrustedEffectStagingPort}
  from "../../agent-runtime/src/gateway-tool-client.ts";
 import type {
@@ -47,6 +46,19 @@ import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,r
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import {SPECIALIST_ROLES,APPLICATION_ROLES,REQUIRED_SPECIALISTS} from "../../plan-contracts/src/agent-roles.mjs";
 import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
+
+/** A2A transport to a specialist (the agent-runtime A2A client). */
+export interface ProtectedA2AClientPort {
+  sendProtectedTask(request: {
+    agent_base_url: string;
+    subtask: DeterministicSubtask;
+    delegation_evidence: DelegationEvidence;
+    trusted_gateway_task_id: string;
+  }): Promise<{
+    card: { name: string };
+    task: import("@a2a-js/sdk").Task;
+  }>;
+}
 const ROLES=SPECIALIST_ROLES;
 function deny(reason:string):never{
  throw Error("Trusted authority-only A2A owner NO-GO: "+reason);

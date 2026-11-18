@@ -205,10 +205,10 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    }) as typeof fetch;
    agents[role]=await startSpecializedAgentServer({
     role,port:await port(),host:"127.0.0.1",
-    capabilityProfile:"approved-plan",delegatedAuthorization:true,
+    delegatedAuthorization:true,
     adk:{model:models[role],gatewayBaseUrl:"http://gateway.r328.invalid",
      adapterBaseUrl:"http://signer.r328.invalid",adapterToken:c.secret,
-     fetchFn,scopeModelPaths:true,maxModelTurns:4,maxModelCallMs:5000,
+     fetchFn,maxModelTurns:4,maxModelCallMs:5000,
      trustedEffectTaskRegistry:registries[role]}
    });
   }

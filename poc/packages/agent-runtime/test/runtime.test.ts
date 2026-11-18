@@ -1,3 +1,4 @@
+import {taskArtifact} from "./fixtures/task-artifact.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TaskState } from "@a2a-js/sdk";
@@ -25,11 +26,9 @@ test("specialized Agent Cards expose the frozen A2A 1.0 contract", () => {
 });
 
 
-test("approved-plan Agent Cards advertise reusable skills, never Task permissions", () => {
+test("Agent Cards advertise reusable skills, never Task permissions", () => {
   for (const role of ["backend","frontend","test"] as const) {
-    const card=createSpecializedAgentCard(role,"http://127.0.0.1:9000",{
-      capabilityProfile:"approved-plan"
-    });
+    const card=createSpecializedAgentCard(role,"http://127.0.0.1:9000");
     assert.equal(card.supportedInterfaces[0]?.protocolVersion,"1.0");
     assert.deepEqual(card.defaultInputModes,["application/json"]);
     assert.equal(card.skills.length,1);
@@ -49,25 +48,11 @@ test("approved-plan Agent Cards advertise reusable skills, never Task permission
   }
 });
 
-test("R199 default A2A Agent Cards advertise generic roles; legacy requires opt-in",()=>{
-  const generic=createSpecializedAgentCard("backend","http://127.0.0.1:9000");
-  assert.equal(generic.skills[0]?.id,"backend-software-engineering");
-  assert.ok(!JSON.stringify(generic).includes("Account Suspension"));
-  assert.ok(!JSON.stringify(generic).includes("account-suspension"));
-  const legacy=createSpecializedAgentCard("backend","http://127.0.0.1:9000",{
-    capabilityProfile:"legacy"
-  });
-  assert.equal(legacy.skills[0]?.id,"backend-account-lifecycle");
-  assert.ok(legacy.skills[0]?.tags?.includes("account-suspension"));
-  assert.ok(legacy.description?.includes("Account Suspension"));
-  assert.equal(generic.capabilities.extensions?.[0]?.params?.agentDid,
-    legacy.capabilities.extensions?.[0]?.params?.agentDid);
-});
-
-test("deterministic A2A flow performs discovery -> Message -> Task -> Artifact without leaking authority", async () => {
+test("A2A flow performs discovery -> Message -> Task -> Artifact without leaking authority", async () => {
   const agent = await startSpecializedAgentServer({
     role: "backend",
-    port: 43171
+    port: 43171,
+    taskHandler: async (context) => taskArtifact("backend", context.subtask)
   });
 
   try {
@@ -79,11 +64,14 @@ test("deterministic A2A flow performs discovery -> Message -> Task -> Artifact w
 
     const result = await orchestrator.sendProtectedTask({
       agent_base_url: agent.baseUrl,
+      trusted_gateway_task_id: "dispatch_" + "r".repeat(22),
       subtask: {
         subtask_id: "phase7-backend-subtask",
-        instruction: "Prepare deterministic backend task context.",
-        branch: "feature/account-suspension",
-        relevant_paths: ["apps/backend/src/users/user.service.ts"]
+        instruction: "Prepare backend task context.",
+        branch: "feature/session-work",
+        relevant_paths: ["apps/backend/src/users/user.service.ts"],
+        approved_file_permissions: [{operation: "read_file", path: "apps/backend/src/users/user.service.ts"}],
+        approved_run_tests: false
       },
       delegation_evidence: {
         credential,
@@ -109,7 +97,7 @@ test("deterministic A2A flow performs discovery -> Message -> Task -> Artifact w
     assert.equal(part?.$case, "data");
     if (part?.$case === "data") {
       assert.equal(part.value.role, "backend");
-      assert.equal(part.value.branch, "feature/account-suspension");
+      assert.equal(part.value.branch, "feature/session-work");
       assert.equal(part.value.test_outcome, "not_run");
     }
   } finally {
@@ -121,7 +109,8 @@ test("orchestrator rejects an Agent Card without delegated-authorization support
   const agent = await startSpecializedAgentServer({
     role: "frontend",
     port: 43172,
-    delegatedAuthorization: false
+    delegatedAuthorization: false,
+    taskHandler: async () => { throw new Error("must never execute"); }
   });
 
   try {
@@ -131,11 +120,14 @@ test("orchestrator rejects an Agent Card without delegated-authorization support
       () =>
         orchestrator.sendProtectedTask({
           agent_base_url: agent.baseUrl,
+          trusted_gateway_task_id: "dispatch_" + "i".repeat(22),
           subtask: {
             subtask_id: "phase7-incompatible",
             instruction: "This protected task must never execute.",
-            branch: "feature/account-suspension",
-            relevant_paths: ["apps/frontend/src/pages/UserDetailPage.tsx"]
+            branch: "feature/session-work",
+            relevant_paths: ["apps/frontend/src/pages/UserDetailPage.tsx"],
+            approved_file_permissions: [],
+            approved_run_tests: false
           },
           delegation_evidence: {
             credential: "{}",

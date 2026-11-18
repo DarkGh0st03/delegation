@@ -327,7 +327,7 @@ test("R453 additional read specialist receives actual SDK A2A Task only after it
    ports.add(port);
    const server=await startSpecializedAgentServer({
     role,port,host:"127.0.0.1",delegatedAuthorization:true,
-    capabilityProfile:"approved-plan",
+    
     ...(role==="reviewer"?{ownerAdditionalCardPin:{
      did:reviewerDid,name:"Owner Read-Only Reviewer",
      skillId:"source-review",capabilities:["read_file"]

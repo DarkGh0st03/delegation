@@ -11,7 +11,7 @@ async function withRealRoles(
   action:(input:{endpoints:Record<typeof ROLES[number],string>;
                 servers:Awaited<ReturnType<typeof startSpecializedAgentServer>>[]})=>Promise<void>,
   overrides:Partial<Record<typeof ROLES[number],{
-    delegatedAuthorization?:boolean;capabilityProfile?:"legacy"|"approved-plan";
+    delegatedAuthorization?:boolean;
   }>>={}
 ){
   const base=42000+randomInt(0,5000)*3;
@@ -23,7 +23,6 @@ async function withRealRoles(
         role,host:"127.0.0.1",port:base+i,
         delegatedAuthorization:
           overrides[role]?.delegatedAuthorization??true,
-        capabilityProfile:overrides[role]?.capabilityProfile??"approved-plan",
         taskHandler:async()=>{throw Error("readiness must not execute a Task");}
       }));
     }
@@ -92,7 +91,7 @@ test("R5 role card profile and advertised private transport cannot be downgraded
   };
   const forge=(role:typeof ROLES[number])=>{
     const card=createSpecializedAgentCard(role,endpoints[role],{
-      capabilityProfile:"approved-plan",delegatedAuthorization:true
+      delegatedAuthorization:true
     });
     return card;
   };
@@ -167,7 +166,7 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
    const role=roleFor(String(raw));assert.ok(role);
    readCount++;
    return Response.json(createSpecializedAgentCard(role,endpoints[role],{
-    capabilityProfile:"approved-plan",delegatedAuthorization:true,
+    delegatedAuthorization:true,
     nativeSignerDid:identities[role]
    }));
   };
@@ -181,14 +180,14 @@ test("R382.3 trusted startup probe matches each Agent Card to original native Ru
   // but actual creation remains restricted to signed project-test sources
   // through the original Gateway/owner. Card forgery cannot expand scope.
   const nativeTestCard=createSpecializedAgentCard("test",endpoints.test,{
-   nativeSignerDid:identities.test,capabilityProfile:"approved-plan",
+   nativeSignerDid:identities.test,
    delegatedAuthorization:true
   });
   assert.deepEqual(nativeTestCard.capabilities.extensions?.[0]?.params?.taskCapabilities,
    ["read_file","update_file","create_file","run_tests"]);
   for(const role of ["backend","frontend"] as const){
    const card=createSpecializedAgentCard(role,endpoints[role],{
-    nativeSignerDid:identities[role],capabilityProfile:"approved-plan"
+    nativeSignerDid:identities[role]
    });
    assert.deepEqual(card.capabilities.extensions?.[0]?.params?.taskCapabilities,
     ["read_file","update_file","create_file"]);

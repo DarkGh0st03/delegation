@@ -14,7 +14,7 @@ import {startSpecializedAgentServer} from "../src/server.ts";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SECRET = "SECRET_DELEGATION_CREDENTIAL_PAYLOAD_PHASE3";
-const BRANCH = "feature/account-suspension";
+const BRANCH = "feature/session-work";
 const PATHS = {
   backend: "apps/backend/src/users/user.service.ts",
   frontend: "apps/frontend/src/pages/UserDetailPage.tsx",
@@ -45,6 +45,20 @@ class OneToolModel extends BaseLlm {
   override connect(_request: LlmRequest): Promise<BaseLlmConnection> {
     return Promise.reject(new Error("Live interface disabled in Phase 3 CI"));
   }
+}
+
+/** A signed Task: dispatch ID, exact file grants and Runner flag. */
+let dispatchCounter = 0;
+function signedTask(subtask_id: string, role: SpecializedAgentRole) {
+  const path = PATHS[role];
+  return {
+    trusted_gateway_task_id: "dispatch_" + String(++dispatchCounter).padStart(22, "0"),
+    subtask: {subtask_id, instruction: "Perform a controlled change", branch: BRANCH,
+      relevant_paths: [path],
+      approved_file_permissions:
+        [{operation: "read_file" as const, path}, {operation: "update_file" as const, path}],
+      approved_run_tests: role === "test"}
+  };
 }
 
 function fakeBoundary(role: SpecializedAgentRole, deny = false,
@@ -116,7 +130,7 @@ async function send(role: SpecializedAgentRole, model: BaseLlm, fetchFn: typeof 
   try {
     const response=await orchestrator.sendProtectedTask({
       agent_base_url:server.baseUrl,
-      subtask:{subtask_id:"phase3-"+role,instruction:"Perform a controlled change",branch:BRANCH,relevant_paths:[PATHS[role]]},
+      ...signedTask("phase3-"+role,role),
       delegation_evidence:evidence
     });
     return {response,serverContext:server.executor.taskContexts.get(response.task.id),executions:server.executor.executionCount};
@@ -456,7 +470,7 @@ test("Phase 3 per-task model budget fails closed before a successful Artifact",a
     try{
       const response=await orchestrator.sendProtectedTask({
         agent_base_url:server.baseUrl,
-        subtask:{subtask_id:"bounded",instruction:"Do controlled work",branch:BRANCH,relevant_paths:[PATHS.backend]},
+        ...signedTask("bounded","backend"),
         delegation_evidence:{credential:SECRET,credential_id:"urn:phase3:child:backend",presenter_id:"did:thesis:backend-agent"}
       });
       completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;

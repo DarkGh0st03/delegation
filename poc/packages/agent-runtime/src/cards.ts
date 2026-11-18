@@ -7,11 +7,6 @@ import {
   type SpecializedAgentRole
 } from "./contracts.ts";
 
-import {
- LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT,
- LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_TAGS
-} from "./fixtures/account-suspension-agent-cards.ts";
-
 import {APPROVED_SPECIALIZED_AGENT_PROFILES,
  nativeAuthorityOnlyAdvertisedCapabilities} from "./approved-specialized-profiles.ts";
 import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
@@ -94,8 +89,6 @@ export function createSpecializedAgentCard(
   baseUrl: string,
   options: {
     delegatedAuthorization?: boolean;
-    /** Trusted server-startup choice, not a per-Task grant or identity proof. */
-    capabilityProfile?: "legacy" | "approved-plan";
     /** Original native Rust role signer DID; never an A2A/ADK/model input. */
     nativeSignerDid?: string;
   } = {}
@@ -113,11 +106,8 @@ export function createSpecializedAgentCard(
       nativeDid!==trustedSignerAgentDid(role)))
    throw Error("Trusted native A2A Agent Card signer DID mismatch");
   const signerDid=nativeDid??config.did;
-  // General role capabilities are the default for all new A2A discovery.
-  // Historical scenario Card descriptions are explicit opt-in test fixtures.
-  const approved = options.capabilityProfile !== "legacy";
-  const skill = approved ? APPROVED_PLAN_SKILLS[role] : undefined;
-  const legacy = !approved ? LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT[role] : undefined;
+  // Cards advertise only generic role capabilities.
+  const skill = APPROVED_PLAN_SKILLS[role];
   const delegatedAuthorization = options.delegatedAuthorization ?? true;
   // Native role discovery uses the original owner-approved capability
   // catalog. Test CREATE remains restricted to exact project test sources
@@ -128,7 +118,7 @@ export function createSpecializedAgentCard(
 
   return {
     name: config.name,
-    description: skill?.description ?? legacy!.description,
+    description: skill.description,
     supportedInterfaces: [
       {
         url: `${baseUrl.replace(/\/+$/u, "")}/a2a/rest`,
@@ -154,7 +144,7 @@ export function createSpecializedAgentCard(
               required: true,
               params: {
                 agentDid: signerDid,
-                ...(approved?{taskCapabilities:[...advertisedTools]}:{}),
+                taskCapabilities:[...advertisedTools],
                 evidenceLocation: "message.metadata.delegation_evidence"
               }
             }
@@ -168,13 +158,11 @@ export function createSpecializedAgentCard(
     defaultOutputModes: ["application/json"],
     skills: [
       {
-        id: skill?.id ?? legacy!.skillId,
-        name: skill?.name ?? legacy!.skillName,
-        description: skill?.description ?? legacy!.description,
-        tags: approved
-          ? ["thesis", "software-engineering", "delegated-authorization", role]
-          : [...LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_TAGS, role],
-        examples: [skill?.example ?? legacy!.example],
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        tags: ["thesis", "software-engineering", "delegated-authorization", role],
+        examples: [skill.example],
         inputModes: ["application/json"],
         outputModes: ["application/json"],
         securityRequirements: []

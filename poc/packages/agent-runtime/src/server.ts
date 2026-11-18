@@ -16,7 +16,6 @@ import { PrivateEvidenceTaskStore } from "./private-task-store.ts";
 import { PrivateEvidenceRequestHandler } from "./private-request-handler.ts";
 import {
   DeterministicSpecializedAgentExecutor,
-  type DeterministicArtifactPayloadBuilder,
   type DeterministicTaskHandler
 } from "./executor.ts";
 import {SPECIALIZED_AGENT_ROLES,type SpecializedAgentRole} from "./contracts.ts";
@@ -30,9 +29,7 @@ export interface SpecializedAgentServerOptions {
   port: number;
   host?: string;
   delegatedAuthorization?: boolean;
-  /** Advertise generic role skills for a trusted approved-plan workflow. */
-  capabilityProfile?: "legacy" | "approved-plan";
-  artifactBuilder?: DeterministicArtifactPayloadBuilder;
+  /** Custom Task handler (tests only); production agents use `adk`. */
   taskHandler?: DeterministicTaskHandler;
   adk?: AdkA2ATaskHandlerConfig;
   /** Opt-in only; the default A2A baseline stays unchanged. */
@@ -68,8 +65,7 @@ export async function startSpecializedAgentServer(
   // The original synthetic offline test mode remains strictly non-native.
   const pinned=options.ownerAdditionalCardPin;
   const nativeExtra=extra&&!!options.adk;
-  if(extra&&(!pinned||options.capabilityProfile==="legacy"||
-     options.delegatedAuthorization===false))
+  if(extra&&(!pinned||options.delegatedAuthorization===false))
     throw Error("Additional A2A specialist requires exact Owner Card pins");
   if(extra&&nativeExtra&&(
      !options.mcpTaskSigning||!options.nativeSignerDid||
@@ -91,10 +87,10 @@ export async function startSpecializedAgentServer(
        options.role,baseUrl,options.ownerAdditionalCardPin!)
     :createSpecializedAgentCard(options.role as SpecializedAgentRole,baseUrl,{
        delegatedAuthorization:options.delegatedAuthorization,
-       capabilityProfile:options.capabilityProfile,
        ...(options.nativeSignerDid===undefined?{}:{nativeSignerDid:options.nativeSignerDid})
      });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
+  if (!options.adk && !options.taskHandler) throw new Error("A2A agent requires an ADK runtime or a Task handler");
   // R381.6: a private Rust MCP subprocess is an owner-bound signing
   // transport, never a free-standing A2A capability. Refuse it BEFORE any
   // listener or Task is created without the original
@@ -107,13 +103,6 @@ export async function startSpecializedAgentServer(
      !options.nativeSignerDid)
     throw Error("private_native_mcp_requires_signer_did");
 
-  // R194 reject retired repository/Runner MCP options for EVERY profile,
-  // including direct JS library callers rather than only production launchers.
-  if(options.adk&&["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
-       .some(key=>Object.prototype.hasOwnProperty.call(options.adk,key)))
-    throw Error("legacy_repository_mcp_retired");
-  if(options.adk&&Object.prototype.hasOwnProperty.call(options.adk,"mcpCryptoUrl"))
-    throw Error("legacy_crypto_http_mcp_retired");
   if (options.mcpTaskSigning && !options.adk) {
     throw new Error("Private MCP task worker requires a configured ADK runtime");
   }
@@ -129,16 +118,14 @@ export async function startSpecializedAgentServer(
        role:options.role,capabilities:[...pinned!.capabilities]
       }}:{})})
     : undefined;
-  const taskHandler: DeterministicTaskHandler | undefined = adkHandler
+  const taskHandler: DeterministicTaskHandler = adkHandler
     ? async (context,signal) => {
         try { return await adkHandler(context,signal); }
         finally { mcpTaskRegistry?.end(context.task_id); }
       }
-    : options.taskHandler;
+    : options.taskHandler!;
   const executor = new DeterministicSpecializedAgentExecutor(
     options.role as SpecializedAgentRole,
-    undefined,
-    options.artifactBuilder,
     taskHandler
   );
   const requestHandler = new PrivateEvidenceRequestHandler(

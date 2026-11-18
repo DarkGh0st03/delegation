@@ -1,16 +1,30 @@
-import type {
-  ModelFunctionCall,
-  ModelFunctionTool
-} from "./llm-client.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
-import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
+import {validatePrivateApprovedBranch} from "./approved-branch.ts";
 import {
   GatewayControlledToolClient,
   SPECIALIZED_TOOL_NAMES,
   type SpecializedToolName
 } from "./gateway-tool-client.ts";
 
-const FEATURE_BRANCH = "feature/account-suspension";
+/** Model-facing function declaration (JSON schema arguments). */
+export interface ModelFunctionTool {
+  type: "function";
+  name: string;
+  description: string;
+  strict: true;
+  parameters: Record<string, unknown>;
+}
+
+/** One model function call to execute through the Gateway. */
+export interface ModelFunctionCall {
+  call_id: string;
+  name: string;
+  arguments: string;
+}
+
+// Placeholder: every declaration's branch enum is replaced by the Task's
+// signed work branch.
+const FEATURE_BRANCH = "feature/placeholder";
 
 const TOOL_DEFINITIONS: Record<SpecializedToolName, ModelFunctionTool> = {
   read_file: {
@@ -109,7 +123,7 @@ export class ControlledToolRegistry {
   constructor(
     gateway: GatewayControlledToolClient,
     allowedTools: readonly SpecializedToolName[],
-    branch:string=LEGACY_A2A_BRANCH
+    branch:string
   ) {
     this.#branch=validatePrivateApprovedBranch(branch);
     if (allowedTools.length === 0) {

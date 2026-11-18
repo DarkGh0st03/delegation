@@ -25,7 +25,7 @@ function nativeEnvironment(t:import("node:test").TestContext){
 }
 function cardDid(role:typeof roles[number],override:string){
  const card=createSpecializedAgentCard(role,"http://127.0.0.1:1",{
-  delegatedAuthorization:true,capabilityProfile:"approved-plan",
+  delegatedAuthorization:true,
   nativeSignerDid:override
  });
  const extension=card.capabilities.extensions?.[0];
@@ -84,7 +84,7 @@ test("R386 native Agent Cards advertise Test CREATE as non-authorizing capabilit
  nativeEnvironment(t);
  for(const [index,role] of roles.entries()){
   const card=createSpecializedAgentCard(role,"http://127.0.0.1:61001",{
-   nativeSignerDid:did(index+2),capabilityProfile:"approved-plan",
+   nativeSignerDid:did(index+2),
    delegatedAuthorization:true
   });
   const advertised=card.capabilities.extensions?.[0]?.params?.taskCapabilities;

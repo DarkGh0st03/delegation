@@ -8,7 +8,7 @@ import {
 } from "@google/adk";
 import {roleWalletSocket} from "./native-crypto-ipc.ts";
 import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
-import { modelVisibleTaskContext } from "./agent-controller.ts";
+import { modelVisibleTaskContext } from "./task-context.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
@@ -70,7 +70,6 @@ export interface AdkA2ATaskHandlerConfig {
   maxModelTurns?: number;
   maxModelCallMs?: number;
   generateContentConfig?: AdkGenerationConfig;
-  scopeModelPaths?: boolean;
   gatewayTimeoutMs?: number;
   /** Private Task signer for one-shot crypto VP proofs; not model tools. */
   mcpTaskRegistry?:PrivateMcpTaskRegistry;
@@ -309,21 +308,20 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // A signed Test preparation Task may create/update tests without owning
     // the separate final Docker run_tests grant. Never infer the runner
     // capability from its Test role or from another Task's permission.
-    const signedTask=context.trusted_gateway_task_id!==undefined&&
-      context.subtask.approved_file_permissions!==undefined;
-    const taskRef=signedTask?safeSignedTaskRef(context.trusted_gateway_task_id):null;
-    // R385.15: a Task with signed file grants receives Runner ONLY when
-    // the original owner explicitly attested run_tests. An omitted flag
-    // cannot create model-visible authority; historical unsigned fixtures
-    // keep the compatibility behavior and Gateway remains authoritative.
+    if(context.trusted_gateway_task_id===undefined||
+       !Array.isArray(context.subtask.approved_file_permissions))
+      throw Error("A2A Task is not a signed Task");
+    const grants=context.subtask.approved_file_permissions;
+    const taskRef=safeSignedTaskRef(context.trusted_gateway_task_id);
+    // R385.15: a Test Task receives Runner ONLY when the original owner
+    // explicitly attested run_tests; the Gateway remains authoritative.
     const mayRunTests=context.role==="test"&&
-      (!signedTask||context.subtask.approved_run_tests===true);
+      context.subtask.approved_run_tests===true;
     // The configured turn limits were set for a Task with one read and one
     // write. Each further signed context read costs exactly one more model
     // turn (every grant is single-use), so the Task gets one turn per extra
     // read, never more: the session call budget still bounds the total.
-    const signedReads=signedTask
-      ?context.subtask.approved_file_permissions!.filter(p=>p.operation==="read_file").length:0;
+    const signedReads=grants.filter(p=>p.operation==="read_file").length;
     const taskTurnLimit=Math.min(100,turnLimit+Math.max(0,signedReads-1));
     const model = new BoundedModel(config.model, taskTurnLimit, maxModelCallMs, signal,
       (durationMs, inputTokens, outputTokens, thinkingTokens, turn, responseShape) => {
@@ -345,7 +343,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       evidence: context.delegation_evidence,
       // R204: trusted signed Tasks sign their VP natively, in the WALLET of
       // this agent's role (only its own key). Native failure is terminal.
-      ...(context.trusted_gateway_task_id&&roleWalletSocket(context.role)
+      ...(roleWalletSocket(context.role)
         ?{nativeSocketPath:roleWalletSocket(context.role)!}:{}),
       ...(config.nativePresentationTransport==="mcp-stdio"
         ?{nativePresentationTransport:"mcp-stdio" as const}:{}),
@@ -363,59 +361,42 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(ownerEffect?{trustedEffectStager:ownerEffect}:{}),
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
-      taskId: context.trusted_gateway_task_id??context.task_id,
+      taskId: context.trusted_gateway_task_id,
       evidenceHandler,
-      ...(signedTask?{
-        approvedDiagnosticReadPaths:context.subtask.approved_file_permissions!
-          .filter(p=>p.operation==="read_file").map(p=>p.path),
-        approvedDiagnosticWritePaths:context.subtask.approved_file_permissions!
-          .filter(p=>p.operation==="update_file").map(p=>p.path)
-      }:{}),
+      approvedDiagnosticReadPaths:grants
+        .filter(p=>p.operation==="read_file").map(p=>p.path),
+      approvedDiagnosticWritePaths:grants
+        .filter(p=>p.operation==="update_file").map(p=>p.path),
       ...(cryptoPresentation ? {cryptoPresentation} : {}),
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
       // Signed Test Tasks invoke Docker through the Gateway FunctionTool.
       // Timeout does not grant run_tests or widen signed permissions.
-      ...(context.role==="test"&&context.trusted_gateway_task_id
-        ? {runnerExecuteTimeoutMs:960_000} : {}),
+      ...(context.role==="test" ? {runnerExecuteTimeoutMs:960_000} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
     // Gateway client and its private evidence; MCP never receives them.
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
-      { ...(context.trusted_gateway_task_id
-         ? {
-             allowedPaths:context.subtask.relevant_paths,
-             ...(context.subtask.approved_file_permissions!==undefined
-               ?{approvedBranch:context.subtask.branch}:{}),
-             ...(context.subtask.approved_file_permissions!==undefined
-               ? {allowedFilePermissions:context.subtask.approved_file_permissions}:{})
-           } : {}),
-       evidenceHandler});
+      { allowedPaths:context.subtask.relevant_paths,
+        approvedBranch:context.subtask.branch,
+        allowedFilePermissions:grants,
+        evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.trustedAdditionalReadOnlyRole?{
         trustedAdditionalReadOnlyRole:config.trustedAdditionalReadOnlyRole
       }:{}),
-      ...(signedTask&&context.role==="test"
-        ?{trustedRunTestsAllowed:mayRunTests}:{}),
+      ...(context.role==="test"?{trustedRunTestsAllowed:mayRunTests}:{}),
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
-      ...(config.scopeModelPaths ? {scopeModelPaths: true} : {}),
-      ...(context.trusted_gateway_task_id
-        ? {
-            trustedBranch:context.subtask.branch,
-            trustedTaskPaths:context.subtask.relevant_paths,
-            ...(context.subtask.approved_file_permissions!==undefined
-              ? {trustedFilePermissions:context.subtask.approved_file_permissions}:{})
-          }:{}),
+      trustedBranch:context.subtask.branch,
+      trustedTaskPaths:context.subtask.relevant_paths,
+      trustedFilePermissions:grants,
       ...(taskRef?{diagnosticTaskRef:taskRef}:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });
     const {agent} = configured;
-    const appName = context.trusted_gateway_task_id &&
-      context.subtask.approved_file_permissions !== undefined
-      ? "delegated_adk_" + context.role
-      : "account_suspension_adk_" + context.role;
+    const appName = "delegated_adk_" + context.role;
     const userId = "delegated_a2a";
     const sessionService = new InMemorySessionService();
     const runner = new Runner({agent, appName, sessionService});

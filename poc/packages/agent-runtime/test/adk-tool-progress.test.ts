@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {AdkToolProgress} from "../src/adk-tool-progress.ts";
-import {SPECIALIZED_AGENT_PROFILES} from "../src/specialized-agents.ts";
 
 const ok=(name:"read_file"|"update_file",path:string)=>({
   name,arguments:{branch:"feature/account-suspension",path},
@@ -40,14 +39,6 @@ test("Legacy approval referral without a failed phase remains terminal",()=>{
   assert.equal(progress.typecheckScopeSummary,null);
 });
 
-test("all ADK role prompts encourage bounded investigation and safe full-file writes",()=>{
-  for(const role of ["backend","frontend","test"] as const){
-    const prompt=SPECIALIZED_AGENT_PROFILES[role].system_prompt;
-    assert.match(prompt,/do not reread an unchanged file/i);
-    assert.match(prompt,/REPLACES the entire target file/i);
-    assert.match(prompt,/Never attempt to bypass an authorization denial/i);
-  }
-});
 
 test("A trusted out-of-scope Runner repair remains terminal even after other tools",()=>{
   const progress=new AdkToolProgress();

@@ -4,9 +4,6 @@ import type {
 } from "../../agent-runtime/src/contracts.ts";
 import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
 
-export const ACCOUNT_SUSPENSION_ARTIFACT_BRANCH =
-  "feature/account-suspension" as const;
-
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const VALID_ROLES = new Set<SpecializedAgentRole>(SPECIALIST_ROLES);
 const VALID_TEST_OUTCOMES = new Set(["not_run", "pass", "fail"]);
@@ -15,8 +12,8 @@ export interface WorkflowArtifactValidationOptions {
   requireTestPass?: boolean;
   /** Signed Test preparation explicitly lacks run_tests authority. */
   requireTestNotRun?: boolean;
-  /** The approved Task branch comes from trusted pre-dispatch input. */
-  expectedBranch?: string;
+  /** The signed Task branch comes from trusted pre-dispatch input. */
+  expectedBranch: string;
 }
 
 export interface ValidatedWorkflowArtifact extends AgentArtifactPayload {
@@ -61,7 +58,7 @@ function commitSha(value: unknown, label: string): string {
 export function validateWorkflowArtifact(
   value: unknown,
   expectedRole: SpecializedAgentRole,
-  options: WorkflowArtifactValidationOptions = {}
+  options: WorkflowArtifactValidationOptions
 ): ValidatedWorkflowArtifact {
   const raw = object(value, "Agent Artifact payload");
   const role = nonEmptyString(raw.role, "Artifact role");
@@ -77,8 +74,8 @@ export function validateWorkflowArtifact(
     );
   }
 
-  const expectedBranch=options.expectedBranch??ACCOUNT_SUSPENSION_ARTIFACT_BRANCH;
-  if(raw.branch!==expectedBranch){
+  const expectedBranch=options.expectedBranch;
+  if(typeof expectedBranch!=="string"||raw.branch!==expectedBranch){
     throw new Error(`Artifact branch must be ${expectedBranch}`);
   }
 

@@ -30,13 +30,16 @@ test("ADK model API call timeout fails closed without 3-minute provider wait",as
   const started=performance.now();
   await assert.rejects(()=>handler({
     task_id:"test-task-model-timeout",
+    trusted_gateway_task_id:"dispatch_"+"t".repeat(22),
     context_id:"test-context",
     role:"backend",
     subtask:{
       subtask_id:"backend-test",
       instruction:"Demonstrate timeout",
-      branch:"feature/account-suspension",
-      relevant_paths:["apps/backend/src/users/user.service.ts"]
+      branch:"feature/session-work",
+      relevant_paths:["apps/backend/src/users/user.service.ts"],
+      approved_file_permissions:[{operation:"read_file",path:"apps/backend/src/users/user.service.ts"}],
+      approved_run_tests:false
     },
     delegation_evidence:{
       credential:"TEST_ONLY_NEVER_LOG_CREDENTIAL",

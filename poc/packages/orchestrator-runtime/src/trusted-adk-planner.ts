@@ -484,9 +484,7 @@ export class TrustedAdkReadOnlyPlanner {
           // Unknown roles must carry a trusted owner-supplied Card; no model
           // URL fetching and no synthetic fallback into a different role.
           const card=registered.card??createSpecializedAgentCard(
-            role as SpecialistRole,"http://127.0.0.1",{
-              capabilityProfile:"approved-plan"
-            });
+            role as SpecialistRole,"http://127.0.0.1");
           return {
             ok:true,role,card_ref:registered.card_ref,
             name:card.name,description:card.description,

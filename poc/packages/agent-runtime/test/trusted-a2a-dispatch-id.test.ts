@@ -4,8 +4,8 @@ import {createServer} from "node:net";
 import {TaskState} from "@a2a-js/sdk";
 import {DeterministicA2AOrchestrator} from "../src/orchestrator.ts";
 import {startSpecializedAgentServer} from "../src/server.ts";
-import {buildDeterministicArtifactPayload} from "../src/artifact-builder.ts";
-import {modelVisibleTaskContext} from "../src/agent-controller.ts";
+import {taskArtifact} from "./fixtures/task-artifact.ts";
+import {modelVisibleTaskContext} from "../src/task-context.ts";
 
 // The A2A server advertises its requested port in Agent Cards before bind,
 // so port:0 would advertise an unusable URL. Probe a free ephemeral loopback
@@ -33,7 +33,7 @@ test("real A2A transport retains a prebound Gateway ID privately, distinct from 
    role:"backend",host:"127.0.0.1",port:await freeLoopbackPort(),
    taskHandler:async ctx=>{
      context=structuredClone(ctx);
-     return buildDeterministicArtifactPayload("backend",ctx.subtask);
+     return taskArtifact("backend",ctx.subtask);
    }
  });
  try{
@@ -50,7 +50,8 @@ test("real A2A transport retains a prebound Gateway ID privately, distinct from 
        approved_file_permissions:[
          {operation:"read_file" as const,path:"apps/backend/src/users/user.service.ts"},
          {operation:"update_file" as const,path:"apps/backend/src/users/user.service.ts"}
-       ]
+       ],
+       approved_run_tests:false
      },
      delegation_evidence:{
        credential:"PRIVATE_TEST_DELEGATION_CREDENTIAL",

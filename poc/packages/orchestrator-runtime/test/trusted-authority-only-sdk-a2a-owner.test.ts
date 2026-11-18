@@ -184,14 +184,14 @@ test("R327 genuine SDK A2A HTTP -> ADK -> private Unix stage, completion gated i
   for(const role of roles){
    const server=await startSpecializedAgentServer({
     role,host:"127.0.0.1",port:await freePort(),
-    delegatedAuthorization:true,capabilityProfile:"approved-plan",
+    delegatedAuthorization:true,
     ...(role==="backend"?{adk:{
      model,gatewayBaseUrl:"http://offline-gateway.r327.invalid",
      adapterBaseUrl:"http://offline-signer.r327.invalid",
-     adapterToken:secret,scopeModelPaths:true,
+     adapterToken:secret,
      maxModelTurns:4,maxModelCallMs:5000,
      trustedEffectTaskRegistry:registry,fetchFn:handlerFetch
-    }}:{})
+    }}:{taskHandler:async()=>{throw Error("only the Backend runs in this test");}})
    });
    servers.push(server);urls[role]=server.baseUrl;
   }

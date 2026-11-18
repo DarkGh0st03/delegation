@@ -1,9 +1,7 @@
 /**
- * Only a trusted, prebound approved-plan task can use a non-legacy branch.
- * This is a narrow syntax guard; Git/OPA/Gateway continue enforcing actual
- * resources, repository and permission authority.
+ * Syntax guard for the signed work branch of a Task. Git/OPA/Gateway keep
+ * enforcing the actual resources, repository and permission authority.
  */
-export const LEGACY_A2A_BRANCH="feature/account-suspension";
 export function validatePrivateApprovedBranch(value:unknown):string{
   if(typeof value!=="string"||value.length>120||
      !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(value)||

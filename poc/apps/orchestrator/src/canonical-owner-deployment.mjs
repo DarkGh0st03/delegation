@@ -194,7 +194,7 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   localWorkers:{directory:c.directory,projectTestSourceProfile:testSourceProfileOf(projectProfile),
    workers:Object.fromEntries(roles.map((role,i)=>[
    role,{port:c.workerPorts[role],adk:{model:model(),gatewayBaseUrl:gatewayUrl,
-    adapterToken:workerTokens[i],scopeModelPaths:true,fetchFn:workerFetch(role),
+    adapterToken:workerTokens[i],fetchFn:workerFetch(role),
     gatewayTimeoutMs:role==="test"?900000:60000}}
   ]))},
   workflow:{

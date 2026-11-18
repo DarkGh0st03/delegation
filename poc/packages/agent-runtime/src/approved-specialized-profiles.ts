@@ -4,13 +4,21 @@
  * Task goals, repository, branch and file permissions MUST come from the
  * reviewed/signed A2A Task. No scenario-specific instructions or fixed path
  * lists belong to an approved specialist role profile.
- *
- * The historical Account Suspension fixture lives separately in
- * fixtures/account-suspension-agent-profiles.ts for UNSIGNED regression tests.
  */
 import type {SpecializedAgentRole} from "./contracts.ts";
-import type {SpecializedAgentProfile} from "./specialized-agents.ts";
+import type {SpecializedToolName} from "./gateway-tool-client.ts";
 import {ROLE_SKILLS,SPECIALIST_ROLES,TEST_ROLE} from "../../plan-contracts/src/agent-roles.mjs";
+
+export interface SpecializedAgentProfile {
+  role: SpecializedAgentRole;
+  skill: string;
+  tools: readonly SpecializedToolName[];
+  writable_paths: readonly string[];
+  creatable_paths: readonly string[];
+  read_only_paths: readonly string[];
+  can_run_tests: boolean;
+  system_prompt: string;
+}
 
 const role=(role:SpecializedAgentRole,skill:string,tools:SpecializedAgentProfile["tools"],
  canRunTests:boolean):SpecializedAgentProfile=>Object.freeze({

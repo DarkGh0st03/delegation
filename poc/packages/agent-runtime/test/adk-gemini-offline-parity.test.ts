@@ -8,9 +8,13 @@ import {z} from "zod";
 import {createAdkSpecializedAgent} from "../src/adk-specialized-agents.ts";
 import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
 
-const BRANCH="feature/account-suspension";
+const BRANCH="feature/session-work";
 const PATH="apps/backend/src/users/user.service.ts";
 const OUTPUT={maxOutputTokens:1024,temperature:0};
+/** Signed Task: read + update of the single Backend file. */
+const SIGNED={trustedBranch:BRANCH,trustedTaskPaths:[PATH],
+  trustedFilePermissions:[{operation:"read_file" as const,path:PATH},
+    {operation:"update_file" as const,path:PATH}]};
 
 /**
  * Both agents use the actual ADK Runner + FunctionTool declaration pipeline.
@@ -44,8 +48,8 @@ async function capture(agent:LlmAgent,model:FirstTurnCapture,label:string):Promi
             task_id:"offline-backend-task",
             role:"backend",
             subtask:{
-              subtask_id:"account-suspension-backend",
-              instruction:"Implement the backend Account Suspension lifecycle and shared status contract.",
+              subtask_id:"session-backend",
+              instruction:"Implement the backend change and its shared status contract.",
               branch:BRANCH,
               relevant_paths:[
                 "packages/shared/src/account-status.ts",
@@ -94,7 +98,7 @@ test("OFFLINE: Gemini function smoke vs real Backend share ADK request parameter
     name:"thesis_gemini_readonly_smoke",
     description:"Safe external Gemini ADK tool-calling test.",
     model:smokeModel,
-    instruction:"Call read_file exactly once, with branch=feature/account-suspension "+
+    instruction:"Call read_file exactly once, with branch=feature/session-work "+
       "and path=apps/backend/src/users/user.service.ts. When done reply READY.",
     tools:[new FunctionTool({
       name:"read_file",
@@ -107,7 +111,7 @@ test("OFFLINE: Gemini function smoke vs real Backend share ADK request parameter
     generateContentConfig:OUTPUT
   });
   const backendModel=new FirstTurnCapture();
-  const {agent:backendAgent}=createAdkSpecializedAgent({
+  const {agent:backendAgent}=createAdkSpecializedAgent({...SIGNED,
     role:"backend",
     model:backendModel,
     gatewayClient:{
@@ -148,7 +152,7 @@ test("OFFLINE: Gemini function smoke vs real Backend share ADK request parameter
 
 test("OFFLINE: Backend update_file declaration exposes only the required argument names",()=>{
   const backendModel=new FirstTurnCapture();
-  const {agent}=createAdkSpecializedAgent({
+  const {agent}=createAdkSpecializedAgent({...SIGNED,
     role:"backend",
     model:backendModel,
     gatewayClient:{invoke:async()=>{throw new Error("No Gateway in schema check");}} as never,

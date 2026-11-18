@@ -4,7 +4,7 @@ import {createServer} from "node:net";
 import {setTimeout as sleep} from "node:timers/promises";
 import {Role,TaskState} from "@a2a-js/sdk";
 import {ClientFactory,ClientFactoryOptions,ServiceParameters,withA2AExtensions} from "@a2a-js/sdk/client";
-import {buildDeterministicArtifactPayload} from "../src/artifact-builder.ts";
+import {taskArtifact} from "./fixtures/task-artifact.ts";
 import {DELEGATED_AUTHORIZATION_EXTENSION_URI} from "../src/contracts.ts";
 import {DeterministicA2AOrchestrator} from "../src/orchestrator.ts";
 import {startSpecializedAgentServer} from "../src/server.ts";
@@ -12,9 +12,12 @@ import {startSpecializedAgentServer} from "../src/server.ts";
 const EVIDENCE="SECRET_PRIVATE_DC_ONLY_FOR_TEST";
 const request=(url:string)=>({
   agent_base_url:url,
+  trusted_gateway_task_id:"dispatch_"+"a".repeat(22),
   subtask:{subtask_id:"long-job",instruction:"Work within the allowed Backend file",
-    branch:"feature/account-suspension" as const,
-    relevant_paths:["apps/backend/src/users/user.service.ts"]},
+    branch:"feature/session-work",
+    relevant_paths:["apps/backend/src/users/user.service.ts"],
+    approved_file_permissions:[{operation:"read_file" as const,path:"apps/backend/src/users/user.service.ts"}],
+    approved_run_tests:false},
   delegation_evidence:{credential:EVIDENCE,credential_id:"urn:test:backend",
     presenter_id:"did:thesis:backend"}
 });
@@ -29,7 +32,7 @@ test("A2A polling completes an intentionally slow task, and never persists DC in
     taskHandler:async(context)=>{
       taskId=context.task_id;
       await sleep(420);
-      return buildDeterministicArtifactPayload("backend",context.subtask);
+      return taskArtifact("backend",context.subtask);
     }
   });
   try{
@@ -78,7 +81,7 @@ test("A2A deadline cancels slow task and late results cannot produce an Artifact
       id=context.task_id;
       signal?.addEventListener("abort",()=>{wasAborted=true;},{once:true});
       await sleep(330);
-      return buildDeterministicArtifactPayload("backend",context.subtask);
+      return taskArtifact("backend",context.subtask);
     }
   });
   try{
@@ -103,7 +106,8 @@ test("A2A polling config rejects invalid deadline/intervals before network acces
 
 test("protected initial A2A sendMessage cannot return delegation metadata even when history is requested",async()=>{
   const server=await startSpecializedAgentServer({
-    role:"backend",host:"127.0.0.1",port:43594
+    role:"backend",host:"127.0.0.1",port:43594,
+    taskHandler:async(context)=>taskArtifact("backend",context.subtask)
   });
   try{
     const client=await clientFor(server.baseUrl);
@@ -115,7 +119,8 @@ test("protected initial A2A sendMessage cannot return delegation metadata even w
         role:Role.ROLE_USER,
         parts:[{content:{$case:"data",value:task.subtask},metadata:undefined,
           filename:"",mediaType:"application/json"}],
-        metadata:{delegation_evidence:task.delegation_evidence},
+        metadata:{delegation_evidence:task.delegation_evidence,
+          trusted_gateway_task_id:task.trusted_gateway_task_id},
         extensions:[DELEGATED_AUTHORIZATION_EXTENSION_URI],
         referenceTaskIds:[]
       },
@@ -125,7 +130,7 @@ test("protected initial A2A sendMessage cannot return delegation metadata even w
         acceptedOutputModes:["application/json"],
         taskPushNotificationConfig:undefined
       },
-      metadata:{workflow:"account-suspension"}
+      metadata:{workflow:"delegated-task"}
     },{serviceParameters:ServiceParameters.create(
       withA2AExtensions(DELEGATED_AUTHORIZATION_EXTENSION_URI)
     )});
@@ -154,7 +159,7 @@ test("A2A Express 5 startup rejects an occupied port and cannot report a fake re
     try{
       returnedServer=await startSpecializedAgentServer({
         role:"backend",host:"127.0.0.1",port:address.port,
-        delegatedAuthorization:true,capabilityProfile:"approved-plan",
+        delegatedAuthorization:true,
         taskHandler:async()=>{throw Error("must never accept protected task");}
       });
     }catch(error){startupError=error;}
