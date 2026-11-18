@@ -206,3 +206,16 @@ test('a choice outside the signed Root is refused with a reason the Engineer can
  await assert.rejects(proposer([{resource:test_file,operation:'read_file'},{resource:test_file,operation:'update_file'}]).propose(),
   /model Task choice denied: permission not in the signed Root \(read_file tests\/frontend\/List\.test\.tsx\): a new Engineer approval is needed/u);
 });
+
+test('a Test edit outside the declared test sources is refused with the test folders in the reason',async()=>{
+ const spec=root+'/files/tests/e2e/user-profile.spec.ts';
+ const perms=[{resource:spec,operation:'read_file'},{resource:spec,operation:'update_file'}];
+ const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
+  model:new RawText(JSON.stringify({task_id:'task-e2e-1',agent_id:'test',depends_on:['task-run-1'],
+   permissions:perms,instruction:'Update the e2e spec'})),
+  requirement:'Search users',branch:'feature/sample-change',rootPermissions:perms,
+  agents:{test:{capabilities:['read_file','update_file','create_file','run_tests']}},
+  previousTasks:[{task_id:'task-run-1',agent_id:'test'}],nextEpoch:2,decisionKind:'agent'});
+ await assert.rejects(proposer.propose(),
+  /the Test agent may only write project test sources \(update_file tests\/e2e\/user-profile\.spec\.ts; test sources are tests\/backend, tests\/frontend/u);
+});

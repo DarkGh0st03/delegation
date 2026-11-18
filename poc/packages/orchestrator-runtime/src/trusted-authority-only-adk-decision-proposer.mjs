@@ -430,14 +430,20 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    // read -> CAS). Distinct files require distinct serial Task/Child
    // admissions, independently pinned HEADs, and fresh Test on the final
    // commit. A model cannot smuggle unused read/write permissions.
+   const testRoots=()=>'test sources are '+this.projectTestSourceProfile.roots.join(', ')+
+     ' ('+this.projectTestSourceProfile.suffixes.join(', ')+')';
+   const edited=selected.find(p=>['update_file','create_file'].includes(p.operation));
+   if(raw.agent_id==='test'&&edited&&
+      !(edited.operation==='update_file'?isProjectTestRepairGrant(selected,this.projectTestSourceProfile):
+        isProjectTestCreateGrant([edited],this.projectTestSourceProfile)))
+    fail('the Test agent may only write project test sources ('+shown(edited)+'; '+testRoots()+')');
+   if(selected.some(p=>p.operation==='create_pull_request'))
+    fail('a specialist Task cannot open a pull request');
    if((this.decisionKind==='adaptive'&&
        !(scopedRead||oneNativeEffect||exactNativeReadCas||exactNativeReadCreate))||
-      (raw.agent_id==='test'&&selected.some(p=>p.operation==='update_file')&&
-       !isProjectTestRepairGrant(selected,this.projectTestSourceProfile))||
-      selected.some(p=>p.operation==='create_pull_request')||
       (!scopedRead&&!exactNativeReadCas&&!exactNativeReadCreate&&
        selected.filter(p=>['update_file','create_file','run_tests'].includes(p.operation)).length!==1))
-    fail();
+    fail('a Task needs exactly one edited file (plus its reads) or one test run');
   }
   const choice=Object.freeze({task_id:raw.task_id,agent_id:raw.agent_id,
    depends_on:Object.freeze([...raw.depends_on]),
