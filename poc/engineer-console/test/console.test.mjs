@@ -764,3 +764,19 @@ test("free mode: after a verified FAIL the simulated Orchestrator repairs and re
   assert.equal(retest.task.permissions[0].operation, "run_tests");
   assert.equal((await next(failure)).action, "blocked", "the second FAIL exhausts a budget of two");
 });
+
+test("free mode: the simulated Draft PR depends on the last completed test run", async () => {
+  const {ScriptedRootTaskModel} = await import("../src/scripted-execution-models.mjs");
+  const model = new ScriptedRootTaskModel({task_id: "draft-pr", agent_id: "orchestrator",
+    depends_on: ["t99-test"], permissions: [], instruction: "Crea la Draft PR"});
+  const ask = async completed => {
+    let out;
+    const context = {independently_gateway_completed_tasks: completed.map(task_id => ({task_id}))};
+    for await (const r of model.generateContentAsync({contents: [{role: "user",
+      parts: [{text: JSON.stringify(context)}]}]})) out = r;
+    return JSON.parse(out.content.parts[0].text).depends_on;
+  };
+  assert.deepEqual(await ask(["branch", "t01-test", "t99-test"]), ["t99-test"]);
+  // After a verified FAIL and a repair, the PR follows the passing retest.
+  assert.deepEqual(await ask(["branch", "t01-test", "t98-repair-1", "t99-retest-1"]), ["t99-retest-1"]);
+});

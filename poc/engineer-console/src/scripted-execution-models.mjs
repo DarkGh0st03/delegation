@@ -367,8 +367,13 @@ export class ScriptedDecisionModel extends Scripted {
 export class ScriptedRootTaskModel extends Scripted {
   #task;
   constructor(task) { super({model: "scripted-root-task-no-ai"}); this.#task = task; }
-  async *generateContentAsync() {
+  async *generateContentAsync(request) {
     this.calls++;
-    yield say(JSON.stringify(this.#task));
+    // The Draft PR depends on the LAST completed test run: after a repair
+    // that is the retest, not the first (failed) run.
+    const runs = [...completedTaskIds(request)].filter(id => /^t99-(test|retest-\d+)$/u.test(id));
+    const task = this.#task.task_id === "draft-pr" && runs.length
+      ? {...this.#task, depends_on: [runs.at(-1)]} : this.#task;
+    yield say(JSON.stringify(task));
   }
 }
