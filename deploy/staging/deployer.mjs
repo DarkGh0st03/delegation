@@ -93,11 +93,19 @@ export class StagingDeployer {
   }
 
   async #gitea_(path, {binary = false} = {}) {
-    const response = await this.#fetch(this.#gitea.baseUrl + "/api/v1" + path, {
-      headers: {authorization: "token " + this.#gitea.token, accept: binary ? "*/*" : "application/json"},
-      redirect: "error", signal: AbortSignal.timeout(binary ? 300_000 : 20_000)
-    });
+    // Gitea not reachable (e.g. still starting): a temporary condition,
+    // retried at the next pass; it never marks a running app as failed.
+    const unreachable = detail => Object.assign(Error("Gitea non raggiungibile (" + detail +
+      "): nuovo tentativo tra pochi secondi"), {transient: true});
+    let response;
+    try {
+      response = await this.#fetch(this.#gitea.baseUrl + "/api/v1" + path, {
+        headers: {authorization: "token " + this.#gitea.token, accept: binary ? "*/*" : "application/json"},
+        redirect: "error", signal: AbortSignal.timeout(binary ? 300_000 : 20_000)
+      });
+    } catch (error) { throw unreachable(error?.message ?? "errore di rete"); }
     if (response.status === 404) return undefined;
+    if (response.status >= 500) throw unreachable("HTTP " + response.status);
     if (!response.ok) throw Error(`Gitea ${path} -> HTTP ${response.status}`);
     return binary ? Buffer.from(await response.arrayBuffer()) : response.json();
   }
@@ -143,7 +151,11 @@ export class StagingDeployer {
         try { await this.#reconcile(name, profile); }
         catch (error) {
           this.#log(`[${name}] ${error.message}`);
-          this.#set(name, {state: "failed", message: error.message, log: error.output ?? null});
+          if (error.transient) {
+            // Keep the state of the running version; only report the delay.
+            const entry = this.#status.repositories[name] ?? {};
+            this.#set(name, {state: entry.state === "running" ? "running" : "waiting", message: error.message});
+          } else this.#set(name, {state: "failed", message: error.message, log: error.output ?? null});
         }
       }
       // Repositories deleted or staging disabled: stop their app. An
@@ -167,7 +179,14 @@ export class StagingDeployer {
     const digest = stagingProfileDigest(profile);
     const container = await this.#containerState(name);
     const upToDate = entry.live_sha === sha && entry.profile_sha256 === digest;
-    if (upToDate && container.running && container.sha === sha) return;
+    if (upToDate && container.running && container.sha === sha) {
+      // The current main runs: clear any stale failure or delay message.
+      const active = "Versione " + sha.slice(0, 7) + " attiva";
+      if (entry.state !== "running" || entry.message !== active || entry.failed_sha === sha)
+        this.#set(name, {state: "running", message: active, log: null,
+          ...(entry.failed_sha === sha ? {failed_sha: null, failed_profile_sha256: null} : {})});
+      return;
+    }
     // Do not loop on a version that already failed with this same profile
     // (saving the profile again in the console is the explicit retry).
     const retryRequested = (this.#store.savedAt(name) || "") > (entry.failed_at || "");

@@ -368,3 +368,40 @@ test("console API: detection is stored per repository and drives the App column"
   const redetect = await call("POST", "/api/repos/lib/staging/detect", undefined, cookie);
   assert.equal((await redetect.json()).detection.interface, "none");
 });
+
+test("deployer: Gitea briefly unreachable never marks the running app as failed, and a stale failure clears", async (t) => {
+  const dir = tempDir(t), world = fakeWorld();
+  new StagingStore(dir).save("greeter", PROFILE);
+  let offline = false;
+  const fetchFn = async (url, init) => {
+    if (offline && url.startsWith("http://gitea:3000")) throw new TypeError("fetch failed");
+    return world.fetchFn(url, init);
+  };
+  const deployer = new StagingDeployer({stagingDir: dir, gitea: {baseUrl: "http://gitea:3000", org: "thesis", token: "deploy-token"},
+    docker: world.docker, fetchFn, log: () => {}, readyTimeoutMs: 50, sleep: async () => {}});
+  await deployer.tick();
+  assert.equal(deployer.status.repositories.greeter.state, "running");
+  offline = true;
+  await deployer.tick();
+  assert.equal(deployer.status.repositories.greeter.state, "running");
+  assert.match(deployer.status.repositories.greeter.message, /Gitea non raggiungibile/u);
+  offline = false;
+  await deployer.tick();
+  assert.equal(deployer.status.repositories.greeter.state, "running");
+  assert.equal(deployer.status.repositories.greeter.message, "Versione " + SHA1.slice(0, 7) + " attiva");
+
+  // A failure recorded earlier (e.g. before a restart) for the version that
+  // now runs is cleared on the next pass, without rebuilding.
+  const status = JSON.parse(readFileSync(join(dir, "status.json"), "utf8"));
+  Object.assign(status.repositories.greeter, {state: "failed", message: "fetch failed",
+    failed_sha: SHA1, failed_profile_sha256: status.repositories.greeter.profile_sha256});
+  writeFileSync(join(dir, "status.json"), JSON.stringify(status));
+  const restarted = new StagingDeployer({stagingDir: dir, gitea: {baseUrl: "http://gitea:3000", org: "thesis", token: "deploy-token"},
+    docker: world.docker, fetchFn, log: () => {}, readyTimeoutMs: 50, sleep: async () => {}});
+  const before = world.calls.length;
+  await restarted.tick();
+  const entry = restarted.status.repositories.greeter;
+  assert.equal(entry.state, "running");
+  assert.equal(entry.failed_sha, null);
+  assert.equal(world.calls.filter((c, i) => i >= before && /^(create|run|commit)/u.test(c)).length, 0);
+});
