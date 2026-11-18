@@ -2,8 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {createTrustedEngineerCredentialPort}
  from "../src/trusted-engineer-crypto-port.ts";
-import {createOwnerPrivateMcpChildCryptographyPort}
- from "../src/trusted-child-crypto-port.ts";
 import {createDirectRustEngineerCredentialPort}
  from "../src/trusted-engineer-direct-core-port.ts";
 
@@ -19,21 +17,15 @@ const root=(id:string,index:string,seconds:number)=>({
  }
 });
 
-test("R218 canonical root and child DC fail closed without a native Rust socket",()=>{
+test("R218 canonical Root DC fails closed without a native Rust socket",()=>{
  const previousFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
  const previousSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  try{
-  const transport={
-   adapterBaseUrl:"http://127.0.0.1:8090",
-   bearerToken:"PRIVATE_ENGINEER_BEARER",
-   fetchFn:(async()=>{throw Error("HTTP Adapter must not be called");}) as typeof fetch
-  };
+  const transport={bearerToken:"PRIVATE_ENGINEER_BEARER"};
   assert.throws(()=>createTrustedEngineerCredentialPort(transport),
     /Canonical Engineer root requires native Rust issuer socket/u);
-  assert.throws(()=>createOwnerPrivateMcpChildCryptographyPort(transport),
-    /Canonical signed Child DC requires native Rust issuer socket/u);
  }finally{
   if(previousFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
   else process.env.APPROVED_RUNNER_NATIVE_MCP=previousFlag;

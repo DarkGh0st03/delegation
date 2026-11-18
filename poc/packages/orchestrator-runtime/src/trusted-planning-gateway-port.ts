@@ -33,8 +33,6 @@ export interface TrustedPlanningGatewayPortConfig {
   coordinator:PlanningAuthority;
   snapshot:TrustedPlanningSnapshot;
   gatewayBaseUrl:string;
-  /** Historical HTTP presenter only; approved Rust signer needs no URL. */
-  adapterBaseUrl?:string;
   adapterToken:string;
   fetchFn?:typeof fetch;
   timeoutMs?:number;
@@ -76,7 +74,6 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     this.#credentialId=root.credential_id;
     this.#client=new OrchestratorPlanningGatewayReadClient({
       gatewayBaseUrl:config.gatewayBaseUrl,
-      ...(config.adapterBaseUrl!==undefined?{adapterBaseUrl:config.adapterBaseUrl}:{}),
       adapterToken:config.adapterToken,
       rootCredentialId:root.credential_id,
       planningBranch:trustedPlanningSourceBranch(snapshot),

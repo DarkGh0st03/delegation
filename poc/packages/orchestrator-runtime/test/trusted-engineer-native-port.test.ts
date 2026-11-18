@@ -64,7 +64,6 @@ test("R171 native Engineer root and revocation share one private local Rust port
   }};
  });
  const p=createNativeRustEngineerCredentialPort({
-  adapterBaseUrl:"http://should-never-be-used.invalid",
   bearerToken:"TRUSTED_ENGINEER_LOCAL_BEARER",nativeSocketPath:f.path
  });
  const root=await p.issueScopedOrchestratorRoot(issue as never);
@@ -85,7 +84,7 @@ test("R171 trust boundary rejects a root with unauthorized amplified permissions
    {resource:"gitea://untrusted",operation:"merge_pull_request"}]}
  }}));
  const p=createNativeRustEngineerCredentialPort({
-  adapterBaseUrl:"http://unused.invalid",bearerToken:"PRIVATE_BEARER",
+  bearerToken:"PRIVATE_BEARER",
   nativeSocketPath:f.path
  });
  await assert.rejects(p.issueScopedOrchestratorRoot(issue as never),
@@ -97,7 +96,7 @@ test("R171 native denial masks Rust details and NEVER falls back to HTTP",async 
   ok:false,error:"PRIVATE_ENGINEER_SIGNING_KEY_NEVER_LOG"
  }));
  const p=createNativeRustEngineerCredentialPort({
-  adapterBaseUrl:"http://localhost:1",bearerToken:"PRIVATE_BEARER",
+  bearerToken:"PRIVATE_BEARER",
   nativeSocketPath:f.path
  });
  await assert.rejects(p.issueScopedOrchestratorRoot(issue as never),e=>{
@@ -116,7 +115,7 @@ test("R171 canonical owner selects native Unix port when explicitly configured",
  try{
   process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=f.path;
   const client=createTrustedEngineerCredentialPort({
-   adapterBaseUrl:"http://127.0.0.1:1",bearerToken:"TRUSTED_ENGINEER_LOCAL_BEARER"
+   bearerToken:"TRUSTED_ENGINEER_LOCAL_BEARER"
   });
   assert.equal((await client.issueScopedOrchestratorRoot(issue as never)).id,
     issue.credential_id);

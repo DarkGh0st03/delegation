@@ -1,25 +1,19 @@
 /**
- * R161: trusted, OWNER-PRIVATE child credential issuer transport.
+ * Trusted, owner-private Child DC issuer transport.
  *
  * Authority lives in TrustedApprovedPlanChildAuthorityIssuer: this port may
  * only receive a command after the immutable signed plan, exact role/grants,
- * one-shot durable intent and live root checks. It cannot select permissions,
+ * one-shot durable intent and live Root checks. It cannot select permissions,
  * mint its own DC or be invoked from an ADK FunctionTool/MCP Agent Task.
- *
- * The current signer is still the existing Rust Adapter (single issuer
- * identity, revocation and status registry). A later private crypto MCP port
- * can replace this transport without adding a model-visible issuance tool.
+ * The signer is the Orchestrator's own Rust wallet (native Unix socket).
  */
 import type {CredentialStatusInput,IssuedDelegationCredential}
   from "./trusted-credential-contracts.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
-import {createOwnerPrivateChildMcpSession}
-  from "../../../mcp-shared/src/owner-private-child-mcp.ts";
-import {invokeNativeCrypto,roleWalletSocket} from "../../agent-runtime/src/native-crypto-ipc.ts";
+import {invokeNativeCrypto} from "../../agent-runtime/src/native-crypto-ipc.ts";
 import {createOwnerPrivateNativeCryptoMcpSession}
  from "../../../mcp-shared/src/owner-private-native-crypto-stdio.mjs";
 
-type FetchLike=typeof fetch;
 export interface ExactTrustedChildIssuance {
   parent_credential_id:string;
   credential_id:string;
@@ -32,60 +26,23 @@ export interface ExactTrustedChildIssuance {
   permissions:readonly DelegatedPermission[];
 }
 export interface TrustedChildCryptographyPort {
-  readonly kind:"rust-adapter"|"rust-native"|"owner-private-crypto-mcp";
+  readonly kind:"rust-native";
   issueChild(request:Readonly<ExactTrustedChildIssuance>):Promise<IssuedDelegationCredential>;
-  /** R381.3 opt-in only: Rust IPC invoked INSIDE a private MCP subprocess. */
+  /** Opt-in: the same Rust IPC call made inside a private MCP subprocess. */
   issueChildViaPrivateMcp?(request:Readonly<ExactTrustedChildIssuance>):Promise<IssuedDelegationCredential>;
 }
-export interface RustAdapterChildPortConfig {
-  /** Only the retired HTTP issuer needs a base URL. Native Rust needs none. */
-  adapterBaseUrl?:string;
+export interface NativeChildPortConfig {
   bearerToken:string;
-  fetchFn?:FetchLike;
   timeoutMs?:number;
 }
 
-export function createRustAdapterChildCryptographyPort(
- config:RustAdapterChildPortConfig
-):TrustedChildCryptographyPort {
- const adapterUrl=config.adapterBaseUrl;
- if(typeof adapterUrl!=="string"||
-    !/^https?:\/\//u.test(adapterUrl)||
-    !adapterUrl.trim()||
-    !config.bearerToken.trim()||
-    !Number.isSafeInteger(config.timeoutMs??5000)||
-    (config.timeoutMs??5000)<1)
-   throw Error("Private Rust Adapter issuance transport unavailable");
- const base=adapterUrl.replace(/\/+$/u,"");
- const send=config.fetchFn??fetch;
- const timeout=config.timeoutMs??5000;
- return Object.freeze({
-  kind:"rust-adapter" as const,
-  async issueChild(request:Readonly<ExactTrustedChildIssuance>) {
-   // No schema-inferred grants: the caller must pass only the exact
-   // previously authenticated, approved permissions.
-   const response=await send(base+"/v1/credentials/child",{
-    method:"POST",
-    headers:{authorization:"Bearer "+config.bearerToken,
-      "content-type":"application/json",accept:"application/json"},
-    body:JSON.stringify(request),
-    signal:AbortSignal.timeout(timeout)
-   });
-   if(!response.ok)
-    throw Error("Trusted child DC: Adapter rejected exact signed Task child issuance");
-   try{return await response.json() as IssuedDelegationCredential;}
-   catch{throw Error("Trusted child DC: Adapter child issuance response is malformed");}
-  }
- });
-}
-
 /**
- * Native Child DC signing in the SAME Rust process as the Engineer's root.
- * The caller supplied exact grants have already been checked against a
- * signed approved Task. Rust enforces parent/role/capability independently.
+ * Native Child DC signing in the Orchestrator's Rust wallet. The exact
+ * grants have already been checked against a signed approved Task; Rust
+ * enforces parent, role and capability independently.
  */
 export function createNativeRustChildCryptographyPort(
- config:RustAdapterChildPortConfig,socketPath:string
+ config:NativeChildPortConfig,socketPath:string
 ):TrustedChildCryptographyPort {
  if(!config.bearerToken?.trim()||!socketPath.startsWith("/"))
   throw Error("Trusted native Child DC transport unavailable");
@@ -118,32 +75,6 @@ export function createNativeRustChildCryptographyPort(
     socketPath,bearerToken:config.bearerToken,timeoutMs:config.timeoutMs??10000
    },request);
    return validate(await session.invokeOnce(),request);
-  }
- });
-}
-
-/**
- * R162: real MCP SDK exchange inside the trusted owner process.
- * The existing Rust Adapter is the sole issuer and revocation authority;
- * no new keys, status registry or model-facing tool are created.
- */
-export function createOwnerPrivateMcpChildCryptographyPort(
- config:RustAdapterChildPortConfig
-):TrustedChildCryptographyPort{
- // Child DCs are issued in the Orchestrator's OWN wallet.
- const socketPath=roleWalletSocket("orchestrator");
- if(!socketPath&&process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
-  throw Error("Canonical signed Child DC requires native Rust issuer socket");
- const rust=socketPath
-  ?createNativeRustChildCryptographyPort(config,socketPath)
-  :createRustAdapterChildCryptographyPort(config);
- return Object.freeze({
-  kind:"owner-private-crypto-mcp" as const,
-  async issueChild(request:Readonly<ExactTrustedChildIssuance>){
-   const session=createOwnerPrivateChildMcpSession(
-     ()=>rust.issueChild(request)
-   );
-   return session.invokeOnce();
   }
  });
 }

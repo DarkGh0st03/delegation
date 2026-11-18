@@ -1,3 +1,4 @@
+import {withFakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * Real ADK agent + A2A handler: a specialist reads the edited file and its
@@ -56,8 +57,8 @@ test("several signed reads + an identical update end as an owner-fenced 'no chan
    async attest(id:string,tool:"read_file"|"update_file"){owner.push("attest:"+tool+":"+id);},
    async reportNoChange(id:string){owner.push("no_change:"+id);}}});
  const model=new ScriptedNoChange();
- const handler=createAdkA2ATaskHandler({model,gatewayBaseUrl:"http://gateway.invalid",
-  adapterToken:"ADAPTER_SECRET",adapterBaseUrl:"http://signer.invalid",maxModelTurns:6,
+ const handler=createAdkA2ATaskHandler(withFakeSigner({model,gatewayBaseUrl:"http://gateway.invalid",
+  adapterToken:"ADAPTER_SECRET",maxModelTurns:6,
   scopeModelPaths:true,trustedEffectTaskRegistry:registry,
   fetchFn:(async(url:unknown,options?:RequestInit)=>{
    const u=String(url),body=JSON.parse(String(options?.body));
@@ -76,7 +77,7 @@ test("several signed reads + an identical update end as an owner-fenced 'no chan
       revision:SHA,content:SOURCE[path]}});
    }
    throw Error("unexpected offline call "+u);
-  }) as typeof fetch});
+  }) as typeof fetch}));
  await assert.rejects(handler(context()),/ended after read without producing an update/u);
  // Only the two signed reads reached the Gateway; the identical update did not.
  assert.deepEqual(gateway,["prepare:read_file:"+DEP,"execute:req-1",
@@ -116,8 +117,8 @@ test("Test agent: signed reads and no write end as an owner-fenced 'no change ne
    async attest(id:string,tool:"read_file"|"update_file"){owner.push("attest:"+tool+":"+id);},
    async reportNoChange(id:string){owner.push("no_change:"+id);}}});
  const model=new ScriptedReadsOnly([SRC,TEST]);
- const handler=createAdkA2ATaskHandler({model,gatewayBaseUrl:"http://gateway.invalid",
-  adapterToken:"ADAPTER_SECRET",adapterBaseUrl:"http://signer.invalid",maxModelTurns:6,
+ const handler=createAdkA2ATaskHandler(withFakeSigner({model,gatewayBaseUrl:"http://gateway.invalid",
+  adapterToken:"ADAPTER_SECRET",maxModelTurns:6,
   scopeModelPaths:true,trustedEffectTaskRegistry:registry,
   fetchFn:(async(url:unknown,options?:RequestInit)=>{
    const u=String(url),body=JSON.parse(String(options?.body));
@@ -133,7 +134,7 @@ test("Test agent: signed reads and no write end as an owner-fenced 'no change ne
       revision:SHA,content:files[path]}});
    }
    throw Error("unexpected offline call "+u);
-  }) as typeof fetch});
+  }) as typeof fetch}));
  await assert.rejects(handler({...context(),role:"test",
   subtask:{...context().subtask,instruction:"Repair the failing route test",relevant_paths:[SRC,TEST],
    approved_file_permissions:[{path:SRC,operation:"read_file"},{path:TEST,operation:"read_file"},

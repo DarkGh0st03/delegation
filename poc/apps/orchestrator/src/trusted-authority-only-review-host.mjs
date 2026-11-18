@@ -121,7 +121,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   !fields(options.planner,['model','planId','onObservation','maxModelTurns',
     'maxProposalRevisions','thinkingLevel','maxModelCallMs','maxOutputTokens','maxPlanningMs',
     'projectProfileSha256'])||
-  !fields(options.gateway,['gatewayBaseUrl','adapterBaseUrl','adapterToken','fetchFn','timeoutMs']))
+  !fields(options.gateway,['gatewayBaseUrl','adapterToken','fetchFn','timeoutMs']))
   deny('explicit trusted dependencies required; legacy/context overrides forbidden');
  // Disposable owner-private, offline-only seam. A2A/model/workflow JSON
  // cannot mint an R323 native receipt or call this host-only callback.

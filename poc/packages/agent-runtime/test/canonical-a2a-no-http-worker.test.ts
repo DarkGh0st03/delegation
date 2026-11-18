@@ -1,3 +1,4 @@
+import {fakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync} from "node:crypto";
@@ -32,7 +33,7 @@ test("R223 running canonical A2A server exposes no private MCP HTTP worker route
    adk:{
     model:{model:"r223-no-model-inference"} as BaseLlm,
     gatewayBaseUrl:"http://127.0.0.1:1",
-    adapterBaseUrl:"http://127.0.0.1:2",
+    presentationSigner:fakeSigner(),
     adapterToken:"R223_PRIVATE_TEST_ONLY",
     fetchFn:async()=>{throw Error("No network calls in R223 A2A route test");}
    }

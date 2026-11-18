@@ -4,8 +4,6 @@ import {invokeNativeCrypto} from "./native-crypto-ipc.ts";
 import {createOwnerPrivateNativeCryptoMcpSession}
  from "../../../mcp-shared/src/owner-private-native-crypto-stdio.mjs";
 
-type FetchLike = typeof fetch;
-
 export interface PreparedGatewayAuthorization {
   request_id: string;
   audience: string;
@@ -17,33 +15,47 @@ export interface PreparedGatewayAuthorization {
   expires_at: string;
 }
 
+/** The exact presentation an agent's wallet is asked to sign. */
+export interface PresentationRequest {
+  credential_id: string;
+  disclosed_permissions: PreparedGatewayAuthorization["required_permission"][];
+  audience: string;
+  challenge: string;
+}
+
+/**
+ * TESTS ONLY: an explicit, injected fake signer. Production agents sign
+ * every VP in their own native Rust wallet (nativeSocketPath); a signer is
+ * refused whenever the canonical native mode is on.
+ */
+export type PresentationSigner = (
+  request: Readonly<PresentationRequest>
+) => Promise<string>;
+
 export interface DelegationEvidenceHandlerConfig {
-  /** Historical unsigned HTTP fixture only; native Rust VP needs no Adapter URL. */
-  adapterBaseUrl?: string;
+  /** Caller token of this agent for its own wallet. */
   adapterToken: string;
   evidence: DelegationEvidence;
   timeoutMs?: number;
+  /** This agent's Rust wallet socket (production). */
   nativeSocketPath?: string;
   /** Trusted host only; not received from A2A/ADK/model/tool arguments. */
   nativePresentationTransport?: "direct"|"mcp-stdio";
-  fetchFn?: FetchLike;
+  /** Tests only; see PresentationSigner. */
+  presentationSigner?: PresentationSigner;
   signal?: AbortSignal;
 }
 
 export class DelegationEvidenceHandler {
-  readonly #adapterBaseUrl: string;
   readonly #adapterToken: string;
   readonly #evidence: DelegationEvidence;
   readonly #timeoutMs: number;
   readonly #nativeSocketPath?:string;
   readonly #nativePresentationTransport:"direct"|"mcp-stdio";
-  readonly #fetch: FetchLike;
+  readonly #presentationSigner?: PresentationSigner;
   readonly #signal?: AbortSignal;
 
   constructor(config: DelegationEvidenceHandlerConfig) {
-    if (!config.nativeSocketPath && !config.adapterBaseUrl?.trim()) {
-      throw new Error("Delegation Adapter base URL cannot be empty");
-    }
     if(config.nativePresentationTransport!==undefined&&
        config.nativePresentationTransport!=="direct"&&
        config.nativePresentationTransport!=="mcp-stdio")
@@ -51,24 +63,24 @@ export class DelegationEvidenceHandler {
     if(config.nativePresentationTransport==="mcp-stdio"&&
        !config.nativeSocketPath)
       throw Error("Private MCP native presenter requires trusted Rust socket");
+    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&
+       (!config.nativeSocketPath||config.presentationSigner))
+      throw Error("Canonical signed Task VP requires native Rust signer socket");
+    if (!config.nativeSocketPath === !config.presentationSigner) {
+      throw new Error("Delegation evidence needs exactly one signer: the native wallet or an explicit test signer");
+    }
     if (config.adapterToken.trim().length === 0) {
-      throw new Error("Delegation Adapter token cannot be empty");
+      throw new Error("Delegation wallet token cannot be empty");
     }
     if (config.evidence.credential_id.trim().length === 0) {
       throw new Error("Delegation credential id cannot be empty");
     }
-
-    // Signed canonical Tasks must not fall back to the old Adapter HTTP
-    // presenter when the native Rust socket is absent.
-    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&!config.nativeSocketPath)
-      throw Error("Canonical signed Task VP requires native Rust signer socket");
-    this.#adapterBaseUrl = (config.adapterBaseUrl??"").replace(/\/+$/u, "");
     this.#adapterToken = config.adapterToken;
     this.#evidence = structuredClone(config.evidence);
     this.#timeoutMs = config.timeoutMs ?? 5_000;
     this.#nativeSocketPath=config.nativeSocketPath;
     this.#nativePresentationTransport=config.nativePresentationTransport??"direct";
-    this.#fetch = config.fetchFn ?? fetch;
+    this.#presentationSigner=config.presentationSigner;
     this.#signal = config.signal;
   }
 
@@ -84,116 +96,50 @@ export class DelegationEvidenceHandler {
     prepared: PreparedGatewayAuthorization
   ): Promise<string> {
     this.#signal?.throwIfAborted();
-    // Native path uses the SAME Rust CryptoRuntime as the Engineer root
-    // and the Orchestrator child. NEVER fall back to HTTP after native denial.
-    if(this.#nativeSocketPath){
-      let issued:unknown;
-      try{
-        // The agent's own Child DC travels as DATA to its wallet, which
-        // holds only this agent's key and no shared credential store.
-        let credential:unknown;
-        try{credential=JSON.parse(this.#evidence.credential);}catch{credential=undefined;}
-        const args={
-          credential_id:this.#evidence.credential_id,
-          disclosed_permissions:[prepared.required_permission],
-          audience:prepared.audience,challenge:prepared.challenge,
-          ...(credential&&typeof credential==="object"&&!Array.isArray(credential)&&
-            (credential as {id?:unknown}).id===this.#evidence.credential_id?{credential}:{})
-        };
-        // The original A2A Task's signed Child and Gateway challenge are
-        // fixed by the trusted handler before this host-selected transport.
-        // A failed/ambiguous MCP signing call is never retried directly.
-        issued=this.#nativePresentationTransport==="mcp-stdio"
-          ?await createOwnerPrivateNativeCryptoMcpSession(
-            "presentation_create",{
-              socketPath:this.#nativeSocketPath,
-              bearerToken:this.#adapterToken,timeoutMs:this.#timeoutMs,
-              signal:this.#signal
-            },args).invokeOnce()
-          :await invokeNativeCrypto({
-            socketPath:this.#nativeSocketPath,token:this.#adapterToken,
-            timeoutMs:this.#timeoutMs
-          },"create_presentation",args);
-      }catch{
-        throw new ControlledToolError("tool_unavailable",
-          "Native Rust cryptographic presentation unavailable");
-      }
-      this.#signal?.throwIfAborted();
-      const signed=issued&&typeof issued==="object"&&!Array.isArray(issued)
-        ?(issued as {signed_vp?:unknown}).signed_vp:undefined;
-      if(typeof signed!=="string"||!signed.trim())
-        throw new ControlledToolError("tool_unavailable",
-          "Native Rust cryptographic presentation malformed");
-      return signed;
-    }
-    let response: Response;
+    const request: PresentationRequest = {
+      credential_id: this.#evidence.credential_id,
+      disclosed_permissions: [prepared.required_permission],
+      audience: prepared.audience,
+      challenge: prepared.challenge
+    };
+    let issued: unknown;
     try {
-      response = await this.#fetch(`${this.#adapterBaseUrl}/v1/presentations`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${this.#adapterToken}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          credential_id: this.#evidence.credential_id,
-          disclosed_permissions: [prepared.required_permission],
-          audience: prepared.audience,
-          challenge: prepared.challenge
-        }),
-        signal: this.#signal
-            ? AbortSignal.any([this.#signal, AbortSignal.timeout(this.#timeoutMs)])
-            : AbortSignal.timeout(this.#timeoutMs)
-      });
-    } catch (error) {
-      throw new ControlledToolError(
-        "tool_unavailable",
-        `Delegation Adapter is unavailable: ${error instanceof Error ? error.message : String(error)}`
-      );
+      issued = this.#nativeSocketPath
+        ? await this.#signNatively(this.#nativeSocketPath, request)
+        : {signed_vp: await this.#presentationSigner!(Object.freeze({...request}))};
+    } catch {
+      // A signer failure is terminal: never retried through another route.
+      throw new ControlledToolError("tool_unavailable",
+        "Cryptographic presentation unavailable");
     }
-
     this.#signal?.throwIfAborted();
-    const raw = await response.text();
-    let body: unknown = {};
-    if (raw.length > 0) {
-      try {
-        body = JSON.parse(raw);
-      } catch {
-        throw new ControlledToolError(
-          "tool_unavailable",
-          "Delegation Adapter returned invalid JSON"
-        );
-      }
-    }
+    const signed=issued&&typeof issued==="object"&&!Array.isArray(issued)
+      ?(issued as {signed_vp?:unknown}).signed_vp:undefined;
+    if(typeof signed!=="string"||!signed.trim())
+      throw new ControlledToolError("tool_unavailable",
+        "Cryptographic presentation malformed");
+    return signed;
+  }
 
-    if (!response.ok) {
-      const message =
-        typeof body === "object" &&
-        body !== null &&
-        "error" in body &&
-        typeof (body as { error?: unknown }).error === "string"
-          ? (body as { error: string }).error
-          : `Delegation Adapter rejected presentation with HTTP ${response.status}`;
-
-      throw new ControlledToolError(
-        response.status >= 500 ? "tool_unavailable" : "authorization_denied",
-        message,
-        { statusCode: response.status }
-      );
-    }
-
-    if (
-      typeof body !== "object" ||
-      body === null ||
-      !("signed_vp" in body) ||
-      typeof (body as { signed_vp?: unknown }).signed_vp !== "string" ||
-      (body as { signed_vp: string }).signed_vp.trim().length === 0
-    ) {
-      throw new ControlledToolError(
-        "tool_unavailable",
-        "Delegation Adapter response is missing signed_vp"
-      );
-    }
-
-    return (body as { signed_vp: string }).signed_vp;
+  /** The agent's own Child DC travels as DATA to its wallet, which holds
+   * only this agent's key and no shared credential store. */
+  async #signNatively(socketPath: string, request: PresentationRequest): Promise<unknown> {
+    let credential:unknown;
+    try{credential=JSON.parse(this.#evidence.credential);}catch{credential=undefined;}
+    const args={...request,
+      ...(credential&&typeof credential==="object"&&!Array.isArray(credential)&&
+        (credential as {id?:unknown}).id===this.#evidence.credential_id?{credential}:{})
+    };
+    // The signed Child and the Gateway challenge are fixed by the trusted
+    // handler before this host-selected transport.
+    return this.#nativePresentationTransport==="mcp-stdio"
+      ?await createOwnerPrivateNativeCryptoMcpSession(
+        "presentation_create",{
+          socketPath,bearerToken:this.#adapterToken,timeoutMs:this.#timeoutMs,
+          signal:this.#signal
+        },args).invokeOnce()
+      :await invokeNativeCrypto({
+        socketPath,token:this.#adapterToken,timeoutMs:this.#timeoutMs
+      },"create_presentation",args);
   }
 }

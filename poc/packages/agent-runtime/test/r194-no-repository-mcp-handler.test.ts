@@ -1,8 +1,9 @@
+import {fakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createAdkA2ATaskHandler} from "../src/adk-a2a-handler.ts";
 const base={model:{} as never,gatewayBaseUrl:"http://127.0.0.1:0",
- adapterBaseUrl:"http://127.0.0.1:0",adapterToken:"offline"};
+ presentationSigner:fakeSigner(),adapterToken:"offline"};
 
 test("R194 ADK Task rejects stale repository MCP options",()=>{
  for(const option of [

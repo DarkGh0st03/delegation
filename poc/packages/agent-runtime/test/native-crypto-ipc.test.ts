@@ -69,15 +69,13 @@ test("R213 signed VP handler never falls back to Adapter HTTP when native socket
  const signed=await fixture(t,request=>({
   ok:true,result:{signed_vp:"native.private.vp"}
  }));
- let httpRequests=0;
  const handler=new DelegationEvidenceHandler({
-  adapterBaseUrl:"http://127.0.0.1:1",adapterToken:"PRIVATE_BACKEND_TOKEN",
+  adapterToken:"PRIVATE_BACKEND_TOKEN",
   nativeSocketPath:signed.path,
   evidence:{
    credential:"private.opaque.child",credential_id:"urn:child:42",
    presenter_id:"did:thesis:backend"
-  },
-  fetchFn:(async()=>{httpRequests++;throw Error("Forbidden HTTP Adapter fallback");}) as typeof fetch
+  }
  });
  const request={
   request_id:"native-task-1",audience:"cloud-access-gateway",
@@ -85,7 +83,6 @@ test("R213 signed VP handler never falls back to Adapter HTTP when native socket
   required_permission:{resource:"gitea://trusted/files/a.ts",operation:"read_file"}
  };
  assert.equal(await handler.createPresentation(request),"native.private.vp");
- assert.equal(httpRequests,0);
  assert.equal(signed.calls.length,1);
  assert.equal(signed.calls[0].operation,"create_presentation");
  assert.equal(signed.calls[0].token,"PRIVATE_BACKEND_TOKEN");
@@ -97,19 +94,17 @@ test("R213 signed VP handler never falls back to Adapter HTTP when native socket
 
  const denied=await fixture(t,()=>({ok:false,error:"PRIVATE_RUST_SIGNER_SECRET"}));
  const failing=new DelegationEvidenceHandler({
-  adapterBaseUrl:"http://127.0.0.1:1",adapterToken:"PRIVATE_BACKEND_TOKEN",
+  adapterToken:"PRIVATE_BACKEND_TOKEN",
   nativeSocketPath:denied.path,
   evidence:{credential:"private.opaque.child",credential_id:"urn:child:42",
-   presenter_id:"did:thesis:backend"},
-  fetchFn:(async()=>{httpRequests++;throw Error("Forbidden HTTP Adapter fallback");}) as typeof fetch
+   presenter_id:"did:thesis:backend"}
  });
  await assert.rejects(failing.createPresentation({...request,request_id:"native-task-2"}),
   (error:unknown)=>{
-   assert.match(String(error),/Native Rust cryptographic presentation unavailable/u);
+   assert.match(String(error),/[Cc]ryptographic presentation unavailable/u);
    assert.doesNotMatch(String(error),/PRIVATE_RUST_SIGNER_SECRET/u);
    return true;
   });
- assert.equal(httpRequests,0);
  assert.equal(denied.calls.length,1);
 });
 
@@ -118,11 +113,9 @@ test("R218 canonical signed VP handler rejects missing native socket before HTTP
  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
  try{
   assert.throws(()=>new DelegationEvidenceHandler({
-   adapterBaseUrl:"http://127.0.0.1:8090",
    adapterToken:"PRIVATE_BACKEND_TOKEN",
    evidence:{credential:"private.opaque.child",credential_id:"urn:child:42",
-    presenter_id:"did:thesis:backend"},
-   fetchFn:(async()=>{throw Error("HTTP fallback forbidden");}) as typeof fetch
+    presenter_id:"did:thesis:backend"}
   }),/Canonical signed Task VP requires native Rust signer socket/u);
  }finally{
   if(oldFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
@@ -168,15 +161,12 @@ test("R381.4 actual Agent VP signs via owner-private MCP subprocess using same n
  const rust=await fixture(t,request=>({
   ok:true,result:{signed_vp:"signed.once.in.mcp.worker"}
  }));
- let forbiddenHttpCalls=0;
  const handler=new DelegationEvidenceHandler({
-  adapterBaseUrl:"http://127.0.0.1:1",
   adapterToken:"PRIVATE_AGENT_NATIVE_BEARER",
   nativeSocketPath:rust.path,
   nativePresentationTransport:"mcp-stdio",
   evidence:{credential:"private.existing.child",
-   credential_id:"urn:child:r3814",presenter_id:"did:thesis:backend"},
-  fetchFn:(async()=>{forbiddenHttpCalls++;throw Error("FORBIDDEN HTTP FALLBACK");}) as typeof fetch
+   credential_id:"urn:child:r3814",presenter_id:"did:thesis:backend"}
  });
  const challenge={
   request_id:"r3814-gateway-prepare",
@@ -186,7 +176,6 @@ test("R381.4 actual Agent VP signs via owner-private MCP subprocess using same n
   required_permission:{resource:"gitea://trusted/files/test.ts",operation:"read_file"}
  };
  assert.equal(await handler.createPresentation(challenge),"signed.once.in.mcp.worker");
- assert.equal(forbiddenHttpCalls,0);
  assert.equal(rust.calls.length,1);
  assert.deepEqual(rust.calls[0],{
   token:"PRIVATE_AGENT_NATIVE_BEARER",
@@ -203,14 +192,12 @@ test("R381.4 private Agent MCP signing never retries after native failure",async
  const rust=await fixture(t,()=>({
   ok:false,error:"PRIVATE_NATIVE_RUST_KEY_DO_NOT_LOG"
  }));
- let fallbackCalls=0;
  const handler=new DelegationEvidenceHandler({
   adapterToken:"PRIVATE_AGENT_BEARER",
   nativeSocketPath:rust.path,
   nativePresentationTransport:"mcp-stdio",
   evidence:{credential:"opaque",credential_id:"urn:child:r3814",
-   presenter_id:"did:thesis:backend"},
-  fetchFn:(async()=>{fallbackCalls++;throw Error("fallback unavailable");}) as typeof fetch
+   presenter_id:"did:thesis:backend"}
  });
  await assert.rejects(handler.createPresentation({
   request_id:"r3814-failed",
@@ -218,17 +205,15 @@ test("R381.4 private Agent MCP signing never retries after native failure",async
   expires_at:new Date(Date.now()+60000).toISOString(),
   required_permission:{resource:"gitea://test",operation:"read_file"}
  }),error=>{
-  assert.match(String(error),/Native Rust cryptographic presentation unavailable/u);
+  assert.match(String(error),/[Cc]ryptographic presentation unavailable/u);
   assert.doesNotMatch(String(error),/PRIVATE_NATIVE_RUST_KEY/u);
   return true;
  });
- assert.equal(fallbackCalls,0);
  assert.equal(rust.calls.length,1);
 });
 
 test("R381.4 non-native signed Agent may not choose private MCP signer",()=>{
  assert.throws(()=>new DelegationEvidenceHandler({
-  adapterBaseUrl:"http://legacy.invalid",
   adapterToken:"PRIVATE",
   nativePresentationTransport:"mcp-stdio",
   evidence:{credential:"opaque",credential_id:"some-child",
@@ -244,17 +229,13 @@ test("R382.0 aborted original A2A Task cannot obtain a native MCP VP after Rust 
   abort.abort();
   return {ok:true,result:{signed_vp:"PRIVATE_CANCELLED_VP_NEVER_EXPOSE"}};
  });
- let fallback=0;
  const handler=new DelegationEvidenceHandler({
   adapterToken:"PRIVATE_CANCELLED_BACKEND",
   nativeSocketPath:rust.path,
   nativePresentationTransport:"mcp-stdio",
   signal:abort.signal,
   evidence:{credential:"opaque-native-child",
-   credential_id:"urn:r3820:child",presenter_id:"did:thesis:backend"},
-  fetchFn:(async()=>{
-   fallback++;throw Error("Legacy Adapter must not be called");
-  }) as typeof fetch
+   credential_id:"urn:r3820:child",presenter_id:"did:thesis:backend"}
  });
  const prepared={
   request_id:"r3820-real-task-cancel",
@@ -270,5 +251,4 @@ test("R382.0 aborted original A2A Task cannot obtain a native MCP VP after Rust 
  });
  assert.equal(abort.signal.aborted,true);
  assert.equal(rust.calls.length,1);
- assert.equal(fallback,0);
 });

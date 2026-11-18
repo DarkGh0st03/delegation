@@ -1,3 +1,4 @@
+import {withFakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R321: actual offline ADK LlmAgent/Runner -> direct Gateway controlled tool
@@ -72,9 +73,8 @@ function fixture(observe?:(w:{task_id:string;credential_id:string;
   }}
  });
  const model=new ScriptedBackendUpdate();
- const handler=createAdkA2ATaskHandler({
+ const handler=createAdkA2ATaskHandler(withFakeSigner({
   model,gatewayBaseUrl:BASE_URL,adapterToken:SECRET,
-  adapterBaseUrl:"http://native-signer.r321.invalid",
   maxModelTurns:4,scopeModelPaths:true,
   trustedEffectTaskRegistry:registry,
   ...(observe?{trustedOriginalModelCallWindow:observe}:{}),
@@ -116,7 +116,7 @@ function fixture(observe?:(w:{task_id:string;credential_id:string;
    }
    throw Error("Forbidden offline R321 transport "+u);
   }) as typeof fetch
- });
+ }));
  return {handler,model,registry,calls};
 }
 test("R321 owner-prebound A2A Task uses actual ADK Runner without sharing signer or stager with model",async()=>{

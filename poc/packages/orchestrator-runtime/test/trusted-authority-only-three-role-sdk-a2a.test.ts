@@ -1,3 +1,4 @@
+import {withFakeSigner} from "../../agent-runtime/test/fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R328: three real A2A HTTP agents, three actual scripted Google ADK
@@ -210,10 +211,10 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    agents[role]=await startSpecializedAgentServer({
     role,port:await port(),host:"127.0.0.1",
     delegatedAuthorization:true,
-    adk:{model:models[role],gatewayBaseUrl:"http://gateway.r328.invalid",
-     adapterBaseUrl:"http://signer.r328.invalid",adapterToken:c.secret,
+    adk:withFakeSigner({model:models[role],gatewayBaseUrl:"http://gateway.r328.invalid",
+     adapterToken:c.secret,
      fetchFn,maxModelTurns:4,maxModelCallMs:5000,
-     trustedEffectTaskRegistry:registries[role]}
+     trustedEffectTaskRegistry:registries[role]})
    });
   }
   const coordinator=Object.assign(Object.create(

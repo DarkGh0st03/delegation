@@ -24,8 +24,7 @@ interface PreparedAuthorization {
 
 export interface OrchestratorGatewayTransportConfig {
   gatewayBaseUrl: string;
-  /** Required for historical HTTP fixtures only; native Rust issuer needs no URL. */
-  adapterBaseUrl?: string;
+  /** The Orchestrator's caller token for its own Rust wallet. */
   adapterToken: string;
   rootCredentialId: string;
   timeoutMs?: number;
@@ -89,12 +88,11 @@ async function parseJson(response: Response, label: string): Promise<unknown> {
 
 export class OrchestratorGatewayTransport {
   readonly #gatewayBaseUrl: string;
-  readonly #adapterBaseUrl: string;
   readonly #adapterToken: string;
   readonly #rootCredentialId: string;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
-  readonly #nativeSocketPath?:string;
+  readonly #nativeSocketPath:string;
   readonly #hierarchicalReadGrants:readonly RequiredPermission[];
 
   constructor(config: OrchestratorGatewayTransportConfig) {
@@ -102,11 +100,6 @@ export class OrchestratorGatewayTransport {
       config.gatewayBaseUrl,
       "Gateway base URL"
     ).replace(/\/+$/u, "");
-    // Native Rust VP issuance does not depend on any Adapter HTTP address.
-    // Legacy HTTP fixtures must still specify one explicitly.
-    this.#adapterBaseUrl = config.adapterBaseUrl?.trim()
-      ? config.adapterBaseUrl.replace(/\/+$/u, "")
-      : "";
     this.#adapterToken = nonEmptyString(
       config.adapterToken,
       "Orchestrator Adapter token"
@@ -127,24 +120,16 @@ export class OrchestratorGatewayTransport {
         "Untrusted hierarchical Planning presentation configuration");
     this.#hierarchicalReadGrants=Object.freeze(grants.map(g=>
       Object.freeze({operation:g.operation,resource:g.resource})));
-    // Canonical trusted-owner path shares the SAME Rust issuer as Engineer,
-    // Child DC and Agent VP. Bad socket configuration fails closed.
-    // The Orchestrator signs its Planning VPs in its OWN wallet.
+    // The Orchestrator signs its Planning VPs in its OWN Rust wallet.
+    // A missing or malformed socket fails closed before any Gateway call.
     const socketPath=roleWalletSocket("orchestrator");
-    if(socketPath!==undefined){
-      if(!socketPath.startsWith("/")||socketPath.length>100||
-         socketPath.trim()!==socketPath)
-        throw new OrchestratorGatewayClientError("Native Rust signer socket invalid");
-      this.#nativeSocketPath=socketPath;
-    }else if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"){
-      // Refuse before Gateway prepare, rather than trying legacy Adapter
-      // signing after a canonical native socket has been omitted.
+    if(socketPath===undefined)
       throw new OrchestratorGatewayClientError(
-        "Canonical signed DAG requires native Rust Orchestrator signer socket");
-    }else if(!this.#adapterBaseUrl){
-      throw new OrchestratorGatewayClientError(
-        "Historical Orchestrator HTTP signing requires explicit Adapter URL");
-    }
+        "Orchestrator signing requires its native Rust wallet socket");
+    if(!socketPath.startsWith("/")||socketPath.length>100||
+       socketPath.trim()!==socketPath)
+      throw new OrchestratorGatewayClientError("Native Rust signer socket invalid");
+    this.#nativeSocketPath=socketPath;
   }
 
 
@@ -191,7 +176,7 @@ export class OrchestratorGatewayTransport {
     this.#assertActive(signal);
     const prepared = await this.#prepare(taskId, tool, args,signal);
     this.#assertActive(signal);
-    // Fail before the Adapter can sign an unexpected permission. The trusted
+    // Fail before the wallet can sign an unexpected permission. The trusted
     // Planning caller derives expectedPermission from its pinned snapshot.
     if(expectedPermission && (prepared.required_permission.operation !==
          expectedPermission.operation ||
@@ -384,68 +369,15 @@ export class OrchestratorGatewayTransport {
       audience:prepared.audience,
       challenge:prepared.challenge
     };
-    if(this.#nativeSocketPath){
-      try{
-        return await createNativeOrchestratorPresentation({
-          socketPath:this.#nativeSocketPath,token:this.#adapterToken,
-          timeoutMs:this.#timeoutMs
-        },input,signal);
-      }catch(error){
-        throw new OrchestratorGatewayClientError(
-          error instanceof Error?error.message:"Native Rust Orchestrator presentation denied");
-      }
-    }
-    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+    try{
+      return await createNativeOrchestratorPresentation({
+        socketPath:this.#nativeSocketPath,token:this.#adapterToken,
+        timeoutMs:this.#timeoutMs
+      },input,signal);
+    }catch(error){
       throw new OrchestratorGatewayClientError(
-        "Canonical signed DAG requires native Rust Orchestrator signing");
-    let response: Response;
-    try {
-      response = await this.#fetch(
-        `${this.#adapterBaseUrl}/v1/presentations`,
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${this.#adapterToken}`,
-            "content-type": "application/json",
-            accept: "application/json"
-          },
-          body: JSON.stringify(input),
-          signal: this.#requestSignal(signal)
-        }
-      );
-    } catch (error) {
-      throw new OrchestratorGatewayClientError(
-        `Delegation Adapter presentation is unavailable: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+        error instanceof Error?error.message:"Native Rust Orchestrator presentation denied");
     }
-
-    this.#assertActive(signal);
-    const body = await parseJson(
-      response,
-      "Delegation Adapter presentation"
-    );
-    this.#assertActive(signal);
-    if (!response.ok) {
-      throw new OrchestratorGatewayClientError(
-        errorMessage(
-          body,
-          `Delegation Adapter rejected presentation with HTTP ${response.status}`
-        ),
-        response.status
-      );
-    }
-    if (typeof body !== "object" || body === null) {
-      throw new OrchestratorGatewayClientError(
-        "Delegation Adapter returned a malformed presentation response"
-      );
-    }
-
-    return nonEmptyString(
-      (body as Record<string, unknown>).signed_vp,
-      "signed_vp"
-    );
   }
 
   async #execute(requestId: string, signedVp: string,

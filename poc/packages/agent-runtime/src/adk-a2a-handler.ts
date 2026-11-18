@@ -9,7 +9,7 @@ import {
 import {roleWalletSocket} from "./native-crypto-ipc.ts";
 import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./task-context.ts";
-import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
+import { DelegationEvidenceHandler, type PresentationSigner } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
 import {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
@@ -62,9 +62,9 @@ export interface AdkA2ATaskHandlerConfig {
   )=>()=>void;
   model: BaseLlm;
   gatewayBaseUrl: string;
-  /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
-  adapterBaseUrl?: string;
   adapterToken: string;
+  /** Tests only: explicit fake VP signer (refused in canonical native mode). */
+  presentationSigner?: PresentationSigner;
   /** Trusted A2A host only; never selected by Task, MCP or ADK. */
   nativePresentationTransport?: "direct"|"mcp-stdio";
   maxModelTurns?: number;
@@ -252,7 +252,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
        !config.mcpTaskRegistry))
     throw Error("Canonical signed A2A requires native Rust and task-local crypto MCP");
   if (!config.adapterToken?.trim() || !config.gatewayBaseUrl?.trim() ||
-      (process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"&&!config.adapterBaseUrl?.trim())) {
+      (process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"&&!config.presentationSigner)) {
     throw new Error("ADK protected task handler requires Gateway, role token and an available cryptographic transport");
   }
   const turnLimit = config.maxModelTurns ?? 8;
@@ -338,17 +338,16 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const events: AdkControlledToolOutcome[] = [];
     const progress = new AdkToolProgress();
     const evidenceHandler = new DelegationEvidenceHandler({
-      adapterBaseUrl: config.adapterBaseUrl,
       adapterToken: config.adapterToken,
       evidence: context.delegation_evidence,
       // R204: trusted signed Tasks sign their VP natively, in the WALLET of
       // this agent's role (only its own key). Native failure is terminal.
       ...(roleWalletSocket(context.role)
-        ?{nativeSocketPath:roleWalletSocket(context.role)!}:{}),
+        ?{nativeSocketPath:roleWalletSocket(context.role)!}
+        :config.presentationSigner?{presentationSigner:config.presentationSigner}:{}),
       ...(config.nativePresentationTransport==="mcp-stdio"
         ?{nativePresentationTransport:"mcp-stdio" as const}:{}),
-      ...(signal ? {signal} : {}),
-      ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
+      ...(signal ? {signal} : {})
     });
     // The task-local crypto MCP and direct Gateway client use the SAME
     // exact-Child presentation. Never fall back to a generic Adapter bearer.

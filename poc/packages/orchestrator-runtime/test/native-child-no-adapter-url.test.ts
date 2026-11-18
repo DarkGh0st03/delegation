@@ -4,9 +4,7 @@ import {createServer} from "node:net";
 import {mkdtempSync,rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {createNativeRustChildCryptographyPort,
- createOwnerPrivateMcpChildCryptographyPort,
- createRustAdapterChildCryptographyPort}
+import {createNativeRustChildCryptographyPort}
  from "../src/trusted-child-crypto-port.ts";
 
 const rights=[{
@@ -69,24 +67,4 @@ test("R240 same native Rust Child issuer needs token + Unix socket, no Adapter U
  await assert.rejects(port.issueChild(request),
   /Native Rust Child DC changed signed permissions/u);
  assert.equal(observed.length,2);
-});
-
-test("R240 Child issuer never uses implicit historical Adapter HTTP after native guard",()=>{
- assert.throws(()=>createRustAdapterChildCryptographyPort({
-  bearerToken:"PRIVATE_ORCHESTRATOR"
- }),/Private Rust Adapter issuance transport unavailable/u);
- const originalFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
- const originalSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
- try{
-  process.env.APPROVED_RUNNER_NATIVE_MCP="1";
-  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
-  assert.throws(()=>createOwnerPrivateMcpChildCryptographyPort({
-   bearerToken:"PRIVATE_ORCHESTRATOR"
-  }),/Canonical signed Child DC requires native Rust issuer socket/u);
- }finally{
-  if(originalFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
-  else process.env.APPROVED_RUNNER_NATIVE_MCP=originalFlag;
-  if(originalSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
-  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=originalSocket;
- }
 });

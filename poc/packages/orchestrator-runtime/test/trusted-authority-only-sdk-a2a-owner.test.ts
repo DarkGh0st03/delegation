@@ -1,3 +1,4 @@
+import {withFakeSigner} from "../../agent-runtime/test/fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R327: real HTTP A2A SDK and ADK Runner with authenticated owner/agent
@@ -189,13 +190,12 @@ test("R327 genuine SDK A2A HTTP -> ADK -> private Unix stage, completion gated i
    const server=await startSpecializedAgentServer({
     role,host:"127.0.0.1",port:await freePort(),
     delegatedAuthorization:true,
-    ...(role==="backend"?{adk:{
+    ...(role==="backend"?{adk:withFakeSigner({
      model,gatewayBaseUrl:"http://offline-gateway.r327.invalid",
-     adapterBaseUrl:"http://offline-signer.r327.invalid",
      adapterToken:secret,
      maxModelTurns:4,maxModelCallMs:5000,
      trustedEffectTaskRegistry:registry,fetchFn:handlerFetch
-    }}:{taskHandler:async()=>{throw Error("only the Backend runs in this test");}})
+    })}:{taskHandler:async()=>{throw Error("only the Backend runs in this test");}})
    });
    servers.push(server);urls[role]=server.baseUrl;
   }

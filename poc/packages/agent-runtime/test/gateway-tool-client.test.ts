@@ -1,3 +1,4 @@
+import {fakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -7,18 +8,13 @@ import {GatewayControlledToolClient} from "../src/gateway-tool-client.ts";
 
 function evidenceHandler(): DelegationEvidenceHandler {
   return new DelegationEvidenceHandler({
-    adapterBaseUrl: "http://adapter.local",
     adapterToken: "phase8a-adapter-test-token",
     evidence: {
       credential: "phase8a-child-credential-payload",
       credential_id: "urn:phase8a:backend",
       presenter_id: "did:thesis:backend-agent"
     },
-    fetchFn: async () =>
-      new Response(JSON.stringify({ signed_vp: "phase8a-signed-vp" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      })
+    presentationSigner: fakeSigner("phase8a-signed-vp")
   });
 }
 

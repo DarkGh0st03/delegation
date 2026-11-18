@@ -126,14 +126,12 @@ async function fixture(){
   const effectStager=agentRegistry.selectFor(context);
   assert.equal(effectStager.stagedTool,"read_then_update");
   const evidenceHandler=new DelegationEvidenceHandler({
-   adapterBaseUrl:"http://fixture.invalid",adapterToken:"OFFLINE",
+   adapterToken:"OFFLINE",
    evidence:{credential:"OFFLINE_CHILD",credential_id:childId,
     presenter_id:presenter},
-   fetchFn:async(input,init)=>{
-    const body=JSON.parse(String(init?.body));
-    assert.ok(String(input).endsWith("/v1/presentations"));
-    events.push("sign_"+body.challenge);
-    return Response.json({signed_vp:"OFFLINE_VP"});
+   presentationSigner:async request=>{
+    events.push("sign_"+request.challenge);
+    return "OFFLINE_VP";
    }
   });
   const gatewayClient=new GatewayControlledToolClient({

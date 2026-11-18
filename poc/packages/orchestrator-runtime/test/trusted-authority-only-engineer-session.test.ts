@@ -872,7 +872,7 @@ test("R290 denies unregistered Task, unexpected permission fields, expiry and HT
   const calls:ExactTrustedChildIssuance[]=[];
   assert.throws(()=>new TrustedAuthorityOnlyChildIssuer({
    coordinator,nativeCryptoPort:{...nativeChildPort(calls),
-    kind:"rust-adapter"} as never,journal:childJournal,nowMs:()=>nowMs
+    kind:"unknown-transport"} as never,journal:childJournal,nowMs:()=>nowMs
   }),/native Rust issuer/);
   const child=new TrustedAuthorityOnlyChildIssuer({
    coordinator,nativeCryptoPort:nativeChildPort(calls),journal:childJournal,

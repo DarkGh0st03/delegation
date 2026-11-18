@@ -1,3 +1,4 @@
+import {withFakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -121,9 +122,9 @@ async function send(role: SpecializedAgentRole, model: BaseLlm, fetchFn: typeof 
   port: number, generateContentConfig?: {maxOutputTokens:number;temperature:number}) {
   const server=await startSpecializedAgentServer({
     role,host:"127.0.0.1",port,
-    adk:{model,fetchFn,gatewayBaseUrl:"http://gateway.local",
-      adapterBaseUrl:"http://adapter.local",adapterToken:"phase3-service-token",
-      ...(generateContentConfig ? {generateContentConfig} : {})}
+    adk:withFakeSigner({model,fetchFn,gatewayBaseUrl:"http://gateway.local",
+      adapterToken:"phase3-service-token",
+      ...(generateContentConfig ? {generateContentConfig} : {})})
   });
   const orchestrator=new DeterministicA2AOrchestrator();
   const evidence={credential:SECRET,credential_id:"urn:phase3:child:"+role,presenter_id:"did:thesis:"+role+"-agent"};
@@ -460,9 +461,8 @@ test("Phase 3 per-task model budget fails closed before a successful Artifact",a
   const model=new OneToolModel("update_file",{branch:BRANCH,path:PATHS.backend,content:"bounded"},true);
   const server=await startSpecializedAgentServer({
     role:"backend",port:43375,
-    adk:{model,maxModelTurns:1,fetchFn:boundary.fetchFn as typeof fetch,
-      gatewayBaseUrl:"http://gateway.local",adapterBaseUrl:"http://adapter.local",
-      adapterToken:"phase3-service-token"}
+    adk:withFakeSigner({model,maxModelTurns:1,fetchFn:boundary.fetchFn as typeof fetch,
+      gatewayBaseUrl:"http://gateway.local",adapterToken:"phase3-service-token"})
   });
   try {
     const orchestrator=new DeterministicA2AOrchestrator();

@@ -1,3 +1,4 @@
+import {fakeSigner} from "./fixtures/fake-presentation-signer.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {setTimeout as sleep} from "node:timers/promises";
@@ -22,7 +23,7 @@ class SlowApiModel extends BaseLlm{
 test("ADK model API call timeout fails closed without 3-minute provider wait",async()=>{
   const model=new SlowApiModel();
   const handler=createAdkA2ATaskHandler({
-    model,adapterBaseUrl:"http://adapter.invalid",
+    model,presentationSigner:fakeSigner(),
     gatewayBaseUrl:"http://gateway.invalid",
     adapterToken:"TEST_ONLY_NOT_REAL",
     maxModelTurns:3,maxModelCallMs:1000
@@ -53,7 +54,7 @@ test("ADK model API call timeout fails closed without 3-minute provider wait",as
 
 test("ADK model call timeout rejects unsafe configuration without network traffic",()=>{
   const valid={
-    model:new SlowApiModel(),adapterBaseUrl:"http://adapter.invalid",
+    model:new SlowApiModel(),presentationSigner:fakeSigner(),
     gatewayBaseUrl:"http://gateway.invalid",adapterToken:"TEST_ONLY"
   };
   assert.throws(()=>createAdkA2ATaskHandler({
@@ -71,7 +72,7 @@ test("ADK model call timeout rejects unsafe configuration without network traffi
 
 test("ADK generation configuration rejects unsafe values before any network traffic",()=>{
   const base={
-    model:new SlowApiModel(),adapterBaseUrl:"http://adapter.invalid",
+    model:new SlowApiModel(),presentationSigner:fakeSigner(),
     gatewayBaseUrl:"http://gateway.invalid",adapterToken:"TEST_ONLY"
   };
   for(const generateContentConfig of [
