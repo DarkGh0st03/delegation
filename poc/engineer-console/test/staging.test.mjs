@@ -447,3 +447,22 @@ test("deployer: after a stack restart the version recorded as failed is restarte
   assert.equal(entry.state, "running");
   assert.equal(entry.failed_sha, null);
 });
+
+test("detection: an npm monorepo with a Vite UI and an API server workspace is a web app", async () => {
+  const result = await detect(["package-lock.json", "apps/frontend/index.html"], {
+    "package.json": JSON.stringify({workspaces: ["apps/*", "packages/*"], scripts: {test: "vitest run"}}),
+    "apps/frontend/package.json": JSON.stringify({name: "@iam/frontend",
+      scripts: {build: "tsc --noEmit && vite build", preview: "vite preview"},
+      dependencies: {react: "19", "react-dom": "19"}, devDependencies: {vite: "6"}}),
+    "apps/backend/package.json": JSON.stringify({name: "@iam/backend",
+      scripts: {start: "tsx src/server.ts"}, dependencies: {express: "5"}}),
+    "packages/shared/package.json": JSON.stringify({name: "@iam/shared"})});
+  assert.equal(result.interface, "web");
+  assert.equal(result.proposal.build, "npm ci --include=dev --no-audit --no-fund && npm run build -w @iam/frontend");
+  assert.equal(result.proposal.start, "npm run start -w @iam/backend & exec npm run preview -w @iam/frontend -- --host 0.0.0.0 --port 4173 --strictPort");
+  assert.equal(result.proposal.port, 4173);
+  // A monorepo of libraries only is still "not available".
+  const libs = await detect([], {"package.json": JSON.stringify({workspaces: ["packages/*"]}),
+    "packages/a/package.json": JSON.stringify({name: "a", scripts: {build: "tsc"}})});
+  assert.equal(libs.interface, "none");
+});

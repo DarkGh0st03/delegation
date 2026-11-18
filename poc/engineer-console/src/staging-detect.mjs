@@ -11,7 +11,7 @@ import {validateStagingProfile} from "./staging.mjs";
 
 const NODE_IMAGE = "node:22.15.0-bookworm";
 const PYTHON_IMAGE = "python:3.12.7-slim";
-const MAX_READS = 8;
+const MAX_READS = 12;
 
 const has = (deps, ...names) => names.some(n => Object.hasOwn(deps, n));
 const proposal = (raw) => validateStagingProfile({version: 1, enabled: true, ...raw});
@@ -20,6 +20,47 @@ const none = (reason, evidence, profile) => ({interface: "none", reason, evidenc
   ...(profile ? {proposal: proposal({...profile})} : {})});
 
 function parseJson(text) { try { return JSON.parse(text); } catch { return undefined; } }
+
+/** Paths of the workspace manifests an npm root declares ("apps/*", "packages/x"). */
+function workspaceManifests(pkg, files) {
+  const globs = Array.isArray(pkg.workspaces) ? pkg.workspaces
+    : Array.isArray(pkg.workspaces?.packages) ? pkg.workspaces.packages : [];
+  const out = [];
+  for (const glob of globs) {
+    if (typeof glob !== "string" || glob.includes("..") || glob.startsWith("/")) continue;
+    const base = glob.replace(/\/$/u, "");
+    if (base.endsWith("/*")) {
+      const dir = base.slice(0, -2) + "/";
+      for (const f of files)
+        if (f.startsWith(dir) && f.endsWith("/package.json") && f.slice(dir.length).split("/").length === 2) out.push(f);
+    } else if (!base.includes("*") && files.has(base + "/package.json")) out.push(base + "/package.json");
+  }
+  return out.sort();
+}
+
+/**
+ * npm monorepo: a Vite user interface in one workspace, optionally an HTTP
+ * server in another (e.g. apps/frontend + apps/backend). The UI is served
+ * by "vite preview", which forwards the API calls like the dev server.
+ */
+function detectNodeWorkspaces(root, workspaces, files) {
+  const install = files.has("package-lock.json") ? "npm ci --include=dev --no-audit --no-fund"
+    : "npm install --include=dev --no-audit --no-fund";
+  const id = w => (typeof w.pkg.name === "string" && /^[@a-z0-9][\w./@-]{0,100}$/iu.test(w.pkg.name))
+    ? w.pkg.name : w.path.replace(/\/package\.json$/u, "");
+  const deps = w => ({...(w.pkg.dependencies ?? {}), ...(w.pkg.devDependencies ?? {})});
+  const scripts = w => (w.pkg.scripts && typeof w.pkg.scripts === "object" ? w.pkg.scripts : {});
+  const ui = workspaces.find(w => has(deps(w), "vite") &&
+    has(deps(w), "react", "react-dom", "vue", "svelte", "preact", "solid-js", "lit") && scripts(w).build);
+  const server = workspaces.find(w => w !== ui && scripts(w).start &&
+    has(deps(w), "express", "fastify", "koa", "@hapi/hapi", "hono", "@nestjs/core"));
+  const evidence = ["package.json", ...workspaces.map(w => w.path)];
+  if (!ui) return undefined;
+  const preview = `npm run preview -w ${id(ui)} -- --host 0.0.0.0 --port 4173 --strictPort`;
+  return web(server ? "Monorepo npm: interfaccia Vite e server API" : "Monorepo npm: interfaccia Vite", {
+    image: NODE_IMAGE, build: `${install} && npm run build -w ${id(ui)}`,
+    start: server ? `npm run start -w ${id(server)} & exec ${preview}` : `exec ${preview}`, port: 4173}, evidence);
+}
 
 /** Node.js project (package.json at the root). */
 function detectNode(pkg, files) {
@@ -110,7 +151,19 @@ export async function detectStaging({files, read}) {
 
   if (paths.has("package.json")) {
     const pkg = parseJson(await readText("package.json") ?? "");
-    if (pkg && typeof pkg === "object") return detectNode(pkg, paths);
+    if (pkg && typeof pkg === "object") {
+      const manifests = workspaceManifests(pkg, paths);
+      if (manifests.length) {
+        const workspaces = [];
+        for (const path of manifests) {
+          const ws = parseJson(await readText(path) ?? "");
+          if (ws && typeof ws === "object") workspaces.push({path, pkg: ws});
+        }
+        const found = detectNodeWorkspaces(pkg, workspaces, paths);
+        if (found) return found;
+      }
+      return detectNode(pkg, paths);
+    }
     return none("package.json non leggibile", ["package.json"]);
   }
   for (const manifest of ["requirements.txt", "pyproject.toml"]) {

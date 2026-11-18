@@ -115,9 +115,11 @@ una sola pagina principale più una pagina per ogni sessione:
 | Impostazioni (ingranaggio) | Stato dell'ambiente: Gitea, OPA, Anvil, contratti, moduli Rust, core dell'Engineer e verificatore del Gateway. Il pallino sull'ingranaggio è verde quando è tutto pronto |
 
 Il profilo dei test (immagine Docker, fasi, cartelle dei test) si modifica in
-**Configura policy**, come JSON: ogni repository parte dallo stesso modello npm
-(`npm ci`, `npm test`, test in `test/` o `tests/`); il server lo valida e la sua
-impronta entra in ciò che l'Engineer firma.
+**Configura policy**, come JSON. Se la repository dichiara il proprio profilo in
+`.github/test-profile.json` (accanto alla sua CI; `.github/` è vietato agli agenti)
+la console parte da quello, altrimenti dal modello npm (`npm ci`, `npm test`, test
+in `test/` o `tests/`). Il server lo valida e la sua impronta entra in ciò che
+l'Engineer firma.
 
 ### Come funziona una sessione
 

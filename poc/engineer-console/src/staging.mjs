@@ -111,12 +111,17 @@ export class StagingStore {
   #detectionPath(name) { return join(this.#dir, "detections", validateRepoName(name) + ".json"); }
 
   /** Result of the automatic detection (see staging-detect.mjs). */
+  /** Bump when the detector learns new project shapes: older results are
+   * then recomputed (e.g. npm monorepos were once reported as "none"). */
+  static DETECTOR_VERSION = 2;
+
   saveDetection(name, result, sha) {
     const record = {interface: result.interface === "web" ? "web" : "none",
       reason: String(result.reason ?? "").slice(0, 200),
       evidence: (result.evidence ?? []).map(String).slice(0, 8),
       ...(result.proposal ? {proposal: validateStagingProfile(result.proposal)} : {}),
-      sha: typeof sha === "string" ? sha : null, detected_at: new Date().toISOString()};
+      sha: typeof sha === "string" ? sha : null, detected_at: new Date().toISOString(),
+      detector_version: StagingStore.DETECTOR_VERSION};
     const path = this.#detectionPath(name), tmp = path + ".tmp-" + process.pid;
     writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n");
     renameSync(tmp, path);
@@ -126,6 +131,7 @@ export class StagingStore {
   detection(name) {
     try {
       const raw = JSON.parse(readFileSync(this.#detectionPath(name), "utf8"));
+      if (raw.detector_version !== StagingStore.DETECTOR_VERSION) return undefined;
       return {interface: raw.interface === "web" ? "web" : "none", reason: String(raw.reason ?? ""),
         evidence: Array.isArray(raw.evidence) ? raw.evidence.map(String) : [],
         ...(raw.proposal ? {proposal: validateStagingProfile(raw.proposal)} : {}),

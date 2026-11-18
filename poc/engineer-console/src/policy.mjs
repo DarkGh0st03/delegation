@@ -30,6 +30,31 @@ export function defaultProjectProfile() {
 }
 
 export const DEFAULT_FORBIDDEN_PATHS = Object.freeze([".github/", "security/"]);
+
+/** Where a repository may declare its own test profile, next to its CI
+ * configuration. ".github/" is forbidden to agents by the default policy:
+ * like a CI pipeline, the profile changes only through a reviewed merge. */
+export const REPOSITORY_TEST_PROFILE_PATH = ".github/test-profile.json";
+
+/**
+ * Default policy of a repository without a saved one: the test profile the
+ * repository declares at its pinned commit when present and valid,
+ * otherwise the npm template. The Engineer still reviews it, and its
+ * digest enters what the Engineer signs.
+ * @param readFile async (path) => text | undefined, at the pinned commit
+ */
+export async function repositoryDefaultPolicy(repository, readFile) {
+  const policy = defaultPolicy(repository);
+  let text;
+  try { text = await readFile(REPOSITORY_TEST_PROFILE_PATH); } catch { text = undefined; }
+  if (text === undefined) return {policy, source: "default"};
+  try {
+    policy.project_profile = plainProfile(validateProjectProfile(JSON.parse(text)));
+    return {policy, source: "repository"};
+  } catch {
+    return {policy, source: "default (repository test profile not valid)"};
+  }
+}
 export const SUPPORTED_WORK_BRANCH_PREFIX = "feature/";
 
 export function defaultPolicy(repository) {

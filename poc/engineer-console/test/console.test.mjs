@@ -792,3 +792,23 @@ test("free mode: the simulated Draft PR depends on the last completed test run",
   // After a verified FAIL and a repair, the PR follows the passing retest.
   assert.deepEqual(await ask(["branch", "t01-test", "t98-repair-1", "t99-retest-1"]), ["t99-retest-1"]);
 });
+
+test("a repository may declare its test profile in .github/test-profile.json (used when no policy is saved)", async () => {
+  const {repositoryDefaultPolicy, NPM_PROJECT_PROFILE_TEMPLATE} = await import("../src/policy.mjs");
+  const repo = {owner: "thesis", name: "sample-app", default_branch: "main"};
+  const profile = {version: 1, image: "node:22.15.0-bookworm",
+    phases: [{name: "dependency_install", command: "npm ci"}, {name: "unit_tests", command: "npx vitest run"}],
+    test_sources: {roots: ["tests"], suffixes: [".test.ts"]}};
+  const read = files => async path => files[path];
+  const declared = await repositoryDefaultPolicy(repo, read({".github/test-profile.json": JSON.stringify(profile)}));
+  assert.equal(declared.source, "repository");
+  assert.deepEqual(declared.policy.project_profile.phases.map(p => p.name), ["dependency_install", "unit_tests"]);
+  // Agents cannot change it: .github/ is forbidden by the default policy.
+  assert.ok(declared.policy.forbidden_path_prefixes.includes(".github/"));
+  const none = await repositoryDefaultPolicy(repo, read({}));
+  assert.equal(none.source, "default");
+  assert.deepEqual(none.policy.project_profile.phases, NPM_PROJECT_PROFILE_TEMPLATE.phases);
+  const bad = await repositoryDefaultPolicy(repo, read({".github/test-profile.json": JSON.stringify({...profile, image: "node:latest"})}));
+  assert.equal(bad.source, "default (repository test profile not valid)");
+  assert.deepEqual(bad.policy.project_profile.phases, NPM_PROJECT_PROFILE_TEMPLATE.phases);
+});

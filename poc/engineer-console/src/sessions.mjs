@@ -16,7 +16,7 @@ import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../packages/plan-contracts/src/pl
 import {projectProfileDigest, testSourceProfileOf} from "../../packages/plan-contracts/src/project-profile.mjs";
 import {APPLICATION_ROLES, SPECIALIST_ROLES, TEST_ROLE, roleEnvKey}
   from "../../packages/plan-contracts/src/agent-roles.mjs";
-import {defaultPolicy, validatePolicy} from "./policy.mjs";
+import {repositoryDefaultPolicy, validatePolicy} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
 import {preflightGemini, createSessionGeminiModels, GEMINI_WORKER_SETTINGS} from "./gemini-models.mjs";
 
@@ -544,9 +544,11 @@ export class EngineerSessions {
           error.message + "): correggila e salvala di nuovo dalla pagina Policy");
       }
     } else {
-      // The default becomes the saved policy, so later re-publications
-      // (environment page, OPA restart) keep enforcing it for this session.
-      policy = defaultPolicy(repo);
+      // The default (with the test profile the repository declares at the
+      // pinned commit, if any) becomes the saved policy, so later
+      // re-publications (environment page, OPA restart) keep enforcing it.
+      ({policy} = await repositoryDefaultPolicy(repo,
+        path => this.#gitea.fileText(name, session.base_sha, path)));
       this.#store.savePolicy(policy);
     }
     await this.#opa.publish(this.#store.listPolicies());

@@ -13,7 +13,7 @@ import {dirname, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {SESSION_COOKIE, sessionTokenFromCookie} from "./auth.mjs";
 import {validateRepoName} from "./gitea.mjs";
-import {defaultPolicy, validatePolicy} from "./policy.mjs";
+import {defaultPolicy, repositoryDefaultPolicy, validatePolicy} from "./policy.mjs";
 import {detectStaging} from "./staging-detect.mjs";
 
 const PUBLIC = resolve(dirname(fileURLToPath(import.meta.url)), "../public");
@@ -106,8 +106,11 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
   async function repoWithPolicy(name) {
     const repository = await gitea.repositoryDetail(validateRepoName(name));
     const stored = store.loadPolicy(repository.owner, repository.name);
-    let policy = defaultPolicy(repository), policySource = "default";
-    if (stored) {
+    let policy, policySource;
+    if (!stored) ({policy, source: policySource} = await repositoryDefaultPolicy(repository,
+      path => repository.head_sha ? gitea.fileText(repository.name, repository.head_sha, path) : undefined));
+    else {
+      policy = defaultPolicy(repository); policySource = "default";
       try {
         const {saved_at: _ignored, ...raw} = stored;
         policy = validatePolicy(raw, repository); policySource = "saved";

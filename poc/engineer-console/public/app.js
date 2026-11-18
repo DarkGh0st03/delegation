@@ -285,7 +285,7 @@ function renderContext() {
       (r.head_sha ? " @ " + r.head_sha.slice(0, 8) : "");
     chip.classList.add("active");
     $("ctx-policy").querySelector("span").textContent = "Policy " +
-      (selectedRepo.policy_source === "saved" ? "salvata" : "predefinita") + " · configura";
+      (selectedRepo.policy_source === "saved" ? "salvata" : selectedRepo.policy_source === "repository" ? "con profilo test della repository" : "predefinita") + " · configura";
   } else {
     label.textContent = "Seleziona una repository";
     chip.classList.remove("active");
@@ -427,7 +427,9 @@ function openPolicy(section) {
   loadStagingForm(section === "staging");
   const p = selectedRepo.policy, f = $("policy-form").elements, r = selectedRepo.repository;
   $("policy-repo").textContent = r.owner + "/" + r.name;
-  $("policy-source").textContent = {default: "predefinita", saved: "salvata"}[selectedRepo.policy_source] ??
+  $("policy-source").textContent = {default: "predefinita", saved: "salvata",
+    repository: "predefinita, con il profilo dei test della repository (.github/test-profile.json)",
+    "default (repository test profile not valid)": "predefinita (il profilo dei test della repository non è valido)"}[selectedRepo.policy_source] ??
     "predefinita (quella salvata non era più valida)";
   f.protected_branches.value = p.protected_branches.join("\n");
   f.forbidden_path_prefixes.value = p.forbidden_path_prefixes.join("\n");
