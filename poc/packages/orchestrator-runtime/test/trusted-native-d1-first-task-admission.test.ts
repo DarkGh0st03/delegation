@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,mkdir,readdir,rm,readFile,chmod} from "node:fs/promises";
@@ -9,7 +10,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {AuthenticatedRunnerFailureObserver}
  from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
@@ -18,6 +19,9 @@ import {enrollFirstNativeD1ChildAtGateway}
 import {DurableNativeD1FirstTaskAdmissionJournal,
  admitFirstNativeD1RepairTask}
  from "../src/trusted-native-d1-first-task-admission.ts";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const branch="feature/account-suspension",branchUri=canonicalBranchUri(repo,branch);

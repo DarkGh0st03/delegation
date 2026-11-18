@@ -31,18 +31,11 @@ test("RunnerClient sends the exact authorized SHA and validates the response bin
           runner_profile: "poc-default",project_profile_sha256:PROFILE_SHA,
           status: "pass",
           phases: [
-            { phase: "dependency_install", status: "pass" },
-            { phase: "researcher_acceptance", status: "pass", passed: 1, failed: 0 }
+            { phase: "dependency_install", status: "pass" }
           ],
           project_tests: {
             status: "pass",
             phases: [{ phase: "dependency_install", status: "pass" }]
-          },
-          researcher_acceptance: {
-            phase: "researcher_acceptance",
-            status: "pass",
-            passed: 1,
-            failed: 0
           },
           log_reference: "runner-log://abc"
         }),
@@ -58,7 +51,6 @@ test("RunnerClient sends the exact authorized SHA and validates the response bin
   assert.equal(result.tested_commit_sha, request.commit_sha);
   assert.equal(result.status, "pass");
   assert.equal(result.project_tests?.status, "pass");
-  assert.equal(result.researcher_acceptance?.status, "pass");
 });
 
 test("RunnerClient fails closed on a mismatched tested SHA", async () => {
@@ -155,7 +147,6 @@ test("RunnerClient accepts only bounded Vitest paths in a genuine failure",async
       phases:[{phase:"frontend_tests",status:"fail"}],
       project_tests:{status:"fail",
         phases:[{phase:"frontend_tests",status:"fail"}]},
-      researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"},
       failing_test_files:[
         "tests/frontend/access.test.tsx",
         "tests/frontend/../private.test.ts",
@@ -180,7 +171,6 @@ test("RunnerClient carries failed test messages only for kept failing files",asy
     project_profile_sha256:PROFILE_SHA,status:"fail",
     phases:[{phase:"frontend_tests",status:"fail"}],
     project_tests:{status:"fail",phases:[{phase:"frontend_tests",status:"fail"}]},
-    researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"},
     failing_test_files:["tests/frontend/access.test.tsx","src/outside-profile.test.ts"],test_failures});
   const run=(test_failures:unknown)=>new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
     baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
@@ -205,7 +195,6 @@ test("RunnerClient carries compiler error messages only for a failed typecheck",
       repository:request.repository,branch:request.branch,tested_commit_sha:request.commit_sha,
       runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
       phases:[{phase,status:"fail"}],project_tests:{status:"fail",phases:[{phase,status:"fail"}]},
-      researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"},
       typecheck_errors:[error]}),{status:200})}).run(request);
   assert.deepEqual((await run("typecheck")).typecheck_errors,[error]);
   assert.equal((await run("backend_tests")).typecheck_errors,undefined);
@@ -231,26 +220,3 @@ test("RunnerClient carries only valid fileless TypeScript codes",async()=>{
   assert.equal(nonCompiler.typecheck_error_codes,undefined);
 });
 
-test("RunnerClient forwards fixed acceptance labels only for an acceptance-only FAIL",async()=>{
-  const acceptance_failure={failed_checks:["ui_pending_actions"],
-    timed_out:false,unclassified_failure:false};
-  const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
-    "build","playwright_e2e","researcher_acceptance"].map(phase=>({
-      phase,status:phase==="researcher_acceptance"?"fail":"pass"}));
-  const fixture={request_id:request.request_id,repository:request.repository,
-    branch:request.branch,tested_commit_sha:request.commit_sha,runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,
-    status:"fail",phases,project_tests:{status:"pass",phases:phases.slice(0,-1)},
-    researcher_acceptance:phases.at(-1),acceptance_failure};
-  const run=async(data:unknown)=>new RunnerClient({projectProfile:IAM_CONSOLE_PROJECT_PROFILE,
-    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
-    fetchFn:async()=>new Response(JSON.stringify(data),{status:200})
-  }).run(request);
-  assert.deepEqual((await run(fixture)).acceptance_failure,acceptance_failure);
-  assert.equal((await run({...fixture,acceptance_failure:{...acceptance_failure,
-    raw_assertion:"PRIVATE"}})).acceptance_failure,undefined);
-  await assert.rejects(run({...fixture,status:"pass"}),
-    /contradictory failure evidence/);
-  assert.equal((await run({...fixture,project_tests:{status:"fail",phases}}))
-    .acceptance_failure,undefined);
-  await assert.rejects(run({...fixture,tested_commit_sha:"b".repeat(40)}),/authorized request/u);
-});

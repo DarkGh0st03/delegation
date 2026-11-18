@@ -8,7 +8,6 @@ import {createHash,createHmac,timingSafeEqual} from "node:crypto";
 import {constants} from "node:fs";
 import {lstat,open} from "node:fs/promises";
 import {isAbsolute,resolve,join} from "node:path";
-import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import {GiteaClient} from "./gitea-client.ts";
 import {sanitizeVitestFailureFiles} from "../../test-runner-controller/src/vitest-failure-files.ts";
 import {sanitizeTestFailureMessages,type TestFailureMessage}
@@ -52,7 +51,7 @@ function canonical(v:unknown):string{
 }
 const digest=(v:string)=>createHash("sha256").update(v).digest("hex");
 interface FailReceipt{
- readonly schema:"authority-only-runner-fail-evidence-v2";
+ readonly schema:"authority-only-runner-fail-evidence-v3";
  readonly kind:"gateway_controlled_docker_runner_fail";
  readonly session_id:string;readonly authority_digest:string;
  readonly root_credential_id:string;readonly task_id:string;
@@ -66,7 +65,6 @@ interface FailReceipt{
  readonly typecheck_errors?:readonly TypecheckError[];
  readonly failing_test_files?:readonly string[];
  readonly test_failures?:readonly TestFailureMessage[];
- readonly acceptance_failure?:RunnerClientResult["acceptance_failure"];
  readonly repair_candidate:boolean;readonly runner_profile:"poc-default";
  readonly log_reference:string;readonly policy_version:string;
  readonly completed_at_ms:number;
@@ -131,7 +129,7 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
  const phase=v.first_failed_phase;
  const files=v.failing_test_files;
  const messages=v.test_failures;
- if(Object.keys(v).filter(k=>!["typecheck_error_codes","typecheck_errors","acceptance_failure","failing_test_files","test_failures"].includes(k)).sort().join(",")!==FIELDS||
+ if(Object.keys(v).filter(k=>!["typecheck_error_codes","typecheck_errors","failing_test_files","test_failures"].includes(k)).sort().join(",")!==FIELDS||
     (Object.hasOwn(v,"typecheck_errors")&&
      (v.first_failed_phase!=="typecheck"||!Array.isArray(v.typecheck_errors)||!v.typecheck_errors.length||
       JSON.stringify(sanitizeTypecheckErrors(v.typecheck_errors))!==JSON.stringify(v.typecheck_errors)))||
@@ -139,18 +137,15 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
      (!Array.isArray(files)||!Array.isArray(messages)||!messages.length||
       JSON.stringify(sanitizeTestFailureMessages(messages,files as string[]))!==JSON.stringify(messages)))||
     (Object.hasOwn(v,"failing_test_files")&&
-     (!isRunnerPhaseName(phase)||phase==="researcher_acceptance"||
+     (!isRunnerPhaseName(phase)||
       !Array.isArray(files)||!files.length||
       JSON.stringify(sanitizeVitestFailureFiles(files))!==JSON.stringify(files)))||
-    (Object.hasOwn(v,"acceptance_failure")&&
-     (v.first_failed_phase!=="researcher_acceptance"||
-      !safeAcceptanceFailureSummary(v.acceptance_failure)))||
     (codesPresent&&(v.first_failed_phase!=="typecheck"||
       !Array.isArray(v.typecheck_error_codes)||
       v.typecheck_error_codes.length===0||
       JSON.stringify(sanitizeTypecheckErrorCodes(v.typecheck_error_codes))!==
        JSON.stringify(v.typecheck_error_codes)))||
-    v.schema!=="authority-only-runner-fail-evidence-v2"||
+    v.schema!=="authority-only-runner-fail-evidence-v3"||
     v.kind!=="gateway_controlled_docker_runner_fail"||
     BINDING.some(k=>v[k]!==e[k]||v[k]!==intent[k])||
     v.repository!==repo||v.branch!==branch||
@@ -162,7 +157,7 @@ function validateRow(raw:unknown,intent:TrustedAuthorityOnlyRunnerIntent,
     v.runner_profile!=="poc-default"||
     typeof v.first_failed_phase!=="string"||
     !isRunnerPhaseName(v.first_failed_phase)||
-    !isRunnerPhaseName(v.environment_phase)||v.environment_phase==="researcher_acceptance"||
+    !isRunnerPhaseName(v.environment_phase)||
     v.repair_candidate!==(v.first_failed_phase!==v.environment_phase)||
     !LOG.test(v.log_reference as string)||
     typeof v.policy_version!=="string"||
@@ -231,11 +226,10 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
   const typecheckErrors=stage.first_failed_phase==="typecheck"&&result.typecheck_errors?.length
    ?sanitizeTypecheckErrors(result.typecheck_errors):[];
   // Failed test names and messages: untrusted data, bounded, per failing file.
-  const testFailures=stage.first_failed_phase!=="researcher_acceptance"&&
-   result.failing_test_files?.length&&result.test_failures?.length
+  const testFailures=result.failing_test_files?.length&&result.test_failures?.length
    ?sanitizeTestFailureMessages(result.test_failures,result.failing_test_files):[];
   const unsigned:Omit<FailReceipt,"mac_sha256">={
-   schema:"authority-only-runner-fail-evidence-v2",
+   schema:"authority-only-runner-fail-evidence-v3",
    kind:"gateway_controlled_docker_runner_fail",...e,
    repository:this.#repo,branch:this.#branch,
    tested_commit_sha:stage.tested_commit_sha,
@@ -243,10 +237,7 @@ export class TrustedGatewayRunnerFailEvidencePublisher{
    ...(stage.first_failed_phase==="typecheck"&&result.typecheck_error_codes?.length?
     {typecheck_error_codes:sanitizeTypecheckErrorCodes(result.typecheck_error_codes)}:{}),
    ...(typecheckErrors.length?{typecheck_errors:typecheckErrors}:{}),
-   ...(stage.first_failed_phase==="researcher_acceptance"&&result.acceptance_failure?
-    {acceptance_failure:result.acceptance_failure}:{}),
-   ...(stage.first_failed_phase!=="researcher_acceptance"&&
-    result.failing_test_files?.length?{failing_test_files:result.failing_test_files}:{}),
+   ...(result.failing_test_files?.length?{failing_test_files:result.failing_test_files}:{}),
    ...(testFailures.length?{test_failures:testFailures}:{}),
    environment_phase:stage.environment_phase,
    repair_candidate:stage.repair_candidate,
@@ -291,7 +282,6 @@ export class AuthenticatedRunnerFailureObserver{
   typecheck_errors?:readonly TypecheckError[];
   failing_test_files?:readonly string[];
   test_failures?:readonly TestFailureMessage[];
-  acceptance_failure?:RunnerClientResult["acceptance_failure"];
   repair_candidate:boolean;evidence_sha256:string;
   gateway_task_completed:false;recovery_authorized:false
  }>>{
@@ -318,7 +308,6 @@ export class AuthenticatedRunnerFailureObserver{
    ...(v.typecheck_error_codes?.length?
     {typecheck_error_codes:Object.freeze([...v.typecheck_error_codes])}:{}),
    ...(v.typecheck_errors?.length?{typecheck_errors:Object.freeze(v.typecheck_errors.map(x=>Object.freeze({...x})))}:{}),
-   ...(v.acceptance_failure?{acceptance_failure:safeAcceptanceFailureSummary(v.acceptance_failure)!}:{}),
    ...(v.failing_test_files?.length?{failing_test_files:Object.freeze([...v.failing_test_files])}:{}),
    ...(v.test_failures?.length?{test_failures:Object.freeze(v.test_failures.map(x=>Object.freeze({...x})))}:{}),
    repair_candidate:v.repair_candidate,

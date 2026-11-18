@@ -48,7 +48,7 @@ import {AuthenticatedGiteaReadCompletionObserver}
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
 import {isTestAgentReadGrant,readUpdateGrantShape,isProjectTestCreateGrant,isProjectTestSource,
  readCreateGrantShape,isProjectTestReadCreateGrant,
- isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE,exactFilePath}
+ isTrustedProjectTestSourceProfile,exactFilePath}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
@@ -130,7 +130,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     (typeof options.disposableOwnerModelTaskPrebind!=='function'||
      process.env.DELEGATION_DISPOSABLE_LIVE_MODE==='gemini-real'))
   deny('disposable model Task prebind requires offline private owner code');
- const projectTestSourceProfile=options.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+ const projectTestSourceProfile=options.projectTestSourceProfile;
  if(!isTrustedProjectTestSourceProfile(projectTestSourceProfile))
   deny('trusted repository test-source profile required');
  const snapshot=structuredClone(options.snapshot),requirement=options.requirement,branch=options.workBranch;
@@ -731,7 +731,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          proof.repository!==intent.repository||proof.branch!==intent.branch||
          proof.tested_commit_sha!==intent.expected_head_sha||
          proof.completion.evidence_sha256!==completed.verified_evidence_sha256||
-         proof.project_tests!=='pass'||!['skipped','pass'].includes(proof.researcher_acceptance)||
+         proof.project_tests!=='pass'||
          !Object.keys(expected).every(k=>proof.completion[k]===expected[k]))
        deny('PR tested HEAD changed during independent verification');
       return Object.freeze({
@@ -740,7 +740,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        repository:proof.repository,branch:proof.branch,
        tested_commit_sha:proof.tested_commit_sha,
        evidence_sha256:proof.completion.evidence_sha256,
-       project_tests:'pass',researcher_acceptance:proof.researcher_acceptance,
+       project_tests:'pass',
        gateway_execution_authorized:false
       });
      })();
@@ -851,9 +851,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         ...(adaptiveVerifiedFailures.at(-1).failing_test_files?.length?
          {failing_test_files:adaptiveVerifiedFailures.at(-1).failing_test_files}:{}),
         ...(adaptiveVerifiedFailures.at(-1).test_failures?.length?
-         {test_failures:adaptiveVerifiedFailures.at(-1).test_failures}:{}),
-        ...(adaptiveVerifiedFailures.at(-1).acceptance_failure?
-         {acceptance_failure:adaptiveVerifiedFailures.at(-1).acceptance_failure}:{})
+         {test_failures:adaptiveVerifiedFailures.at(-1).test_failures}:{})
        },verifiedFailureHistory:adaptiveVerifiedFailures.map(f=>({
         failed_task_id:f.failed_task_id,failed_phase:f.failed_phase,
         source_evidence_sha256:f.source_evidence_sha256,

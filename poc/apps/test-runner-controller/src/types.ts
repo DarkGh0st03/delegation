@@ -22,7 +22,7 @@ export interface RunnerRunRequest {
   project_profile_sha256: string;
 }
 
-/** A phase name of the project profile, or the historical researcher suite. */
+/** A phase name of the Engineer-signed project profile. */
 export type RunnerPhaseName = string;
 
 export interface RunnerPhaseResult {
@@ -38,10 +38,6 @@ export interface RunnerProjectTestsResult {
   phases: RunnerPhaseResult[];
 }
 
-export interface RunnerResearcherAcceptanceResult extends RunnerPhaseResult {
-  phase: "researcher_acceptance";
-}
-
 import type {TypecheckLocation} from "./typecheck-diagnostics.ts";
 export interface RunnerRunResult {
   request_id: string;
@@ -54,14 +50,7 @@ export interface RunnerRunResult {
   status: "pass" | "fail";
   phases: RunnerPhaseResult[];
   project_tests?: RunnerProjectTestsResult;
-  researcher_acceptance?: RunnerResearcherAcceptanceResult;
   log_reference?: string;
-  /** Fixed researcher check IDs only; diagnostic, never repair authorization. */
-  acceptance_failure?: Readonly<{
-    failed_checks: readonly string[];
-    timed_out: boolean;
-    unclassified_failure: boolean;
-  }>;
   /** Trusted metadata only; agents must filter by approved read paths. */
   typecheck_diagnostics?: TypecheckLocation[];
   /** Fileless, source-free compiler error codes for diagnostics only. */

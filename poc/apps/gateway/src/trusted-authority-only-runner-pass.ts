@@ -1,15 +1,11 @@
 /**
- * R303.2 — strict authenticated Runner PASS classification for future
- * authority-only Test Task completion. This code is not a Docker executor
- * and does not authenticate signed Rust DCs or create an HMAC receipt.
+ * Strict authenticated Runner PASS classification for Test Task completion.
+ * This code is not a Docker executor and does not authenticate signed Rust
+ * DCs or create an HMAC receipt.
  *
- * RunnerClient itself binds an authenticated HTTPS/owner-only bearer request
- * to the exact returned object. A PASS claim alone (even from the service)
- * is insufficient without all fixed project phases.
- *
- * The separate researcher acceptance suite is no longer part of the
- * workflow: the Runner reports it as "skipped". A historical "pass" is
- * still accepted; a "fail" is never a PASS (the overall status is "fail").
+ * RunnerClient itself binds an authenticated owner-only bearer request to
+ * the exact returned object. A PASS claim alone (even from the service) is
+ * insufficient without every phase of the approved project profile.
  */
 import {isRunnerPhaseName} from "../../../packages/plan-contracts/src/project-profile.mjs";
 import {RunnerClient,assertTrustedRunnerClientResult,
@@ -23,12 +19,10 @@ export interface VerifiedRunnerPass{
  readonly branch:string;readonly tested_commit_sha:string;
  readonly runner_profile:"poc-default";
  readonly all_project_tests_passed:true;
- readonly researcher_acceptance:"skipped"|"pass";
  readonly completed_phases:readonly string[];
  readonly log_reference:string;
  readonly runner_execution_authorized:false;
 }
-const ACCEPTANCE_OK=new Set(["skipped","pass"]);
 function deny(s:string):never{
  throw Error("Authority-only Runner PASS evidence NO-GO: "+s);
 }
@@ -49,11 +43,8 @@ export function validateTrustedRunnerPass(
     result.status!=="pass"||
     !result.project_tests||
     result.project_tests.status!=="pass"||
-    result.researcher_acceptance?.phase!=="researcher_acceptance"||
-    !ACCEPTANCE_OK.has(result.researcher_acceptance.status)||
     !/^runner-log:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
        .test(result.log_reference??"")||
-    result.acceptance_failure!==undefined||
     result.project_e2e_failure!==undefined||
     result.failing_test_files!==undefined||result.test_failures!==undefined||
     result.typecheck_errors!==undefined||
@@ -65,7 +56,7 @@ export function validateTrustedRunnerPass(
  if(!PROJECT.length||!PROJECT.every(isRunnerPhaseName))
   deny("approved project profile has no valid phases");
  if(!Array.isArray(result.phases)||
-    result.phases.length!==PROJECT.length+1||
+    result.phases.length!==PROJECT.length||
     !Array.isArray(result.project_tests.phases)||
     result.project_tests.phases.length!==PROJECT.length)
   deny("all pinned Runner phases must be present");
@@ -76,11 +67,6 @@ export function validateTrustedRunnerPass(
      (p.failed??0)!==0||(q.failed??0)!==0)
    deny("approved project phase skipped, duplicated, reordered or failed");
  }
- const researcher=result.phases[PROJECT.length];
- if(researcher.phase!=="researcher_acceptance"||
-    researcher.status!==result.researcher_acceptance.status||
-    (researcher.failed??0)!==0)
-  deny("researcher acceptance phase inconsistent with Runner verdict");
  return Object.freeze({
   status:"owner_verified_runner_pass_staged",
   request_id:request.request_id,repository:request.repository,
@@ -88,8 +74,7 @@ export function validateTrustedRunnerPass(
   runner_profile:"poc-default",
   project_profile_sha256:client.projectProfileSha256,
   all_project_tests_passed:true,
-  researcher_acceptance:result.researcher_acceptance.status as "skipped"|"pass",
-  completed_phases:Object.freeze([...PROJECT,"researcher_acceptance"]),
+  completed_phases:Object.freeze([...PROJECT]),
   log_reference:result.log_reference!,
   runner_execution_authorized:false
  });

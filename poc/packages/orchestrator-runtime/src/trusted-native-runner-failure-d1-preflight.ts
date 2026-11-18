@@ -53,7 +53,6 @@ type NativeVerifiedFailedTest=Readonly<{
  failing_test_files?:readonly string[];
  /** Failed tests of those files with their message: untrusted data. */
  test_failures?:readonly Readonly<{file:string;test:string;message:string}>[];
- acceptance_failure?:import("../../../apps/gateway/src/runner-client.ts").RunnerClientResult["acceptance_failure"];
  recovery_authorized:false;child_credential_issued:false;
  gateway_task_completed:false;task_registered:false;
 }>;
@@ -163,7 +162,6 @@ export async function observeTrustedNativeTestFailure(
   ...(failingTestFiles?.length?{failing_test_files:Object.freeze(failingTestFiles)}:{}),
   // Only messages of failing files inside the signed read scope.
   ...(testFailures?.length?{test_failures:Object.freeze(testFailures)}:{}),
-  ...(fail.acceptance_failure?{acceptance_failure:fail.acceptance_failure}:{}),
   recovery_authorized:false as const,
   child_credential_issued:false as const,
   gateway_task_completed:false as const,

@@ -498,7 +498,6 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     let testedCommitSha: string | undefined;
     let runnerProfile: "poc-default" | undefined;
     let projectTests: "pass" | "fail" | undefined;
-    let researcherAcceptance: "pass" | "fail" | "skipped" | undefined;
     for (const event of events) {
       if (!event.payload.ok) {
         if(event.name==="run_tests"&&
@@ -508,7 +507,6 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
           testedCommitSha=undefined;
           runnerProfile=undefined;
           projectTests=undefined;
-          researcherAcceptance=undefined;
         }else if(event.payload.error.kind!=="no_change")
           errors.push(event.payload.error.kind);
         // "no_change" never reached the Gateway and consumed no grant.
@@ -544,9 +542,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         const sha = result.tested_commit_sha;
         const profile = result.runner_profile;
         const pt = status(result.project_tests);
-        const ra = status(result.researcher_acceptance);
         if (typeof sha !== "string" || !SHA.test(sha) || profile !== "poc-default"
-            || (pt !== "pass" && pt !== "fail") || !ra) {
+            || (pt !== "pass" && pt !== "fail")) {
           errors.push("invalid_test_result");
           continue;
         }
@@ -554,7 +551,6 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         revision = sha;
         runnerProfile = "poc-default";
         projectTests = pt;
-        researcherAcceptance = ra;
         // A synthetic later PASS never clears this Task's prior FAIL.
       }
     }
@@ -610,9 +606,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     if (errors.length > 0) throw new Error("ADK controlled task failed: " + [...new Set(errors)].join(", "));
     if (revision === null) throw new Error("ADK task produced no confirmed repository revision");
 
-    const testOutcome = projectTests === "pass" &&
-      (researcherAcceptance === "pass" || researcherAcceptance === "skipped")
-      ? "pass" : (projectTests === "fail" || researcherAcceptance === "fail") ? "fail" : "not_run";
+    const testOutcome = projectTests === "pass" ? "pass"
+      : projectTests === "fail" ? "fail" : "not_run";
     if (context.role === "test") {
       // A write following successful tests invalidates the tested SHA;
       // functional success cannot attest a newer, untested revision.
@@ -655,8 +650,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       model_id: model.effectiveModelVersion ?? model.model, model_iterations: model.turns,
       ...(testedCommitSha ? {tested_commit_sha: testedCommitSha} : {}),
       ...(runnerProfile ? {runner_profile: runnerProfile} : {}),
-      ...(projectTests ? {project_tests: projectTests} : {}),
-      ...(researcherAcceptance ? {researcher_acceptance: researcherAcceptance} : {})
+      ...(projectTests ? {project_tests: projectTests} : {})
     };
     }finally{
       // Active-task revocation cannot be inferred from model output.

@@ -6,11 +6,10 @@ import {isRunnerPhaseName} from '../../plan-contracts/src/project-profile.mjs';
 import {sanitizeVitestFailureFiles} from '../../../apps/test-runner-controller/src/vitest-failure-files.ts';
 import {sanitizeTestFailureMessages} from '../../../apps/test-runner-controller/src/test-failure-messages.ts';
 import {sanitizeTypecheckErrors} from '../../../apps/test-runner-controller/src/typecheck-diagnostics.ts';
-import {safeAcceptanceFailureSummary} from '../../../runner/acceptance/failure-catalog.mjs';
 import {BaseLlm,LlmAgent,Runner,InMemorySessionService} from '@google/adk';
 import {MAX_ADAPTIVE_SOURCE_OBSERVATIONS} from '../../plan-contracts/src/planning-limits.mjs';
 import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,readUpdateGrantShape,isProjectTestCreateGrant,isProjectTestSource,
- isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE,readCreateGrantShape,isProjectTestReadCreateGrant}
+ isTrustedProjectTestSourceProfile,readCreateGrantShape,isProjectTestReadCreateGrant}
  from '../../plan-contracts/src/gitea-permission-containment.mjs';
 import {ROLE_SKILLS} from "../../plan-contracts/src/agent-roles.mjs";
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -50,7 +49,7 @@ class SingleDecisionModel extends BaseLlm{
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
  constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,verifiedFailureHistory,specialistNoChanges,nextEpoch,decisionKind='agent',executionProgress,maxVerifiedFailures=2,
- projectTestSourceProfile=IAM_CONSOLE_PROJECT_TEST_PROFILE}){
+ projectTestSourceProfile}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
@@ -194,8 +193,6 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    const base=['failed_phase','source_evidence_sha256'];
    const codes=verifiedFailure&&typeof verifiedFailure==='object'&&
     Object.hasOwn(verifiedFailure,'typecheck_error_codes');
-   const acceptance=verifiedFailure&&typeof verifiedFailure==='object'&&
-    Object.hasOwn(verifiedFailure,'acceptance_failure');
    const files=verifiedFailure?.failing_test_files;
    const phase=verifiedFailure?.failed_phase;
    const runnerGrant=roots.find(p=>p.operation==='run_tests'&&
@@ -204,7 +201,6 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
         exact(verifiedFailure,[...base,'typecheck_error_codes'])||
         exact(verifiedFailure,[...base,'typecheck_error_codes','typecheck_errors'])||
         exact(verifiedFailure,[...base,'typecheck_errors'])||
-        exact(verifiedFailure,[...base,'acceptance_failure'])||
         exact(verifiedFailure,[...base,'failing_test_files'])||
         exact(verifiedFailure,[...base,'failing_test_files','test_failures']))||
       (Object.hasOwn(verifiedFailure,'typecheck_errors')&&
@@ -218,15 +214,12 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
          JSON.stringify(verifiedFailure.test_failures)))||
       (Object.hasOwn(verifiedFailure,'failing_test_files')&&
        (decisionKind!=='adaptive'||!runnerGrant||
-        phase==='researcher_acceptance'||
         !Array.isArray(files)||!files.length||
         JSON.stringify(sanitizeVitestFailureFiles(files))!==JSON.stringify(files)||
         files.some(path=>!roots.some(p=>giteaPermissionCovers(p,{
          resource:runnerGrant.resource+'/files/'+path.split('/').map(encodeURIComponent).join('/'),
          operation:'read_file'
         })))))||
-      (acceptance&&(decisionKind!=='adaptive'||verifiedFailure.failed_phase!=='researcher_acceptance'||
-       !safeAcceptanceFailureSummary(verifiedFailure.acceptance_failure)))||
       !phases.has(verifiedFailure.failed_phase)||
       typeof verifiedFailure.source_evidence_sha256!=='string'||
       !/^[a-f0-9]{64}$/u.test(verifiedFailure.source_evidence_sha256)||
@@ -328,8 +321,6 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
       {failing_test_files:[...this.verifiedFailure.failing_test_files]}:{}),
      ...(this.verifiedFailure.test_failures?.length?
       {failed_tests:this.verifiedFailure.test_failures.map(x=>({...x}))}:{}),
-     ...(this.verifiedFailure.acceptance_failure?
-      {acceptance_failure:this.verifiedFailure.acceptance_failure}:{}),
      status:'verified_failure_preflight_only_not_approval'
     }
    }:{})

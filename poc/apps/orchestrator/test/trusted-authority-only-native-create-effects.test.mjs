@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../../packages/plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,mkdir,rm,readdir} from "node:fs/promises";
@@ -5,7 +6,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {InMemoryRequestStore} from "../../gateway/src/prepare.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../gateway/src/trusted-authority-only-admissions.ts";
 import {TrustedAuthorityOnlyGiteaCreatePreflight}
  from "../../gateway/src/trusted-authority-only-create-preflight.ts";
@@ -15,6 +16,9 @@ import {AuthenticatedGiteaCreateCompletionObserver}
  from "../../gateway/src/trusted-authority-only-gitea-create-evidence.ts";
 import {assembleTrustedAuthorityOnlyNativeCreateEffects}
  from "../src/trusted-authority-only-native-create-effects.mjs";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const repository="thesis/iam-console-poc";
 const branch="feature/account-suspension";

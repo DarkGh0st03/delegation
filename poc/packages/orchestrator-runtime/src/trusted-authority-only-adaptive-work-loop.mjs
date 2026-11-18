@@ -36,8 +36,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
    // The owner's test-source rule (project profile) is passed as a trusted
    // object, never through the cloned, model-visible progress context.
    const decide=()=>new TrustedAuthorityOnlyAdkDecisionProposer({
-    ...before,model,decisionKind:'adaptive',
-    ...(projectTestSourceProfile===undefined?{}:{projectTestSourceProfile})
+    ...before,model,decisionKind:'adaptive',projectTestSourceProfile
    }).propose();
    const decision=await (hooks.runDecision?hooks.runDecision(decide):decide());
    signal?.throwIfAborted();
@@ -174,8 +173,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
          {typecheck_error_codes:[...observed.typecheck_error_codes]}:{}),
         ...(observed.typecheck_errors?.length?{typecheck_errors:observed.typecheck_errors}:{}),
         ...(observed.failing_test_files?.length?{failing_test_files:observed.failing_test_files}:{}),
-        ...(observed.test_failures?.length?{test_failures:observed.test_failures}:{}),
-        ...(observed.acceptance_failure?{acceptance_failure:observed.acceptance_failure}:{})
+        ...(observed.test_failures?.length?{test_failures:observed.test_failures}:{})
        }))
      deny('verified Test FAIL did not preserve the original authority and success ledger');
     // The failed Task is registered (epoch advances), but NOT completed.

@@ -1,10 +1,13 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BaseLlm} from '@google/adk';
-import {TrustedAuthorityOnlyAdkDecisionProposer}
+import {TrustedAuthorityOnlyAdkDecisionProposer as TrustedAuthorityOnlyAdkDecisionProposerBase}
  from '../src/trusted-authority-only-adk-decision-proposer.mjs';
-import {createTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
+import {createTrustedProjectTestSourceProfile}
  from '../../plan-contracts/src/gitea-permission-containment.mjs';
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyAdkDecisionProposer extends TrustedAuthorityOnlyAdkDecisionProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
 
 class NeverCalledModel extends BaseLlm {
  constructor(){super({model:'r401-offline-only'});}
@@ -27,7 +30,7 @@ test('R401.1 ADK owner accepts only a provisioned repository test profile',()=>{
   ...props(),projectTestSourceProfile:alt
  }));
  assert.doesNotThrow(()=>new TrustedAuthorityOnlyAdkDecisionProposer({
-  ...props(),projectTestSourceProfile:IAM_CONSOLE_PROJECT_TEST_PROFILE
+  ...props(),projectTestSourceProfile:SAMPLE_TEST_SOURCES
  }));
  assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer({
   ...props(),projectTestSourceProfile:{

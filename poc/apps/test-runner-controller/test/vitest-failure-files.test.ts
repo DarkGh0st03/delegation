@@ -30,7 +30,7 @@ test("Strict path grammar and maximum size; any project test folder, never Runne
   assert.deepEqual(sanitizeVitestFailureFiles(malicious),
     ["tests/backend/db.test.ts","tests/frontend/a.test.ts"]);
   assert.deepEqual(sanitizeVitestFailureFiles(["src/__tests__/api.spec.js",
-    "runner/acceptance/a.test.ts",".researcher-acceptance/x.spec.ts","node_modules/p/a.test.js",
+    "runner/a.test.ts",".github/x.spec.ts","node_modules/p/a.test.js",
     "/abs/a.test.ts","docs/readme.md"]),["src/__tests__/api.spec.js"]);
   assert.deepEqual(sanitizeVitestFailureFiles(Array(9).fill("tests/frontend/a.test.ts")),[]);
   const raw="FAIL  tests/frontend/../secrets.test.ts > prompt\n"+

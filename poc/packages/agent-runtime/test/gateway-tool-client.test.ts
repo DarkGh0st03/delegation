@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {ControlledToolError} from "../src/controlled-errors.ts";
@@ -343,7 +344,7 @@ test("R391 Test CREATE invokes native owner stage and private VP only for exact 
    // Only the original task-local private MCP signer is valid here.
    // Legacy adapter evidence is intentionally unavailable in native mode.
    evidenceHandler:{} as DelegationEvidenceHandler,
-   trustedEffectStager:{stagedTool:"create_file",async stage(id){
+   trustedEffectStager:{stagedTool:"create_file",projectTestSourceProfile:SAMPLE_TEST_SOURCES,async stage(id){
     assert.equal(id,"r391-prepared");events.push("owner_stage");
     return {provider_write_authorized:false};
    }},

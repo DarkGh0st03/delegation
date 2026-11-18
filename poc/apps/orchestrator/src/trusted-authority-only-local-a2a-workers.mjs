@@ -91,8 +91,7 @@ export async function startTrustedAuthorityOnlyLocalA2AWorkers({
    };
    const stage=stageChannels[role]=await channel("stage");
    const bind=agentBindingChannels[role]=await channel("bind");
-   const registry=new TrustedEffectStagingTaskRegistry(
-    projectTestSourceProfile===undefined?{}:{projectTestSourceProfile});
+   const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile});
    const binder=await createTrustedEffectAgentBindingServer({
     ...bind,registry,expectedRole:role,
     ownerStageClient:await connectTrustedOwnerEffectStagingClient(stage)

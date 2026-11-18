@@ -32,14 +32,13 @@ const request={
  branch,commit_sha:sha,profile:"poc-default" as const
 };
 const phases=["dependency_install","typecheck","backend_tests",
- "frontend_tests","build","playwright_e2e","researcher_acceptance"];
+ "frontend_tests","build","playwright_e2e"];
 function failure(){
  const states=phases.map((phase,i)=>({phase,status:i<1?"pass":i===1?"fail":"skipped"}));
  return {
   request_id:request.request_id,repository:request.repository,branch,
   tested_commit_sha:sha,runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
-  phases:states,project_tests:{status:"fail",phases:states.slice(0,6)},
-  researcher_acceptance:states[6],
+  phases:states,project_tests:{status:"fail",phases:states},
   log_reference:"runner-log://12345678-1234-1234-1234-123456789abc"
  };
 }
@@ -164,34 +163,12 @@ test("R337 missing durable original POST attempt cannot publish or observe FAIL"
  },failure(),false);
 });
 
-test("R377.4 researcher check labels survive authenticated FAIL and are MAC bound",async()=>{
- const states=phases.map(phase=>({phase,status:phase==="researcher_acceptance"?"fail":"pass"}));
- const summary={failed_checks:["ui_pending_actions"],timed_out:false,unclassified_failure:false};
- const body={...failure(),phases:states,
-  project_tests:{status:"pass",phases:states.slice(0,6)},researcher_acceptance:states[6],
-  acceptance_failure:summary};
- await fixture(async({publisher,observer,runner,directory})=>{
-  const result=await runner.run(request);
-  await publisher.publish(intent,binding,request,result,"opa-r3774");
-  assert.deepEqual((await observer.observe(intent,binding)).acceptance_failure,summary);
-  const [name]=await readdir(directory);
-  const file=join(directory,name!);
-  const row=JSON.parse(await readFile(file,"utf8"));
-  row.acceptance_failure.failed_checks=["service_persistence"];
-  await writeFile(file,JSON.stringify(row));
-  await assert.rejects(observer.observe(intent,binding),/MAC invalid/u);
-  row.acceptance_failure.failed_checks=["untrusted raw assertion"];
-  await writeFile(file,JSON.stringify(row));
-  await assert.rejects(observer.observe(intent,binding),/violates signed Task/u);
- },body);
-});
-
 test("authenticated FAIL binds the failed test names and messages (MAC-protected)",async()=>{
  const states=phases.map((phase,i)=>({phase,status:i<2?"pass":i===2?"fail":"skipped"}));
  const path="tests/backend/account.test.ts";
  const failed={file:path,test:"accounts > suspends",message:"AssertionError: expected 'ACTIVE' to be 'SUSPENDED'"};
  const body={...failure(),phases:states,
-  project_tests:{status:"fail",phases:states.slice(0,6)},researcher_acceptance:states[6],
+  project_tests:{status:"fail",phases:states},
   failing_test_files:[path],test_failures:[failed]};
  await fixture(async({publisher,observer,runner,directory})=>{
   const result=await runner.run(request);
@@ -213,7 +190,7 @@ test("R377.5 authenticated Backend FAIL binds the sanitized Vitest paths",async(
  const states=phases.map((phase,i)=>({phase,status:i<2?"pass":i===2?"fail":"skipped"}));
  const path="tests/backend/account.test.ts";
  const body={...failure(),phases:states,
-  project_tests:{status:"fail",phases:states.slice(0,6)},researcher_acceptance:states[6],
+  project_tests:{status:"fail",phases:states},
   failing_test_files:[path,"src/outside-profile.test.ts","private assertion"]};
  await fixture(async({publisher,observer,runner,directory})=>{
   const result=await runner.run(request);

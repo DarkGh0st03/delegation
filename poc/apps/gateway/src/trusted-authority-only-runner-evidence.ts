@@ -5,7 +5,7 @@
  *
  * HMAC protects provenance within the trusted Gateway owner; it is NOT
  * itself a Docker scheduler signature. The real controlled RunnerClient
- * response, all six project phases, researcher acceptance, and the pinned
+ * response, every phase of the approved project profile and the pinned
  * Gitea HEAD must independently corroborate PASS before Task completion.
  */
 import {isRunnerPhaseName,MAX_PROJECT_PHASES} from "../../../packages/plan-contracts/src/project-profile.mjs";
@@ -45,12 +45,12 @@ const BINDING=[
 ] as const;
 const FIELDS=[
  "schema","kind",...BINDING,"repository","branch","tested_commit_sha",
- "runner_profile","project_profile_sha256","project_tests","researcher_acceptance",
+ "runner_profile","project_profile_sha256","project_tests",
  "phase_names","log_reference","policy_version","completed_at_ms",
  "verification","mac_sha256"
 ].sort().join(",");
 interface OwnerRunnerPassReceipt{
- readonly schema:"authority-only-runner-pass-evidence-v1";
+ readonly schema:"authority-only-runner-pass-evidence-v3";
  readonly kind:"gateway_controlled_docker_runner_pass";
  readonly session_id:string;
  readonly authority_digest:string;
@@ -68,7 +68,6 @@ interface OwnerRunnerPassReceipt{
  readonly runner_profile:"poc-default";
  readonly project_profile_sha256:string;
  readonly project_tests:"pass";
- readonly researcher_acceptance:"skipped"|"pass";
  readonly phase_names:readonly string[];
  readonly log_reference:string;
  readonly policy_version:string;
@@ -132,7 +131,7 @@ function assertFields(
   deny("Runner receipt is not a protected object");
  const v=value as Record<string,unknown>;
  if(Object.keys(v).sort().join(",")!==FIELDS||
-    v.schema!=="authority-only-runner-pass-evidence-v2"||
+    v.schema!=="authority-only-runner-pass-evidence-v3"||
     v.kind!=="gateway_controlled_docker_runner_pass"||
     v.repository!==repo||v.branch!==branch||
     BINDING.some(k=>v[k]!==e[k])||
@@ -143,12 +142,10 @@ function assertFields(
     v.runner_profile!=="poc-default"||
     !SHA64.test(v.project_profile_sha256 as string)||
     v.project_tests!=="pass"||
-    (v.researcher_acceptance!=="skipped"&&v.researcher_acceptance!=="pass")||
     !Array.isArray(v.phase_names)||
-    v.phase_names.length<2||v.phase_names.length>MAX_PROJECT_PHASES+1||
+    v.phase_names.length<1||v.phase_names.length>MAX_PROJECT_PHASES||
     !v.phase_names.every(isRunnerPhaseName)||
     new Set(v.phase_names).size!==v.phase_names.length||
-    v.phase_names.at(-1)!=="researcher_acceptance"||
     typeof v.log_reference!=="string"||
     !/^runner-log:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
       .test(v.log_reference)||
@@ -212,7 +209,7 @@ export class AuthenticatedRunnerCompletionObserver{
  async #readTestedHead(e:TrustedCompletionExpectation):Promise<Readonly<{
   completion:ObservedTrustedTaskCompletion;
   repository:string;branch:string;tested_commit_sha:string;
-  project_tests:"pass";researcher_acceptance:"skipped"|"pass";
+  project_tests:"pass";
  }>>{
   const raw=await readReceipt(this.#directory,receiptName(e));
   const r=assertFields(raw,e,this.#repo,this.#branch);
@@ -235,7 +232,7 @@ export class AuthenticatedRunnerCompletionObserver{
    }),
    repository:r.repository,branch:r.branch,
    tested_commit_sha:r.tested_commit_sha,
-   project_tests:r.project_tests,researcher_acceptance:r.researcher_acceptance
+   project_tests:r.project_tests
   });
  }
  toTrustedObserver():TrustedAuthorityOnlyCompletionObserver{
@@ -298,7 +295,7 @@ export class TrustedGatewayRunnerPassEvidencePublisher{
   if(!Number.isSafeInteger(now)||now<=0)
    deny("invalid owner time for Runner result receipt");
   const unsigned:Omit<OwnerRunnerPassReceipt,"mac_sha256">={
-   schema:"authority-only-runner-pass-evidence-v2",
+   schema:"authority-only-runner-pass-evidence-v3",
    kind:"gateway_controlled_docker_runner_pass",
    ...binding,
    repository:this.#repo,
@@ -306,7 +303,7 @@ export class TrustedGatewayRunnerPassEvidencePublisher{
    tested_commit_sha:pass.tested_commit_sha,
    runner_profile:"poc-default",
    project_profile_sha256:pass.project_profile_sha256,
-   project_tests:"pass",researcher_acceptance:pass.researcher_acceptance,
+   project_tests:"pass",
    phase_names:[...pass.completed_phases],
    log_reference:pass.log_reference,
    policy_version:policyVersion,completed_at_ms:now,

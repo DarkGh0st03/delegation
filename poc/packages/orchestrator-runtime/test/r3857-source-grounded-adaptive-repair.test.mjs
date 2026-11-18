@@ -13,8 +13,10 @@ import {join} from "node:path";
 import {promisify} from "node:util";
 import {execFile} from "node:child_process";
 import {BaseLlm} from "@google/adk";
-import {runTrustedAuthorityOnlyAdaptiveWorkLoop as run}
+import {runTrustedAuthorityOnlyAdaptiveWorkLoop as runLoop}
  from "../src/trusted-authority-only-adaptive-work-loop.mjs";
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
+const run=options=>runLoop({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...options});
 import {selectTrustedRepairDiagnosticRead as verifyRead}
  from "../src/trusted-authority-only-repair-diagnostic-gate.mjs";
 

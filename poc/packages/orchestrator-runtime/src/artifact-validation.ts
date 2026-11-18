@@ -116,8 +116,7 @@ export function validateWorkflowArtifact(
   const runnerFields = [
     raw.tested_commit_sha,
     raw.runner_profile,
-    raw.project_tests,
-    raw.researcher_acceptance
+    raw.project_tests
   ];
   if(requireTestNotRun&&runnerFields.some(value=>value!==undefined))
     throw new Error("Signed Test preparation Artifact must not claim Runner evidence");
@@ -133,7 +132,6 @@ export function validateWorkflowArtifact(
   let testedCommitSha: string | undefined;
   let runnerProfile: "poc-default" | undefined;
   let projectTests: "pass" | "fail" | undefined;
-  let researcherAcceptance: "pass" | "fail" | "skipped" | undefined;
 
   if (expectedRole === "test" && requireTestPass) {
     testedCommitSha = commitSha(
@@ -159,14 +157,6 @@ export function validateWorkflowArtifact(
     }
     projectTests = "pass";
 
-    // The researcher acceptance suite is no longer run ("skipped"); a
-    // historical "pass" is still valid, a "fail" never is.
-    if (raw.researcher_acceptance !== "pass" && raw.researcher_acceptance !== "skipped") {
-      throw new Error(
-        "Test Artifact is not acceptable: researcher_acceptance must be skipped or pass"
-      );
-    }
-    researcherAcceptance = raw.researcher_acceptance;
   }
 
   if (!Array.isArray(raw.errors)) {
@@ -200,10 +190,7 @@ export function validateWorkflowArtifact(
       : { runner_profile: runnerProfile }),
     ...(projectTests === undefined
       ? {}
-      : { project_tests: projectTests }),
-    ...(researcherAcceptance === undefined
-      ? {}
-      : { researcher_acceptance: researcherAcceptance })
+      : { project_tests: projectTests })
   };
 
   if (raw.model_id !== undefined) {

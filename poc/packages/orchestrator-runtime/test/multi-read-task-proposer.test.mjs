@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * Multi-permission Task: the Orchestrator may give one specialist the signed
  * reads of the file it edits AND of the files that file depends on, plus ONE
@@ -6,8 +7,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {BaseLlm} from "@google/adk";
-import {TrustedAuthorityOnlyAdkDecisionProposer as Proposer}
+import {TrustedAuthorityOnlyAdkDecisionProposer as ProposerBase}
  from "../src/trusted-authority-only-adk-decision-proposer.mjs";
+/** Test default: the sample repository test-source profile. */
+class Proposer extends ProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
 
 const branch="feature/account-suspension";
 const root="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";

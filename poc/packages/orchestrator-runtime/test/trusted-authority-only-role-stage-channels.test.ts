@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R333 — three physical HMAC staging channels, one Coordinator/root and
  * one owner registry.  The local origin of a stage request is pinned
@@ -22,7 +23,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
@@ -30,6 +31,9 @@ import {TrustedEffectStagingTaskRegistry}
  from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
 import {createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const roles=["backend","frontend","test"] as const;
 type Role=(typeof roles)[number];
@@ -141,7 +145,7 @@ async function setup(extra=false){
   };
   const startBind=async()=>{
    for(const role of activeRoles){
-    const reg=new TrustedEffectStagingTaskRegistry();
+    const reg=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
     registries[role]=reg;
     const ownerStageClient=await connectTrustedOwnerEffectStagingClient(
      stageChannels[role]

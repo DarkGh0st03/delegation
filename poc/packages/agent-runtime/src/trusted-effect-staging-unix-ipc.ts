@@ -16,7 +16,7 @@ import {assertTrustedOriginalScopedEffectDirectory,
  from "./trusted-effect-staging-scoped-linux.ts";
 import {TrustedEffectStagingTaskRegistry,
  type TrustedEffectTaskOwnerPins} from "./trusted-effect-staging-task-registry.ts";
-import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
+import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import type {TrustedEffectStagingPort} from "./gateway-tool-client.ts";
 import {SPECIALIST_ROLES} from "../../plan-contracts/src/agent-roles.mjs";
@@ -536,10 +536,10 @@ export async function createTrustedEffectAgentBindingServer(config:{
 export async function connectTrustedEffectAgentBindingClient(
  config:{socketPath:string;secretFile:string;expectedRole?:Role;
   originalScopedEffectRole?:TrustedOriginalScopedEffectRole;
-  /** Test-source rule of the project profile (default: example repository). */
+  /** Test-source rule of the session's project profile (required). */
   projectTestSourceProfile?:unknown}
 ){
- const testSources=config.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+ const testSources=config.projectTestSourceProfile;
  if(!isTrustedProjectTestSourceProfile(testSources))
   deny("project test-source profile must come from a trusted project profile");
  if(config.originalScopedEffectRole&&

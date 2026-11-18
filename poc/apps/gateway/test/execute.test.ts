@@ -462,18 +462,11 @@ test("successful Controlled Runner execution records Runner-specific audit metad
         runner_profile: "poc-default",
         status: "pass",
         phases: [
-          { phase: "dependency_install", status: "pass" },
-          { phase: "researcher_acceptance", status: "pass", passed: 1, failed: 0 }
+          { phase: "dependency_install", status: "pass" }
         ],
         project_tests: {
           status: "pass",
           phases: [{ phase: "dependency_install", status: "pass" }]
-        },
-        researcher_acceptance: {
-          phase: "researcher_acceptance",
-          status: "pass",
-          passed: 1,
-          failed: 0
         },
         log_reference: "runner-log://audit"
       };
@@ -494,7 +487,6 @@ test("successful Controlled Runner execution records Runner-specific audit metad
     assert.equal(event.runner_profile, "poc-default");
     assert.equal(event.runner_status, "pass");
     assert.equal(event.runner_project_tests_status, "pass");
-    assert.equal(event.runner_researcher_acceptance_status, "pass");
     assert.equal(event.runner_log_reference, "runner-log://audit");
   }
 });

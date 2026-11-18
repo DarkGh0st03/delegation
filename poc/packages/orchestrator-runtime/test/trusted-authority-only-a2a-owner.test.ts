@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {TaskState} from "@a2a-js/sdk";
@@ -7,7 +8,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {TrustedAuthorityOnlyCreateEffectStager}
  from "../../../apps/gateway/src/trusted-authority-only-create-effect-stager.ts";
@@ -21,6 +22,9 @@ import {TrustedAuthorityOnlyRemoteEffectBootstrap}
  from "../src/trusted-authority-only-remote-effect-bootstrap.ts";
 import {TrustedAuthorityOnlyA2AOwner}
  from "../src/trusted-authority-only-a2a-owner.ts";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const branch="feature/account-suspension",file="apps/backend/src/users/account.ts";

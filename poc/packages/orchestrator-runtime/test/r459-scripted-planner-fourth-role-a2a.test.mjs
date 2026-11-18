@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R459 scripted Planner -> owner-pinned reviewer -> real private HTTP A2A.
  * Native Rust, Gateway and Gitea remain fixture-only in this test; R458
@@ -11,7 +12,7 @@ import {randomBytes} from "node:crypto";
 import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {TrustedAuthorityOnlyAdkDecisionProposer}
+import {TrustedAuthorityOnlyAdkDecisionProposer as TrustedAuthorityOnlyAdkDecisionProposerBase}
  from "../src/trusted-authority-only-adk-decision-proposer.mjs";
 import {startTrustedAuthorityOnlySdkA2AOwner}
  from "../src/trusted-authority-only-a2a-owner.ts";
@@ -19,7 +20,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
@@ -29,6 +30,11 @@ import {TrustedEffectStagingTaskRegistry}
  from "../../agent-runtime/src/trusted-effect-staging-task-registry.ts";
 import {createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyAdkDecisionProposer extends TrustedAuthorityOnlyAdkDecisionProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const canonicalRoles=Object.freeze(["backend","frontend","test"]);
 const roles=Object.freeze([...canonicalRoles,"reviewer"]);
@@ -164,7 +170,7 @@ test("R459 scripted Planner selects pinned fourth-role real A2A; only fixture-ba
    };
    stageChannels[role]=await ch("stage");
    agentBindingChannels[role]=await ch("bind");
-   registries[role]=new TrustedEffectStagingTaskRegistry();
+   registries[role]=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
    const binder=await createTrustedEffectAgentBindingServer({
     ...agentBindingChannels[role],registry:registries[role],expectedRole:role,
     ownerStageClient:await connectTrustedOwnerEffectStagingClient(stageChannels[role])

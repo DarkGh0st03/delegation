@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,writeFile,rm} from "node:fs/promises";
@@ -41,7 +42,7 @@ async function fixtures(expectedRole?:"backend"|"test",
   await writeFile(file,randomBytes(32).toString("hex")+"\n",
    {mode:0o600,flag:"wx"});
  const owner=new TrustedOwnerEffectStagingRegistry();
- const agent=new TrustedEffectStagingTaskRegistry(),calls:string[]=[];
+ const agent=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES}),calls:string[]=[];
  const stageSocket=join(dir,"stage.sock"),bindSocket=join(dir,"bind.sock");
  const ownerServer=await createTrustedOwnerEffectStagingServer({
   socketPath:stageSocket,secretFile:stageSecret,registry:owner,expectedRole
@@ -56,7 +57,7 @@ async function fixtures(expectedRole?:"backend"|"test",
   ...(expectedPresenterDid?{expectedPresenterDid}:{})
  });
  await agentServer.start();
- const client=await connectTrustedEffectAgentBindingClient({
+ const client=await connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
   socketPath:bindSocket,secretFile:bindSecret});
  const close=async()=>{
   await Promise.allSettled([agentServer.close(),ownerServer.close()]);
@@ -109,7 +110,7 @@ test("R322 authenticated owner binds remote A2A Task; one prepared Gateway reque
 test("R322 distinct HMAC secrets and missing owner prebinding cannot stage",async()=>{
  const x=await fixtures();
  try{
-  const wrongBinding=await connectTrustedEffectAgentBindingClient({
+  const wrongBinding=await connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
    socketPath:x.bindSocket,secretFile:x.foreignSecret});
   await assert.rejects(wrongBinding.bindTask(pins),/operation denied/u);
   const wrongStage=await connectTrustedOwnerEffectStagingClient({
@@ -411,7 +412,7 @@ test("R390 Test CREATE exact source binds through private HMAC and stages once",
 test("R437 provisioned invoice role can bind and stage only on its own private HMAC channels",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"r437-invoice-ipc-"));
  const ownerRegistry=new TrustedOwnerEffectStagingRegistry();
- const agentRegistry=new TrustedEffectStagingTaskRegistry(),effects:string[]=[];
+ const agentRegistry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES}),effects:string[]=[];
  const stageHex=join(dir,"invoice-stage.hex"),
   stageSock=join(dir,"invoice-stage.sock"),
   beHex=join(dir,"backend-stage.hex"),
@@ -441,7 +442,7 @@ test("R437 provisioned invoice role can bind and stage only on its own private H
    socketPath:bindSock,secretFile:bindHex,ownerStageClient:stage
   });
   await binder.start();
-  const client=await connectTrustedEffectAgentBindingClient({
+  const client=await connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
    socketPath:bindSock,secretFile:bindHex,expectedRole:"invoice"
   });
   const file="apps/invoice.ts",request="r437-invoice-read";

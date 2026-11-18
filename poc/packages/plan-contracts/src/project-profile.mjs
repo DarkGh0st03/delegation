@@ -16,13 +16,13 @@ export const PROJECT_PROFILE_VERSION = 1;
 export const MAX_PROJECT_PHASES = 8;
 const IMAGE = /^[a-z0-9][a-z0-9._/-]{0,150}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,63})?(?:@sha256:[a-f0-9]{64})?$/u;
 const PHASE_NAME = /^[a-z][a-z0-9_]{1,31}$/u;
-/** A Runner phase name: a project-profile phase or the historical
- * researcher suite. The only rule every component shares for phase names. */
+/** A Runner phase name of a project profile. The only rule every component
+ * shares for phase names. */
 export function isRunnerPhaseName(value) {
   return typeof value === "string" && PHASE_NAME.test(value) && value !== "project_tests";
 }
-/** Reserved: historical researcher suite and the Runner's own bookkeeping. */
-const RESERVED_PHASES = new Set(["researcher_acceptance", "project_tests"]);
+/** Reserved: the Runner's own bookkeeping. */
+const RESERVED_PHASES = new Set(["project_tests"]);
 const FAILURE_REPORTS = new Set(["vitest"]);
 
 const fail = reason => { throw Error("Invalid project profile: " + reason); };

@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R327: real HTTP A2A SDK and ADK Runner with authenticated owner/agent
  * Unix IPC. No paid model, live Rust/EVM, Gitea or Docker: those services
@@ -24,7 +25,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {startTrustedAuthorityOnlySdkA2AOwner}
  from "../src/trusted-authority-only-a2a-owner.ts";
@@ -32,6 +33,9 @@ import {canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
 import type {SpecializedAgentRole}
  from "../../agent-runtime/src/contracts.ts";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const repo={authority:"gitea.local",owner:"thesis",
  repository:"iam-console-poc"};
@@ -130,7 +134,7 @@ test("R327 genuine SDK A2A HTTP -> ADK -> private Unix stage, completion gated i
  const socket=join(dir,"owner-stage.sock"),
   bindSocket=join(dir,"backend-bind.sock");
  const events:string[]=[];
- const registry=new TrustedEffectStagingTaskRegistry();
+ const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  const model=new ScriptedBackend();
  const servers:Awaited<ReturnType<typeof startSpecializedAgentServer>>[]=[];
  let binding:Awaited<ReturnType<typeof createTrustedEffectAgentBindingServer>>|undefined;

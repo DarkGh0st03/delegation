@@ -1,6 +1,5 @@
 import {createHash} from "node:crypto";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
-import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import { ProviderUnavailableError } from "./errors.ts";
 import {validateProjectProfile,projectProfileDigest,isRunnerPhaseName,testSourceProfileOf}
   from "../../../packages/plan-contracts/src/project-profile.mjs";
@@ -49,10 +48,6 @@ export interface RunnerClientResult {
     status: "pass" | "fail";
     phases: RunnerPhaseExecutionResult[];
   };
-  researcher_acceptance?: RunnerPhaseExecutionResult & {
-    phase: "researcher_acceptance";
-  };
-  acceptance_failure?: import("../../test-runner-controller/src/types.ts").RunnerRunResult["acceptance_failure"];
   log_reference?: string;
   typecheck_diagnostics?: TypecheckLocation[];
   typecheck_error_codes?: string[];
@@ -203,16 +198,16 @@ export class RunnerClient {
     if (profile !== "poc-default" || body.project_profile_sha256 !== this.#profileSha256) {
       throw new ProviderUnavailableError("Runner returned an unexpected profile");
     }
-    // Every reported phase belongs to the approved profile (or is the
-    // researcher slot); PASS/FAIL validators then enforce the exact sequence.
-    const known = new Set([...this.#profile.phases.map(p => p.name), "researcher_acceptance"]);
+    // Every reported phase belongs to the approved profile; PASS/FAIL
+    // validators then enforce the exact sequence.
+    const known = new Set(this.#profile.phases.map(p => p.name));
     if (parsePhases(body.phases).some(p => !known.has(p.phase)))
       throw new ProviderUnavailableError("Runner phase is not in the approved project profile");
 
     // An authenticated controller must not report PASS while sending any
     // failure evidence (even an empty or malformed failure field).
     if(status==="pass"&&[
-      "acceptance_failure","typecheck_diagnostics","typecheck_error_codes","typecheck_errors",
+      "typecheck_diagnostics","typecheck_error_codes","typecheck_errors",
       "failing_test_files","test_failures","project_e2e_failure"
     ].some(key=>Object.hasOwn(body,key)&&body[key]!==null))
       throw new ProviderUnavailableError(
@@ -236,24 +231,6 @@ export class RunnerClient {
       );
     }
 
-    const researcherAcceptance =
-      body.researcher_acceptance === undefined
-        ? undefined
-        : parsePhase(body.researcher_acceptance, "researcher_acceptance");
-    if (
-      researcherAcceptance !== undefined &&
-      researcherAcceptance.phase !== "researcher_acceptance"
-    ) {
-      throw new ProviderUnavailableError(
-        "Runner researcher_acceptance has an unexpected phase name"
-      );
-    }
-
-    const acceptanceFailure = status==="fail"&&projectStatus==="pass"&&
-      researcherAcceptance?.status==="fail"&&
-      parsePhases(body.phases).every(p=>p.phase==="researcher_acceptance"
-        ?p.status==="fail":p.status==="pass")
-      ?safeAcceptanceFailureSummary(body.acceptance_failure):null;
     const firstFailedPhase=parsePhases(body.phases).find(p=>p.status==="fail")?.phase;
     const vitestFailurePhase=this.#profile.phases.some(p=>p.name===firstFailedPhase&&
       p.failure_report==="vitest")?firstFailedPhase:null;
@@ -261,7 +238,6 @@ export class RunnerClient {
       ?safeProjectE2eFailureDiagnostic(body.project_e2e_failure):null;
     const result: RunnerClientResult = {
       ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
-      ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
       request_id: string(body.request_id, "request_id"),
       repository: string(body.repository, "repository"),
       branch: string(body.branch, "branch"),
@@ -275,13 +251,6 @@ export class RunnerClient {
             project_tests: {
               status: projectStatus as "pass" | "fail",
               phases: parsePhases(projectTests.phases)
-            }
-          }
-        : {}),
-      ...(researcherAcceptance !== undefined
-        ? {
-            researcher_acceptance: researcherAcceptance as RunnerPhaseExecutionResult & {
-              phase: "researcher_acceptance";
             }
           }
         : {}),

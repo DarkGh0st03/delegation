@@ -160,7 +160,6 @@ export interface ExecuteAuditEvent {
   runner_profile?: "poc-default";
   runner_status?: "pass" | "fail";
   runner_project_tests_status?: "pass" | "fail";
-  runner_researcher_acceptance_status?: "pass" | "fail" | "skipped";
   runner_log_reference?: string;
   provider: "mock" | "gitea" | "runner";
 }
@@ -325,7 +324,7 @@ export interface GiteaCreatePullRequestExecutionResult {
 }
 
 export interface RunnerPhaseExecutionResult {
-  /** A phase of the Engineer-approved project profile, or researcher_acceptance. */
+  /** A phase of the Engineer-approved project profile. */
   phase: string;
   status: "pass" | "fail" | "skipped";
   passed?: number;
@@ -336,11 +335,6 @@ export interface RunnerPhaseExecutionResult {
 export interface RunnerProjectTestsExecutionResult {
   status: "pass" | "fail";
   phases: RunnerPhaseExecutionResult[];
-}
-
-export interface RunnerResearcherAcceptanceExecutionResult
-  extends RunnerPhaseExecutionResult {
-  phase: "researcher_acceptance";
 }
 
 export interface RunnerExecutionResult {
@@ -354,7 +348,6 @@ export interface RunnerExecutionResult {
   status: "pass" | "fail";
   phases: RunnerPhaseExecutionResult[];
   project_tests?: RunnerProjectTestsExecutionResult;
-  researcher_acceptance?: RunnerResearcherAcceptanceExecutionResult;
   log_reference?: string;
   /** Sanitized compiler locations, never raw stderr/source. */
   typecheck_diagnostics?: import("../../test-runner-controller/src/typecheck-diagnostics.ts").TypecheckLocation[];
@@ -363,7 +356,6 @@ export interface RunnerExecutionResult {
   /** Bounded Vitest failed file paths, never text or source. */
   failing_test_files?: string[];
   project_e2e_failure?: NonNullable<ReturnType<typeof import("../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
-  acceptance_failure?: import("../../test-runner-controller/src/types.ts").RunnerRunResult["acceptance_failure"];
 }
 
 export type ExecutionResult =

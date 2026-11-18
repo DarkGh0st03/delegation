@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * Reads + one create (session s-6268042fdca1): the Test agent reads the
  * component a new test covers and the API it uses, then creates the test.
@@ -58,7 +59,7 @@ function nativeEnvironment(t:import("node:test").TestContext){
 }
 function fixture(){
  const owner:string[]=[],gateway:string[]=[];
- const registry=new TrustedEffectStagingTaskRegistry();
+ const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  registry.bindTask({runtimeTaskId:RUNTIME,planTaskId:PLAN,role:"test",branch:BRANCH,
   operation:"read_then_create",path:NEW,childCredentialId:CHILD,presenterId:DID,
   effectStager:{stagedTool:"read_then_create",

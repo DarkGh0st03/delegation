@@ -1,9 +1,12 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {BaseLlm} from "@google/adk";
-import {TrustedAuthorityOnlyAdkDecisionProposer,
+import {TrustedAuthorityOnlyAdkDecisionProposer as TrustedAuthorityOnlyAdkDecisionProposerBase,
  originalAuthorityOnlyDecisionTimeouts}
  from "../src/trusted-authority-only-adk-decision-proposer.mjs";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyAdkDecisionProposer extends TrustedAuthorityOnlyAdkDecisionProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
 
 const BRANCH="feature/account-suspension";
 const P={resource:"gitea://gitea.local/thesis/iam-console-poc",

@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync,createHash} from "node:crypto";
@@ -7,7 +8,7 @@ import {join} from "node:path";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedOperationalSessionStore}
  from "../../../apps/gateway/src/trusted-operational-session-store.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
@@ -2105,6 +2106,9 @@ test("R353.8 even a signed Orchestrator PR grant cannot issue an Orchestrator Ch
 import {TrustedAuthorityOnlyBranchExecutor} from '../../../apps/gateway/src/trusted-authority-only-branch-executor.ts';
 import {DirectCoreRustVerifier} from '../../../apps/gateway/src/direct-core-verifier.ts';
 import {OpaPolicyClient} from '../../../apps/gateway/src/policy-client.ts';
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 for(const mode of ['pass','no-stage','foreign-root','child-depth','opa-denied','vp-denied',
  'main-moved','existing-branch','post-lost','wrong-post-sha','reader-moved','generic-completion']){
  test('R354 original root branch through canonical Gateway '+mode,async()=>{

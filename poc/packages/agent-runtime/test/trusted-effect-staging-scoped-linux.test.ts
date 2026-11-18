@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,writeFile,rm} from "node:fs/promises";
@@ -63,7 +64,7 @@ test("cross-UID effect IPC cannot silently loosen the current private owner-only
   channel:"bind",side:"worker",scope:fake,socketPath,secretFile
  }),DENY);
  const client=await assert.rejects(
-  connectTrustedEffectAgentBindingClient({
+  connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
    socketPath,secretFile,expectedRole:"backend",
    originalScopedEffectRole:fake
   }),DENY);
@@ -77,7 +78,7 @@ test("cross-UID effect IPC cannot silently loosen the current private owner-only
    socketPath,secretFile,expectedRole:"backend",
    originalScopedEffectRole:fake
   }),DENY);
- const effectRegistry=new TrustedEffectStagingTaskRegistry();
+ const effectRegistry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  await assert.rejects(createTrustedEffectAgentBindingServer({
   socketPath,secretFile,registry:effectRegistry,
   ownerStageClient:{async stage(){}},
@@ -95,7 +96,7 @@ test("scoped role cannot be passed without an explicitly matching original stagi
   socketPath:"/tmp/absent.sock",secretFile:"/tmp/absent.hex",
   expectedRole:"test",originalScopedEffectRole:scope
  }),/Trusted authority-only effect IPC NO-GO/u);
- await assert.rejects(connectTrustedEffectAgentBindingClient({
+ await assert.rejects(connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
   socketPath:"/tmp/absent.sock",secretFile:"/tmp/absent.hex",
   expectedRole:"frontend",originalScopedEffectRole:scope
  }),/Trusted authority-only effect IPC NO-GO/u);

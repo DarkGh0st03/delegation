@@ -1,10 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {isProjectTestReadGrant,isProjectTestRepairGrant,isProjectTestCreateGrant,isProjectTestSource,
- createTrustedProjectTestSourceProfile,isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
- from "../src/gitea-permission-containment.mjs";
+import * as containment from "../src/gitea-permission-containment.mjs";
+import {SAMPLE_TEST_SOURCES} from "./fixtures/test-sources.mjs";
 
-const prefix="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";
+const {createTrustedProjectTestSourceProfile,isTrustedProjectTestSourceProfile}=containment;
+// The checks always run against the session's profile; here a sample one.
+const withProfile=fn=>(x,profile=SAMPLE_TEST_SOURCES)=>fn(x,profile);
+const isProjectTestSource=withProfile(containment.isProjectTestSource);
+const isProjectTestReadGrant=withProfile(containment.isProjectTestReadGrant);
+const isProjectTestRepairGrant=withProfile(containment.isProjectTestRepairGrant);
+const isProjectTestCreateGrant=withProfile(containment.isProjectTestCreateGrant);
+
+const prefix="gitea://gitea.local/thesis/demo-app/branches/feature%2Fsession-work";
 const permission=(operation,path)=>({operation,resource:prefix+"/files/"+path});
 
 test("R383.0 Test agent may investigate a signed, exact application test file only",()=>{
@@ -28,7 +35,7 @@ test("R383.0 project test read denies source files, acceptance tests, directory 
  const wrong=permission("read_file","tests/frontend/account.spec.ts");
  const escaped=permission("read_file","tests/backend/../frontend/account.test.ts");
  const foreign={operation:"read_file",
-  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/main/files/tests/backend/account.test.ts"};
+  resource:"gitea://gitea.local/thesis/demo-app/branches/main/files/tests/backend/account.test.ts"};
  const dir={operation:"read_file",
   resource:prefix+"/directories/tests/backend"};
  for(const read of [source,acceptance,wrong,escaped,dir]){
@@ -92,7 +99,7 @@ test("R386 Test CREATE requires one exact project test source, no extra grants",
  assert.equal(isProjectTestCreateGrant([null]),false);
 });
 
-test("R401 trusted repository test profile supports alternate test layouts without changing IAM Console",()=>{
+test("R401 a repository test profile supports its own test layout",()=>{
  const other=createTrustedProjectTestSourceProfile({
   roots:["src/__tests__","test/unit"],suffixes:[".test.ts",".spec.tsx"]
  });
@@ -100,7 +107,7 @@ test("R401 trusted repository test profile supports alternate test layouts witho
  assert.equal(Object.isFrozen(other),true);
  assert.equal(Object.isFrozen(other.roots),true);
  for(const path of ["src/__tests__/api.spec.tsx","test/unit/handler.test.ts"]){
-  assert.equal(isProjectTestSource(path),false,"default PoC profile is unchanged");
+  assert.equal(isProjectTestSource(path),false,"another profile does not cover it");
   assert.equal(isProjectTestSource(path,other),true);
   const read=permission("read_file",path),update=permission("update_file",path);
   assert.equal(isProjectTestReadGrant([read],other),true);
@@ -113,15 +120,16 @@ test("R401 trusted repository test profile supports alternate test layouts witho
   "tests/acceptance/account.test.ts","src/__tests__/run%2Fner.test.ts"]){
   assert.equal(isProjectTestSource(path,other),false,path);
  }
- assert.equal(isProjectTestSource("tests/backend/user.test.ts",IAM_CONSOLE_PROJECT_TEST_PROFILE),true);
+ assert.equal(isProjectTestSource("tests/backend/user.test.ts",SAMPLE_TEST_SOURCES),true);
  assert.equal(isProjectTestSource("src/__tests__/api.spec.tsx",{
   roots:["src/__tests__"],suffixes:[".spec.tsx"]}),false,
   "model-supplied/plain object is not a trusted profile");
 });
 
 test("R401 untrusted/broad test-source profile configuration is rejected",()=>{
+ assert.equal(containment.isProjectTestSource("tests/backend/a.test.ts"),false,
+  "without a profile nothing is a project test source");
  for(const invalid of [
-  {roots:["tests/acceptance"],suffixes:[".test.ts"]},
   {roots:["runner/acceptance"],suffixes:[".test.ts"]},
   {roots:["../test"],suffixes:[".test.ts"]},
   {roots:["src/__tests__"],suffixes:[".txt"]},

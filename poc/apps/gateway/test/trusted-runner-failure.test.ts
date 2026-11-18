@@ -7,7 +7,7 @@ import {IAM_CONSOLE_PROJECT_PROFILE,projectProfileDigest} from "../../../package
 const PROFILE_SHA=projectProfileDigest(IAM_CONSOLE_PROJECT_PROFILE);
 const names=[
  "dependency_install","typecheck","backend_tests","frontend_tests",
- "build","playwright_e2e","researcher_acceptance"
+ "build","playwright_e2e"
 ] as const;
 const intent={
  schema:"authority-only-runner-intent-v1" as const,
@@ -36,9 +36,7 @@ function outcome(failedAt:number){
   request_id:request.request_id,repository:request.repository,
   branch:request.branch,tested_commit_sha:request.commit_sha,
   runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"fail",
-  phases,project_tests:{
-   status:failedAt===6?"pass":"fail",phases:phases.slice(0,6)
-  },researcher_acceptance:phases[6],log_reference:log
+  phases,project_tests:{status:"fail",phases},log_reference:log
  };
 }
 function harness(payload:unknown){
@@ -53,7 +51,7 @@ function harness(payload:unknown){
  return client;
 }
 test("R335 authenticated first failing phase is only a non-authorizing stage",async()=>{
- for(const index of [0,1,3,5,6]){
+ for(const index of [0,1,3,5]){
   const client=harness(outcome(index)),result=await client.run(request);
   const proof=validateTrustedRunnerFailure(client,request,result,intent);
   assert.equal(proof.first_failed_phase,names[index]);
@@ -86,8 +84,8 @@ test("R335 contradictory FAIL, missing/skipped phases, and PASS are refused",asy
   {...outcome(1),phases:outcome(1).phases.slice(1)},
   {...outcome(1),phases:outcome(1).phases.map((p,i)=>i===3?
    {...p,status:"pass"}:p)},
-  {...outcome(6),project_tests:{status:"fail",
-   phases:outcome(6).phases.slice(0,6)}},
+  {...outcome(5),project_tests:{status:"pass",
+   phases:outcome(5).phases}},
   {...outcome(1),status:"pass"},
   {...outcome(1),log_reference:"untrusted://output"}
  ];

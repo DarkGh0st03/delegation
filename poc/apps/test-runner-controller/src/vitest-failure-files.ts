@@ -6,7 +6,7 @@
  * Runner-owned folders are never accepted.
  */
 const MAX=8;
-const FORBIDDEN=new Set(["acceptance","researcher_acceptance","runner",".github","node_modules",".researcher-acceptance"]);
+const FORBIDDEN=new Set(["runner",".github","node_modules"]);
 const TEST_PATH=/^[A-Za-z0-9_@.-]+(?:\/[A-Za-z0-9_@.-]+)*\.(?:test|spec)\.[cm]?[jt]sx?$/u;
 function allowed(x:unknown):x is string{
   return typeof x==="string"&&x.length<=180&&!x.includes("\\")&&!x.includes("//")&&

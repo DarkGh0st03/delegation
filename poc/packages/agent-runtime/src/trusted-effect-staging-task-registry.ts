@@ -1,4 +1,4 @@
-import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
+import {isProjectTestSource,MAX_TASK_READS,isTrustedProjectTestSourceProfile}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R320: trusted host-only, per-Task ADK/A2A -> Gateway effect binding.
@@ -91,7 +91,7 @@ export class TrustedEffectStagingTaskRegistry {
  readonly #testSources:unknown;
  /** Owner-provisioned: where the Test agent may write (project profile). */
  constructor(opts:{projectTestSourceProfile?:unknown}={}){
-  const rule=opts.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+  const rule=opts.projectTestSourceProfile;
   if(!isTrustedProjectTestSourceProfile(rule))
    deny("project test-source profile must come from a trusted project profile");
   this.#testSources=rule;

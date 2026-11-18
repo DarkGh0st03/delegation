@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../packages/plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
@@ -485,16 +486,16 @@ test("simulated execution plans only from APPROVED permissions, one Task per rea
     // read without update: never becomes a write Task
     {operation: "read_file", resource: file("tests/backend/c.test.ts")}
   ];
-  const plan = simulatedExecutionPlan(approved, "s-1");
+  const plan = simulatedExecutionPlan(approved, "s-1", SAMPLE_TEST_SOURCES);
   assert.deepEqual(plan.tasks.map(t => [t.task_id, t.agent_id, t.path ?? null]), [
     ["t01-backend", "backend", "apps/backend/src/a.ts"],
     ["t02-frontend", "frontend", "apps/frontend/src/B.tsx"],
     ["t99-test", "test", null]]);
   assert.equal(plan.pullRequest, undefined, "no PR permission approved, none planned");
   assert.deepEqual(plan.tasks[0].permissions.map(p => p.operation), ["read_file", "update_file"]);
-  assert.equal(roleForPath("tests/backend/x.test.ts"), "test");
+  assert.equal(roleForPath("tests/backend/x.test.ts", SAMPLE_TEST_SOURCES), "test");
   // The Test role may not create/update e2e specs: a file specialist does.
-  assert.equal(roleForPath("tests/e2e/x.spec.ts"), "frontend");
+  assert.equal(roleForPath("tests/e2e/x.spec.ts", SAMPLE_TEST_SOURCES), "frontend");
   assert.match(simulatedMarker("a.css", "s-1"), /^\/\* .*SIMULATA.* \*\/$/u);
   assert.match(simulatedMarker("a.ts", "s-1"), /^\/\/ \[delegation s-1\]/u);
   // The worker rewrites what the Gateway actually returned.
@@ -604,7 +605,7 @@ test("free modes: app work, then ONE Test Task reads the changed app files and e
   const rw = path => [{operation: "read_file", resource: `${base}/files/${path}`},
     {operation: "update_file", resource: `${base}/files/${path}`}];
   const plan = simulatedExecutionPlan([...rw("apps/backend/src/a.ts"), ...rw("apps/frontend/src/B.tsx"),
-    ...rw("tests/backend/a.test.ts"), {operation: "run_tests", resource: base}], "s-1");
+    ...rw("tests/backend/a.test.ts"), {operation: "run_tests", resource: base}], "s-1", SAMPLE_TEST_SOURCES);
   assert.deepEqual(plan.tasks.map(t => [t.task_id, t.op ?? "run", t.path ?? null]), [
     ["t01-backend", "update", "apps/backend/src/a.ts"],
     ["t02-frontend", "update", "apps/frontend/src/B.tsx"],
@@ -637,7 +638,7 @@ test("free modes: a CREATED test reads the changed files in the same Task (reads
     {operation: "read_file", resource: `${base}/files/apps/backend/src/a.ts`},
     {operation: "update_file", resource: `${base}/files/apps/backend/src/a.ts`},
     {operation: "create_file", resource: `${base}/files/tests/backend/a.test.ts`},
-    {operation: "run_tests", resource: base}], "s-1");
+    {operation: "run_tests", resource: base}], "s-1", SAMPLE_TEST_SOURCES);
   assert.deepEqual(plan.tasks.map(t => [t.task_id, t.op ?? "run"]), [
     ["t01-backend", "update"], ["t02-test", "create"], ["t99-test", "run"]]);
   assert.deepEqual(plan.tasks[1].reads, ["apps/backend/src/a.ts"]);

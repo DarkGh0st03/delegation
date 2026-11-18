@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R328: three real A2A HTTP agents, three actual scripted Google ADK
  * LlmAgent/Runner instances, three role-pinned owner->agent HMAC channels,
@@ -25,7 +26,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {startTrustedAuthorityOnlySdkA2AOwner}
  from "../src/trusted-authority-only-a2a-owner.ts";
@@ -33,6 +34,9 @@ import {canonicalFileUri,canonicalBranchUri}
  from "../../../apps/gateway/src/canonical.ts";
 import type {SpecializedAgentRole}
  from "../../agent-runtime/src/contracts.ts";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const roles=["backend","frontend","test"] as const;
 type Role=(typeof roles)[number];
@@ -145,7 +149,7 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
     {mode:0o600,flag:"wx"});
    binds[role]={socketPath,secretFile};
-   registries[role]=new TrustedEffectStagingTaskRegistry();
+   registries[role]=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
    const binding=await createTrustedEffectAgentBindingServer({
     socketPath,secretFile,registry:registries[role],
     ownerStageClient:ownerStage,expectedRole:role
@@ -309,7 +313,7 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    a2aPolling:{deadlineMs:16000,initialIntervalMs:25,maxIntervalMs:80}
   } as never);
   // A signer of Frontend does not acquire the Backend binding channel.
-  const wrongBinder=await connectTrustedEffectAgentBindingClient({
+  const wrongBinder=await connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
    socketPath:binds.frontend.socketPath,
    secretFile:binds.frontend.secretFile
   });

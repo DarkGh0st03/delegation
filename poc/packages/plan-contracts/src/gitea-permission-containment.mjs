@@ -34,12 +34,13 @@ function scope(resource) {
     v.includes("..")||v.includes("%")))return null;
  return {prefix,kind:p[5],path};
 }
-// Application tests may use dotted filenames (user.service.test.ts) but never\n// empty/double-dot path components. Runner-owned
-// acceptance and execution configuration are outside this project scope.
+// Application tests may use dotted filenames (user.service.test.ts) but never
+// empty/double-dot path components. Runner configuration is outside this scope.
 /**
  * Repository-owned application-test source policy. Constructed ONLY by a
  * trusted provisioner, never from ADK tool arguments or A2A/model output.
- * The default profile preserves IAM Console's existing project-test scope.
+ * Every check requires the profile of the session's repository: without a
+ * trusted profile nothing is a project test source.
  * This describes eligible test sources, NOT a DC, VP or permission grant.
  */
 const TRUSTED_TEST_PROFILES=new WeakSet();
@@ -47,7 +48,7 @@ const ROOT_PART=/^[A-Za-z0-9_-]+$/u;
 const FILE_STEM=/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/u;
 const TEST_SUFFIX=/^\.(?:test|spec)\.(?:[cm]?js|tsx?|jsx?)$/u;
 const FORBIDDEN_TEST_ROOT_SEGMENTS=new Set([
- "acceptance","researcher_acceptance","runner",".github","node_modules"
+ "runner",".github","node_modules"
 ]);
 export function createTrustedProjectTestSourceProfile(value) {
  const valid=value&&typeof value==="object"&&!Array.isArray(value)&&
@@ -74,14 +75,10 @@ export function createTrustedProjectTestSourceProfile(value) {
  TRUSTED_TEST_PROFILES.add(profile);
  return profile;
 }
-export const IAM_CONSOLE_PROJECT_TEST_PROFILE=createTrustedProjectTestSourceProfile({
- roots:["tests/backend","tests/frontend"],
- suffixes:[".test.ts",".test.tsx"]
-});
 export function isTrustedProjectTestSourceProfile(value) {
  return !!value&&typeof value==="object"&&TRUSTED_TEST_PROFILES.has(value);
 }
-export function isProjectTestSource(path,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+export function isProjectTestSource(path,profile) {
  if(!isTrustedProjectTestSourceProfile(profile)||typeof path!=="string"||
     path.length>240||path.includes("%")||path.includes("\\")||
     /[\x00-\x1f\x7f]/u.test(path))return false;
@@ -97,7 +94,7 @@ export function isProjectTestSource(path,profile=IAM_CONSOLE_PROJECT_TEST_PROFIL
 /** R383.0 — Test may investigate ONLY owner-scoped application test
  * sources in a dedicated read-only Child. This cannot authorize an edit,
  * Docker acceptance changes, Runner PASS or a broader directory grant. */
-export function isProjectTestReadGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+export function isProjectTestReadGrant(permissions,profile) {
  if(!Array.isArray(permissions)||permissions.length!==1||
     permissions[0]?.operation!=="read_file")return false;
  const file=scope(permissions[0].resource);
@@ -117,7 +114,7 @@ export function isTestAgentReadGrant(permissions) {
 }
 /** Test CREATE is restricted to one exact project test source. This is a
  * grant-shape check only; native Rust, OPA, absence and CAS remain required. */
-export function isProjectTestCreateGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+export function isProjectTestCreateGrant(permissions,profile) {
  if(!Array.isArray(permissions)||permissions.length!==1||
     permissions[0]?.operation!=="create_file")return false;
  const file=scope(permissions[0].resource);
@@ -176,7 +173,7 @@ export function readWriteGrantShape(permissions) {
 }
 /** Test may CREATE only a project test source; it may READ any signed file
  * (the application code the new test covers) in the same Task. */
-export function isProjectTestReadCreateGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+export function isProjectTestReadCreateGrant(permissions,profile) {
  const shape=readCreateGrantShape(permissions);
  const created=shape&&scope(shape.create);
  return !!created&&created.kind==="files"&&
@@ -203,7 +200,7 @@ export function readGrantsCoverPath(permissions,path) {
 }
 /** Test may EDIT only a project test source; it may READ any signed file
  * (application code it tests) in the same Task. */
-export function isProjectTestRepairGrant(permissions,profile=IAM_CONSOLE_PROJECT_TEST_PROFILE) {
+export function isProjectTestRepairGrant(permissions,profile) {
  const shape=readUpdateGrantShape(permissions);
  const edited=shape&&scope(shape.edit);
  return !!edited&&edited.kind==="files"&&

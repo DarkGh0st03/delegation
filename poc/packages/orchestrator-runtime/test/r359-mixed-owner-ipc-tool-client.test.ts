@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R359.8 cost-free protocol integration: native owner state machine, real
  * authenticated Unix bind/stage channels and the controlled Gateway client.
@@ -22,7 +23,7 @@ import {TrustedOwnerEffectStagingRegistry,
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 import type {AgentTaskContext} from "../../agent-runtime/src/contracts.ts";
 import {InMemoryRequestStore} from "../../../apps/gateway/src/prepare.ts";
-import {TrustedAuthorityOnlyGatewayAdmissions}
+import {TrustedAuthorityOnlyGatewayAdmissions as TrustedAuthorityOnlyGatewayAdmissionsBase}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {TrustedAuthorityOnlyGiteaMutationPreflight}
  from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
@@ -30,6 +31,9 @@ import {AuthenticatedGiteaMutationCompletionObserver}
  from "../../../apps/gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
 import {TrustedAuthorityOnlySequentialReadUpdateStager}
  from "../../../apps/gateway/src/trusted-authority-only-sequential-read-update-stager.ts";
+/** Test default: the sample repository test-source profile. */
+class TrustedAuthorityOnlyGatewayAdmissions extends TrustedAuthorityOnlyGatewayAdmissionsBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}
+ get projectTestSourceProfile(){return super.projectTestSourceProfile??SAMPLE_TEST_SOURCES;}}
 
 const runtime="dispatch_"+"M".repeat(22),task="r3598-backend";
 const branch="feature/account-suspension",path="apps/backend/src/users/account.ts";
@@ -86,7 +90,7 @@ async function fixture(){
  });
  const ownerRegistry=new TrustedOwnerEffectStagingRegistry();
  ownerRegistry.bindTask(runtime,native,role);
- const agentRegistry=new TrustedEffectStagingTaskRegistry();
+ const agentRegistry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  const stageSocket=join(dir,"stage.sock"),bindSocket=join(dir,"bind.sock");
  const ownerServer=await createTrustedOwnerEffectStagingServer({
   socketPath:stageSocket,secretFile:stageSecret,
@@ -103,7 +107,7 @@ async function fixture(){
    ownerStageClient:ownerStage,expectedRole:role
   });
   await agentServer.start();
-  const binder=await connectTrustedEffectAgentBindingClient({
+  const binder=await connectTrustedEffectAgentBindingClient({projectTestSourceProfile:SAMPLE_TEST_SOURCES,
    socketPath:bindSocket,secretFile:bindSecret
   });
   await binder.bindTask({runtimeTaskId:runtime,planTaskId:task,

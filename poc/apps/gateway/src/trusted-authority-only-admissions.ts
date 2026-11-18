@@ -1,6 +1,6 @@
 import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,readUpdateGrantShape,exactFilePath,isProjectTestCreateGrant,isProjectTestSource,
  readCreateGrantShape,readWriteGrantShape,isProjectTestReadCreateGrant,
- isTrustedProjectTestSourceProfile,IAM_CONSOLE_PROJECT_TEST_PROFILE}
+ isTrustedProjectTestSourceProfile}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R287 — opt-in, in-process Gateway admission of permission-only Engineer
@@ -118,9 +118,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #testSources:unknown;
  readonly #baseBranch:string;
  get projectTestSourceProfile():unknown{
-  // An object that only borrows this prototype gets the default (most
-  // restrictive, example-repository) rule, never a wider one.
-  return #testSources in this?this.#testSources:IAM_CONSOLE_PROJECT_TEST_PROFILE;
+  // An object that only borrows this prototype has no rule: nothing is a
+  // project test source for it.
+  return #testSources in this?this.#testSources:undefined;
  }
  readonly #repository:GatewayRepositoryConfig;
  readonly #engineerDid:string;
@@ -207,7 +207,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
        typeof opts.repository[k as keyof GatewayRepositoryConfig]==="string"&&
        !!opts.repository[k as keyof GatewayRepositoryConfig].trim()))
    deny("trusted Gateway admission dependencies missing");
-  const testSources=opts.projectTestSourceProfile??IAM_CONSOLE_PROJECT_TEST_PROFILE;
+  const testSources=opts.projectTestSourceProfile;
   if(!isTrustedProjectTestSourceProfile(testSources))
    deny("project test-source profile must come from a trusted project profile");
   this.#testSources=testSources;

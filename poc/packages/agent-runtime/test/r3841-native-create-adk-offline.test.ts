@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R384.1 — actual Google ADK LlmAgent/Runner, original prebound A2A Task,
  * one-use owner stage, real task-local MCP token/challenge protocol and
@@ -94,7 +95,7 @@ function nativeEnvironment(t:import("node:test").TestContext){
  });
 }
 function fixture(options:{wrongResult?:boolean;denyStage?:boolean;repeat?:boolean}={}){
- const registry=new TrustedEffectStagingTaskRegistry();
+ const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  const calls:string[]=[];
  let attempted=false;
  registry.bindTask({

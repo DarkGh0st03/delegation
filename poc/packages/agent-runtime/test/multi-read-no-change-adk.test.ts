@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * Real ADK agent + A2A handler: a specialist reads the edited file and its
  * context (several signed reads), then decides that the file needs no change.
@@ -47,7 +48,7 @@ class ScriptedNoChange extends BaseLlm {
 test("several signed reads + an identical update end as an owner-fenced 'no change needed'",async()=>{
  const owner:string[]=[],gateway:string[]=[];
  let next=0;
- const registry=new TrustedEffectStagingTaskRegistry();
+ const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  registry.bindTask({runtimeTaskId:RUNTIME,planTaskId:PLAN,role:"backend",branch:BRANCH,
   operation:"read_then_update",path:EDIT,childCredentialId:CHILD,presenterId:PRESENTER,
   effectStager:{stagedTool:"read_then_update",plannedReads:2,
@@ -107,7 +108,7 @@ test("Test agent: signed reads and no write end as an owner-fenced 'no change ne
   [TEST]:"it('filters by department',()=>{});\n"};
  const owner:string[]=[];
  let next=0;
- const registry=new TrustedEffectStagingTaskRegistry();
+ const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  registry.bindTask({runtimeTaskId:RUNTIME,planTaskId:PLAN,role:"test",branch:BRANCH,
   operation:"read_then_update",path:TEST,childCredentialId:CHILD,presenterId:"did:thesis:test-agent",
   effectStager:{stagedTool:"read_then_update",plannedReads:2,

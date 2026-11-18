@@ -15,8 +15,10 @@ import {join} from "node:path";
 import {promisify} from "node:util";
 import {execFile} from "node:child_process";
 import {BaseLlm} from "@google/adk";
-import {runTrustedAuthorityOnlyAdaptiveWorkLoop as run}
+import {runTrustedAuthorityOnlyAdaptiveWorkLoop as runLoop}
  from "../src/trusted-authority-only-adaptive-work-loop.mjs";
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
+const run=options=>runLoop({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...options});
 import {selectTrustedRepairDiagnosticRead as verifyRead}
  from "../src/trusted-authority-only-repair-diagnostic-gate.mjs";
 import {isProjectTestSource}
@@ -298,11 +300,11 @@ test("R385.11 forged Gateway read receipt blocks model-derived UPDATE before loc
 });
 
 test("R385.11 Test Agent is confined to application test sources, not Runner config",()=>{
- assert.equal(isProjectTestSource(path),true);
+ assert.equal(isProjectTestSource(path,SAMPLE_TEST_SOURCES),true);
  for(const forbidden of ["tests/backend/runner.config.ts",
   "tests/frontend/../backend/suspend.test.ts",
   "runner/acceptance/suspend.test.ts",
   "tests/backend/suspend.spec.ts",
   "tests/frontend/../../.github/workflows/fast-ci.yml"])
-  assert.equal(isProjectTestSource(forbidden),false,forbidden);
+  assert.equal(isProjectTestSource(forbidden,SAMPLE_TEST_SOURCES),false,forbidden);
 });

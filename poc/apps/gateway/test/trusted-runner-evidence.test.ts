@@ -40,13 +40,12 @@ function success(){
   request_id:request.request_id,repository:request.repository,
   branch,tested_commit_sha:head,
   runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"pass",
-  phases:[...PHASES,"researcher_acceptance"].map(phase=>({
+  phases:PHASES.map(phase=>({
    phase,status:"pass"
   })),
   project_tests:{status:"pass",phases:PHASES.map(phase=>({
    phase,status:"pass"
   }))},
-  researcher_acceptance:{phase:"researcher_acceptance",status:"pass"},
   log_reference:"runner-log://12345678-1234-1234-1234-123456789abc"
  };
 }
@@ -166,7 +165,6 @@ test("R353.0 original authenticated PASS exposes only independently current test
   assert.equal(proof.repository,"thesis/iam-console-poc");
   assert.equal(proof.branch,branch);
   assert.equal(proof.project_tests,"pass");
-  assert.equal(proof.researcher_acceptance,"pass");
   assert.equal(proof.completion.evidence_sha256,digest);
   assert.deepEqual(proof.completion,await observer.observe(expected));
   assert.equal(Object.isFrozen(proof),true);

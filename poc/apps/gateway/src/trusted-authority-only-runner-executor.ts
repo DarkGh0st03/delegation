@@ -159,8 +159,8 @@ export class TrustedAuthorityOnlyRunnerExecutor{
     deny("authenticated Runner FAIL: Task incomplete; D1 gate not armed");
    }
    // The controller already checks the exact request response fields.
-   // The publisher validates ALL seven phases, researcher acceptance,
-   // result provenance and Gitea HEAD before any SUCCESS receipt.
+   // The publisher validates every profile phase, result provenance and
+   // Gitea HEAD before any SUCCESS receipt.
    const digest=await this.#publisher.publish(
     intent,binding,request,result,policy.policy_version);
    const observed=await this.#observer.observe(binding);
@@ -176,7 +176,6 @@ export class TrustedAuthorityOnlyRunnerExecutor{
     runner_profile:"poc-default",
     status:"pass",phases:result.phases,
     project_tests:result.project_tests,
-    researcher_acceptance:result.researcher_acceptance,
     ...(result.log_reference?{log_reference:result.log_reference}:{})
    };
   }finally{this.#inFlight=false;}

@@ -10,9 +10,9 @@ import {sanitizeVitestFailureFiles}
  * has an exact read_file grant for the path. Never return source/log text.
  */
 const PHASES={has:(phase:unknown)=>isRunnerPhaseName(phase)};
-/** A failing project-test phase: any profile phase that is not the
- * typecheck or the researcher suite (failing files come from its report). */
-const testPhase=(phase:string)=>phase!=="typecheck"&&phase!=="researcher_acceptance";
+/** A failing project-test phase: any profile phase other than typecheck
+ * (failing files come from its test report). */
+const testPhase=(phase:string)=>phase!=="typecheck";
 export interface TypecheckScopeSummary {
   /** Only bounded counts of previously sanitized compiler locations. */
   parsed_locations:number;

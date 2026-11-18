@@ -95,8 +95,8 @@ test("isolated executor pins branch head to the exact requested SHA and destroys
 
   assert.equal(result.status, "pass");
   assert.equal(result.tested_commit_sha, request.commit_sha);
-  assert.equal(result.phases.at(-1)?.phase, "researcher_acceptance");
-  assert.equal(result.phases.at(-1)?.status, "skipped");
+  assert.equal(result.phases.length, result.project_tests?.phases.length,
+    "PASS reports only the phases of the project profile");
 
   const dockerExecCalls = calls.filter(
     (call) => call.command === "docker" &&
@@ -420,7 +420,6 @@ test("A real Playwright command failure produces sanitized locations on exact SH
   const result=await worker.run(request);
   assert.equal(result.tested_commit_sha,request.commit_sha);
   assert.equal(result.phases.find(p=>p.phase==="playwright_e2e")?.status,"fail");
-  assert.equal(result.researcher_acceptance?.status,"skipped");
   assert.equal(result.project_e2e_failure?.locations[0]?.check_id,"baseline_user_profile");
   assert.equal(cleaned,true);
   assert.doesNotMatch(JSON.stringify(result),/PRIVATE_SOURCE|PRIVATE_CREDENTIAL/);

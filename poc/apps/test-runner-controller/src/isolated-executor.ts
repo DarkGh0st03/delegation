@@ -412,14 +412,8 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       const projectPhases = [...phases];
       const projectStatus = failed ? "fail" : "pass";
 
-      // PASS means the project's own test phases (Engineer-signed profile).
-      // The historical researcher acceptance suite is not run: the phase is
-      // reported as skipped to keep the Runner/Gateway evidence contract.
-      const researcherAcceptance: RunnerPhaseResult = {
-        phase: "researcher_acceptance",
-        status: "skipped"
-      };
-      phases.push(researcherAcceptance);
+      // PASS means every phase of the project's own tests passed
+      // (the Engineer-signed project profile).
 
       await mkdir(this.#config.log_dir, { recursive: true });
       await writeFile(
@@ -455,7 +449,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           status: projectStatus,
           phases: projectPhases
         },
-        researcher_acceptance: researcherAcceptance,
         log_reference: logReference
       };
     } finally {

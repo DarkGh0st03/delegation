@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import {validateProjectProfile, projectProfileDigest, canonicalProjectProfileJson,
   testSourceProfileOf, IAM_CONSOLE_PROJECT_PROFILE, MAX_PROJECT_PHASES}
   from "../src/project-profile.mjs";
-import {isProjectTestSource, IAM_CONSOLE_PROJECT_TEST_PROFILE}
-  from "../src/gitea-permission-containment.mjs";
+import {isProjectTestSource} from "../src/gitea-permission-containment.mjs";
 
 const python = () => ({version: 1, image: "python:3.12.7-slim",
   phases: [{name: "install", command: "pip install -r requirements.txt"},
@@ -31,8 +30,6 @@ test("test sources of a profile drive the Test agent write scope", () => {
   assert.equal(isProjectTestSource("src/api.test.js", rule), false);
   assert.equal(isProjectTestSource("tests/backend/a.test.ts",
     testSourceProfileOf(IAM_CONSOLE_PROJECT_PROFILE)), true);
-  assert.deepEqual([...IAM_CONSOLE_PROJECT_PROFILE.test_sources.roots],
-    [...IAM_CONSOLE_PROJECT_TEST_PROFILE.roots]);
 });
 
 test("the example profile keeps the historical phases of iam-console-poc", () => {
@@ -53,7 +50,7 @@ test("invalid profiles are refused", () => {
     p => { p.phases = []; },
     p => { p.phases = Array.from({length: MAX_PROJECT_PHASES + 1}, (_, i) => ({name: "p" + i + "x", command: "true"})); },
     p => { p.phases[1].name = "install"; },
-    p => { p.phases[1].name = "researcher_acceptance"; },
+    p => { p.phases[1].name = "project_tests"; },
     p => { p.phases[1].name = "Unit Tests"; },
     p => { p.phases[1].command = " "; },
     p => { p.phases[1].command = "x".repeat(4001); },

@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../../packages/plan-contracts/test/fixtures/test-sources.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,rm} from "node:fs/promises";
@@ -70,7 +71,8 @@ test("Canonical local A2A bootstrap starts fourth native read-only Worker with p
  }
  registry.orchestrator={did:didFor(10),card_ref:"trusted:orchestrator",
   capabilities:["create_branch"]};
- const options={directory:dir,workers,native:true,trustedAgentRegistry:registry};
+ const options={directory:dir,workers,native:true,trustedAgentRegistry:registry,
+  projectTestSourceProfile:SAMPLE_TEST_SOURCES};
  process.env.ADAPTER_ADDITIONAL_SPECIALISTS="";
  await assert.rejects(startTrustedAuthorityOnlyLocalA2AWorkers(options),
   /Invalid private local A2A worker configuration/u);

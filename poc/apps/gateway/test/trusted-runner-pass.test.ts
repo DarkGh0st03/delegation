@@ -21,13 +21,12 @@ const successful=()=>({
  request_id:request.request_id,repository:request.repository,
  branch:request.branch,tested_commit_sha:request.commit_sha,
  runner_profile:"poc-default",project_profile_sha256:PROFILE_SHA,status:"pass",
- phases:[...fixed,"researcher_acceptance"].map(phase=>({
+ phases:fixed.map(phase=>({
   phase,status:"pass"
  })),
  project_tests:{status:"pass",phases:fixed.map(phase=>({
   phase,status:"pass"
  }))},
- researcher_acceptance:{phase:"researcher_acceptance",status:"pass"},
  log_reference:"runner-log://12345678-1234-1234-1234-123456789abc"
 });
 function clientFor(payload:unknown){
@@ -52,9 +51,8 @@ test("R303.2 complete authenticated PASS is staged but never unlocks a Task",asy
  const stage=validateTrustedRunnerPass(client,request,result);
  assert.equal(stage.runner_execution_authorized,false);
  assert.equal(stage.tested_commit_sha,commit);
- assert.equal(stage.completed_phases.length,7);
+ assert.equal(stage.completed_phases.length,6);
  assert.equal(stage.all_project_tests_passed,true);
- assert.equal(stage.researcher_acceptance,"pass");
  assert.equal(callCount(),1);
  await assert.rejects(async()=>validateTrustedRunnerPass(client,{
   ...request,commit_sha:"b".repeat(40)
@@ -69,11 +67,10 @@ test("R303.2 untrusted, contradictory or incomplete PASS cannot attest completio
   {...successful(),phases:successful().phases.slice(1)},
   {...successful(),phases:successful().phases.map((p,i)=>i===4?
     {...p,status:"skipped"}:p)},
-  {...successful(),phases:successful().phases.map((p,i)=>i===6?
+  {...successful(),phases:successful().phases.map((p,i)=>i===5?
     {...p,phase:"backend_tests"}:p)},
   {...successful(),project_tests:{status:"fail",phases:successful().project_tests.phases}},
   {...successful(),project_tests:{status:"pass",phases:successful().project_tests.phases.slice(1)}},
-  {...successful(),researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"}},
   {...successful(),log_reference:"http://untrusted"},
   {...successful(),status:"fail"}
  ];
@@ -81,7 +78,7 @@ test("R303.2 untrusted, contradictory or incomplete PASS cannot attest completio
   const {client}=clientFor(body);
   const result=await client.run(request);
   assert.throws(()=>validateTrustedRunnerPass(client,request,result),
-   /Runner PASS claim|approved project phase|researcher acceptance|pinned Runner phases/);
+   /Runner PASS claim|approved project phase|pinned Runner phases|not in the approved project profile/);
  }
 });
 test("R303.2 switched Child's Runner request, SHA or branch is not portable",async()=>{
@@ -100,24 +97,14 @@ test("R303.2 switched Child's Runner request, SHA or branch is not portable",asy
 
 test("R303.2 contradictory PASS+failure artifacts fails before accepting Runner result",async()=>{
  const {client}=clientFor({...successful(),
-  acceptance_failure:{unclassified_failure:true}});
+  typecheck_error_codes:["TS2322"]});
  await assert.rejects(client.run(request),
   /contradictory failure evidence/);
 });
 
-test("Runner PASS without the separate acceptance suite: skipped is valid, fail never is",async()=>{
- const skipped=successful();
- skipped.researcher_acceptance={phase:"researcher_acceptance",status:"skipped"};
- skipped.phases=skipped.phases.map(p=>p.phase==="researcher_acceptance"?{...p,status:"skipped"}:p);
- const {client}=clientFor(skipped);
- const result=await client.run(request);
- const stage=validateTrustedRunnerPass(client,request,result);
- assert.equal(stage.researcher_acceptance,"skipped");
- assert.equal(stage.all_project_tests_passed,true);
- const failed=successful();
- failed.researcher_acceptance={phase:"researcher_acceptance",status:"fail"};
- failed.phases=failed.phases.map(p=>p.phase==="researcher_acceptance"?{...p,status:"fail"}:p);
- const bad=clientFor(failed);
- const r2=await bad.client.run(request);
- assert.throws(()=>validateTrustedRunnerPass(bad.client,request,r2),/NO-GO/u);
+test("a PASS with a phase outside the approved profile is refused",async()=>{
+ const extra=successful();
+ extra.phases=[...extra.phases,{phase:"extra_suite",status:"pass"}];
+ const {client}=clientFor(extra);
+ await assert.rejects(client.run(request),/not in the approved project profile/u);
 });

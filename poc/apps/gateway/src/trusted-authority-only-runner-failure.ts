@@ -46,27 +46,23 @@ export function validateTrustedRunnerFailure(
     result.status!=="fail"||
     !LOG.test(result.log_reference??""))
    deny("Runner FAIL differs from original immutable Test intent");
- // The approved profile's phases, then the researcher slot. The FIRST
- // profile phase prepares the environment (e.g. dependency installation):
- // its failure is not a code defect the agents could repair.
- const PHASES=[...client.projectProfile.phases.map(x=>x.name),"researcher_acceptance"];
- const last=PHASES.length-1;
+ // The approved profile's phases. The FIRST phase prepares the environment
+ // (e.g. dependency installation): its failure is not a code defect the
+ // agents could repair.
+ const PHASES=client.projectProfile.phases.map(x=>x.name);
  const p=result.phases;
  const project=result.project_tests;
  if(!Array.isArray(p)||p.length!==PHASES.length||
     !project||!Array.isArray(project.phases)||
-    project.phases.length!==PHASES.length-1||
+    project.phases.length!==PHASES.length||
     p.some((v,i)=>v.phase!==PHASES[i])||
     project.phases.some((v,i)=>v.phase!==PHASES[i]||
-      v.status!==p[i].status)||
-    !result.researcher_acceptance||
-    result.researcher_acceptance.phase!=="researcher_acceptance"||
-    result.researcher_acceptance.status!==p[last].status)
+      v.status!==p[i].status))
    deny("Runner FAIL has incomplete or reordered controlled phases");
  const first=p.findIndex(v=>v.status==="fail");
  if(first<0||p.some((v,i)=>v.status!==(i<first?"pass":
      i===first?"fail":"skipped"))||
-    (first===last?(project.status!=="pass"):(project.status!=="fail"))||
+    project.status!=="fail"||
     (p[first].failed!==undefined&&
      (!Number.isSafeInteger(p[first].failed)||p[first]!.failed!<1))||
     p.some(v=>v.failed!==undefined&&

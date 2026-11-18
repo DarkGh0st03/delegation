@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R321: actual offline ADK LlmAgent/Runner -> direct Gateway controlled tool
  * -> trusted owner per-Task staging -> private signer -> Gateway execute.
@@ -58,7 +59,7 @@ class ScriptedBackendUpdate extends BaseLlm {
 function fixture(observe?:(w:{task_id:string;credential_id:string;
  runtime_task_id:string;role:string;call_index_before:number;
  call_index_after:number})=>void|Promise<void>){
- const registry=new TrustedEffectStagingTaskRegistry();
+ const registry=new TrustedEffectStagingTaskRegistry({projectTestSourceProfile:SAMPLE_TEST_SOURCES});
  const calls:string[]=[];
  registry.bindTask({
   runtimeTaskId:RUNTIME,planTaskId:PLAN,

@@ -87,8 +87,11 @@ test("readGrantsCoverPath: exact file or containing directory read grants only",
 });
 
 test("reads + one create: the new file is created from distinct EXISTING files it is written from", async () => {
- const {readCreateGrantShape,readWriteGrantShape,isProjectTestReadCreateGrant,MAX_TASK_READS}=
+ const {readCreateGrantShape,readWriteGrantShape,MAX_TASK_READS}=
   await import("../src/gitea-permission-containment.mjs");
+ const {SAMPLE_TEST_SOURCES}=await import("./fixtures/test-sources.mjs");
+ const isProjectTestReadCreateGrant=async (perms)=>(await import("../src/gitea-permission-containment.mjs"))
+  .isProjectTestReadCreateGrant(perms,SAMPLE_TEST_SOURCES);
  const base="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fs-1/files/";
  const r=path=>({operation:"read_file",resource:base+path});
  const c=path=>({operation:"create_file",resource:base+path});
@@ -96,8 +99,8 @@ test("reads + one create: the new file is created from distinct EXISTING files i
  assert.deepEqual(readCreateGrantShape([r(page),c(test)]),{create:base+test,reads:[base+page]});
  assert.equal(readWriteGrantShape([r(page),c(test)]).operation,"create_file");
  assert.equal(readWriteGrantShape([r(page),{operation:"update_file",resource:base+page}]).operation,"update_file");
- assert.equal(isProjectTestReadCreateGrant([r(page),c(test)]),true);
- assert.equal(isProjectTestReadCreateGrant([r(page),c("apps/frontend/src/new.ts")]),false,
+ assert.equal(await isProjectTestReadCreateGrant([r(page),c(test)]),true);
+ assert.equal(await isProjectTestReadCreateGrant([r(page),c("apps/frontend/src/new.ts")]),false,
   "the Test agent creates only project test sources");
  for(const bad of [
   [c(test)],                                   // no read: a plain single create

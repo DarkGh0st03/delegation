@@ -1,3 +1,4 @@
+import {SAMPLE_TEST_SOURCES} from "../../plan-contracts/test/fixtures/test-sources.mjs";
 /**
  * R385.13 - The 24th Child-consuming Task is the final Test retest.
  * One failed prior Test remains registered but never gateway-completed.
@@ -7,8 +8,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {BaseLlm} from "@google/adk";
-import {TrustedAuthorityOnlyAdkDecisionProposer as Proposer}
+import {TrustedAuthorityOnlyAdkDecisionProposer as ProposerBase}
  from "../src/trusted-authority-only-adk-decision-proposer.mjs";
+/** Test default: the sample repository test-source profile. */
+class Proposer extends ProposerBase{constructor(c){super({projectTestSourceProfile:SAMPLE_TEST_SOURCES,...c});}}
 
 const branch="feature/account-suspension";
 const repo="gitea://gitea.local/thesis/iam-console-poc";
