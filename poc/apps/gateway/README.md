@@ -22,8 +22,11 @@ For every tool call:
    `src/trusted-authority-only-runner-*.ts`).
 
 `src/trusted-authority-only-admissions.ts` admits each Task (exact signed
-grants, one write per Task, test-source fences) and `src/trusted-plan-ipc.ts`
-is the private channel with the Review Host. Every decision is recorded in the
-audit sink shown live in the console.
+grants, one write per Task, test-source fences); every write goes through its
+dedicated executor, while `src/gitea-executor.ts` serves reads only. During
+Planning, `src/composite-authorization.ts` lets the Planner read 2–12 files of
+the pinned commit with one VP (all permissions verified and all OPA decisions
+taken before the first read). Every decision is recorded in the audit sink
+shown live in the console.
 
 Tests: `npm --prefix poc run gateway:test`.

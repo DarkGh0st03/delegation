@@ -17,7 +17,7 @@ The policy in `policy.rego` is default-deny and **parametric per repository**. I
 - `runner_profile`: the only Runner profile accepted;
 - `allow_pull_request`: whether a Draft PR may be opened (agents can never merge).
 
-For authority-only sessions the Gateway injects `session_work_branch` from the **signed operational authority**, never from tool arguments, and OPA allows file, branch, Runner and PR operations only on exactly that branch. An allowed tool name alone is not sufficient to modify a file: the Agent must also hold the exact ResourceUri/Operation authority verified by Rust.
+A repository without published parameters is denied. The Gateway injects `session_work_branch` from the **signed operational authority**, never from tool arguments, and OPA allows file, branch, Runner and PR operations only on exactly that branch. An allowed tool name alone is not sufficient to modify a file: the Agent must also hold the exact ResourceUri/Operation authority verified by Rust.
 
 OPA returns an allow/deny decision to the Gateway; **OPA does not forward tool calls or execute repository operations**.
 

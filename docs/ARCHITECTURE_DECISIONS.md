@@ -45,7 +45,7 @@ Historically, OPA was integrated against a mock Gateway executor before connecti
 
 ## ADR-005 — Adapter callers are bound to server-side identities
 
-**Status:** Accepted
+**Status:** Superseded by ADR-013 (no Adapter HTTP service; per-role wallets)
 
 The Delegation Adapter must not allow a caller to choose an arbitrary holder or issuer identity through request data.
 
@@ -71,7 +71,7 @@ The file-level permission matrix is not duplicated in Rego.
 
 ## ADR-007 — Controlled test execution includes researcher-owned acceptance tests
 
-**Status:** Accepted
+**Status:** Superseded — PASS means the project's own tests pass (ADR-014)
 
 The Test Agent may modify project tests, but it cannot modify the independent acceptance suite used as experimental evidence.
 
@@ -81,7 +81,7 @@ No LLM-controlled arbitrary shell is exposed.
 
 ## ADR-008 — Task decomposition and authority decomposition are separate
 
-**Status:** Accepted
+**Status:** Superseded by ADR-012
 
 The final Account Suspension Orchestrator deterministically runs Backend → Frontend → Test. Each specialized ADK/Gemini role reasons about its assigned task, but cannot invent child permissions or choose the workflow order.
 
@@ -91,7 +91,7 @@ The runtime maps each role to deterministic templates `DC_Backend`, `DC_Frontend
 
 **Status:** Accepted
 
-The workflow may create a Pull Request from `feature/account-suspension` to `main`.
+The workflow may create a Draft Pull Request from the Engineer-signed work branch to the base branch.
 
 `MergePullRequest` is not delegated and no merge tool is exposed.
 
@@ -134,4 +134,32 @@ The remote Agent stores Delegation Evidence in internal task context. External
 task responses request zero message history and Artifacts contain result data
 only. A2A transports task context; it never replaces the
 `Delegation Credential -> Gateway -> DelegationVerifier -> OPA` authority path.
+
+## ADR-012 — Authority-only approval: the Engineer signs permissions, not Tasks
+
+**Status:** Accepted (replaces the signed Task DAG)
+
+The Orchestrator proposes only the maximum permission scope; the Engineer
+signs a subset of it. The Orchestrator then creates, reorders and repairs
+Tasks freely, each with its own Child DC inside the operational Root. The
+signed-DAG path, its approved-plan registry and plan IPC were removed from the
+code base.
+
+## ADR-013 — Cryptography through private per-role wallets and an in-process verifier
+
+**Status:** Accepted
+
+Each agent signs its VPs with its own key through a private MCP session to its
+native Rust wallet; the Orchestrator issues Child DCs the same way. The Gateway
+verifies VPs with the native Rust verifier in its own process. No Adapter HTTP
+service is deployed.
+
+## ADR-014 — Evidence over claims
+
+**Status:** Accepted
+
+A Task is complete only on independent evidence: the Gitea effect at an exact
+revision, and a Runner PASS of the project's tests on the exact commit
+proposed for the Draft PR. Agents accept only signed Tasks (Gateway dispatch
+ID, exact file grants, Runner flag). Merge remains human.
 
