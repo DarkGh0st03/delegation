@@ -24,7 +24,6 @@ export class TrustedActiveAuthorityPlanning {
    !(opts.coordinator instanceof TrustedAuthorityOnlyEngineerSession)||
    !(opts.store instanceof AuthorityPlanningCheckpointStore)||
    !(opts.planner.config.readPort instanceof TrustedPlanningGatewayReadPort)||
-   opts.planner.config.validateProposedPlan||opts.planner.config.pilotFullDag||
    !Number.isSafeInteger(opts.lifetimeMs??900000)||
    (opts.lifetimeMs??900000)<1000||(opts.lifetimeMs??900000)>3600000)
    throw Error('Active authority Planning requires original trusted dependencies');

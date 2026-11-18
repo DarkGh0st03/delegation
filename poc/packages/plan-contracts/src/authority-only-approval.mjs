@@ -12,8 +12,6 @@
 import {createHash,createPrivateKey,createPublicKey,sign,verify}
   from "node:crypto";
 import {validateAuthorizationEnvelope} from "./authorization-envelope.mjs";
-import {validatePlan} from "./plan.mjs";
-import {approvedWorkBranch} from "./approved-work-branch.mjs";
 
 export const AUTHORITY_ONLY_SCHEMA="1.0.0";
 const DOMAIN="delegation.engineer.authority-only.v1";
@@ -247,40 +245,4 @@ export function assertVerifiedAuthorityOnlyGrant(verified,{allowedOperations,
    authority_digest:verified.authority_digest,
    authenticated_engineer_did:verified.authenticated_engineer_did,
    expires_at:verified.expires_at});
-}
-/**
- * Candidate Executor preflight only. A Task DAG may evolve after signing,
- * but its permissions must be a STRICT exact-pair subset. No root issuance,
- * branch writes or Gateway registration occurs here.
- */
-export function assertExecutionWithinAuthority(plan,verified,{allowedOperations,nowMs=Date.now()}={}){
- if(!verified||typeof verified!=="object"||
-    !authenticatedReceipts.has(verified)||verified.authenticated!==true||
-    typeof verified.authenticated_engineer_did!=="string"||
-    !verified.authenticated_engineer_did.startsWith("did:")||
-    typeof verified.authority_digest!=="string"||
-    !SHA64.test(verified.authority_digest))deny("unverified Engineer authority");
- if(!Number.isFinite(nowMs)||typeof verified.expires_at!=="string"||
-    !Number.isFinite(Date.parse(verified.expires_at))||
-    nowMs>=Date.parse(verified.expires_at))deny("authenticated authority expired");
- const grant=verified.authorization;
- validateAuthorityOnlyGrant(grant,{allowedOperations});
- if(verified.authority_digest!==authorityOnlyDigest(grant,{allowedOperations}))
-   deny("authority digest mismatch");
- validatePlan(plan,{allowedOperations});
- if(plan.session_id!==grant.session_id||
-    plan.base_revision!==grant.base_revision||
-    requirementDigest(plan.requirement)!==grant.requirement_sha256||
-    ["authority","owner","repository"].some(k=>
-      plan.repository[k]!==grant.repository[k])||
-    approvedWorkBranch(plan)!==grant.branch)
-   deny("execution escapes signed session, requirement, repository or branch");
- const permissionKeys=new Set(grant.permissions.map(pair));
- for(const row of plan.requested_permissions)
-   if(!permissionKeys.has(pair(row)))deny("execution requests unapproved permission");
- return Object.freeze({
-  status:"scope_preflight_only",authority_digest:verified.authority_digest,
-  plan_within_authority:true,execution_authorized:false,
-  root_credential_issued:false,task_binding_authorized:false
- });
 }

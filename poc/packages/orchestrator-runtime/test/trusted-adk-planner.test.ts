@@ -3,11 +3,7 @@ import test from "node:test";
 import {
   BaseLlm,type LlmRequest,type LlmResponse,type BaseLlmConnection
 } from "@google/adk";
-import {validatePlan} from "../../plan-contracts/src/plan.mjs";
-import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
-import {compilePlanningProposal,TrustedAdkReadOnlyPlanner,
-  TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,safeExecutionPreflightRejection,safePlanningRejection}
-  from "../src/trusted-adk-planner.ts";
+import {TrustedAdkReadOnlyPlanner} from "../src/trusted-adk-planner.ts";
 
 const FILE="src/billing/invoice.ts";
 const SNAPSHOT={
@@ -27,18 +23,12 @@ const cfg={
   planId:"draft-invoices-v1",workBranch:"feature/invoice-sort",
   agents:AGENTS
 };
+/** A permission-only Planning draft (never Tasks, DIDs or approvals). */
 function draft(){
   return {
-    tasks:[
-      {id:"branch",agent_id:"orchestrator",title:"Create work branch",
-       description:"Create a feature branch from trusted main",depends_on:[],
-       permissions:[{operation:"create_branch",path:null,reason:"Isolate source edits"}]},
-      {id:"backend",agent_id:"backend",title:"Implement invoice ordering",
-       description:"Read then modify the approved service",depends_on:["branch"],
-       permissions:[
-         {operation:"read_file",path:FILE,reason:"Inspect existing behavior"},
-         {operation:"update_file",path:FILE,reason:"Implement requested ordering"}
-       ]}
+    requested_permissions:[
+      {operation:"read_file",resource_type:"file",path:FILE},
+      {operation:"update_file",resource_type:"file",path:FILE}
     ],
     assumptions:[],uncertainties:[]
   };
@@ -64,80 +54,12 @@ class Scripted extends BaseLlm {
     return Promise.reject(Error("No network model"));
   }
 }
-test("proposal compiler creates a strict plan without an approval or credential",()=>{
-  const result=compilePlanningProposal(draft(),cfg);
-  assert.equal(result.status,"unapproved_proposal");
-  assert.equal(result.plan.base_revision,SNAPSHOT.base_revision);
-  assert.deepEqual(result.plan.repository,SNAPSHOT.repository);
-  assert.equal(result.plan.candidate_agents[0]?.did,AGENTS.backend.did);
-  assert.equal(result.plan.tasks[1]?.agent_id,"backend");
-  assert.equal(result.plan.requested_permissions[2]?.operation,"update_file");
-  assert.ok(result.plan.requested_permissions[2]?.resource.includes(
-    "/branches/feature%2Finvoice-sort/files/src/billing/invoice.ts"));
-  validatePlan(result.plan,{allowedOperations:new Set(RUST_OPERATIONS)});
-  assert.equal("approval" in result,false);
-  assert.equal(result.digest.length,64);
-});
-test("ADK Planner reads real Gateway-shaped pinned source, returning only a draft",async()=>{
-  const portCalls:Array<{tool:string;args:Record<string,unknown>}>=[];
-  const model=new Scripted({branch:"main",path:FILE},draft());
-  const port={async invoke(tool:string,args:Record<string,unknown>){
-    portCalls.push({tool,args});
-    return {provider:"gitea",performed:true,tool,path:FILE,branch:"main",
-      revision:SNAPSHOT.base_revision,content:"export const invoices = [];"};
-  }};
-  const result=await new TrustedAdkReadOnlyPlanner({
-    ...cfg,model,readPort:port,pilotFullDag:true
-  }).propose();
-  assert.equal(result.verified_source_reads,1);
-  assert.deepEqual(portCalls,[{tool:"read_file",args:{branch:"main",path:FILE}}]);
-  assert.equal(result.plan.base_revision,SNAPSHOT.base_revision);
-  const exposed=JSON.stringify(model.requests.map(r=>({
-    contents:r.contents,tools:r.config?.tools
-  })));
-  for(const forbidden of ["signed_vp","delegation_evidence","private_key",
-    "execute_plan","create_branch\"","update_file\""]){
-    assert.ok(!exposed.includes(forbidden),forbidden);
-  }
-  assert.ok(exposed.includes("read_file"));
-  // Regression-test implementation must be part of the ACTUAL ADK system
-  // instruction, not merely a separate post-hoc diagnostic after Gemini.
-  const system=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
-  assert.ok(system.includes("concrete regression tests"));
-  assert.ok(system.includes("merely calling run_tests"));
-  assert.ok(system.includes("PR requires verified tests"));
-  assert.ok(system.includes("one shared behavioral contract"));
-  assert.ok(system.includes("existing invariants to preserve"));
-  assert.ok(system.includes("record the specific uncertainty"));
-  // These are host-owned preflight constraints, not extra grants or model
-  // autonomy. An unapproved live draft gets at most two repair attempts.
-  assert.ok(system.includes("IN THAT SAME Task"));
-  assert.ok(system.includes("exactly ONE Test run_tests grant"));
-  assert.ok(system.includes("must follow the required final run_tests Task"));
-  assert.ok(system.includes("never propose unordered or overlapping writes"));
-});
-test("Planner guidance encourages source-grounded tests without granting new tools",()=>{
-  assert.ok(Object.isFrozen(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE));
-  assert.ok(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.some(line=>line.includes("self-contained brief")));
-  assert.ok(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.some(line=>line.includes("expectations consistent")));
-  const text=TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.join("\n");
-  assert.match(text,/discovered directory/);
-  assert.match(text,/uncertainty rather than invent/);
-  assert.match(text,/authorization cases/);
-  assert.match(text,/read_file grant for the EXACT same path/);
-  assert.match(text,/zero dependencies/);
-  assert.match(text,/final run_tests Task/);
-  assert.match(text,/distinct Tasks/);
-  assert.doesNotMatch(text,/Include at least one Task for each Backend, Frontend and Test specialist/u);
-  assert.doesNotMatch(text,/apps\/backend\/src\/users|by-department|golden/i);
-});
-
 test("out-of-scope Planning read is denied before the trusted provider",async()=>{
   let calls=0;
   const model=new Scripted({branch:"main",path:"secrets/production.env"},draft());
   await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
     ...cfg,model,readPort:{async invoke(){calls++;return {};}}
-  }).propose(),/no verified read-only grounded proposal/);
+  }).proposeAuthority(),/no verified read-only grounded proposal/);
   assert.equal(calls,0);
 });
 test("mismatched pinned SHA is rejected, even with a plausible model plan",async()=>{
@@ -147,33 +69,29 @@ test("mismatched pinned SHA is rejected, even with a plausible model plan",async
       return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
         revision:"b".repeat(40),content:"untrusted"};
     }}
-  }).propose(),/no verified read-only grounded proposal/);
+  }).proposeAuthority(),/no verified read-only grounded proposal/);
 });
-test("untrusted model cannot request arbitrary operations, unknown source or second branch",()=>{
-  const operations=[
-    (d:any)=>{d.tasks[1].permissions[1].operation="merge_pull_request";},
-    (d:any)=>{d.tasks[1].permissions[1].path="private/unknown.ts";},
-    (d:any)=>{d.tasks[0].agent_id="backend";},
-    (d:any)=>{d.tasks[1].depends_on=[];},
-    (d:any)=>{d.tasks[1].permissions[1].resource="gitea://attacker/private";},
-    (d:any)=>{d.tasks[1].permissions[1].path="../secrets";},
-    (d:any)=>{d.tasks[1].permissions[1].path="src/billing/other.ts";}
-  ];
-  for(const mutate of operations){
-    const d=draft();mutate(d);
-    assert.throws(()=>compilePlanningProposal(d,cfg));
-  }
+test("ADK Planner reads Gateway-shaped pinned source and returns only a permission draft",async()=>{
+  const portCalls:Array<{tool:string;args:Record<string,unknown>}>=[];
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  const port={async invoke(tool:string,args:Record<string,unknown>){
+    portCalls.push({tool,args});
+    return {provider:"gitea",performed:true,tool,path:FILE,branch:"main",
+      revision:SNAPSHOT.base_revision,content:"export const invoices = [];"};
+  }};
+  const result=await new TrustedAdkReadOnlyPlanner({...cfg,model,readPort:port}).proposeAuthority();
+  assert.equal(result.verified_source_reads,1);
+  assert.deepEqual(portCalls,[{tool:"read_file",args:{branch:"main",path:FILE}}]);
+  assert.equal(result.proposal.base_revision,SNAPSHOT.base_revision);
+  const exposed=JSON.stringify(model.requests.map(r=>({contents:r.contents,tools:r.config?.tools})));
+  for(const forbidden of ["signed_vp","delegation_evidence","private_key","execute_plan"])
+    assert.ok(!exposed.includes(forbidden),forbidden);
+  assert.ok(exposed.includes("read_file"));
+  const system=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
+  assert.ok(system.includes("maximum permission scope"));
+  assert.ok(system.includes("This output grants nothing"));
 });
-
-test("branch-only sketches cannot silently select the legacy branch",()=>{
-  const d=draft();
-  d.tasks[1]={id:"pr",agent_id:"orchestrator",title:"Open PR",
-    description:"Open a review request",depends_on:["branch"],
-    permissions:[{operation:"create_pull_request",path:null,reason:"Review"}]};
-  assert.throws(()=>compilePlanningProposal(d,cfg),/exact trusted work branch/);
-});
-
-test("generic multi-read Planning permits independent disjoint edits and exact-SHA review",async()=>{
+test("multi-read Planning proposes only the permission scope, pinned to the exact SHA",async()=>{
   const UI="src/ui/invoice-list.tsx";
   const E2E="tests/e2e/invoice-order.spec.ts";
   const snapshot={...SNAPSHOT,
@@ -181,28 +99,15 @@ test("generic multi-read Planning permits independent disjoint edits and exact-S
     files:[FILE,UI]
   };
   const proposed={
-    tasks:[
-      {id:"branch",agent_id:"orchestrator",title:"Start isolated branch",
-       description:"Create an approved work branch",depends_on:[],
-       permissions:[{operation:"create_branch",path:null,reason:"Isolate writes"}]},
-      {id:"backend",agent_id:"backend",title:"Update billing ordering",
-       description:"Update due-date sort",depends_on:["branch"],
-       permissions:[
-         {operation:"read_file",path:FILE,reason:"Inspect billing"},
-         {operation:"update_file",path:FILE,reason:"Fix ordering"}]},
-      {id:"frontend",agent_id:"frontend",title:"Update invoice display",
-       description:"Display sorted invoices",depends_on:["branch"],
-       permissions:[
-         {operation:"read_file",path:UI,reason:"Inspect UI"},
-         {operation:"update_file",path:UI,reason:"Show ordering"}]},
-      {id:"test",agent_id:"test",title:"Test ordering",
-       description:"Run exact pinned SHA acceptance",
-       depends_on:["backend","frontend"],permissions:[
-         {operation:"create_file",path:E2E,reason:"Create regression"},
-         {operation:"run_tests",path:null,reason:"Check final SHA"}]},
-      {id:"pr",agent_id:"orchestrator",title:"Request human review",
-       description:"Open PR without merge",depends_on:["test"],
-       permissions:[{operation:"create_pull_request",path:null,reason:"Review only"}]}
+    requested_permissions:[
+      {operation:"create_branch",resource_type:"repository",path:null},
+      {operation:"read_file",resource_type:"file",path:FILE},
+      {operation:"update_file",resource_type:"file",path:FILE},
+      {operation:"read_file",resource_type:"file",path:UI},
+      {operation:"update_file",resource_type:"file",path:UI},
+      {operation:"create_file",resource_type:"file",path:E2E},
+      {operation:"run_tests",resource_type:"branch",path:null},
+      {operation:"create_pull_request",resource_type:"repository",path:null}
     ],assumptions:[],uncertainties:[]
   };
   const readSequence=[
@@ -242,42 +147,15 @@ test("generic multi-read Planning permits independent disjoint edits and exact-S
       return {...base,branch:"main",path:args.path,
         content:"export const publicSource = true;"};
     }}
-  }).propose();
+  }).proposeAuthority();
   assert.equal(plan.verified_source_reads,2);
   assert.deepEqual(invoked,readSequence.map(x=>x.name));
-  assert.equal(plan.plan.requested_permissions.length,8);
-  assert.deepEqual(plan.plan.tasks.find(x=>x.id==="frontend")?.depends_on,["branch"]);
-  assert.deepEqual(plan.plan.tasks.find(x=>x.id==="test")?.depends_on,
-    ["backend","frontend"]);
-  assert.deepEqual(plan.plan.requested_permissions
-    .filter(x=>x.operation==="create_pull_request").map(x=>x.agent_id),
-    ["orchestrator"]);
-  assert.equal(plan.plan.base_revision,snapshot.base_revision);
+  assert.equal(plan.proposal.requested_permissions.length,8);
+  assert.equal(plan.proposal.base_revision,snapshot.base_revision);
+  assert.equal(plan.proposal.branch,cfg.workBranch);
+  // A permission-only draft: no Tasks, agents, DIDs or approval.
   assert.equal("approval" in plan,false);
-});
-
-test("Planner rejects unordered writes to the same discovered file",()=>{
-  const UI="src/ui/invoice-list.tsx";
-  const snapshot={...SNAPSHOT,files:[FILE,UI],
-    directories:["","src","src/billing","src/ui"]};
-  const config={...cfg,snapshot};
-  const proposed=draft();
-  proposed.tasks.push({
-    id:"frontend",agent_id:"frontend",
-    title:"Conflicting UI edit",description:"Update same invoice service",
-    depends_on:["branch"],permissions:[
-      {operation:"update_file",path:FILE,reason:"Conflicting change"}
-    ]
-  });
-  assert.throws(()=>compilePlanningProposal(proposed,config),
-    /independent Tasks cannot modify the same file/);
-  proposed.tasks[2].depends_on=["backend"];
-  assert.doesNotThrow(()=>compilePlanningProposal(proposed,config));
-  const duplicate=draft();
-  duplicate.tasks[1].permissions.push({
-    operation:"update_file",path:FILE,reason:"Duplicate write"});
-  assert.throws(()=>compilePlanningProposal(duplicate,config),
-    /duplicate Task permission/);
+  assert.equal("tasks" in plan.proposal,false);
 });
 
 test("Planner validates per-call and output-token bounds before any model request",()=>{
@@ -305,7 +183,7 @@ test("Planner propagates bounded inference config into real ADK model requests",
       return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
         revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
     }}
-  }).propose();
+  }).proposeAuthority();
   assert.equal(result.verified_source_reads,1);
   assert.equal(model.requests.length,2);
   assert.equal((model.requests[0].config as any)?.maxOutputTokens,1234);
@@ -329,7 +207,7 @@ test("Planner fails closed after a model ignores the per-call abort signal",asyn
   await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
     ...cfg,model:new SlowScripted(),maxModelCallMs:1000,
     readPort:{async invoke(){throw Error("unexpected provider read");}}
-  }).propose(),/no verified read-only grounded proposal/);
+  }).proposeAuthority(),/no verified read-only grounded proposal/);
   // The ADK Runner deliberately collapses internal model errors into
   // a generic unapproved-plan denial; the abort signal proves the deadline.
   assert.equal(observed?.aborted,true);
@@ -353,7 +231,7 @@ test("Planner's total session budget aborts a model even when per-call budget re
   await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
     ...cfg,model:new Stalled(),maxPlanningMs:1000,maxModelCallMs:3000,
     readPort:{async invoke(){throw Error("provider must not be used");}}
-  }).propose(),/no verified read-only grounded proposal/);
+  }).proposeAuthority(),/no verified read-only grounded proposal/);
   assert.equal(observed?.aborted,true);
 });
 
@@ -369,7 +247,7 @@ test("Planner refuses a late real-provider-shaped source read after session dead
         path:FILE,revision:SNAPSHOT.base_revision,
         content:"export const invoices=[];"};
     }}
-  }).propose(),/no verified read-only grounded proposal/);
+  }).proposeAuthority(),/no verified read-only grounded proposal/);
   assert.equal(calls,1);
 });
 
@@ -384,11 +262,11 @@ test("R5 Planner is one-shot even after a successful unsigned proposal",async()=
         revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
     }}
   });
-  const result=await planner.propose();
-  assert.equal(result.status,"unapproved_proposal");
+  const result=await planner.proposeAuthority();
+  assert.equal(result.status,"unapproved_authority_proposal");
   assert.equal(providerCalls,1);
   const modelTurns=model.requests.length;
-  await assert.rejects(planner.propose(),/already attempted/);
+  await assert.rejects(planner.proposeAuthority(),/already attempted/);
   assert.equal(providerCalls,1);
   assert.equal(model.requests.length,modelTurns);
 });
@@ -403,9 +281,9 @@ test("R5 Planner concurrent calls cannot generate two independent drafts",async(
         revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
     }}
   });
-  const first=planner.propose();
-  await assert.rejects(planner.propose(),/already attempted/);
-  assert.equal((await first).status,"unapproved_proposal");
+  const first=planner.proposeAuthority();
+  await assert.rejects(planner.proposeAuthority(),/already attempted/);
+  assert.equal((await first).status,"unapproved_authority_proposal");
   assert.equal(runs,1);
 });
 
@@ -419,8 +297,8 @@ test("trusted Planner observations expose bounded metadata but not source or pro
       return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
         revision:SNAPSHOT.base_revision,content:"PRIVATE_TEST_SOURCE_PAYLOAD"};
     }}
-  }).propose();
-  assert.equal(result.status,"unapproved_proposal");
+  }).proposeAuthority();
+  assert.equal(result.status,"unapproved_authority_proposal");
   assert.deepEqual(events.filter(e=>e.kind==="model_turn"&&e.status==="started")
     .map(e=>e.turn),[1,2]);
   assert.deepEqual(events.filter(e=>e.kind==="read"&&e.status==="verified")
@@ -440,7 +318,7 @@ test("ADK rejects out-of-scope arguments before invoking the trusted provider",a
   await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
     ...cfg,model,onObservation(event){events.push({...event});},
     readPort:{async invoke(){providerCalls++;return {};}}
-  }).propose(),/no verified read-only grounded proposal/);
+  }).proposeAuthority(),/no verified read-only grounded proposal/);
   assert.equal(providerCalls,0);
   // The ADK FunctionTool schema rejects invalid path enums before our read()
   // callback is invoked. Absence of a read event is correct, not a bypass.
@@ -459,7 +337,7 @@ test("trusted provider denial emits metadata-only failure without a draft",async
       provider:"gitea",performed:true,tool:"read_file",path:FILE,
       branch:"main",revision:"b".repeat(40),content:"PRIVATE_PROVIDER_BYTES"
     };}}
-  }).propose(),/no verified read-only grounded proposal/);
+  }).proposeAuthority(),/no verified read-only grounded proposal/);
   assert.equal(providerCalls,1);
   assert.ok(events.some(e=>e.kind==="read"&&e.status==="denied"&&
     e.reason==="trusted_planning_read_failed"));
@@ -487,8 +365,8 @@ test("optional ADK provider token reports are captured once per call without sou
         path:FILE,revision:SNAPSHOT.base_revision,
         content:"PRIVATE_SOURCE_NEVER_EXPORTED"};
     }}
-  }).propose();
-  assert.equal(result.status,"unapproved_proposal");
+  }).proposeAuthority();
+  assert.equal(result.status,"unapproved_authority_proposal");
   const usages=events.filter(e=>e.kind==="model_usage");
   assert.deepEqual(usages.map(x=>({turn:x.turn,input:x.input_tokens,
     output:x.output_tokens,total:x.total_tokens,thought:x.thought_tokens})),[
@@ -520,7 +398,7 @@ test("failed Gemini delegate preserves only HTTP classification before ADK colla
     ...cfg,model:new ProviderErrorModel(),
     onObservation(event){trace.push({...event});},
     readPort:{async invoke(){throw Error("unexpected source read");}}
-  }).propose());
+  }).proposeAuthority());
   const failures=trace.filter(e=>e.kind==="model_failure");
   assert.ok(failures.some(e=>e.phase==="delegate_exception"&&
     e.http_status===400&&e.category==="invalid_request_or_tool_schema"));
@@ -547,7 +425,7 @@ test("ADK returned structured model error is observed without raw provider text"
     ...cfg,model:new ModelErrorResponse(),
     onObservation(event){trace.push({...event});},
     readPort:{async invoke(){throw Error("unexpected provider call");}}
-  }).propose());
+  }).proposeAuthority());
   assert.ok(trace.some(e=>e.kind==="model_failure"&&
     e.category==="quota_or_rate_limit"&&e.phase==="model_error_response"));
   assert.ok(!JSON.stringify(trace).includes("ERROR_MESSAGE_CONTAINS_PRIVATE_PROMPT"));
@@ -562,8 +440,8 @@ test("Gemini function declarations avoid empty objects and empty-string enum",as
         branch:"main",path:FILE,revision:SNAPSHOT.base_revision,
         content:"export const invoices=[];"};
     }}
-  }).propose();
-  assert.equal(result.status,"unapproved_proposal");
+  }).proposeAuthority();
+  assert.equal(result.status,"unapproved_authority_proposal");
   const tools=(model.requests[0].config as any)?.tools;
   assert.ok(Array.isArray(tools)&&tools.length>0,"ADK function schemas exist");
   const declarations=tools.flatMap((t:any)=>t.functionDeclarations??[]);
@@ -623,8 +501,8 @@ test("long-horizon Planner handles >12 real ADK model turns with MEDIUM thinking
         path:FILE,revision:SNAPSHOT.base_revision,
         content:"export const invoices=[];"};
     }}
-  }).propose();
-  assert.equal(output.status,"unapproved_proposal");
+  }).proposeAuthority();
+  assert.equal(output.status,"unapproved_authority_proposal");
   assert.equal(readCalls,14);
   assert.equal(model.turns,15);
   assert.equal(model.requests.length,15);
@@ -634,51 +512,6 @@ test("long-horizon Planner handles >12 real ADK model turns with MEDIUM thinking
   assert.equal(observations.filter(e=>e.kind==="proposal").length,1);
 });
 
-
-test("Planner classifies out-of-scope update without exposing model-selected path",async()=>{
-  const events:Array<Record<string,unknown>>=[];
-  const bad=draft();
-  bad.tasks[1].permissions[1].path="PRIVATE_MODEL_SELECTED_FILE.ts";
-  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
-    ...cfg,model:new Scripted({branch:"main",path:FILE},bad),
-    onObservation(e){events.push({...e});},
-    readPort:{async invoke(tool:string){
-      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
-        revision:SNAPSHOT.base_revision,content:"PRIVATE_GITEA_SOURCE"};
-    }}
-  }).propose(),/file absent from trusted Planning snapshot/);
-  assert.deepEqual(events.filter(e=>e.kind==="plan_rejection"),[{
-    kind:"plan_rejection",stage:"contract",reason:"unauthorized_existing_file"
-  }]);
-  const serialized=JSON.stringify(events);
-  for(const sensitive of ["PRIVATE_MODEL_SELECTED_FILE","PRIVATE_GITEA_SOURCE",
-    cfg.requirement])assert.ok(!serialized.includes(sensitive));
-});
-
-test("Planner reports unordered overlapping source edits without leaking task IDs",async()=>{
-  const events:Array<Record<string,unknown>>=[];
-  const bad=draft();
-  bad.tasks.push({
-    id:"SECRET_MODEL_TASK",agent_id:"frontend",
-    title:"Concurrent writer",description:"Write same file independently",
-    depends_on:["branch"],
-    permissions:[{operation:"update_file",path:FILE,reason:"Write"}]
-  });
-  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
-    ...cfg,model:new Scripted({branch:"main",path:FILE},bad),
-    onObservation(e){events.push({...e});},
-    readPort:{async invoke(tool:string){
-      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
-        revision:SNAPSHOT.base_revision,content:"PRIVATE_GITEA_SOURCE"};
-    }}
-  }).propose(),/independent Tasks cannot modify the same file/);
-  assert.deepEqual(events.filter(e=>e.kind==="plan_rejection"),[{
-    kind:"plan_rejection",stage:"contract",
-    reason:"conflicting_unordered_writes"
-  }]);
-  assert.ok(!JSON.stringify(events).includes("SECRET_MODEL_TASK"));
-  assert.ok(!JSON.stringify(events).includes("PRIVATE_GITEA_SOURCE"));
-});
 
 test("Planner reports invalid JSON with a fixed non-content-bearing code",async()=>{
   class InvalidJsonModel extends BaseLlm {
@@ -704,7 +537,7 @@ test("Planner reports invalid JSON with a fixed non-content-bearing code",async(
       return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
         revision:SNAPSHOT.base_revision,content:"PRIVATE_GITEA_SOURCE"};
     }}
-  }).propose(),/model output was not strict JSON/);
+  }).proposeAuthority(),/model output was not strict JSON/);
   assert.deepEqual(observations.filter(e=>e.kind==="plan_rejection"),[{
     kind:"plan_rejection",stage:"json",reason:"invalid_json"
   }]);
@@ -726,7 +559,7 @@ test("a rejected Planner draft gets one signed-scope correction in its existing 
         }}]}};return;
       }
       const plan=draft();
-      if(this.turns===2)plan.tasks[1].permissions[1].path="PRIVATE_UNDISCOVERED.ts";
+      if(this.turns===2)plan.requested_permissions[1].path="PRIVATE_UNDISCOVERED.ts";
       yield {content:{role:"model",parts:[{text:JSON.stringify(plan)}]}};
     }
     override connect():Promise<BaseLlmConnection>{throw Error("Offline only");}
@@ -741,200 +574,24 @@ test("a rejected Planner draft gets one signed-scope correction in its existing 
       return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
         revision:SNAPSHOT.base_revision,content:"PRIVATE_SOURCE_CONTENT"};
     }}
-  }).propose();
-  assert.equal(outcome.status,"unapproved_proposal");
+  }).proposeAuthority();
+  assert.equal(outcome.status,"unapproved_authority_proposal");
   assert.equal(model.turns,3);
   assert.equal(reads,1);
   assert.deepEqual(events.filter(e=>e.kind==="plan_rejection"),[{
-    kind:"plan_rejection",stage:"contract",reason:"unauthorized_existing_file"
+    kind:"plan_rejection",stage:"contract",reason:"invalid_permissions"
   }]);
   assert.equal(events.filter(e=>e.kind==="proposal").length,1);
   // The same ADK session contains earlier model output by design.
   // Only the newly authored trusted feedback message must omit draft data.
   const latestUserMessage=model.requests[2].contents.at(-1);
   assert.equal(latestUserMessage?.role,"user");
-  assert.ok(JSON.stringify(latestUserMessage).includes("unauthorized_existing_file"));
+  assert.ok(JSON.stringify(latestUserMessage).includes("invalid_permissions"));
   assert.ok(!JSON.stringify(latestUserMessage).includes("PRIVATE_UNDISCOVERED"));
   assert.ok(!JSON.stringify(events).includes("PRIVATE_UNDISCOVERED"));
   assert.ok(!JSON.stringify(events).includes("PRIVATE_SOURCE_CONTENT"));
 });
 
-test("Planner correction fails closed after one rejected revision",async()=>{
-  class TwoBadDrafts extends BaseLlm{
-    turns=0;
-    constructor(){super({model:"offline-two-bad-drafts"});}
-    override async *generateContentAsync():AsyncGenerator<LlmResponse,void>{
-      this.turns++;
-      if(this.turns===1){
-        yield {content:{role:"model",parts:[{functionCall:{
-          id:"pinned",name:"read_file",args:{branch:"main",path:FILE}
-        }}]}};return;
-      }
-      const bad=draft();
-      bad.tasks[1].permissions[1].path="UNAUTHORIZED.ts";
-      yield {content:{role:"model",parts:[{text:JSON.stringify(bad)}]}};
-    }
-    override connect():Promise<BaseLlmConnection>{throw Error("No paid provider");}
-  }
-  const model=new TwoBadDrafts(),events:Array<Record<string,unknown>>=[];
-  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
-    ...cfg,model,maxProposalRevisions:1,maxModelTurns:5,
-    onObservation(e){events.push({...e});},
-    readPort:{async invoke(tool:string){
-      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
-        revision:SNAPSHOT.base_revision,content:"source"};
-    }}
-  }).propose(),/file absent from trusted Planning snapshot/);
-  assert.equal(model.turns,3);
-  assert.equal(events.filter(e=>e.kind==="plan_rejection").length,2);
-  assert.ok(!events.some(e=>e.kind==="proposal"));
-});
-
-test("Planner never uses an extra repair turn beyond the original model budget",async()=>{
-  const bad=draft();bad.tasks[1].permissions[1].path="OTHER.ts";
-  const model=new Scripted({branch:"main",path:FILE},bad);
-  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
-    ...cfg,model,maxModelTurns:2,maxProposalRevisions:1,
-    readPort:{async invoke(tool:string){
-      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
-        revision:SNAPSHOT.base_revision,content:"source"};
-    }}
-  }).propose(),/file absent from trusted Planning snapshot/);
-  assert.equal(model.requests.length,2);
-  assert.throws(()=>new TrustedAdkReadOnlyPlanner({
-    ...cfg,model,maxProposalRevisions:3 as 1,
-    readPort:{async invoke(){throw Error("unexpected");}}
-  }),/invalid trusted Planning config/);
-});
-
-test("trusted host-owned execution preflight rejects a model DAG before approval",async()=>{
-  const observations:any[]=[];
-  const model=new Scripted({branch:"main",path:FILE},draft());
-  const port={async invoke(tool:string){
-    return {provider:"gitea",performed:true,tool,branch:"main",
-      path:FILE,revision:SNAPSHOT.base_revision,content:"safe source"};
-  }};
-  let invoked=0;
-  const planner=new TrustedAdkReadOnlyPlanner({
-    ...cfg,model,readPort:port,maxProposalRevisions:0,
-    validateProposedPlan:()=>{
-      invoked++;
-      throw Error("private untrusted diagnostic must not escape");
-    },
-    onObservation:e=>observations.push(e)
-  });
-  await assert.rejects(planner.propose(),
-    /trusted execution DAG preflight rejected proposal/);
-  assert.equal(invoked,1);
-  assert.ok(observations.some(e=>e.kind==="plan_rejection"&&
-    e.stage==="contract"&&e.reason==="execution_dag_incompatible"));
-  assert.ok(!JSON.stringify(observations).includes("private untrusted"));
-});
-
-test("native pilot DAG preflight uses only static actionable diagnostic classes",()=>{
- const known=[
-  ["Pilot DAG preflight: expected one test run_tests","execution_required_operation_count"],
-  ["Pilot DAG preflight: PR must depend on final Runner","execution_pr_before_runner"],
-  ["Pilot DAG preflight: Runner must follow every file edit","execution_runner_before_edit"],
-  ["Pilot DAG preflight: signed update missing same-Task read","execution_update_without_read"],
-  ["Pilot DAG preflight: unordered or overlapping file writes","execution_unordered_writes"],
-  ["Pilot DAG preflight: read of new file before creation","execution_read_before_creation"],
-  ["Pilot DAG preflight: bounded pilot requires signed frontend Task","execution_missing_specialist"]
- ];
- for(const [message,category] of known)
-  assert.equal(safeExecutionPreflightRejection(Error(message)),category);
- const arbitrary="Pilot DAG preflight: SECRET_TASK_OR_FILE";
- assert.equal(safeExecutionPreflightRejection(Error(arbitrary)),"execution_dag_incompatible");
- assert.equal(safeExecutionPreflightRejection(Error("private untrusted diagnostic must not escape")),
-  "execution_dag_incompatible");
-});
-
-test("model receives only sanitized exact DAG preflight feedback for bounded same-session revision",async()=>{
- const requests:LlmRequest[]=[];
- class Retry extends BaseLlm{
-  count=0;
-  constructor(){super({model:"offline-fixed-preflight-feedback"});}
-  override async *generateContentAsync(r:LlmRequest):AsyncGenerator<LlmResponse,void>{
-   requests.push(r);this.count++;
-   if(this.count===1){
-    yield {content:{role:"model",parts:[{functionCall:{id:"read",name:"read_file",
-     args:{branch:"main",path:FILE}}}]}};return;
-   }
-   yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}};
-  }
-  override connect(_r:LlmRequest):Promise<BaseLlmConnection>{return Promise.reject(Error("offline"));}
- }
- const observations:any[]=[];let attempts=0;
- const result=await new TrustedAdkReadOnlyPlanner({
-  ...cfg,model:new Retry(),maxProposalRevisions:1,maxModelTurns:4,
-  readPort:{async invoke(tool:string){return {provider:"gitea",performed:true,tool,
-   branch:"main",path:FILE,revision:SNAPSHOT.base_revision,content:"source"};}},
-  validateProposedPlan:()=>{if(++attempts===1)
-    throw Error("Pilot DAG preflight: PR must depend on final Runner");},
-  onObservation:o=>observations.push(o)
- }).propose();
- assert.equal(result.status,"unapproved_proposal");assert.equal(attempts,2);
- assert.deepEqual(observations.filter(o=>o.kind==="plan_rejection"),[
-  {kind:"plan_rejection",stage:"contract",reason:"execution_pr_before_runner"}]);
- const feedback=JSON.stringify(requests[2].contents.at(-1));
- assert.ok(feedback.includes("execution_pr_before_runner"));
- assert.ok(feedback.includes("create_pull_request Task transitively depend on the Test Task owning run_tests"));
- assert.ok(feedback.includes("no new authority"));
- assert.ok(!feedback.includes("PRIVATE_SOURCE_CONTENT"));
- assert.ok(!JSON.stringify(observations).includes("private"));
-});
-
-test("branch/PR narratives cannot contradict the trusted feature branch",()=>{
- const valid=draft();
- valid.tasks[0].description=
-  "Create feature/invoice-sort from the pinned main; do not merge";
- assert.doesNotThrow(()=>compilePlanningProposal(valid,cfg));
- const wrongBranch=draft();
- wrongBranch.tasks[0].description="Create feature/other-release instead";
- assert.throws(()=>compilePlanningProposal(wrongBranch,cfg),
-  /Task branch name conflicts with trusted work branch/);
- const wrongTitle=draft();
- wrongTitle.tasks[0].title="Create feature/other-release";
- assert.throws(()=>compilePlanningProposal(wrongTitle,cfg),
-  /Task branch name conflicts with trusted work branch/);
- const wrongPr=draft();
- wrongPr.tasks.push({
-  id:"pr",agent_id:"orchestrator",
-  title:"Open PR for review",
-  description:"Open PR from feature/other-release to main",
-  depends_on:["backend"],
-  permissions:[{operation:"create_pull_request",path:null,
-   reason:"Request a review only"}]
- });
- assert.throws(()=>compilePlanningProposal(wrongPr,cfg),
-  /Task branch name conflicts with trusted work branch/);
- wrongPr.tasks[2].description="Open PR from feature/invoice-sort to main";
- assert.doesNotThrow(()=>compilePlanningProposal(wrongPr,cfg));
-});
-
- test("shape diagnostics distinguish type and level without exposing model values",()=>{
- const cases:Array<[string,(d:any)=>unknown]>=[
- ["shape_proposal_object",()=>null],
- ["shape_proposal_fields",d=>({...d,PRIVATE_VALUE:"secret"})],
- ["shape_proposal_list",d=>({...d,assumptions:"PRIVATE_VALUE"})],
- ["shape_proposal_string",d=>({...d,assumptions:["x".repeat(401)]})],
- ["shape_task_object",d=>({...d,tasks:[null,d.tasks[1]]})],
- ["shape_task_fields",d=>{delete d.tasks[0].title;return d;}],
- ["shape_task_list",d=>{d.tasks[0].depends_on=["x","x"];return d;}],
- ["shape_task_string",d=>{d.tasks[0].description="x".repeat(1801);return d;}],
- ["shape_permission_object",d=>{d.tasks[0].permissions=[null];return d;}],
- ["shape_permission_fields",d=>{delete d.tasks[0].permissions[0].path;return d;}],
- ["shape_permission_string",d=>{d.tasks[0].permissions[0].reason="";return d;}]
- ];
- for(const [reason,mutate] of cases){
- assert.throws(()=>compilePlanningProposal(mutate(draft()),cfg),e=>{
- assert.equal(safePlanningRejection(e),reason);
- assert.ok(!String(e).includes("PRIVATE_VALUE"));return true;
- });
- }
- assert.doesNotThrow(()=>compilePlanningProposal(draft(),cfg));
- assert.equal(safePlanningRejection(Error("Unapproved Planning: shape_private_secret")),"contract_validation_other");
- });
 test("shape feedback reaches model and permits bounded same-session correction",async()=>{
  const requests:LlmRequest[]=[];
  class Retry extends BaseLlm{
@@ -956,59 +613,15 @@ test("shape feedback reaches model and permits bounded same-session correction",
   readPort:{async invoke(tool:string){return {provider:"gitea",performed:true,tool,
    branch:"main",path:FILE,revision:SNAPSHOT.base_revision,content:"source"};}},
   onObservation:o=>observations.push(o)
- }).propose();
- assert.equal(result.status,"unapproved_proposal");
+ }).proposeAuthority();
+ assert.equal(result.status,"unapproved_authority_proposal");
  assert.deepEqual(observations.filter(o=>o.kind==="plan_rejection"),[
-  {kind:"plan_rejection",stage:"contract",reason:"shape_proposal_list"}]);
+  {kind:"plan_rejection",stage:"contract",reason:"invalid_permissions"}]);
  const feedback=JSON.stringify(requests[2].contents.at(-1));
- assert.ok(feedback.includes("shape_proposal_list"));
- assert.ok(feedback.includes("Check the proposal structure: list"));
+ assert.ok(feedback.includes("invalid_permissions"));
  assert.ok(feedback.includes("no new authority"));
  assert.ok(!feedback.includes("PRIVATE_SOURCE_CONTENT"));
  assert.ok(!JSON.stringify(observations).includes("private"));
-});
-
-test("R160 generic Planner selects only Task-relevant specialists; pilot shape is explicit",async()=>{
- const port={async invoke(tool:string){
-  return {provider:"gitea",performed:true,tool,path:FILE,branch:"main",
-   revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
- }};
- const genericModel=new Scripted({branch:"main",path:FILE},draft());
- const generic=await new TrustedAdkReadOnlyPlanner({
-   ...cfg,model:genericModel,readPort:port
- }).propose();
- assert.deepEqual(generic.plan.candidate_agents.map(a=>a.agent_id),["backend"]);
- assert.deepEqual(generic.plan.tasks.map(a=>a.agent_id),["orchestrator","backend"]);
- const prompt=JSON.stringify(genericModel.requests[0]?.config?.systemInstruction??{});
- assert.match(prompt,/Select only the specialists needed by the requirement/);
- assert.doesNotMatch(prompt,/Include at least one Task for each Backend, Frontend and Test specialist/);
- const pilotModel=new Scripted({branch:"main",path:FILE},draft());
- await new TrustedAdkReadOnlyPlanner({
-  ...cfg,model:pilotModel,readPort:port,pilotFullDag:true
- }).propose();
- assert.match(JSON.stringify(pilotModel.requests[0]?.config?.systemInstruction??{}),
-   /Include at least one Task for each Backend, Frontend and Test specialist/);
- assert.throws(()=>new TrustedAdkReadOnlyPlanner({
-   ...cfg,model:pilotModel,readPort:port,pilotFullDag:"yes" as never
- }),/invalid trusted Planning config/);
-});
-
-test("R282 approved Backend and Frontend can propose new source files in trusted directories",()=>{
- for(const role of ["backend","frontend"] as const){
-  const d=draft();
-  d.tasks[1].agent_id=role;
-  d.tasks[1].permissions=[{operation:"create_file",
-    path:"src/billing/new-module.ts",reason:"Implement the approved module"}];
-  const result=compilePlanningProposal(d,cfg);
-  assert.equal(result.plan.requested_permissions[1].agent_id,role);
-  assert.equal(result.plan.requested_permissions[1].operation,"create_file");
-  validatePlan(result.plan,{allowedOperations:new Set(RUST_OPERATIONS)});
-  d.tasks[1].permissions[0].path="private/outside/new-module.ts";
-  assert.throws(()=>compilePlanningProposal(d,cfg),/authorized discovery directories/);
-  d.tasks[1].permissions[0].operation="run_tests";
-  d.tasks[1].permissions[0].path=null;
-  assert.throws(()=>compilePlanningProposal(d,cfg),/not supported for proposed Agent role/);
- }
 });
 
 test("R282 Planner really uses a host-only published approved-plan Agent Card FunctionTool",async()=>{
@@ -1038,11 +651,10 @@ test("R282 Planner really uses a host-only published approved-plan Agent Card Fu
    return {provider:"gitea",performed:true,tool,branch:"main",path:args.path,
     revision:SNAPSHOT.base_revision,content:"export const safe=true;"};
   }}
- }).propose();
- assert.equal(result.status,"unapproved_proposal");
+ }).proposeAuthority();
+ assert.equal(result.status,"unapproved_authority_proposal");
  assert.deepEqual(reads,["read_file"]);
  assert.equal(result.verified_source_reads,1);
- assert.equal(result.plan.candidate_agents[0].did,AGENTS.backend.did);
  const declarations=JSON.stringify(model.requests[0].config?.tools);
  assert.ok(declarations.includes("read_agent_card"));
  const next=JSON.stringify(model.requests[1].contents);
@@ -1051,43 +663,14 @@ test("R282 Planner really uses a host-only published approved-plan Agent Card Fu
  assert.ok(!next.includes("private_key"));
 });
 
-test("R401.2 Planner compiles dynamically registered Agent Cards but never creates authority",()=>{
- const docs={
-  did:"did:thesis:docs",card_ref:"trusted:docs",
-  capabilities:["read_file"] as const,
-  card:{name:"Documentation specialist",description:"Read authorized API docs",
-   skills:[{id:"documentation-review",name:"Review docs",
-    description:"Inspect the approved source"}]}
- };
- const d=draft();
- d.tasks[1]={id:"auditor",agent_id:"auditor",title:"Review invoice interface",
-  description:"Inspect the approved source only",depends_on:["branch"],
-  permissions:[{operation:"read_file",path:FILE,reason:"Review contract"}]};
- const result=compilePlanningProposal(d,{...cfg,agents:{auditor:docs}});
- assert.deepEqual(result.plan.candidate_agents,[{
-  agent_id:"auditor",did:docs.did,card_ref:docs.card_ref
- }]);
- assert.equal(result.plan.requested_permissions[1]?.operation,"read_file");
- assert.equal("authority" in result,false);
- const escalated=draft();
- escalated.tasks[1].agent_id="auditor";
- assert.throws(()=>compilePlanningProposal(escalated,{...cfg,agents:{auditor:docs}}),
-  /tool is not supported for proposed Agent role/u);
- assert.throws(()=>compilePlanningProposal(d,{...cfg,agents:{
-  auditor:{did:docs.did,card_ref:docs.card_ref,capabilities:["read_file"] as const}
- }}),/unverified registered Agent Card/u);
-});
-
 test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async()=>{
  const docs={did:"did:thesis:docs",card_ref:"trusted:docs",
   capabilities:["read_file"] as const,
   card:{name:"Documentation specialist",description:"Inspect authorized source",
    skills:[{id:"docs-review",name:"Review docs",description:"Inspect approved source"}]}
  };
- const proposal=draft();
- proposal.tasks[1]={id:"auditor",agent_id:"auditor",title:"Review existing API",
-  description:"Read the pinned source",depends_on:["branch"],
-  permissions:[{operation:"read_file",path:FILE,reason:"Review existing contract"}]};
+ const proposal={requested_permissions:[
+  {operation:"read_file",resource_type:"file",path:FILE}],assumptions:[],uncertainties:[]};
  class CardFirst extends BaseLlm {
   calls=0;requests:LlmRequest[]=[];
   constructor(){super({model:"r401-offline-card-discovery"});}
@@ -1117,8 +700,8 @@ test("R401.2 live ADK Planning reads a host-pinned extra specialist Card",async(
    return {provider:"gitea",performed:true,tool,branch:"main",
     path:FILE,revision:SNAPSHOT.base_revision,content:"export const sample = true;"};
   }}
- }).propose();
+ }).proposeAuthority();
  assert.equal(readCount,1);
- assert.equal(result.plan.candidate_agents[0]?.agent_id,"auditor");
+ assert.deepEqual(result.proposal.requested_permissions.map(p=>p.operation),["read_file"]);
  assert.ok(JSON.stringify(model.requests[0]?.config?.tools??[]).includes("auditor"));
 });

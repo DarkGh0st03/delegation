@@ -51,10 +51,5 @@ test('actual ADK read-only runner emits permission-only proposal with verified s
  const prompt=JSON.stringify(model.requests[0].config.systemInstruction);
  assert.match(prompt,/requested_permissions/);
  assert.doesNotMatch(prompt,/first Task creates a branch|Each Task has/);
- await assert.rejects(p.propose(),/already attempted/);
-});
-test('authority-only mode refuses legacy DAG hooks before any model call',async()=>{
- const model=new Scripted();
- await assert.rejects(planner(model,{pilotFullDag:true}).proposeAuthority(),/signed-DAG/);
- assert.equal(model.requests.length,0);
+ await assert.rejects(p.proposeAuthority(),/already attempted/);
 });
