@@ -200,6 +200,9 @@
         <input name="work_branch_prefix" readonly></label>
       <label class="switch"><input type="checkbox" name="allow_pull_request"><span></span>
         Consenti la creazione di una Draft PR</label>
+      <label class="field"><span>Profilo dei test <em>(JSON: immagine Docker del Runner, fasi in ordine con il loro
+        comando, cartelle e suffissi dei file di test. La sua impronta entra in ciò che firmi)</em></span>
+        <textarea name="project_profile" rows="10" spellcheck="false" class="mono"></textarea></label>
       <p class="note">Gli agenti non possono mai fare merge: il merge resta una tua decisione.</p>
       <p class="msg" id="policy-msg"></p>
       <div class="modal-foot">

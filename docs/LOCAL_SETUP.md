@@ -106,7 +106,7 @@ una sola pagina principale più una pagina per ogni sessione:
 |---|---|
 | Accesso | Password con hash scrypt, cookie `HttpOnly`/`SameSite=Strict`, blocco dopo 5 tentativi |
 | Home · Repository | Tabella delle repository (selezione con un clic, cestino per eliminarle da Gitea) e import **solo dal tuo account GitHub** (`GITHUB_OWNER` nel file `.env`; per le repository private un `GITHUB_TOKEN` di sola lettura, che resta nel server), con protezione del branch principale |
-| Home · Configura policy | Popup con le regole pubblicate su OPA e applicate dal Gateway: branch protetti, percorsi non modificabili, Draft PR consentita. Il branch di lavoro `feature/<sessione>` è fisso |
+| Home · Configura policy | Popup con le regole pubblicate su OPA e applicate dal Gateway (branch protetti, percorsi non modificabili, Draft PR consentita) e il profilo dei test del Runner in JSON. Il branch di lavoro `feature/<sessione>` è fisso |
 | Home · Prompt | Campo di testo in stile chat per il requisito in linguaggio naturale. Le sessioni usano Gemini: inviare il prompt avvia la sessione, con i limiti di chiamate e token |
 | Home · App (main) | Pulsante **Apri l'app ↗**: la versione di `main` pubblicata dal servizio di staging, con il commit attivo (`main @ abc1234`) e, durante un aggiornamento, "Build della nuova versione…". Si aggiorna da solo ogni 5 secondi. Per una repository nuova la console legge i suoi file e mostra **Pubblica l'app** se trova un'interfaccia web (un clic per confermare la proposta) oppure **Interfaccia non disponibile** (libreria, programma a riga di comando, solo API), con il motivo passando il mouse |
 | Home · Configura → App di prova | Come costruire e avviare l'app della repository: immagine Docker, comando di build, comando di avvio, porta. La console lo propone leggendo i file della repository; l'Engineer lo conferma. Non fa parte dei permessi degli agenti né della firma |
@@ -114,10 +114,10 @@ una sola pagina principale più una pagina per ogni sessione:
 | Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519, scheda della Draft PR, riepilogo, chiamate a Gemini, pulsante di stop |
 | Impostazioni (ingranaggio) | Stato dell'ambiente: Gitea, OPA, Anvil, contratti, moduli Rust, core dell'Engineer e verificatore del Gateway. Il pallino sull'ingranaggio è verde quando è tutto pronto |
 
-Il profilo dei test (immagine Docker, fasi, cartelle dei test) non si modifica
-dalla console: ogni repository parte dallo stesso modello npm (`npm ci`,
-`npm test`, test in `test/` o `tests/`); resta comunque legato alla firma
-dell'Engineer.
+Il profilo dei test (immagine Docker, fasi, cartelle dei test) si modifica in
+**Configura policy**, come JSON: ogni repository parte dallo stesso modello npm
+(`npm ci`, `npm test`, test in `test/` o `tests/`); il server lo valida e la sua
+impronta entra in ciò che l'Engineer firma.
 
 ### Come funziona una sessione
 
@@ -193,8 +193,8 @@ Limiti attuali, dichiarati:
 - dopo un riavvio dell'app le sessioni precedenti risultano "Non più attive",
   perché la blockchain locale riparte da zero;
 - il Runner esegue le fasi del profilo dei test della repository (modello npm:
-  `npm ci`, `npm test`) e il Test scrive solo nelle cartelle di test del
-  profilo; il profilo non si modifica ancora dalla console;
+  `npm ci`, `npm test`, se non lo cambi in Configura policy) e il Test scrive
+  solo nelle cartelle di test del profilo;
 - il servizio `runner` ha il socket Docker dell'host, che equivale a privilegi
   di root sull'host: è isolato nella rete interna, conosce solo un token Gitea
   di sola lettura e accetta richieste solo dal Gateway (token privato). I

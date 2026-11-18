@@ -164,6 +164,18 @@ test("policy and requirement are stored for the selected repository", async (t) 
   const weak = await call("PUT", `/api/repos/${REPO.name}/policy`, {cookie,
     body: {...policy, agents_may_merge: true}});
   assert.equal(weak.status, 400);
+  // The Engineer can set the repository's own test profile (validated).
+  const profile = {version: 1, image: "node:22.15.0-bookworm",
+    phases: [{name: "dependency_install", command: "npm ci"}, {name: "typecheck", command: "npm run typecheck"},
+      {name: "backend_tests", command: "npx vitest run tests/backend", failure_report: "vitest"}],
+    test_sources: {roots: ["tests/backend"], suffixes: [".test.ts"]}};
+  assert.equal((await call("PUT", `/api/repos/${REPO.name}/policy`, {cookie,
+    body: {...policy, project_profile: profile}})).status, 200);
+  const withProfile = await (await call("GET", `/api/repos/${REPO.name}`, {cookie})).json();
+  assert.deepEqual(withProfile.policy.project_profile.phases.map(p => p.name),
+    ["dependency_install", "typecheck", "backend_tests"]);
+  assert.equal((await call("PUT", `/api/repos/${REPO.name}/policy`, {cookie,
+    body: {...policy, project_profile: {...profile, image: "node:latest"}}})).status, 400);
 
   const created = await call("POST", "/api/requests", {cookie,
     body: {repository: REPO.name, requirement: "  Allow an admin to suspend users.  "}});

@@ -420,7 +420,7 @@ $("composer").addEventListener("submit", async (event) => {
 });
 
 // =====================================================================
-// Policy dialog (OPA rules only; the project test profile is kept as is)
+// Policy dialog (OPA rules + the project test profile used by the Runner)
 // =====================================================================
 function openPolicy(section) {
   if (!selectedRepo) return;
@@ -433,20 +433,24 @@ function openPolicy(section) {
   f.forbidden_path_prefixes.value = p.forbidden_path_prefixes.join("\n");
   f.work_branch_prefix.value = p.work_branch_prefix + "<sessione>";
   f.allow_pull_request.checked = p.allow_pull_request;
+  f.project_profile.value = JSON.stringify(p.project_profile, null, 2);
   message("policy-msg", "");
   if (!$("policy-dialog").open) $("policy-dialog").showModal();
 }
 $("policy-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const f = event.target.elements, r = selectedRepo.repository, p = selectedRepo.policy;
+  let profile;
+  try { profile = JSON.parse(f.project_profile.value); }
+  catch { message("policy-msg", "Profilo dei test: JSON non valido.", "error"); return; }
   try {
     selectedRepo = await api("PUT", "/api/repos/" + encodeURIComponent(r.name) + "/policy", {
       version: 2, repository: {owner: r.owner, name: r.name}, base_branch: p.base_branch ?? r.default_branch,
       protected_branches: lines(f.protected_branches.value),
       work_branch_prefix: p.work_branch_prefix,
       forbidden_path_prefixes: lines(f.forbidden_path_prefixes.value),
-      // Not edited here: kept exactly as the repository's current profile.
-      project_profile: p.project_profile,
+      // Validated by the server (fixed schema, explicit image version).
+      project_profile: profile,
       allow_pull_request: f.allow_pull_request.checked,
       agents_may_merge: false
     });
