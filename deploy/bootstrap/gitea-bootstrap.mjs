@@ -64,14 +64,12 @@ if (REPO && cfg.GITEA_SOURCE_REPO) {
     mainSha = branch.json?.commit?.id;
     if (!mainSha) await sleep(2000);
   }
-  // A fresh import must be exactly the pinned baseline. Later, main moves on
-  // only through pull requests the Engineer merged: the baseline must still
-  // be in its history (it is not replaced or force-pushed).
+  // main must be the pinned baseline or descend from it: it moves on through
+  // merged pull requests, or the source repository gained commits on top of
+  // the baseline (it is never replaced or force-pushed).
   if (!cfg.GITEA_BASELINE_SHA) {
     console.log("Initial repository main:", mainSha);
-  } else if (imported || mainSha === cfg.GITEA_BASELINE_SHA) {
-    if (mainSha !== cfg.GITEA_BASELINE_SHA)
-      throw Error(`Imported main is ${mainSha}, expected pinned baseline ${cfg.GITEA_BASELINE_SHA}`);
+  } else if (mainSha === cfg.GITEA_BASELINE_SHA) {
     console.log("Baseline verified:", mainSha);
   } else {
     let found = false;
@@ -83,7 +81,7 @@ if (REPO && cfg.GITEA_SOURCE_REPO) {
     }
     if (!found)
       throw Error(`main (${mainSha}) does not descend from the pinned baseline ${cfg.GITEA_BASELINE_SHA}`);
-    console.log(`main is ${mainSha}: merged work on top of the pinned baseline (kept).`);
+    console.log(`main is ${mainSha}${imported ? " (imported)" : ""}: on top of the pinned baseline.`);
   }
 
   if ((await call("GET", `${repoPath}/branch_protections/main`, {ok: [200, 404]})).status === 404) {
