@@ -416,7 +416,10 @@ export class EngineerSessions {
     session.gateway_decisions.push({at: event.timestamp, agent: event.agent_role,
       tool: event.tool, resource: event.resource_uri, decision: event.decision,
       reason: event.reason ?? null, detail, verification_ms: event.verification_ms, opa_ms: event.opa_ms});
-    if (detail) session.log.push({at: new Date().toISOString(),
+    // Tests that ran and failed are an outcome, not a Gateway error.
+    if (event.reason === "tests_failed") session.log.push({at: new Date().toISOString(),
+      text: `Gateway: ${event.tool} di ${event.agent_role} autorizzato, test non superati (FAIL verificato del Runner)`});
+    else if (detail) session.log.push({at: new Date().toISOString(),
       text: `Gateway: ${event.tool} di ${event.agent_role} non riuscito: ${detail}`});
   }
 

@@ -31,6 +31,15 @@ import type {
 function deny(reason:string):never{
  throw Error("Trusted authority-only Docker Runner NO-GO: "+reason);
 }
+/** The project tests ran on the exact signed HEAD and failed, as reported
+ * by the authenticated Runner. An expected outcome, not an outage: it never
+ * completes the Task and never authorizes anything. */
+export class AuthenticatedRunnerFailure extends Error{
+ constructor(){
+  super("Trusted authority-only Docker Runner NO-GO: authenticated Runner FAIL: Task incomplete; D1 gate not armed");
+  this.name="AuthenticatedRunnerFailure";
+ }
+}
 const BINDING=[
  "session_id","authority_digest","root_credential_id","task_id",
  "runtime_task_id","epoch","agent_did","credential_id",
@@ -156,7 +165,7 @@ export class TrustedAuthorityOnlyRunnerExecutor{
         observed.recovery_authorized!==false)
       deny("independent Runner FAIL observation differs from original Task");
     }
-    deny("authenticated Runner FAIL: Task incomplete; D1 gate not armed");
+    throw new AuthenticatedRunnerFailure();
    }
    // The controller already checks the exact request response fields.
    // The publisher validates every profile phase, result provenance and

@@ -5,7 +5,7 @@ import {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
 import {TrustedAuthorityOnlyGiteaCreateExecutor}
  from "./trusted-authority-only-create-executor.ts";
-import {TrustedAuthorityOnlyRunnerExecutor}
+import {TrustedAuthorityOnlyRunnerExecutor,AuthenticatedRunnerFailure}
  from "./trusted-authority-only-runner-executor.ts";
 import {TrustedAuthorityOnlyPullRequestExecutor}
  from "./trusted-authority-only-pull-request-executor.ts";
@@ -562,6 +562,13 @@ export async function executeAuthorization(
       throw new GatewayError(503, "provider_unavailable", error.message);
     }
 
+    if (error instanceof AuthenticatedRunnerFailure) {
+      // Same HTTP contract as any provider failure; only the wording says
+      // what happened: the tests ran and failed on the signed HEAD.
+      dependencies.audit.emit({ ...common, reason: "tests_failed" });
+      throw new GatewayError(503, "provider_unavailable",
+        "Project tests ran on the exact branch HEAD and failed (authenticated Runner FAIL); the Orchestrator receives the verified failure details");
+    }
     dependencies.audit.emit({ ...common, reason: "provider_unavailable" });
     throw new GatewayError(503, "provider_unavailable", "Protected provider failed");
   }

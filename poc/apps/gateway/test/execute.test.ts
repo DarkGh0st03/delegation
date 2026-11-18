@@ -8,6 +8,7 @@ import {
   VerificationUnavailableError
 } from "../src/errors.ts";
 import { executeAuthorization } from "../src/execute.ts";
+import { AuthenticatedRunnerFailure } from "../src/trusted-authority-only-runner-executor.ts";
 import { MockExecutor } from "./fixtures/mock-executor.ts";
 import {
   InMemoryAuditSink,
@@ -314,6 +315,30 @@ test("provider outage is reported after authorization and preserves policy allow
   }
 });
 
+
+test("an authenticated Runner FAIL keeps the 503 contract but says the tests failed", async () => {
+  const { store, audit, response, now } = prepared();
+  const executor: ExecutionPort = {
+    provider: "gitea",
+    async execute() { throw new AuthenticatedRunnerFailure(); }
+  };
+  await assert.rejects(
+    executeAuthorization(
+      { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+      deps(store, audit, new SuccessVerifier(), new FixedPolicy(), executor, now)
+    ),
+    (error: unknown) =>
+      error instanceof Error && (error as { code?: string }).code === "provider_unavailable" &&
+      (error as { statusCode?: number; status?: number }).statusCode !== 200 &&
+      /tests ran .* and failed/u.test(error.message) && !/Protected provider failed/u.test(error.message)
+  );
+  const event = audit.events.at(-1);
+  assert.equal(event?.event, "authorization_executed");
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.decision, "allow");
+    assert.equal(event.reason, "tests_failed");
+  }
+});
 
 test("provider conflict is returned after authorization as a structured 409", async () => {
   const { store, audit, response, now } = prepared();

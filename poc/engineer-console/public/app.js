@@ -610,7 +610,7 @@ function feedEvents(s) {
   });
   s.gateway_decisions.forEach((d, i) => {
     const r = describeResource(d.resource);
-    const runnerFail = d.decision === "allow" && /provider_unavailable/u.test(d.reason || "");
+    const runnerFail = d.decision === "allow" && /tests_failed|provider_unavailable/u.test(d.reason || "");
     events.push({key: "g" + i, at: d.at, kind: d.decision !== "allow" ? "fail denied" : runnerFail ? "warn gw" : "gw",
       role: d.agent, op: d.tool, path: r.path,
       verdict: d.decision !== "allow" ? "negata dal Gateway" : runnerFail ? "eseguita: test non superati" : "consentita"});
@@ -710,7 +710,9 @@ function renderGateway(s) {
     tr.appendChild(el("td", "", time(d.at))); tr.appendChild(el("td", "", d.agent)); tr.appendChild(el("td", "", d.tool));
     tr.appendChild(el("td", "", (r.branch ? r.branch + ": " : "") + r.path));
     tr.appendChild(el("td", d.decision === "allow" ? "allow" : "deny", d.decision === "allow" ? "consentita" : "negata"));
-    tr.appendChild(el("td", "", (d.reason || "") + (d.detail ? " — " + d.detail : "")));
+    tr.appendChild(el("td", "", d.reason === "tests_failed"
+      ? "test eseguiti sul commit del branch, non superati (FAIL verificato del Runner)"
+      : (d.reason || "") + (d.detail ? " — " + d.detail : "")));
     rows.appendChild(tr);
   }
 }
