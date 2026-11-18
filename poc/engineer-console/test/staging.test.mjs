@@ -405,3 +405,45 @@ test("deployer: Gitea briefly unreachable never marks the running app as failed,
   assert.equal(entry.failed_sha, null);
   assert.equal(world.calls.filter((c, i) => i >= before && /^(create|run|commit)/u.test(c)).length, 0);
 });
+
+test("deployer: an archive download that fails because Gitea is not ready is retried, not pinned as failed", async (t) => {
+  const dir = tempDir(t), world = fakeWorld();
+  new StagingStore(dir).save("greeter", PROFILE);
+  let archiveDown = true;
+  const fetchFn = async (url, init) => {
+    if (archiveDown && url.includes("/archive/")) throw new TypeError("fetch failed");
+    return world.fetchFn(url, init);
+  };
+  const deployer = new StagingDeployer({stagingDir: dir, gitea: {baseUrl: "http://gitea:3000", org: "thesis", token: "deploy-token"},
+    docker: world.docker, fetchFn, log: () => {}, readyTimeoutMs: 50, sleep: async () => {}});
+  await deployer.tick();
+  let entry = deployer.status.repositories.greeter;
+  assert.notEqual(entry.state, "failed");
+  assert.equal(entry.failed_sha ?? null, null);
+  archiveDown = false;
+  await deployer.tick();
+  entry = deployer.status.repositories.greeter;
+  assert.equal(entry.state, "running");
+  assert.equal(entry.live_sha, SHA1);
+});
+
+test("deployer: after a stack restart the version recorded as failed is restarted and reported as running", async (t) => {
+  const dir = tempDir(t), world = fakeWorld();
+  new StagingStore(dir).save("greeter", PROFILE);
+  const make = () => new StagingDeployer({stagingDir: dir, gitea: {baseUrl: "http://gitea:3000", org: "thesis", token: "deploy-token"},
+    docker: world.docker, fetchFn: world.fetchFn, log: () => {}, readyTimeoutMs: 50, sleep: async () => {}});
+  await make().tick();
+  // Stack stopped (app container removed) with a stale failure for this main.
+  world.containers.delete("delegation-staging-greeter");
+  const status = JSON.parse(readFileSync(join(dir, "status.json"), "utf8"));
+  Object.assign(status.repositories.greeter, {state: "failed", message: "fetch failed",
+    failed_sha: SHA1, failed_profile_sha256: status.repositories.greeter.profile_sha256,
+    failed_at: new Date(Date.now() + 60_000).toISOString()});
+  writeFileSync(join(dir, "status.json"), JSON.stringify(status));
+  const restarted = make();
+  await restarted.tick();
+  const entry = restarted.status.repositories.greeter;
+  assert.equal(world.containers.get("delegation-staging-greeter")?.running, true);
+  assert.equal(entry.state, "running");
+  assert.equal(entry.failed_sha, null);
+});

@@ -191,8 +191,15 @@ export class StagingDeployer {
     // (saving the profile again in the console is the explicit retry).
     const retryRequested = (this.#store.savedAt(name) || "") > (entry.failed_at || "");
     if (entry.failed_sha === sha && entry.failed_profile_sha256 === digest && !retryRequested) {
-      if (!container.running && entry.live_image && await this.#imageExists(entry.live_image))
+      if (!container.running && entry.live_image && await this.#imageExists(entry.live_image)) {
         await this.#run(name, entry.live_image, entry.live_sha, profile);
+        // The restarted version answers: report it (and, if it is this very
+        // main, the recorded failure no longer applies).
+        if (await this.#ready(name, profile))
+          this.#set(name, {state: "running", log: null,
+            message: "Versione " + String(entry.live_sha).slice(0, 7) + " attiva",
+            ...(entry.live_sha === sha ? {failed_sha: null, failed_profile_sha256: null} : {})});
+      }
       return;
     }
     // Same version, container gone (stack restarted): start the built image.
@@ -273,6 +280,13 @@ export class StagingDeployer {
       this.#set(name, {state: "failed", failed_sha: sha, failed_profile_sha256: digest,
         failed_at: this.#now().toISOString(), message, log: logs, ...(previous.image ? {} : {live_sha: null})});
     } catch (error) {
+      if (error.transient) {
+        // Gitea briefly unreachable: not a failure of this version, retried
+        // at the next pass; the running version (if any) is untouched.
+        this.#set(name, {state: entry.live_sha ? "running" : "waiting", message: error.message});
+        this.#log(`[${name}] ${error.message}`);
+        return;
+      }
       this.#set(name, {state: "failed", failed_sha: sha, failed_profile_sha256: digest,
         failed_at: this.#now().toISOString(), message: error.message, log: error.output ?? null});
       this.#log(`[${name}] ${error.message}`);
