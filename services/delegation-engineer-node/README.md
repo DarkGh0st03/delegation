@@ -1,39 +1,32 @@
-# Direct Software Engineer → Core Rust (R225)
+# Engineer core and role wallets (Node-API addon)
 
-This crate is the new **trusted Engineer in-process Rust Node-API module**.
-It is an alternative to the historical Engineer → Unix socket → Rust
-Adapter process route. It is **not** a second issuer: the Rust
-`CryptoRuntime` itself is instantiated **only once**, inside the same OS
-process as the protected Engineer host, on a dedicated Rust thread.
+Node-API addon (`delegation-engineer.node`) that runs the Rust
+`CryptoRuntime` of `services/delegation-adapter` inside trusted Node
+processes started by the Engineer console. It exposes two entry points:
+
+| Function | Process | Holds | Serves |
+|---|---|---|---|
+| `start_engineer_core()` | Engineer core | Engineer key, platform governance key | in-process Root issuance and revocation; Gateway read-only inspection (`read_issued_root`, `read_credential_status`) on a private socket |
+| `start_role_wallet()` | one per role (Orchestrator, each specialist) | only that role's key | Child DC issuance (Orchestrator only) and the role's own VPs on its private socket |
 
 ```text
-Software Engineer (trusted Node host)
-  └── direct Node-API binding (.node)
-        └── ONE Rust CryptoRuntime [keys / parent DCs / status / EVM]
-              └── authenticated Unix socket, delegated commands ONLY
-                   ├── Orchestrator issue_child
-                   └── Orchestrator / Backend / Frontend / Test create_presentation
-
-Cloud Access Gateway
-  └── separate PUBLIC-ONLY native Rust verifier (delegation-core-node)
-       └── DID / EVM / signed status / accumulator verification
+Engineer console (trusted)
+ ├── Engineer core ── Root issue/revoke (in-process, never via socket)
+ ├── wallet: Orchestrator ── issue_child, create_presentation
+ ├── wallet: backend / frontend / test / ... ── create_presentation
+Gateway
+ └── delegation-core-node (public-only verifier: DID, EVM, status, accumulators)
 ```
 
-Root issuance and confirmed revocation call the addon *in-process*;
-there is no adapter HTTP request, intermediary Unix socket, MCP Server
-or model-visible issuance tool between Engineer and Core Rust. The socket
-owned by this process refuses `issue_root` and `revoke_root` even when
-an Engineer bearer is supplied, and is only for authenticated Child/VP
-commands. This preserves a single status/issuer authority, including
-in-memory parent credential lookup for signed Child DCs.
+Private keys never leave the Rust runtime of their process. Sockets are
+created by the trusted owner with mode 0600 and accept one bounded,
+token-authenticated request per connection. They are not MCP, A2A or
+model-visible tools. A socket refuses `issue_root` and Root revocation
+even with the Engineer token.
 
-The owner native bridge reuses the **existing** `delegation-adapter`
-Rust library's `CryptoRuntime`, permission model and EVM publisher. It
-does NOT construct an independent Core implementation or copy private
-key state into JavaScript. The `delegation-adapter` **HTTP executable is
-not part of this new deployment**.
+## Build
 
-## Build and package (Linux, Rust 1.99 / Node 22.15)
+Built inside the Docker image (`deploy/Dockerfile`). Manual Linux build:
 
 ```sh
 cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
@@ -42,72 +35,26 @@ cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.
   poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
 ```
 
-Set `ENGINEER_CORE_NATIVE_MODE=1` **only** on the protected Software
-Engineer Node process. Configure `ADAPTER_ENGINEER_NATIVE_SOCKET` to a
-fresh, absolute, private local socket path, and provide the existing
-trusted Rust caller identities/tokens and `ADAPTER_TRUST_PROFILE` and
-EVM private/public configuration to this same process. Agents and
-Orchestrator use only the private socket, and the Gateway its
-`delegation-core-node` public-only addon.
+## Configuration
 
-Never start the old Rust Adapter HTTP process with a competing
-`CryptoRuntime` at the same time. An existing native socket prevents
-this addon from initializing a duplicate publisher at that pathname.
-The protected deployment must also remove the old HTTP Adapter
-service from its process-supervision configuration. There is no HTTP
-fallback in `ENGINEER_CORE_NATIVE_MODE=1`.
+The console builds each process environment in
+`poc/engineer-console/src/trusted-core.mjs`:
 
-## Validation boundary
+- Engineer core: `ENGINEER_CORE_NATIVE_MODE=1`,
+  `ADAPTER_SIGNING_ROLE=engineer`, `ADAPTER_ENGINEER_NATIVE_SOCKET`, the
+  Engineer and Gateway caller tokens, the governance and Engineer EVM keys;
+- each wallet: `ADAPTER_SIGNING_ROLE=<role>`, `DELEGATION_WALLET_SOCKET`,
+  that role's caller token and EVM key only.
 
-`.github/workflows/engineer-direct-native-contract.yml` is an explicitly
-requested, **zero-model-billing** gate. It compiles this actual .node
-module and checks native Engineer Root → same Rust Child DC →
-native Backend VP → direct Engineer revocation, including denial of a
-root issued from the delegated socket. No fake cryptographic JS signer
-is involved.
+Both receive the public chain configuration (RPC URL, registry
+addresses, DID scripts, `ADAPTER_PUBLIC_ARTIFACT_DIR`).
 
-The tests in `trusted-engineer-crypto-port.test.ts` use an injected
-binding *only to test* Node input pinning, response shape, error
-redaction, and the no-fallback boundary. They are **not** proof of Rust
-cryptography or EVM integration.
+## Tests
 
-The new addon must pass this native gate and a real EVM/Gitea/Docker
-signed DAG with the old Adapter process disabled before the project
-can switch its default deployment from socket-issuer to direct Engineer
-binding, retire the Adapter HTTP executable, or claim migration
-complete.
+```sh
+cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --locked
+```
 
-## R231 — authenticated Gateway read-only issuer inspection
-
-The Engineer-owned Rust process now exposes two additional **read-only**
-operations on the **same local native Unix socket**:
-`read_issued_root` and `read_credential_status`. Both are restricted
-by Rust to an authenticated **Gateway** caller with
-`VerifyPresentation` capability. The Rust implementation reads its
-existing credential registry and, in EVM mode, verifies the current
-anchored signed Status List JWT; it does **not** duplicate signing
-material or create a second issuer.
-
-`TrustedGatewayNativeRootStatusReader` uses that socket instead of
-the Adapter HTTP endpoints when `ENGINEER_CORE_NATIVE_MODE=1`.
-It rejects an absent native socket, a request to install an HTTP
-`fetchFn` fallback alongside native mode, malformed records and
-revoked/unanchored status. In the current implementation it internally
-wraps the native result as a `Response` to reuse the preexisting
-root/status JSON validation. That is an **in-process JS object**, not
-an HTTP request.
-
-**Important distinction:** the direct public-only Gateway Rust addon
-remains responsible for cryptographically verifying signed VP, DID,
-EVM accumulators and live status. The new read-only issuer socket is
-strictly an *additional issuer-inventory corroboration* used by the
-signed planning/owner gate. It must never be substituted for VP
-verification or OPA/Task authorization.
-
-The new in-memory Rust smoke tests native root issuance, Gateway-only
-root inspection and observable revocation; separate Gateway Node
-tests exercise the EVM-anchored record *shape and fail-closed
-transport semantics* with a synthetic native responder. An actual
-EVM-anchored Engineer-owned source + live signed DAG with **no Adapter
-HTTP process** remains a future CI gate. No independent EVM success is
-claimed by the synthetic fixture.
+The Node tests in `poc/packages/orchestrator-runtime/test/trusted-engineer-*.test.ts`
+inject a binding to test input pinning, response shapes and error
+redaction only; they are not evidence of Rust cryptography.

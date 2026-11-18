@@ -1,4 +1,4 @@
-# Native Gateway → Core Rust verifier (Fase 8C)
+# Gateway verifier (Node-API addon)
 
 This package builds a **Node-API (.node) addon** for the Gateway. It links
 directly to the existing `delegation` Core Rust crate and calls its
@@ -8,12 +8,12 @@ private-key code**.
 
 ## Deployment model
 
-The existing Gateway defaults to `GATEWAY_VERIFIER_MODE=adapter`.
-The optional `core-rust` mode requires an operator-built native addon at
-`poc/apps/gateway/src/native/delegation-core.node`, installed on the same
-OS/architecture/Node-API compatible runtime as the Gateway.
+The Gateway always verifies VPs with this addon
+(the console sets `verifier_mode: "core-rust"`); there is no other verifier. The
+addon is built into the Docker image (`deploy/Dockerfile`) at
+`poc/apps/gateway/src/native/delegation-core.node`.
 
-Linux build (Rust 1.99, Node 22.15):
+Manual Linux build:
 
 ```sh
 cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
@@ -25,7 +25,6 @@ cp services/delegation-core-node/target/release/libdelegation_core_node.so \
 **Required public-only configuration for the Gateway runtime:**
 
 ```sh
-GATEWAY_VERIFIER_MODE=core-rust
 CORE_RUST_RPC_URL=http://anvil:8545
 CORE_RUST_CHAIN_ID=31337
 CORE_RUST_DID_REGISTRY_ADDRESS=<deployed public contract address>
@@ -36,15 +35,15 @@ CORE_RUST_DID_RESOLVER_SCRIPT=blockchain/did-client/resolve-did-json.mjs
 ```
 
 The shared artifact tree must already exist and contain the `accumulators`
-and `status-lists` directories populated by the **EVM Adapter**
+and `status-lists` directories populated by the Engineer core and the role wallets
 (`ADAPTER_PUBLIC_ARTIFACT_DIR`). Mount the same directory **read-only**
 inside the Gateway. It is never populated with private issuer keys or
 signed VP JWTs. The DID resolver script must be installed and have its
 JavaScript dependencies, and RPC/registry information must point to the
-same EVM chain as the Adapter.
+same EVM chain as the issuers.
 
 The addon validates the source configuration and connects to the EVM
-chain at Gateway startup. It does not silently fall back to the Adapter.
+chain at Gateway startup. It has no fallback verifier.
 Each verification runs as an N-API worker pool task, creates its own Core
 Rust trust and status resolvers, and checks:
 
@@ -60,18 +59,12 @@ itself.
 
 ## Tests and limitations
 
-`Native Gateway to Core Rust (Offline)` CI builds the real addon, loads it
-in Node, exercises malformed input and missing RPC/public sources,
-then re-runs Gateway regression tests with the native module present.
-A separate disposable Anvil/OPA workflow
-[GitHub Actions #39576496255](https://github.com/DarkGh0st03/delegation/actions/runs/39576496255)
-now demonstrates a **successful real signed VP** against the native
-Gateway and current EVM evidence. It also denies wrong challenge,
-replay and a credential revoked after presentation creation.
-Only a `mock` provider was used, so this proves the cryptographic
-authorization and OPA path rather than a real Gitea/Runner workflow.
-The default mode remains `adapter` pending complete workflow
-integration and concurrency hardening. No Gemini paid calls are made.
+```sh
+cargo test --manifest-path services/delegation-core-node/Cargo.toml --locked
+```
+
+The full signed-VP path (real VP, EVM status, wrong challenge, replay
+and revocation denial) is exercised by the local Docker deployment.
 
 The Node-API worker pool prevents blocking the main JavaScript loop but
 uses blocking I/O inside Rust, and per-verification DID and EVM RPC calls

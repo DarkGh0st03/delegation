@@ -325,19 +325,6 @@ impl CallerRegistry {
     }
 }
 
-pub fn bearer_token(header_value: &str) -> Result<&str, String> {
-    let value = header_value.trim();
-    let token = value
-        .strip_prefix("Bearer ")
-        .ok_or_else(|| String::from("Authorization header must use Bearer authentication"))?;
-
-    if token.trim().is_empty() {
-        return Err(String::from("Bearer token cannot be empty"));
-    }
-
-    Ok(token)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,13 +400,6 @@ mod tests {
         ]);
 
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn parses_bearer_header() {
-        assert_eq!(bearer_token("Bearer abc").unwrap(), "abc");
-        assert!(bearer_token("Basic abc").is_err());
-        assert!(bearer_token("Bearer ").is_err());
     }
 }
 
