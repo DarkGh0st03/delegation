@@ -13,9 +13,9 @@ and private per-role wallets for Child DCs and VPs.
 
 **Status:** Accepted
 
-The Rust authorization framework and the runtime integration share one Git history. The protected application remains the separate repository `iam-console-poc`.
+The Rust authorization framework and the runtime integration share one Git history. Protected applications are separate repositories, imported into the local Gitea from the Engineer's GitHub account; none is part of this repository.
 
-Integration code lives under `poc/`; the Rust bridge lives under `services/delegation-adapter/`.
+Integration code lives under `poc/`; the Rust bridge lives under `services/` (`delegation-adapter` library, `delegation-engineer-node` and `delegation-core-node` Node-API addons).
 
 ## ADR-002 — Build authorization boundaries before A2A and LLM behavior
 
@@ -75,7 +75,7 @@ The file-level permission matrix is not duplicated in Rego.
 
 The Test Agent may modify project tests, but it cannot modify the independent acceptance suite used as experimental evidence.
 
-The Controlled Test Runner executes both project tests and researcher-owned tests under `poc/runner/acceptance/`.
+The Controlled Test Runner executed both project tests and researcher-owned tests. The acceptance suite and its failure catalog have since been removed from the code.
 
 No LLM-controlled arbitrary shell is exposed.
 

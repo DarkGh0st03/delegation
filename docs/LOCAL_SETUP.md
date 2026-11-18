@@ -13,7 +13,11 @@ cp .env.example .env
 ```
 
 Apri `.env` e scegli la password dell'Engineer (`ENGINEER_PASSWORD`, almeno 8
-caratteri). Il file resta sul tuo computer: è escluso da Git.
+caratteri) e il tuo account GitHub (`GITHUB_OWNER`), l'unico da cui la console
+importa repository. Facoltativo: `INITIAL_REPOSITORY_URL`
+(`https://github.com/<account>/<nome>`, ed eventualmente `INITIAL_REPOSITORY_SHA`)
+fa importare quella repository già al primo avvio. Il file resta sul tuo
+computer: è escluso da Git.
 
 ```bash
 docker compose up -d --build
@@ -44,9 +48,10 @@ docker compose up
  │   │                   (password di servizio casuali, login Engineer da .env)
  │   ├─ gitea-users      crea gli account Gitea (admin, gateway, runner,
  │   │                   staging-deployer)
- │   ├─ gitea-bootstrap  importa iam-console-poc al commit fissato (ai riavvii
- │   │                   accetta main avanzato dai tuoi merge), protegge main,
- │   │                   assegna i permessi, crea i token di servizio
+ │   ├─ gitea-bootstrap  crea l'organizzazione e i token di servizio; se è
+ │   │                   impostata INITIAL_REPOSITORY_URL importa quella
+ │   │                   repository (al commit fissato, se indicato), protegge
+ │   │                   main e assegna i permessi
  │   └─ trust-bootstrap  registra i contratti DID/Trust/Issuer su Anvil
  │
  ├─ infrastruttura
@@ -104,15 +109,15 @@ una sola pagina principale più una pagina per ogni sessione:
 | Home · Configura policy | Popup con le regole pubblicate su OPA e applicate dal Gateway: branch protetti, percorsi non modificabili, Draft PR consentita. Il branch di lavoro `feature/<sessione>` è fisso |
 | Home · Prompt | Campo di testo in stile chat per il requisito in linguaggio naturale. Le sessioni usano Gemini: inviare il prompt avvia la sessione, con i limiti di chiamate e token |
 | Home · App (main) | Pulsante **Apri l'app ↗**: la versione di `main` pubblicata dal servizio di staging, con il commit attivo (`main @ abc1234`) e, durante un aggiornamento, "Build della nuova versione…". Si aggiorna da solo ogni 5 secondi. Per una repository nuova la console legge i suoi file e mostra **Pubblica l'app** se trova un'interfaccia web (un clic per confermare la proposta) oppure **Interfaccia non disponibile** (libreria, programma a riga di comando, solo API), con il motivo passando il mouse |
-| Home · Configura → App di prova | Come costruire e avviare l'app della repository: immagine Docker, comando di build, comando di avvio, porta. Per `iam-console-poc` è già impostato. Non fa parte dei permessi degli agenti né della firma |
+| Home · Configura → App di prova | Come costruire e avviare l'app della repository: immagine Docker, comando di build, comando di avvio, porta. La console lo propone leggendo i file della repository; l'Engineer lo conferma. Non fa parte dei permessi degli agenti né della firma |
 | Home · Sessioni recenti | Elenco delle sessioni con stato e numero della Draft PR. Le vecchie si archiviano (non si cancellano) con `docker compose exec app node poc/engineer-console/scripts/archive-sessions.mjs --keep 2` |
 | Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519, scheda della Draft PR, riepilogo, chiamate a Gemini, pulsante di stop |
 | Impostazioni (ingranaggio) | Stato dell'ambiente: Gitea, OPA, Anvil, contratti, moduli Rust, core dell'Engineer e verificatore del Gateway. Il pallino sull'ingranaggio è verde quando è tutto pronto |
 
 Il profilo dei test (immagine Docker, fasi, cartelle dei test) non si modifica
-dalla console: per l'esempio è quello noto di `iam-console-poc`, per le altre
-repository un modello npm (`npm ci`, `npm test`); resta comunque legato alla
-firma dell'Engineer.
+dalla console: ogni repository parte dallo stesso modello npm (`npm ci`,
+`npm test`, test in `test/` o `tests/`); resta comunque legato alla firma
+dell'Engineer.
 
 ### Come funziona una sessione
 
@@ -187,10 +192,9 @@ Limiti attuali, dichiarati:
   canonico (il popup della policy non permette altri prefissi);
 - dopo un riavvio dell'app le sessioni precedenti risultano "Non più attive",
   perché la blockchain locale riparte da zero;
-- il Runner esegue i comandi di test del progetto `iam-console-poc` (`npm ci`,
-  typecheck, `tests/backend`, `tests/frontend`, build, e2e) e il Test scrive
-  solo in `tests/backend` e `tests/frontend`: altre repository richiedono di
-  rendere configurabili questi due elementi (prossimo passo);
+- il Runner esegue le fasi del profilo dei test della repository (modello npm:
+  `npm ci`, `npm test`) e il Test scrive solo nelle cartelle di test del
+  profilo; il profilo non si modifica ancora dalla console;
 - il servizio `runner` ha il socket Docker dell'host, che equivale a privilegi
   di root sull'host: è isolato nella rete interna, conosce solo un token Gitea
   di sola lettura e accetta richieste solo dal Gateway (token privato). I
@@ -204,8 +208,8 @@ documentazione), **Data** (file di dati, seed, schemi, migrazioni) e **DevOps**
 (Dockerfile, CI, configurazione di build). Ognuno ha la sua identità sulla
 blockchain, il suo wallet e la sua Agent Card. L'Orchestrator vede la
 specializzazione di ciascuno e assegna ogni file all'agente adatto,
-coinvolgendo solo quelli che servono: su `iam-console-poc` bastano Backend,
-Frontend e Test.
+coinvolgendo solo quelli che servono: per una web app con solo codice server e
+interfaccia bastano Backend, Frontend e Test.
 
 Per vederli al lavoro ci sono due progetti di esempio, ciascuno nella sua
 repository GitHub: **campus-library**
@@ -242,7 +246,7 @@ che **tu** hai fatto il merge di una PR in Gitea):
    L'errore (con le ultime righe del log) compare passando il mouse sullo stato
    nella home e nella finestra Configura; "Salva app di prova" riprova.
 
-La prima build di `iam-console-poc` richiede qualche minuto (`npm ci`); le
+La prima build di un'app Node richiede qualche minuto (`npm ci`); le
 successive circa un minuto. La dimostrazione completa diventa: **Apri l'app** →
 scrivi il requisito → approvi i permessi → gli agenti aprono la Draft PR → fai
 il merge in Gitea → dopo poco la home mostra il nuovo commit → ricarichi l'app

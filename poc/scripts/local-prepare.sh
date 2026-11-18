@@ -8,7 +8,7 @@
 # 3. builds the two native Rust addons exactly as the native CI does and
 #    copies them where the Engineer core and the Gateway verifier load them.
 #
-# It does NOT start Docker services (use poc/scripts/phase1-up.sh), does not
+# It does NOT start Docker services (use docker compose), does not
 # create keys outside the gitignored runtime folders and never calls Gemini.
 set -euo pipefail
 
@@ -53,4 +53,4 @@ cp services/delegation-core-node/target/release/libdelegation_core_node.so \
 
 echo
 echo "Preparazione completata."
-echo "Prossimo passo: bash poc/scripts/phase1-up.sh   (avvia Gitea, OPA, Anvil e i contratti)"
+echo "Prossimo passo: docker compose up -d   (avvia Gitea, OPA, Anvil e la console)"

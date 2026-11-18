@@ -13,14 +13,15 @@ Requirements: Docker (on Windows: Docker Desktop with WSL integration). From the
 repository root:
 
 ```bash
-cp .env.example .env        # then set ENGINEER_PASSWORD (and optionally GEMINI_API_KEY)
+cp .env.example .env        # then set ENGINEER_PASSWORD, GITHUB_OWNER (and GEMINI_API_KEY)
 docker compose up -d --build
 ```
 
 Open **http://127.0.0.1:8700** and sign in to **Sigillo** (the console; name
 and "Ardesia Labs" brand are fictional). The first build compiles the native
 Rust modules and takes several minutes. Compose starts Gitea, OPA and Anvil,
-prepares accounts, the example repository and the on-chain registries, the
+prepares accounts and the on-chain registries (and, if `INITIAL_REPOSITORY_URL`
+is set in `.env`, imports that repository), the
 Engineer console, the test Runner and the **staging** service: after you merge
 a pull request in Gitea it builds the new `main` and serves it on
 127.0.0.1:8801 ("Apri l'app" in the console). Full guide (Italian):
@@ -45,8 +46,8 @@ console) reads it.
 Each one has its own DID, MCP-wallet signing key and Agent Card, and gets
 authority only through a per-Task Child credential derived from the
 Engineer-signed Root. The Orchestrator uses only the specialists a requirement
-needs: on `iam-console-poc` that is Backend, Frontend and Test; the demo
-project [campus-library](https://github.com/DarkGh0st03/campus-library) also
+needs: a web app with only server and UI code needs Backend, Frontend and
+Test; the demo project [campus-library](https://github.com/DarkGh0st03/campus-library) also
 needs Data, Documentation and DevOps (a library without user interface:
 [unit-convert](https://github.com/DarkGh0st03/unit-convert)).
 
@@ -117,7 +118,7 @@ Details and code reviews: [docs/RUN_LOG.md](docs/RUN_LOG.md).
 | Specialist agents (ADK/A2A) | `poc/packages/agent-runtime/src/` |
 | Gateway (prepare/execute, Rust verifier, OPA) | `poc/apps/gateway/src/` |
 | Rust core (credentials, accumulators, VP) | `src/`, `services/delegation-*-node/` |
-| Per-role MCP wallets (one signing key each) | `poc/engineer-console/src/role-wallet.mjs`, `services/delegation-adapter/src/config.rs` |
+| Per-role MCP wallets (one signing key each) | `poc/engineer-console/src/role-wallet.mjs`, `services/delegation-engineer-node/`, `services/delegation-adapter/` |
 | OPA policy | `poc/opa/policy.rego` |
 | Test Runner | `poc/apps/test-runner-controller/`, `deploy/runner/start.mjs` |
 | Staging (redeploys merged main) | `deploy/staging/deployer.mjs`, `poc/engineer-console/src/staging.mjs`, detection in `staging-detect.mjs` |
