@@ -193,3 +193,16 @@ test('a choice wrapped in ONE Markdown JSON fence is the same choice (session s-
  for(const text of ['Here it is:\n```json\n'+json+'\n```','```json\n'+json+'\n```\nDone.','```json\n'+json+'\n```\n```json\n{}\n```'])
   await assert.rejects(proposer(text).propose(),/Authority-only model Task choice denied/u);
 });
+
+test('a choice outside the signed Root is refused with a reason the Engineer can act on',async()=>{
+ const test_file=root+'/files/tests/frontend/List.test.tsx';
+ const proposer=permissions=>new TrustedAuthorityOnlyAdkDecisionProposer({
+  model:new RawText(JSON.stringify({task_id:'task-repair-1',agent_id:'test',
+   depends_on:['task-run-1'],permissions,instruction:'Repair the failing test'})),
+  requirement:'Search users',branch:'feature/sample-change',
+  rootPermissions:[{resource:test_file,operation:'create_file'}],
+  agents:{test:{capabilities:['read_file','update_file','create_file','run_tests']}},
+  previousTasks:[{task_id:'task-run-1',agent_id:'test'}],nextEpoch:2,decisionKind:'agent'});
+ await assert.rejects(proposer([{resource:test_file,operation:'read_file'},{resource:test_file,operation:'update_file'}]).propose(),
+  /model Task choice denied: permission not in the signed Root \(read_file tests\/frontend\/List\.test\.tsx\): a new Engineer approval is needed/u);
+});

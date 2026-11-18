@@ -27,7 +27,7 @@ export const AUTHORITY_ONLY_PLANNING_INSTRUCTIONS=[
  'Use existing files and directories only when provided by the trusted owner snapshot, or independently verified through an authorized pinned-SHA Gitea directory listing in an explicitly selected discovery root. New files need a supplied or verified parent directory. Never invent a broader directory.',
  'Request minimal scope. The Engineer may remove permission pairs. This output grants nothing.',
  'No fixed Task order is required. Future execution and recovery are separate from this proposal.',
- 'Behaviour changes need tests written for them: also request create_file (new files) or read_file+update_file (existing files) for the project test sources that will verify the new behaviour, inside the existing test directories of the snapshot. A Test specialist will read the changed application files before writing them.',
+ 'Behaviour changes need tests written for them: also request create_file (new files) or read_file+update_file (existing files) for the project test sources that will verify the new behaviour, inside the existing test directories of the snapshot. A Test specialist will read the changed application files before writing them. Every create_file is automatically paired with read_file+update_file of the same path, so a new file can be repaired after a failing test run.',
  'Besides Backend, Frontend and Test, the team has Docs (README and documentation), Data (seed/data files, schemas, migrations) and DevOps (Dockerfile, CI and build configuration) specialists: when the requirement asks for, or makes out of date, such files, also request read_file+update_file (or create_file) for them.',
  'Tests must use the data the code really has: also request read_file of the files that define the data and types the tests and the changed code rely on (seed data, repositories, fixtures, shared contracts), even when they are not changed.',
  'The owner-fixed execution workflow edits ONLY the trusted work branch: it first creates that branch from the repository base branch, runs the project tests on it, and opens a Draft PR only after the tests pass. For a requirement that changes repository files, therefore ALSO request exactly one create_branch (repository), one run_tests (branch) and one create_pull_request (repository). The Engineer may still remove them.',
@@ -80,6 +80,18 @@ export function compileAuthorityOnlyPlanningProposal(raw:unknown,cfg:{
   }else deny('invalid resource type');
   return {resource,operation:op};
  });
+ // A file created in this session may need a repair after a verified test
+ // FAIL (e.g. a new test with a wrong import). Pair every create_file with
+ // read_file + update_file of the SAME path: visible in the review and
+ // signed by the Engineer like every other permission.
+ const seen=new Set(requested.map(p=>p.operation+'\0'+p.resource));
+ for(const p of [...requested])
+  if(p.operation==='create_file'&&p.resource.includes('/files/'))
+   for(const operation of ['read_file','update_file'])
+    if(!seen.has(operation+'\0'+p.resource)){
+     seen.add(operation+'\0'+p.resource);
+     requested.push({resource:p.resource,operation});
+    }
  const proposal={schema_version:'1.0.0',session_id:cfg.snapshot.session_id,
   repository:structuredClone(cfg.snapshot.repository),branch:cfg.workBranch,
   base_revision:cfg.snapshot.base_revision,requirement:cfg.requirement,

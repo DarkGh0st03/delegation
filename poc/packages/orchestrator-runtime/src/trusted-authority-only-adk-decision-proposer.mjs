@@ -13,7 +13,14 @@ import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,read
  from '../../plan-contracts/src/gitea-permission-containment.mjs';
 import {ROLE_SKILLS} from "../../plan-contracts/src/agent-roles.mjs";
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const fail=()=>{throw Error('Authority-only model Task choice denied');};
+// The reason is for the Engineer's console only (never sent to a model).
+const fail=reason=>{throw Error('Authority-only model Task choice denied'+(reason?': '+reason:''));};
+const shown=p=>{
+ const r=typeof p?.resource==='string'?p.resource:'';
+ const i=r.indexOf('/files/');let path=i>=0?r.slice(i+7):r.split('/').slice(-1)[0];
+ try{path=decodeURIComponent(path);}catch{}
+ return (String(p?.operation??'').slice(0,40)+' '+path).replace(/[\x00-\x1f\x7f]/gu,' ').slice(0,200);
+};
 const exact=(obj,fields)=>obj&&typeof obj==='object'&&!Array.isArray(obj)&&
  Object.keys(obj).length===fields.length&&fields.every(k=>Object.hasOwn(obj,k));
 const pair=p=>JSON.stringify([p.operation,p.resource]);
@@ -369,15 +376,19 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      raw.permissions.length>16)
    fail();
   const known=new Set(this.previous.map(p=>p.task_id));
-  if(known.has(raw.task_id)||raw.depends_on.some(x=>!known.has(x))||
+  if(known.has(raw.task_id)||
      this.specialistNoChanges?.some(x=>x.task_id===raw.task_id)||
-     this.verifiedFailureHistory?.some(p=>p.failed_task_id===raw.task_id))fail();
+     this.verifiedFailureHistory?.some(p=>p.failed_task_id===raw.task_id))
+   fail('Task ID already used');
+  if(raw.depends_on.some(x=>!known.has(x)))
+   fail('depends on a Task that is not completed');
   const seen=new Set(),selected=[];
   for(const p of raw.permissions){
    if(!exact(p,['resource','operation'])||
       typeof p.resource!=='string'||typeof p.operation!=='string'||
-      seen.has(pair(p))||!this.agents[raw.agent_id].includes(p.operation)||
-      !this.roots.some(parent=>giteaPermissionCovers(parent,p)))fail();
+      seen.has(pair(p))||!this.agents[raw.agent_id].includes(p.operation))fail();
+   if(!this.roots.some(parent=>giteaPermissionCovers(parent,p)))
+    fail('permission not in the signed Root ('+shown(p)+'): a new Engineer approval is needed');
    seen.add(pair(p));selected.push(Object.freeze({...p}));
   }
   // The owner chooses the decision kind; model output cannot opt into PR authority.

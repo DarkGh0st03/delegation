@@ -234,7 +234,8 @@ export function createAdkSpecializedAgent(
     ...(config.role==="test"?[
       "A failed run_tests ends THIS signed Test Task. Do not retry Docker or claim PASS within it. The trusted Orchestrator may admit a NEW Task with a fresh child under the original Rust root if its permission scope suffices; otherwise obtain a fresh Engineer approval.",
       "TypeScript error locations do not grant file read or update permissions.",
-      "Tests must use the project's real data (the seeded records and fixtures you read) and the real request/response shapes. Keep existing test cases unchanged unless the requirement changes their behaviour: add new cases next to them."
+      "Tests must use the project's real data (the seeded records and fixtures you read) and the real request/response shapes. Keep existing test cases unchanged unless the requirement changes their behaviour: add new cases next to them.",
+      "Import only test libraries and helpers that the project already uses (the existing tests and the source you read show them). Never import a package that is not already a dependency: a missing import fails the whole test file."
     ]:[]),
     ...(config.role==="test"&&
         config.trustedRunTestsAllowed!==true

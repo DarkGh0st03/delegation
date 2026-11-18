@@ -150,7 +150,11 @@ test("multi-read Planning proposes only the permission scope, pinned to the exac
   }).proposeAuthority();
   assert.equal(plan.verified_source_reads,2);
   assert.deepEqual(invoked,readSequence.map(x=>x.name));
-  assert.equal(plan.proposal.requested_permissions.length,8);
+  // The new test file is paired with read_file+update_file of the same path
+  // (so it can be repaired after a failing run): 8 requested + 2 paired.
+  assert.equal(plan.proposal.requested_permissions.length,10);
+  const e2e=plan.proposal.requested_permissions.filter(p=>p.resource.endsWith("/files/tests/e2e/invoice-order.spec.ts"));
+  assert.deepEqual(e2e.map(p=>p.operation).sort(),["create_file","read_file","update_file"]);
   assert.equal(plan.proposal.base_revision,snapshot.base_revision);
   assert.equal(plan.proposal.branch,cfg.workBranch);
   // A permission-only draft: no Tasks, agents, DIDs or approval.
