@@ -15,6 +15,7 @@ export class ConsoleStore {
     this.#dir = directory;
     mkdirSync(join(directory, "policies"), {recursive: true, mode: 0o700});
     mkdirSync(join(directory, "requests"), {recursive: true, mode: 0o700});
+    mkdirSync(join(directory, "approved-profiles"), {recursive: true, mode: 0o700});
   }
 
   #write(path, value) {
@@ -48,6 +49,20 @@ export class ConsoleStore {
   deletePolicy(owner, name) {
     const path = this.#policyPath(owner, name);
     if (existsSync(path)) rmSync(path);
+  }
+
+  /** The test profile the Engineer last signed for a repository. */
+  #approvedProfilePath(owner, name) {
+    return join(this.#dir, "approved-profiles", `${owner}__${name}.json`);
+  }
+  loadApprovedProfile(owner, name) {
+    const path = this.#approvedProfilePath(owner, name);
+    try { return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : undefined; }
+    catch { return undefined; }
+  }
+  saveApprovedProfile(owner, name, profile, sha256) {
+    this.#write(this.#approvedProfilePath(owner, name),
+      {profile, sha256, approved_at: new Date().toISOString()});
   }
 
   savePolicy(policy) {

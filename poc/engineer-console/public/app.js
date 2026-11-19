@@ -757,6 +757,7 @@ function openReview(s) {
     Math.max(0, Math.round((until - Date.now()) / 60000)) + " minuti); dopo va rifatto il Planning." : "";
   const note = s.mode === "scripted" ? "Proposta SIMULATA: nessun modello di IA è stato usato. Rivedi con attenzione ogni permesso." : "";
   $("rv-simulated").hidden = !note; $("rv-simulated").textContent = note;
+  renderProfileReview(s);
   for (const [id, items] of [["rv-assumptions", s.proposal.assumptions], ["rv-uncertainties", s.proposal.uncertainties]]) {
     const list = $(id); list.replaceChildren();
     for (const t of items.length ? items : ["(nessuna)"]) list.appendChild(el("li", "", t));
@@ -776,6 +777,25 @@ function openReview(s) {
   $("rv-password").value = ""; message("rv-msg", "");
   updateCount();
   $("review-dialog").showModal();
+}
+/** The test profile the Engineer is about to sign, compared with the last
+ * signed one: a new or changed profile is shown prominently. */
+function renderProfileReview(s) {
+  const box = $("rv-profile"), review = s.profile_review, profile = s.project_profile;
+  box.hidden = !review || !profile;
+  if (box.hidden) return;
+  box.className = "profile-review " + review.status;
+  $("rv-profile-title").textContent = {
+    first: "Primo profilo dei test per questa repository: controlla come verranno eseguiti i test prima di firmare.",
+    changed: "Attenzione: il profilo dei test è CAMBIATO rispetto all'ultima volta che l'hai firmato. Controlla le differenze:",
+    unchanged: "Profilo dei test invariato rispetto all'ultima approvazione (impronta " + s.project_profile_sha256.slice(0, 12) + ")."
+  }[review.status] ?? "";
+  const changes = $("rv-profile-changes"); changes.replaceChildren();
+  for (const c of review.changes ?? []) changes.appendChild(el("li", "", c));
+  const phases = $("rv-profile-phases"); phases.replaceChildren();
+  for (const p of profile.phases) phases.appendChild(el("li", "", p.name + " — " + p.command));
+  phases.appendChild(el("li", "muted", "Immagine " + profile.image + " · file di test in " +
+    profile.test_sources.roots.join(", ") + " (" + profile.test_sources.suffixes.join(", ") + ")"));
 }
 function setAll(value) { for (const box of document.querySelectorAll("#rv-rows input")) box.checked = value; updateCount(); }
 $("rv-all").addEventListener("click", () => setAll(true));

@@ -812,3 +812,29 @@ test("a repository may declare its test profile in .github/test-profile.json (us
   assert.equal(bad.source, "default (repository test profile not valid)");
   assert.deepEqual(bad.policy.project_profile.phases, NPM_PROJECT_PROFILE_TEMPLATE.phases);
 });
+
+test("the signing dialog compares the test profile with the last approved one", async () => {
+  const {profileChanges, NPM_PROJECT_PROFILE_TEMPLATE} = await import("../src/policy.mjs");
+  const {ConsoleStore} = await import("../src/store.mjs");
+  const {mkdtempSync, rmSync} = await import("node:fs");
+  const {tmpdir} = await import("node:os");
+  const {join} = await import("node:path");
+  const before = structuredClone(NPM_PROJECT_PROFILE_TEMPLATE);
+  const after = {...structuredClone(before), image: "node:22.16.0-bookworm",
+    phases: [{name: "dependency_install", command: "npm ci"}, {name: "tests", command: "npm test -- --bail"},
+      {name: "lint", command: "npm run lint"}],
+    test_sources: {roots: ["tests"], suffixes: [".test.ts"]}};
+  const changes = profileChanges(before, after);
+  assert.ok(changes.some(c => c.startsWith("Immagine Docker")));
+  assert.ok(changes.some(c => c.startsWith("Fase aggiunta: lint")));
+  assert.ok(changes.some(c => c.startsWith("Fase modificata: tests")));
+  assert.ok(changes.some(c => c.startsWith("Cartelle dei test")));
+  assert.deepEqual(profileChanges(before, structuredClone(before)), []);
+  const dir = mkdtempSync(join(tmpdir(), "console-store-"));
+  try {
+    const store = new ConsoleStore(dir);
+    assert.equal(store.loadApprovedProfile("thesis", "app"), undefined);
+    store.saveApprovedProfile("thesis", "app", before, "a".repeat(64));
+    assert.equal(store.loadApprovedProfile("thesis", "app").sha256, "a".repeat(64));
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});

@@ -153,3 +153,28 @@ export function toOpaRepositoryConfig(policy) {
     allow_pull_request: policy.allow_pull_request
   };
 }
+
+/**
+ * Human-readable differences between two validated project profiles (what
+ * the Engineer must look at before signing a changed profile).
+ */
+export function profileChanges(previous, current) {
+  const out = [];
+  if (previous.image !== current.image) out.push(`Immagine Docker: ${previous.image} → ${current.image}`);
+  const before = new Map(previous.phases.map(p => [p.name, p])), after = new Map(current.phases.map(p => [p.name, p]));
+  for (const [name, phase] of after) {
+    const old = before.get(name);
+    if (!old) out.push(`Fase aggiunta: ${name} — ${phase.command}`);
+    else if (old.command !== phase.command || (old.failure_report ?? null) !== (phase.failure_report ?? null))
+      out.push(`Fase modificata: ${name} — ${old.command} → ${phase.command}`);
+  }
+  for (const name of before.keys()) if (!after.has(name)) out.push(`Fase rimossa: ${name}`);
+  const order = p => p.phases.map(x => x.name).filter(n => before.has(n) && after.has(n)).join(",");
+  if (order(previous) !== order(current)) out.push("Ordine delle fasi cambiato");
+  const list = v => v.join(", ");
+  if (list(previous.test_sources.roots) !== list(current.test_sources.roots))
+    out.push(`Cartelle dei test: ${list(previous.test_sources.roots)} → ${list(current.test_sources.roots)}`);
+  if (list(previous.test_sources.suffixes) !== list(current.test_sources.suffixes))
+    out.push(`Suffissi dei file di test: ${list(previous.test_sources.suffixes)} → ${list(current.test_sources.suffixes)}`);
+  return out;
+}

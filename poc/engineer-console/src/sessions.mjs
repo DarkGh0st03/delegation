@@ -16,7 +16,7 @@ import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../packages/plan-contracts/src/pl
 import {projectProfileDigest, testSourceProfileOf} from "../../packages/plan-contracts/src/project-profile.mjs";
 import {APPLICATION_ROLES, SPECIALIST_ROLES, TEST_ROLE, roleEnvKey}
   from "../../packages/plan-contracts/src/agent-roles.mjs";
-import {repositoryDefaultPolicy, validatePolicy} from "./policy.mjs";
+import {repositoryDefaultPolicy, validatePolicy, profileChanges} from "./policy.mjs";
 import {ScriptedPlannerModel} from "./scripted-planner-model.mjs";
 import {preflightGemini, createSessionGeminiModels, GEMINI_WORKER_SETTINGS} from "./gemini-models.mjs";
 
@@ -183,6 +183,9 @@ export class EngineerSessions {
         proposal_digest: signed.proposal_digest, permission_count: signed.permission_count};
       this.#log(session, `Firma Ed25519 dell'Engineer registrata su ${signed.permission_count} ` +
         `permessi di ${session.proposal.permissions.length}`);
+      if (session.project_profile && session.project_profile_sha256)
+        this.#store.saveApprovedProfile?.(session.repository.owner, session.repository.name,
+          session.project_profile, session.project_profile_sha256);
     } catch (error) {
       // Nothing was signed: the Engineer can retry (e.g. wrong password).
       session.phase = "awaiting_review"; this.#save(session);
@@ -560,6 +563,21 @@ export class EngineerSessions {
     this.#log(session, `Profilo di test della repository: ${policy.project_profile.phases.length} fasi ` +
       `(${policy.project_profile.phases.map(p => p.name).join(", ")}), impronta ` +
       session.project_profile_sha256.slice(0, 12));
+    // Compare with the profile the Engineer last signed for this repository:
+    // a changed profile (e.g. after a merge to .github/test-profile.json)
+    // must be looked at, not signed by habit.
+    const approved = this.#store.loadApprovedProfile?.(owner, name);
+    if (!approved) {
+      session.profile_review = {status: "first"};
+      this.#log(session, "Primo profilo di test per questa repository: controllalo prima di firmare");
+    } else if (approved.sha256 === session.project_profile_sha256) {
+      session.profile_review = {status: "unchanged"};
+    } else {
+      session.profile_review = {status: "changed", previous_sha256: approved.sha256,
+        changes: profileChanges(approved.profile, policy.project_profile)};
+      this.#log(session, "Attenzione: il profilo di test è cambiato rispetto all'ultima approvazione (" +
+        session.profile_review.changes.length + " differenze)");
+    }
 
     // 2. Trusted owner snapshot of every path at the pinned commit.
     const tree = await this.#gitea.repositoryTree(name, session.base_sha);

@@ -374,3 +374,12 @@ a.btn { text-decoration: none; }
 .staging-form textarea, .staging-form input[name="image"] { font-family: var(--mono, ui-monospace, monospace); font-size: .85rem; }
 .pr-next { margin-top: 10px; font-size: .86rem; color: var(--muted); }
 .app-meta.na { font-size: .8rem; color: var(--muted); font-style: italic; cursor: help; }
+
+/* Test profile review in the signing dialog */
+.profile-review { border-radius: 12px; padding: 10px 14px; margin: 8px 0 12px; border: 1px solid #d5dbe8; background: #f6f8fc; }
+.profile-review p { margin: 0 0 6px; font-weight: 650; }
+.profile-review ul { margin: 0 0 6px 18px; padding: 0; }
+.profile-review ol { margin: 6px 0 0 18px; padding: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; }
+.profile-review.changed { background: #fff4e5; border-color: #f5b25b; }
+.profile-review.changed p { color: #8a4b00; }
+.profile-review.first { background: #eef4ff; border-color: #b9cdf5; }
