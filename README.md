@@ -148,7 +148,10 @@ The same unit tests run in CI on every push (`.github/workflows/tests.yml`).
   code a human merged; its profile (image, build, start, port) is set by the
   Engineer in the console and is neither signed nor sent to OPA. Like the
   Runner, the staging service holds the Docker socket; the app containers it
-  starts get no token and run on a separate network.
+  starts get no token and run on a separate network. The same isolation applies
+  to the **Draft PR preview**: the head of the agents' open Draft PR is built
+  and served on `127.0.0.1:8901+` so the Engineer can look at it before the
+  merge; it is removed once the PR is merged or closed and grants nothing.
 
 - Each repository has a **project profile** (Docker image, ordered test
   phases, test folders and suffixes), bound to the Engineer's signature. It is

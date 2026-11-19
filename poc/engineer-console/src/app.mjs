@@ -272,7 +272,10 @@ export function createConsoleHandler({auth, gitea, store, health, port, opa, ses
       if (sessionMatch && method === "GET") {
         const session = sessions?.get(sessionMatch[1]);
         if (!session) throw new HttpError(404, "Sessione non trovata");
-        return send(res, 200, {session});
+        // Draft PR preview (staging service), only for this session's PR.
+        const prNumber = session.pull_request?.number;
+        const preview = prNumber && staging ? staging.previewStatus(session.repository.name, prNumber) : undefined;
+        return send(res, 200, {session, ...(preview ? {preview} : {})});
       }
       const actionMatch = /^\/api\/sessions\/(s-[a-f0-9]{12})\/(approve|stop)$/u.exec(path);
       if (actionMatch && method === "POST") {

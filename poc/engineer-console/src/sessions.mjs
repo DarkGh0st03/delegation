@@ -106,11 +106,11 @@ function writeJson(path, value, mode = 0o600) {
 }
 
 export class EngineerSessions {
-  #config; #core; #gitea; #store; #opa; #dir; #live = new Map(); #owned = new Set(); #nextStatus;
+  #config; #core; #gitea; #store; #opa; #staging; #dir; #live = new Map(); #owned = new Set(); #nextStatus;
 
-  constructor({config, core, gitea, store, opa}) {
+  constructor({config, core, gitea, store, opa, staging}) {
     this.#config = config; this.#core = core; this.#gitea = gitea;
-    this.#store = store; this.#opa = opa;
+    this.#store = store; this.#opa = opa; this.#staging = staging;
     this.#dir = join(config.stateDir, "sessions");
     mkdirSync(this.#dir, {recursive: true, mode: 0o700});
     // Status-list indexes must never repeat on one chain; Anvil restarts
@@ -393,6 +393,15 @@ export class EngineerSessions {
     if (result?.pr_created) {
       session.pull_request = await this.#gitea.pullRequestFor(session.repository.name, session.work_branch)
         .catch(() => null);
+      // Preview of the Draft PR before the human merge (isolated container,
+      // built by the staging service like main).
+      if (session.pull_request?.number && this.#staging) {
+        try {
+          this.#staging.requestPreview(session.repository.name, {pr_number: session.pull_request.number,
+            branch: session.work_branch, session_id: session.id});
+          this.#log(session, "Anteprima della Draft PR richiesta allo staging");
+        } catch { /* the PR exists anyway; the preview is a convenience */ }
+      }
     }
     session.phase = "completed";
     this.#log(session, result?.pr_created

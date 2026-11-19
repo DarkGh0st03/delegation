@@ -529,21 +529,24 @@ function describeResource(uri) {
 async function loadSession() {
   clearTimeout(pollTimer);
   const id = currentSession;
-  let s;
-  try { s = (await api("GET", "/api/sessions/" + id)).session; }
+  let s, preview;
+  try { ({session: s, preview} = await api("GET", "/api/sessions/" + id)); }
   catch (error) {
     $("sv-requirement").textContent = "Sessione non disponibile";
     $("sv-meta").textContent = error.message; return;
   }
   if (id !== currentSession) return;
   sessionData = s;
-  renderHeader(s); renderSteps(s); renderBanner(s); renderFeed(s); renderStats(s); renderPr(s);
+  renderHeader(s); renderSteps(s); renderBanner(s); renderFeed(s); renderStats(s); renderPr(s, preview);
   renderGemini(s); renderGateway(s);
   if (s.phase === "awaiting_review" && !reviewOffered.has(s.id) && !$("review-dialog").open) {
     reviewOffered.add(s.id); openReview(s);
   }
   if (BUSY.has(s.phase) || s.phase === "awaiting_review")
     pollTimer = setTimeout(() => { if (currentSession === id && !$("session-view").hidden) loadSession(); }, 2000);
+  // The Draft PR preview is built after the session ends: keep following it.
+  else if (preview && ["waiting", "building", "starting"].includes(preview.state))
+    pollTimer = setTimeout(() => { if (currentSession === id && !$("session-view").hidden) loadSession(); }, 5000);
 }
 
 function renderHeader(s) {
@@ -667,7 +670,7 @@ function renderStats(s) {
   stat(dl, "Durata", minutes + " min");
   if (calls.length) { stat(dl, "Chiamate IA", calls.length); stat(dl, "Token", tokens.toLocaleString("it-IT")); }
 }
-function renderPr(s) {
+function renderPr(s, preview) {
   const card = $("sv-pr"); card.replaceChildren();
   card.hidden = !s.pull_request;
   if (!s.pull_request) return;
@@ -680,6 +683,24 @@ function renderPr(s) {
   // Gitea is published on the local machine only.
   try { a.href = "http://127.0.0.1:3000" + new URL(pr.url).pathname; } catch { a.href = "#"; }
   a.target = "_blank"; a.rel = "noopener"; card.appendChild(a);
+  // Preview of the PR head before the merge (built by the staging service).
+  if (preview) {
+    const box = el("p", "pr-preview " + preview.state);
+    if (preview.state === "running" && preview.url) {
+      const open = el("a", "btn-preview", "Anteprima della PR ↗");
+      open.href = preview.url; open.target = "_blank"; open.rel = "noopener noreferrer";
+      box.appendChild(open);
+      box.append(" Guarda il risultato prima di fare il merge" +
+        (preview.live_sha ? " (commit " + preview.live_sha.slice(0, 7) + ")." : "."));
+    } else {
+      box.textContent = {building: "Anteprima della PR in preparazione (build in corso)…",
+        starting: "Anteprima della PR in avvio…", waiting: preview.message || "Anteprima della PR in attesa…",
+        failed: "Anteprima non riuscita: " + (preview.message || "errore"),
+        unavailable: preview.message || "Anteprima non disponibile"}[preview.state] ?? "";
+      if (preview.log) box.title = preview.log.slice(-1200);
+    }
+    card.appendChild(box);
+  }
   // After the merge the staging service publishes the new main.
   const url = stagingUrls.get(s.repository.name);
   const note = el("p", "pr-next", "Dopo il merge in Gitea l'app di prova si aggiorna da sola in pochi minuti. ");

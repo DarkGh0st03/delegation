@@ -64,15 +64,15 @@ const gitea = new GiteaAdmin({
   adminPassword: config.giteaAdminPassword, org: config.giteaOrg,
   gatewayUser: config.giteaGatewayUser, runnerUser: config.giteaRunnerUser
 });
+// Staging ("Apri l'app" and Draft PR previews): profiles and preview
+// requests written here, deploy status from the separate deployer service
+// (shared volume). Absent outside Compose.
+const staging = process.env.STAGING_DIR ? new StagingStore(process.env.STAGING_DIR) : undefined;
 const sessions = config.composeMode
-  ? new EngineerSessions({config, core, gitea, store, opa}) : undefined;
+  ? new EngineerSessions({config, core, gitea, store, opa, staging}) : undefined;
 
 // Import source: only the Engineer's own GitHub account (server-side token).
 const github = new GitHubSource({owner: process.env.GITHUB_OWNER, token: process.env.GITHUB_TOKEN});
-
-// Staging ("Apri l'app"): profiles written here, deploy status from the
-// separate deployer service (shared volume). Absent outside Compose.
-const staging = process.env.STAGING_DIR ? new StagingStore(process.env.STAGING_DIR) : undefined;
 
 const handler = createConsoleHandler({
   auth: new ConsoleAuth({users}),

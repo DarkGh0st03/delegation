@@ -18,7 +18,7 @@ import {validateRepoName} from "./gitea.mjs";
 
 export const STAGING_PROFILE_VERSION = 1;
 const IMAGE = /^[a-z0-9][a-z0-9._/-]{0,150}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,63})?(?:@sha256:[a-f0-9]{64})?$/u;
-const STATES = new Set(["building", "starting", "running", "failed", "waiting"]);
+const STATES = new Set(["building", "starting", "running", "failed", "waiting", "unavailable"]);
 
 const fail = reason => { throw Error("Profilo di staging non valido: " + reason); };
 const plain = (value, keys) => value && typeof value === "object" && !Array.isArray(value) &&
@@ -73,6 +73,7 @@ export class StagingStore {
     if (create) {
       mkdirSync(join(directory, "profiles"), {recursive: true});
       mkdirSync(join(directory, "detections"), {recursive: true});
+      mkdirSync(join(directory, "previews"), {recursive: true});
     }
   }
   get directory() { return this.#dir; }
@@ -105,7 +106,8 @@ export class StagingStore {
   }
 
   delete(name) {
-    for (const path of [this.#path(name), this.#detectionPath(name)]) if (existsSync(path)) rmSync(path);
+    for (const path of [this.#path(name), this.#detectionPath(name), this.#previewPath(name)])
+      if (existsSync(path)) rmSync(path);
   }
 
   #detectionPath(name) { return join(this.#dir, "detections", validateRepoName(name) + ".json"); }
@@ -169,6 +171,67 @@ export class StagingStore {
       // A deployer that stopped writing is reported as such.
       const age = Date.now() - Date.parse(all.heartbeat_at ?? "");
       return {...entry, deployer_alive: Number.isFinite(age) && age < 60_000};
+    } catch { return undefined; }
+  }
+
+  // ---- Previews of the agents' Draft PRs (one slot per repository) ----
+  #previewPath(name) { return join(this.#dir, "previews", validateRepoName(name) + ".json"); }
+
+  /** Ask the deployer to serve the head of a Draft PR (newest PR wins). */
+  requestPreview(name, {pr_number, branch, session_id}) {
+    if (!Number.isSafeInteger(pr_number) || pr_number < 1 ||
+        typeof branch !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/u.test(branch) || branch.includes(".."))
+      throw Error("Richiesta di anteprima non valida");
+    const current = this.previewRequest(name);
+    if (current && current.pr_number > pr_number) return current;
+    if (current && current.pr_number === pr_number) return current;
+    const record = {pr_number, branch, session_id: String(session_id ?? "").slice(0, 40),
+      requested_at: new Date().toISOString()};
+    const path = this.#previewPath(name), tmp = path + ".tmp-" + process.pid;
+    writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n");
+    renameSync(tmp, path);
+    return record;
+  }
+
+  previewRequest(name) {
+    try {
+      const raw = JSON.parse(readFileSync(this.#previewPath(name), "utf8"));
+      if (!Number.isSafeInteger(raw.pr_number) || typeof raw.branch !== "string") return undefined;
+      return {pr_number: raw.pr_number, branch: raw.branch, session_id: String(raw.session_id ?? ""),
+        requested_at: String(raw.requested_at ?? "")};
+    } catch { return undefined; }
+  }
+
+  listPreviewRequests() {
+    const out = new Map(), dir = join(this.#dir, "previews");
+    if (!existsSync(dir)) return out;
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith(".json")) continue;
+      const name = file.slice(0, -5);
+      try { validateRepoName(name); } catch { continue; }
+      const request = this.previewRequest(name);
+      if (request) out.set(name, request);
+    }
+    return out;
+  }
+
+  removePreviewRequest(name) {
+    const path = this.#previewPath(name);
+    if (existsSync(path)) rmSync(path);
+  }
+
+  /** Preview state for one PR of a repository (from the deployer). */
+  previewStatus(name, prNumber) {
+    try {
+      const all = JSON.parse(readFileSync(join(this.#dir, "status.json"), "utf8"));
+      const raw = all?.previews?.[name];
+      const request = this.previewRequest(name);
+      if (!request || request.pr_number !== prNumber) return undefined;
+      const entry = raw ? cleanStatus(raw) : {state: "waiting", message: "In attesa del servizio di staging"};
+      if (raw && raw.pr_number !== undefined && raw.pr_number !== prNumber && entry.state !== "unavailable")
+        return {state: "waiting", message: "In attesa del servizio di staging"};
+      const age = Date.now() - Date.parse(all.heartbeat_at ?? "");
+      return {...entry, pr_number: prNumber, deployer_alive: Number.isFinite(age) && age < 60_000};
     } catch { return undefined; }
   }
 

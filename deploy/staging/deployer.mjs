@@ -24,6 +24,9 @@ import {StagingStore, stagingProfileDigest} from "../../poc/engineer-console/src
 
 export const CONTAINER_PREFIX = "delegation-staging-";
 export const IMAGE_REPOSITORY = "delegation-staging/";
+/** Preview of an open Draft PR: its own container, image namespace and ports. */
+export const PREVIEW_PREFIX = "delegation-preview-";
+export const PREVIEW_IMAGE_REPOSITORY = "delegation-preview/";
 const LABEL = "org.delegation.staging";
 const MAX_LOG = 4000;
 
@@ -46,23 +49,26 @@ const tail = text => String(text ?? "").replace(/\x1b\[[0-9;]*[A-Za-z]/gu, "").s
 const shellQuote = value => "'" + String(value).replace(/'/gu, "'\\''") + "'";
 
 export class StagingDeployer {
-  #store; #gitea; #docker; #fetch; #now; #log; #bind; #ports; #network; #buildEnv; #extraCa;
-  #readyTimeoutMs; #buildTimeoutMs; #status = {repositories: {}}; #busy = false; #sleep;
+  #store; #gitea; #docker; #fetch; #now; #log; #bind; #ports; #previewPorts; #network; #buildEnv; #extraCa;
+  #readyTimeoutMs; #buildTimeoutMs; #status = {repositories: {}, previews: {}}; #busy = false; #sleep;
 
   constructor({stagingDir, gitea, docker = (args, options) => runCommand("docker", args, options),
     fetchFn = fetch, now = () => new Date(), log = line => process.stdout.write(line + "\n"),
-    bindAddress = "127.0.0.1", hostPorts = [8801, 8899], network = "delegation-staging",
+    bindAddress = "127.0.0.1", hostPorts = [8801, 8899], previewPorts = [8901, 8999],
+    network = "delegation-staging",
     buildEnv = {}, extraCaPath, readyTimeoutMs = 180_000, buildTimeoutMs = 20 * 60_000,
     sleep = ms => new Promise(r => setTimeout(r, ms))}) {
     this.#store = new StagingStore(stagingDir, {create: false});
     this.#gitea = gitea;               // {baseUrl, org, token}
     this.#docker = docker; this.#fetch = fetchFn; this.#now = now; this.#log = log;
-    this.#bind = bindAddress; this.#ports = hostPorts; this.#network = network;
+    this.#bind = bindAddress; this.#ports = hostPorts; this.#previewPorts = previewPorts;
+    this.#network = network;
     this.#buildEnv = buildEnv; this.#extraCa = extraCaPath;
     this.#readyTimeoutMs = readyTimeoutMs; this.#buildTimeoutMs = buildTimeoutMs; this.#sleep = sleep;
     try {
       const previous = JSON.parse(readFileSync(join(stagingDir, "status.json"), "utf8"));
       if (previous && typeof previous.repositories === "object") this.#status = previous;
+      if (!this.#status.previews || typeof this.#status.previews !== "object") this.#status.previews = {};
     } catch { /* first start */ }
   }
 
@@ -128,9 +134,9 @@ export class StagingDeployer {
     throw Error("Nessuna porta libera per lo staging");
   }
 
-  async #containerState(name) {
+  async #containerState(name, container = CONTAINER_PREFIX + name) {
     const result = await this.#docker(["inspect", "--format",
-      "{{.State.Running}} {{index .Config.Labels \"" + LABEL + ".sha\"}}", CONTAINER_PREFIX + name]);
+      "{{.State.Running}} {{index .Config.Labels \"" + LABEL + ".sha\"}}", container]);
     if (result.code !== 0) return {exists: false, running: false, sha: null};
     const [running, sha] = result.stdout.trim().split(" ");
     return {exists: true, running: running === "true", sha: sha || null};
@@ -164,8 +170,110 @@ export class StagingDeployer {
         if (profiles.has(name) && profiles.get(name)?.enabled !== false) continue;
         await this.#remove(name);
       }
+      await this.#reconcilePreviews(profiles);
       this.#save();
     } finally { this.#busy = false; }
+  }
+
+  #setPreview(name, patch) {
+    const entry = {...(this.#status.previews[name] ?? {}), ...patch, updated_at: this.#now().toISOString()};
+    this.#status.previews[name] = entry;
+    this.#save();
+    return entry;
+  }
+
+  /**
+   * Previews of the agents' open Draft PRs (one per repository, requested by
+   * the console). The PR head is built exactly like main and served in its
+   * own container on the isolated staging network: no token, no access to
+   * Gitea, OPA or the console. Closed or merged PRs lose their preview.
+   */
+  async #reconcilePreviews(profiles) {
+    const requests = this.#store.listPreviewRequests();
+    for (const [name, request] of requests) {
+      const profile = profiles.get(name);
+      try {
+        if (!profile?.enabled) {
+          this.#setPreview(name, {state: "unavailable", pr_number: request.pr_number,
+            message: "Attiva l'app di prova della repository per avere l'anteprima"});
+          continue;
+        }
+        await this.#reconcilePreview(name, request, profile);
+      } catch (error) {
+        this.#log(`[${name}] anteprima: ${error.message}`);
+        this.#setPreview(name, error.transient ? {state: "waiting", message: error.message}
+          : {state: "failed", message: error.message, log: error.output ?? null});
+      }
+    }
+    for (const name of Object.keys(this.#status.previews))
+      if (!requests.has(name)) await this.#removePreview(name);
+  }
+
+  async #reconcilePreview(name, request, profile) {
+    const base = `/repos/${encodeURIComponent(this.#gitea.org)}/${encodeURIComponent(name)}`;
+    const pr = await this.#gitea_(`${base}/pulls/${request.pr_number}`);
+    // Only the requested, still open PR of the session's own branch.
+    if (!pr || pr.state !== "open" || pr.merged || pr.head?.ref !== request.branch) {
+      this.#log(`[${name}] anteprima della PR #${request.pr_number} rimossa (PR chiusa o unita)`);
+      await this.#removePreview(name);
+      this.#store.removePreviewRequest(name);
+      return;
+    }
+    const sha = pr.head?.sha;
+    if (typeof sha !== "string" || !/^[a-f0-9]{40}$/u.test(sha)) return;
+    const short = sha.slice(0, 7), container = PREVIEW_PREFIX + name;
+    const digest = stagingProfileDigest(profile);
+    const entry = this.#status.previews[name] ?? {};
+    const state = await this.#containerState(name, container);
+    const live = entry.live_sha === sha && entry.profile_sha256 === digest;
+    if (live && state.running && state.sha === sha) {
+      if (entry.state !== "running") this.#setPreview(name, {state: "running", message: "Anteprima di " + short + " attiva"});
+      return;
+    }
+    // Never loop on a commit that already failed with this profile.
+    if (entry.failed_sha === sha && entry.failed_profile_sha256 === digest) return;
+    const image = PREVIEW_IMAGE_REPOSITORY + name.toLowerCase() + ":" + sha.slice(0, 12);
+    this.#setPreview(name, {state: "building", pr_number: request.pr_number, branch: request.branch,
+      target_sha: sha, log: null, message: "Build dell'anteprima della PR #" + request.pr_number + " (" + short + ")"});
+    try {
+      if (!await this.#imageExists(image))
+        await this.#buildImage(name, sha, profile, image, PREVIEW_PREFIX + "build-" + name.toLowerCase());
+      const hostPort = this.#previewPort(name);
+      await this.#docker(["rm", "-f", container]);
+      await this.#docker_(["run", "-d", "--name", container,
+        "--label", `${LABEL}.preview=${name}`, "--label", `${LABEL}.sha=${sha}`,
+        "--network", this.#network, "--restart", "unless-stopped",
+        "--memory", "1g", "--pids-limit", "512", "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "-p", `${this.#bind}:${hostPort}:${profile.port}`, image]);
+      this.#setPreview(name, {host_port: hostPort, url: `http://127.0.0.1:${hostPort}/`, state: "starting"});
+      if (await this.#ready(name, profile, container)) {
+        this.#setPreview(name, {state: "running", live_sha: sha, profile_sha256: digest,
+          failed_sha: null, failed_profile_sha256: null, message: "Anteprima di " + short + " attiva"});
+        await this.#pruneImages(name, [image], PREVIEW_IMAGE_REPOSITORY);
+      } else {
+        this.#setPreview(name, {state: "failed", failed_sha: sha, failed_profile_sha256: digest,
+          message: "L'anteprima non risponde su HTTP", log: await this.#logs(name, container)});
+      }
+    } catch (error) {
+      if (error.transient) throw error;
+      this.#setPreview(name, {state: "failed", failed_sha: sha, failed_profile_sha256: digest,
+        message: error.message, log: error.output ?? null});
+    }
+  }
+
+  #previewPort(name) {
+    const entry = this.#status.previews[name];
+    if (Number.isInteger(entry?.host_port)) return entry.host_port;
+    const used = new Set(Object.values(this.#status.previews).map(e => e.host_port));
+    for (let p = this.#previewPorts[0]; p <= this.#previewPorts[1]; p++) if (!used.has(p)) return p;
+    throw Error("Nessuna porta libera per le anteprime");
+  }
+
+  async #removePreview(name) {
+    await this.#docker(["rm", "-f", PREVIEW_PREFIX + name]);
+    await this.#pruneImages(name, [], PREVIEW_IMAGE_REPOSITORY);
+    delete this.#status.previews[name];
   }
 
   async #reconcile(name, profile) {
@@ -215,15 +323,12 @@ export class StagingDeployer {
     await this.#deploy(name, sha, profile, digest, image);
   }
 
-  async #deploy(name, sha, profile, digest, image) {
-    const short = sha.slice(0, 7);
-    const entry = this.#set(name, {state: "building", target_sha: sha, log: null,
-      message: "Build della versione " + short + " (main aggiornato)"});
-    this.#log(`[${name}] build ${short}`);
+  /** Build the exact commit `sha` of a repository into `image`, in a
+   * throw-away container (no token, no access to the infrastructure). */
+  async #buildImage(name, sha, profile, image, builder) {
     const work = mkdtempSync(join(tmpdir(), "staging-"));
-    const builder = CONTAINER_PREFIX + "build-" + name.toLowerCase();
     try {
-      // 1. Exact commit from Gitea (archive of the merged main).
+      // 1. Exact commit from Gitea (archive of that commit).
       const archive = await this.#gitea_(`/repos/${encodeURIComponent(this.#gitea.org)}/` +
         `${encodeURIComponent(name)}/archive/${sha}.tar.gz`, {binary: true});
       if (!archive) throw Error("Archivio del commit non disponibile");
@@ -257,6 +362,19 @@ export class StagingDeployer {
         "--change", `EXPOSE ${profile.port}`,
         "--change", `LABEL ${LABEL}=${name} ${LABEL}.sha=${sha}`,
         builder, image], {timeoutMs: 10 * 60_000});
+    } finally {
+      await this.#docker(["rm", "-f", builder]);
+      rmSync(work, {recursive: true, force: true});
+    }
+  }
+
+  async #deploy(name, sha, profile, digest, image) {
+    const short = sha.slice(0, 7);
+    const entry = this.#set(name, {state: "building", target_sha: sha, log: null,
+      message: "Build della versione " + short + " (main aggiornato)"});
+    this.#log(`[${name}] build ${short}`);
+    try {
+      await this.#buildImage(name, sha, profile, image, CONTAINER_PREFIX + "build-" + name.toLowerCase());
 
       // 3. Roll out, 4. readiness; roll back on failure.
       this.#set(name, {state: "starting", message: "Avvio della versione " + short});
@@ -295,9 +413,6 @@ export class StagingDeployer {
       if (live.live_sha) this.#status.repositories[name].message =
         error.message + ": resta attiva la versione " + live.live_sha.slice(0, 7);
       this.#save();
-    } finally {
-      await this.#docker(["rm", "-f", builder]);
-      rmSync(work, {recursive: true, force: true});
     }
   }
 
@@ -315,29 +430,29 @@ export class StagingDeployer {
   }
 
   /** The app answers HTTP (any status) on its port, on the staging network. */
-  async #ready(name, profile) {
+  async #ready(name, profile, container = CONTAINER_PREFIX + name) {
     const deadline = Date.now() + this.#readyTimeoutMs;
     while (Date.now() < deadline) {
       try {
-        await this.#fetch(`http://${CONTAINER_PREFIX + name}:${profile.port}/`,
+        await this.#fetch(`http://${container}:${profile.port}/`,
           {redirect: "manual", signal: AbortSignal.timeout(3000)});
         return true;
       } catch { /* not yet */ }
-      const state = await this.#containerState(name);
+      const state = await this.#containerState(name, container);
       if (!state.running) return false;
       await this.#sleep(1500);
     }
     return false;
   }
 
-  async #logs(name) {
-    const result = await this.#docker(["logs", "--tail", "60", CONTAINER_PREFIX + name]);
+  async #logs(name, container = CONTAINER_PREFIX + name) {
+    const result = await this.#docker(["logs", "--tail", "60", container]);
     return tail(result.stdout + "\n" + result.stderr);
   }
 
-  async #pruneImages(name, keep) {
+  async #pruneImages(name, keep, namespace = IMAGE_REPOSITORY) {
     const result = await this.#docker(["image", "ls", "--format", "{{.Repository}}:{{.Tag}}",
-      IMAGE_REPOSITORY + name.toLowerCase()]);
+      namespace + name.toLowerCase()]);
     for (const image of result.stdout.split("\n").map(s => s.trim()).filter(Boolean))
       if (!keep.includes(image)) await this.#docker(["image", "rm", image]);
   }
@@ -355,6 +470,10 @@ export class StagingDeployer {
     for (const name of Object.keys(this.#status.repositories)) {
       await this.#docker(["rm", "-f", CONTAINER_PREFIX + name]);
       await this.#docker(["rm", "-f", CONTAINER_PREFIX + "build-" + name.toLowerCase()]);
+    }
+    for (const name of Object.keys(this.#status.previews ?? {})) {
+      await this.#docker(["rm", "-f", PREVIEW_PREFIX + name]);
+      await this.#docker(["rm", "-f", PREVIEW_PREFIX + "build-" + name.toLowerCase()]);
     }
     this.#save();
   }

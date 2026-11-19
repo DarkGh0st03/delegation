@@ -66,7 +66,9 @@ docker compose up
  ├─ runner     (solo rete interna) esegue i test in container Docker usa e getta
  └─ staging    (solo rete interna) dopo ogni merge su main costruisce quel commit
                                  e lo pubblica su 127.0.0.1:8801 (una porta per
-                                 repository, da 8801 in su): "Apri l'app"
+                                 repository, da 8801 in su): "Apri l'app";
+                                 la Draft PR aperta dagli agenti va su
+                                 127.0.0.1:8901 e seguenti: "Anteprima della PR"
 ```
 
 `runner` e `staging` sono gli unici servizi con il socket Docker (equivale a
@@ -111,7 +113,7 @@ una sola pagina principale più una pagina per ogni sessione:
 | Home · App (main) | Pulsante **Apri l'app ↗**: la versione di `main` pubblicata dal servizio di staging, con il commit attivo (`main @ abc1234`) e, durante un aggiornamento, "Build della nuova versione…". Si aggiorna da solo ogni 5 secondi. Per una repository nuova la console legge i suoi file e mostra **Pubblica l'app** se trova un'interfaccia web (un clic per confermare la proposta) oppure **Interfaccia non disponibile** (libreria, programma a riga di comando, solo API), con il motivo passando il mouse |
 | Home · Configura → App di prova | Come costruire e avviare l'app della repository: immagine Docker, comando di build, comando di avvio, porta. La console lo propone leggendo i file della repository; l'Engineer lo conferma. Non fa parte dei permessi degli agenti né della firma |
 | Home · Sessioni recenti | Elenco delle sessioni con stato e numero della Draft PR. Le vecchie si archiviano (non si cancellano) con `docker compose exec app node poc/engineer-console/scripts/archive-sessions.mjs --keep 2` |
-| Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519, scheda della Draft PR, riepilogo, chiamate a Gemini, pulsante di stop |
+| Pagina della sessione | Avanzamento (Planning → Approvazione → Esecuzione → Test → Draft PR), attività in tempo reale (cronologia e decisioni del Gateway), popup di approvazione dei permessi con firma Ed25519 (con l'avviso se il profilo dei test è cambiato dall'ultima approvazione), scheda della Draft PR con il pulsante **Anteprima della PR ↗**, riepilogo, chiamate a Gemini, pulsante di stop |
 | Impostazioni (ingranaggio) | Stato dell'ambiente: Gitea, OPA, Anvil, contratti, moduli Rust, core dell'Engineer e verificatore del Gateway. Il pallino sull'ingranaggio è verde quando è tutto pronto |
 
 Il profilo dei test (immagine Docker, fasi, cartelle dei test) si modifica in
@@ -253,6 +255,28 @@ successive circa un minuto. La dimostrazione completa diventa: **Apri l'app** �
 scrivi il requisito → approvi i permessi → gli agenti aprono la Draft PR → fai
 il merge in Gitea → dopo poco la home mostra il nuovo commit → ricarichi l'app
 e vedi la funzione nuova.
+
+### Anteprima della Draft PR: guardare il risultato prima del merge
+
+I test automatici dicono se il codice funziona, non se *si vede bene*. Per
+questo, come le "preview deployment" dei sistemi reali (Vercel, Netlify,
+GitLab Review Apps), lo staging pubblica anche la Draft PR aperta dagli
+agenti, così l'Engineer la guarda **prima** di decidere il merge:
+
+1. quando la sessione apre la Draft PR, la console chiede allo staging
+   un'anteprima di quella PR (una per repository: vale la più recente);
+2. lo staging legge da Gitea lo stato della PR e il commit in testa al branch,
+   lo costruisce con lo stesso profilo dell'app di prova e lo avvia in
+   `delegation-preview-<repository>` sulla stessa rete isolata, senza token,
+   su `127.0.0.1:8901` e seguenti;
+3. nella scheda della Draft PR compare **Anteprima della PR ↗** (o lo stato
+   della build, con l'errore passando il mouse);
+4. quando fai il merge o chiudi la PR, l'anteprima viene rimossa; dopo il
+   merge "Apri l'app" mostra la nuova versione di `main`.
+
+L'anteprima esegue codice scritto dagli agenti, quindi ha le stesse restrizioni
+dell'app di prova; non concede nulla: il merge resta una tua decisione.
+Serve che la repository abbia l'app di prova attiva.
 
 Comandi utili:
 

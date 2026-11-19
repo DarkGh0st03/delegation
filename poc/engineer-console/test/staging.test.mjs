@@ -466,3 +466,37 @@ test("detection: an npm monorepo with a Vite UI and an API server workspace is a
     "packages/a/package.json": JSON.stringify({name: "a", scripts: {build: "tsc"}})});
   assert.equal(libs.interface, "none");
 });
+
+test("deployer: the head of an open Draft PR gets an isolated preview, removed once the PR is merged", async (t) => {
+  const dir = tempDir(t), world = fakeWorld();
+  const store = new StagingStore(dir);
+  store.save("greeter", PROFILE);
+  store.requestPreview("greeter", {pr_number: 7, branch: "feature/s-0123456789ab", session_id: "s-0123456789ab"});
+  let pr = {state: "open", merged: false, head: {ref: "feature/s-0123456789ab", sha: SHA2}};
+  const fetchFn = async (url, init) => url.endsWith("/repos/thesis/greeter/pulls/7")
+    ? {ok: true, status: 200, json: async () => pr} : world.fetchFn(url, init);
+  const deployer = new StagingDeployer({stagingDir: dir, gitea: {baseUrl: "http://gitea:3000", org: "thesis", token: "deploy-token"},
+    docker: world.docker, fetchFn, log: () => {}, readyTimeoutMs: 50, sleep: async () => {}});
+  await deployer.tick();
+  // main and the PR head run side by side, each in its own container.
+  assert.equal(world.containers.get("delegation-staging-greeter")?.sha, SHA1);
+  assert.equal(world.containers.get("delegation-preview-greeter")?.sha, SHA2);
+  const run = world.calls.find(c => c.startsWith("run ") && c.includes("delegation-preview-greeter"));
+  assert.match(run, /--network delegation-staging/u);
+  assert.match(run, /-p 127\.0\.0\.1:8901:3000/u);
+  assert.doesNotMatch(world.calls.join("\n"), /deploy-token/u, "the token never reaches a container");
+  const preview = store.previewStatus("greeter", 7);
+  assert.equal(preview.state, "running");
+  assert.equal(preview.url, "http://127.0.0.1:8901/");
+  assert.equal(store.previewStatus("greeter", 8), undefined, "only the requested PR");
+  // An older PR does not replace the newer request.
+  store.requestPreview("greeter", {pr_number: 5, branch: "feature/s-aaaaaaaaaaaa"});
+  assert.equal(store.previewRequest("greeter").pr_number, 7);
+  // The human merges the PR: the preview goes away.
+  pr = {...pr, state: "closed", merged: true};
+  await deployer.tick();
+  assert.equal(world.containers.has("delegation-preview-greeter"), false);
+  assert.equal(store.previewRequest("greeter"), undefined);
+  assert.equal(store.previewStatus("greeter", 7), undefined);
+  assert.equal(world.containers.get("delegation-staging-greeter")?.sha, SHA1, "main untouched");
+});

@@ -383,3 +383,9 @@ a.btn { text-decoration: none; }
 .profile-review.changed { background: #fff4e5; border-color: #f5b25b; }
 .profile-review.changed p { color: #8a4b00; }
 .profile-review.first { background: #eef4ff; border-color: #b9cdf5; }
+
+/* Draft PR preview */
+.pr-preview { margin: 10px 0 0; color: var(--muted, #5b6478); }
+.pr-preview.failed { color: #a32929; }
+.btn-preview { display: inline-block; margin-right: 8px; padding: 7px 14px; border-radius: 10px; font-weight: 700;
+  background: var(--brand, #6d5efc); color: #fff !important; text-decoration: none; }
