@@ -224,8 +224,8 @@ export function createAdkSpecializedAgent(
       "Keep the existing structure, language and tone of the document; change only the parts the instruction concerns."
     ]:[]),
     ...(config.role==="frontend"?[
-      "New or changed UI must look like the rest of the application. First look in the stylesheet you read for reusable classes (for example a toolbar/row class for filters and a field class for a labelled control, documented in its comments) and give the new elements those classes; reuse existing components and spacing. Never leave raw, unstyled controls or inline styles.",
-      "When the stylesheet itself is the edited file of your Task, add the styles the page needs in the same visual language as the existing rules (same colour variables, radius, spacing, font weights), reusing its custom properties.",
+      "New or changed UI must look like the rest of the application: before writing, study how the files you read style the existing screens (stylesheet classes, CSS modules, theme variables or design tokens, utility classes, component library) and follow the same approach for the new elements: same components, class naming, font, colours, spacing, radius and states. Never leave raw browser-default controls and never add inline styles.",
+      "In a styling Task (your edited file is a stylesheet, CSS module or theme file), style the elements the changed page uses so they match the existing ones: reuse the existing variables or tokens, font family and weights, colours, border radius, spacing, shadows and hover/focus states; give labels, inputs, selects and buttons the same look as the existing controls; keep every existing rule and never change the look of the other screens.",
       "Give every input a visible label and a placeholder; place filters together in one row above the list they filter.",
       "Filters over a small closed set of values (department, status, role) are a select with an 'All' option, built from the values in the loaded data; free-text search matches as you type, case-insensitive, on partial text."
     ]:[]),
