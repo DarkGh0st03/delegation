@@ -630,6 +630,7 @@ function renderFeed(s) {
   const feed = $("sv-feed"), events = feedEvents(s);
   // Append only new entries (events are time-ordered and append-only).
   const known = new Set(feedKeys);
+  let added = 0;
   if (events.slice(0, feedKeys.length).some((e, i) => e.key !== feedKeys[i])) { feed.replaceChildren(); feedKeys = []; known.clear(); }
   for (const e of events) {
     if (known.has(e.key)) continue;
@@ -648,9 +649,29 @@ function renderFeed(s) {
       txt.appendChild(el("span", "op", e.op + " "));
       txt.append(e.path + " — " + e.verdict);
     } else txt.textContent = e.text;
-    li.appendChild(txt); feed.appendChild(li); feedKeys.push(e.key);
+    li.appendChild(txt); feed.appendChild(li); feedKeys.push(e.key); added++;
   }
+  // Follow the newest entry only when something was added and the Engineer
+  // has not scrolled up to read earlier entries.
+  if (added && $("sv-follow").checked) feed.scrollTop = feed.scrollHeight;
+}
+// Scrolling up to read stops following; scrolling back to the bottom resumes.
+$("sv-feed").addEventListener("scroll", () => {
+  const feed = $("sv-feed");
+  $("sv-follow").checked = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24;
+}, {passive: true});
+$("sv-follow").addEventListener("change", () => {
+  const feed = $("sv-feed");
   if ($("sv-follow").checked) feed.scrollTop = feed.scrollHeight;
+});
+
+/** Append-only table rendering: rows already shown are never rebuilt, so the
+ * reader's scroll position and text selection survive the live refresh. */
+function appendRows(tbody, items, buildRow) {
+  if (tbody.dataset.session !== currentSession || items.length < tbody.rows.length) {
+    tbody.replaceChildren(); tbody.dataset.session = currentSession;
+  }
+  for (let i = tbody.rows.length; i < items.length; i++) tbody.appendChild(buildRow(items[i]));
 }
 
 function stat(dl, label, value, cls) {
@@ -718,8 +739,7 @@ const PHASE_LABELS = {"planning": "Orchestrator Planning", "adaptive-execution":
 function renderGemini(s) {
   const calls = s.model_calls ?? [];
   $("sv-gemini-box").hidden = !calls.length;
-  const rows = $("sv-gemini"); rows.replaceChildren();
-  for (const c of calls) {
+  appendRows($("sv-gemini"), calls, c => {
     const tr = el("tr");
     tr.appendChild(el("td", "", time(c.at))); tr.appendChild(el("td", "", PHASE_LABELS[c.phase] || c.phase));
     tr.appendChild(el("td", c.ok ? "allow" : "deny", c.ok ? "ok" : (c.layer === "budget" ? "scartata (limite)" : "errore")));
@@ -727,12 +747,11 @@ function renderGemini(s) {
     tr.appendChild(el("td", "", c.total_tokens != null ? c.input_tokens + " + " + c.output_tokens + " = " + c.total_tokens : "—"));
     tr.appendChild(el("td", "", c.finish || "")); tr.appendChild(el("td", "", (c.tools || []).join(", ")));
     tr.appendChild(el("td", "", c.error || c.preview || ""));
-    rows.appendChild(tr);
-  }
+    return tr;
+  });
 }
 function renderGateway(s) {
-  const rows = $("sv-gateway"); rows.replaceChildren();
-  for (const d of s.gateway_decisions) {
+  appendRows($("sv-gateway"), s.gateway_decisions, d => {
     const tr = el("tr"), r = describeResource(d.resource);
     tr.appendChild(el("td", "", time(d.at))); tr.appendChild(el("td", "", d.agent)); tr.appendChild(el("td", "", d.tool));
     tr.appendChild(el("td", "", (r.branch ? r.branch + ": " : "") + r.path));
@@ -740,8 +759,8 @@ function renderGateway(s) {
     tr.appendChild(el("td", "", d.reason === "tests_failed"
       ? "test eseguiti sul commit del branch, non superati (FAIL verificato del Runner)"
       : (d.reason || "") + (d.detail ? " — " + d.detail : "")));
-    rows.appendChild(tr);
-  }
+    return tr;
+  });
 }
 
 $("sv-review").addEventListener("click", () => openReview(sessionData));
