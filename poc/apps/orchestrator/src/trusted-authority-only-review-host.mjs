@@ -411,62 +411,6 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        live.authority_digest!==root.authority_digest)
      deny('operational root changed during Gateway admission');
     const executionHandle=Object.freeze({admission,gateway,childIssuer,
-     /** ADK selects the Task and specialist; only this trusted
-      * owner derives the epoch, signed root pins and native Child request. */
-     async proposeAndStageTask(input){
-      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
-         taskStageFailed||taskStageFlight||decisionFlight||
-         dispatchFlight||completionFlight||d1FailurePreflightFlight||
-         d1FailurePreflightFailed||dispatchFailed||completionFailed||
-         a2aStarting||a2aOwner?.phase==='failed_closed'||
-         ++decisionCalls>8)
-       deny('bounded owner Task decision requires active quiescent root');
-      if(!branchReadyForWorkers())
-       deny('Backend/Frontend/Test require independently completed original branch Task');
-      // A registered Child or completed A2A report is NOT a verified
-      // Gateway result. No new model turn until all earlier Tasks have
-      // independently attested durable provider/Runner completion.
-      const pending=[...stagedTaskIds.values()].filter(pin=>
-        !gatewayAttestedTaskIds.has(pin.task_id));
-      // A fresh independently passed D1 retest supersedes the old FAIL
-      // for scheduling only; it NEVER completes the original Test Task.
-      if(pending.length&&!(d1RetestPassed&&pending.length===1&&
-         pending[0].task_id===d1VerifiedFailure?.proof?.failed_task_id))
-       deny('next ADK Task decision requires independent Gateway completion');
-      if(!fields(input,['model','runtimeTaskId','childParameters']))
-       deny('ADK choice cannot supply root, session, or Task authorization');
-      const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
-      const epoch=operationalCoordinator.registeredTaskCount+1;
-      const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
-       model:input.model,projectTestSourceProfile,requirement,branch:before.branch,
-       rootPermissions:before.root_permissions,
-       agents:verifiedProfiles??configuredProfiles,
-       previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({
-        task_id:p.task_id,agent_id:p.agent_id
-       })),
-       nextEpoch:epoch
-      });
-      decisionFlight=(async()=>{
-       const choice=await proposer.propose();
-       const after=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
-       if(closed||session.phase!=='operational'||
-          after.root_credential_id!==before.root_credential_id||
-          after.authority_digest!==before.authority_digest||
-          operationalCoordinator.registeredTaskCount!==epoch-1)
-        deny('owner changed during ADK Task decision');
-       const staged=await executionHandle.stageTask({
-        task:{task_id:choice.task_id,epoch,agent_id:choice.agent_id,
-         depends_on:[...choice.depends_on],permissions:[...choice.permissions]},
-        runtimeTaskId:input.runtimeTaskId,
-        childParameters:input.childParameters
-       });
-       return Object.freeze({...staged,
-        decision_source:'owner_adk_candidate_coordinator_validated',
-        instruction:choice.instruction});
-      })();
-      try{return await decisionFlight;}
-      finally{decisionFlight=undefined;}
-     },
      /** owner-private Task -> Gateway -> native Child -> enrollment.
      * The caller supplies only Task choices and fresh Child metadata;
      * session, revision, requirement, root and DID come from trusted state.

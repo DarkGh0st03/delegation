@@ -4,7 +4,7 @@ import rego.v1
 
 default allow := false
 
-policy_version := "authority-only-parametric-v4"
+policy_version := "authority-only-parametric-v5"
 
 # ---------------------------------------------------------------------------
 # Per-repository parameters.
@@ -59,6 +59,19 @@ original_agent_role if {
 	input.agent_role in {"backend", "frontend", "docs", "data", "devops", "test", "orchestrator"}
 }
 
+# Delegation depth of the presented credential, as computed by the Rust
+# verifier (number of ancestors in the chain). The PoC has exactly two
+# delegation steps: the Orchestrator acts with its Root DC (depth 0) and
+# every other agent with a Child DC issued by the Orchestrator (depth 1).
+# Deeper chains (sub-delegation between agents) are not part of the PoC.
+expected_hierarchy_depth := 0 if input.agent_role == "orchestrator"
+
+expected_hierarchy_depth := 1 if {
+	is_string(input.agent_role)
+	input.agent_role != ""
+	input.agent_role != "orchestrator"
+}
+
 verified_context if {
 	is_object(input.verified_delegation)
 	is_string(input.verified_delegation.presenter_id)
@@ -66,7 +79,7 @@ verified_context if {
 	is_string(input.verified_delegation.credential_id)
 	input.verified_delegation.credential_id != ""
 	is_number(input.verified_delegation.hierarchy_depth)
-	input.verified_delegation.hierarchy_depth >= 0
+	input.verified_delegation.hierarchy_depth == expected_hierarchy_depth
 }
 
 bound_request_context if {

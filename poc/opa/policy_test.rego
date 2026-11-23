@@ -43,6 +43,11 @@ make_input(tool, resource, arguments) := {
 	},
 }
 
+# The Orchestrator presents its Root DC: delegation depth 0.
+as_orchestrator(x) := object.union(x, {"agent_role": "orchestrator", "verified_delegation": {"hierarchy_depth": 0}})
+
+with_depth(x, d) := object.union(x, {"verified_delegation": {"hierarchy_depth": d}})
+
 test_allow_read_file_on_feature_branch if {
 	allow with input as make_input(
 		"read_file",
@@ -223,14 +228,14 @@ test_decision_exposes_policy_version if {
 		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"},
 	) with data.thesis.console_repositories as default_repos
 	result.allow == true
-	result.policy_version == "authority-only-parametric-v4"
+	result.policy_version == "authority-only-parametric-v5"
 }
 
 # Planning has read-only access to main only when the Orchestrator presents
 # the explicitly scoped Rust Operation and canonical Gitea resource.
 test_allow_orchestrator_repository_discovery if {
 	base := make_input("read_repository", repo_uri, {})
-	planning := object.union(base, {"agent_role": "orchestrator"})
+	planning := as_orchestrator(base)
 	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
@@ -240,7 +245,7 @@ test_deny_backend_repository_discovery if {
 
 test_deny_repository_discovery_on_wrong_resource if {
 	base := make_input("read_repository", feature_uri, {})
-	planning := object.union(base, {"agent_role": "orchestrator"})
+	planning := as_orchestrator(base)
 	not allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
@@ -250,7 +255,7 @@ test_allow_orchestrator_main_directory_root if {
 		"gitea://gitea.local/thesis/sample-app/branches/main/directories",
 		{"branch": "main", "path": ""},
 	)
-	planning := object.union(base, {"agent_role": "orchestrator"})
+	planning := as_orchestrator(base)
 	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
@@ -260,7 +265,7 @@ test_allow_orchestrator_main_nested_directory if {
 		"gitea://gitea.local/thesis/sample-app/branches/main/directories/apps/backend",
 		{"branch": "main", "path": "apps/backend"},
 	)
-	planning := object.union(base, {"agent_role": "orchestrator"})
+	planning := as_orchestrator(base)
 	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
@@ -278,7 +283,7 @@ test_allow_orchestrator_read_file_main if {
 		main_file,
 		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
 	)
-	planning := object.union(base, {"agent_role": "orchestrator"})
+	planning := as_orchestrator(base)
 	allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
@@ -304,7 +309,7 @@ test_deny_directory_resource_on_unrelated_branch if {
 		sprintf("%s/directories", [feature_uri]),
 		{"branch": "main", "path": ""},
 	)
-	planning := object.union(base, {"agent_role": "orchestrator"})
+	planning := as_orchestrator(base)
 	not allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
@@ -314,7 +319,7 @@ test_deny_orchestrator_write_on_main_even_with_valid_delegation if {
 		main_file,
 		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
 	)
-	planning := object.union(base, {"agent_role": "orchestrator"})
+	planning := as_orchestrator(base)
 	not allow with input as planning with data.thesis.console_repositories as default_repos
 }
 
@@ -455,7 +460,7 @@ test_console_repo_runner_profile_and_pr_switch if {
 test_console_repo_planning_reads_only_its_base_branch if {
 	base := shop_input("read_file", "gitea://gitea.local/thesis/shop/branches/master/files/src/app.js",
 		{"branch": "master", "path": "src/app.js"}, null)
-	orchestrator := object.union(base, {"agent_role": "orchestrator"})
+	orchestrator := as_orchestrator(base)
 	planning := object.remove(orchestrator, ["session_work_branch"])
 	allow with input as planning with data.thesis.console_repositories as console_repos
 	write := object.union(planning, {"tool": "update_file",
@@ -501,4 +506,47 @@ test_deny_writes_without_signed_session_branch if {
 test_deny_unconfigured_default_repository if {
 	not allow with input as make_input("read_file", backend_file,
 		{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"})
+}
+
+# --- Delegation depth: Root DC (0) for the Orchestrator, Child DC (1) for specialists ---
+
+specialist_read := make_input(
+	"read_file",
+	backend_file,
+	{"branch": "feature/session-work", "path": "apps/backend/src/users/user.service.ts"},
+)
+
+orchestrator_planning_read := as_orchestrator(make_input(
+	"read_file",
+	main_file,
+	{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
+))
+
+test_allow_specialist_with_child_depth_1 if {
+	allow with input as with_depth(specialist_read, 1) with data.thesis.console_repositories as default_repos
+}
+
+test_deny_specialist_presenting_root_depth_0 if {
+	not allow with input as with_depth(specialist_read, 0) with data.thesis.console_repositories as default_repos
+}
+
+test_deny_specialist_with_sub_delegated_depth_2 if {
+	not allow with input as with_depth(specialist_read, 2) with data.thesis.console_repositories as default_repos
+}
+
+test_allow_orchestrator_with_root_depth_0 if {
+	allow with input as with_depth(orchestrator_planning_read, 0) with data.thesis.console_repositories as default_repos
+}
+
+test_deny_orchestrator_presenting_child_depth_1 if {
+	not allow with input as with_depth(orchestrator_planning_read, 1) with data.thesis.console_repositories as default_repos
+}
+
+test_deny_orchestrator_with_depth_2 if {
+	not allow with input as with_depth(orchestrator_planning_read, 2) with data.thesis.console_repositories as default_repos
+}
+
+test_deny_test_agent_with_depth_2 if {
+	test_input := object.union(specialist_read, {"agent_role": "test"})
+	not allow with input as with_depth(test_input, 2) with data.thesis.console_repositories as default_repos
 }
