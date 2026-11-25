@@ -41,21 +41,29 @@ const context2="apps/backend/src/users/types.ts";
 const sha="a".repeat(40),role="backend" as const;
 const childId="urn:r3598:child",presenter="did:thesis:backend-agent";
 
-async function fixture(opts:{badPath?:boolean}={}){
+async function fixture(opts:{badPath?:boolean;denyExecuteRead?:number;failAttestRead?:number}={}){
  const dir=await mkdtemp(join(tmpdir(),"r-batch-ipc-"));
  const bindSecret=join(dir,"bind.hex"),stageSecret=join(dir,"stage.hex");
  for(const secretFile of [bindSecret,stageSecret])
   await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600,flag:"wx"});
  const store=new InMemoryRequestStore(),events:string[]=[];
  let reads=0;const signed:unknown[]=[];const vps:string[]=[];
+ // Models the real completion observer: an attestation needs the Gateway's
+ // receipt for the pending request (admissions observer.observe), which is
+ // published only after a successful Execute.
+ const receipts=new Set<string>();let pendingRead:string|undefined;
  const gateway=Object.assign(Object.create(TrustedAuthorityOnlyGatewayAdmissions.prototype),{
   async beginTrustedSequentialReadUpdateTask(){events.push("manifest");
    return {status:"sequential_read_update_manifest_reserved_staged",
     task_id:task,total_effects:3,write_operation:"update_file",gateway_execution_authorized:false};},
-  async stageTrustedSequentialReadEffect(){events.push("reserve_read");
+  async stageTrustedSequentialReadEffect(record:{request_id:string}){events.push("reserve_read");
+   pendingRead=record.request_id;
    return {status:"sequential_read_effect_reserved_staged",task_id:task,
     sequence:reads+1,gateway_execution_authorized:false};},
-  async attestTrustedSequentialReadEffect(){events.push("verify_read");reads++;
+  async attestTrustedSequentialReadEffect(){
+   if(opts.failAttestRead===reads){events.push("verify_read_failed");throw Error("attestation journal unavailable");}
+   if(!pendingRead||!receipts.has(pendingRead))throw Error("no independently observed Gateway receipt");
+   events.push("verify_read");reads++;
    return {status:"sequential_read_effect_attested_staged",task_id:task,
     sequence:reads,gateway_execution_authorized:false};},
   async stageTrustedSequentialMutationEffect(){events.push("reserve_update");
@@ -155,6 +163,9 @@ async function fixture(opts:{badPath?:boolean}={}){
      const read=record.request.tool==="read_file";
      const p=record.request.arguments.path;
      events.push("execute_"+(read?"read:"+p:"update"));
+     if(read&&opts.denyExecuteRead!==undefined&&body.request_id==="r-batch-read-"+opts.denyExecuteRead)
+      return Response.json({error:"policy_denied"},{status:403});
+     if(read)receipts.add(body.request_id);
      return Response.json({request_id:body.request_id,decision:"allow",
       execution:{provider:"gitea",performed:true,tool:record.request.tool,branch,
        path:opts.badPath&&read?"apps/other.ts":p,
@@ -164,7 +175,7 @@ async function fixture(opts:{badPath?:boolean}={}){
     throw Error("unexpected fixture URL");
    }
   });
-  return {gatewayClient,events,signed,vps,close};
+  return {gatewayClient,events,signed,vps,close,effectStager};
  }catch(error){await close();throw error;}
 }
 
@@ -208,3 +219,24 @@ test("batch read: a repeated signed read after the batch is refused by the owner
   await assert.rejects(f.gatewayClient.invoke("read_file",{branch,path}),/Trusted effect staging failed/u);
  }finally{await f.close();}
 });
+
+// R-F3 (owner side): after a failed Gateway Execute or a failed attestation,
+// a non-conforming client cannot stage, execute or attest any later item.
+for(const fault of ["execute","attestation"] as const){
+ test(`batch read: a failed ${fault} of the first item blocks every later item and the write`,async()=>{
+  const f=await fixture(fault==="execute"?{denyExecuteRead:0}:{failAttestRead:0});
+  try{
+   await assert.rejects(f.gatewayClient.readFiles(branch,[context2,path]));
+   assert.equal(f.events.includes("execute_read:"+path),false);
+   assert.equal(f.events.includes("verify_read"),false);
+   // Direct owner calls that bypass the client loop.
+   await assert.rejects(f.effectStager!.stage("r-batch-read-1"));
+   await assert.rejects(f.effectStager!.attest("r-batch-read-1","read_file"));
+   await assert.rejects(f.effectStager!.attest("r-batch-read-0","read_file"));
+   await assert.rejects(f.gatewayClient.invoke("update_file",{branch,path,content:"x"}),
+    /Trusted effect staging failed/u);
+   assert.equal(f.events.filter(e=>e==="reserve_read").length,1);
+   assert.equal(f.events.includes("execute_update"),false);
+  }finally{await f.close();}
+ });
+}

@@ -189,5 +189,6 @@ test("concurrent first verifications cannot both proceed", async () => {
   await assert.rejects(verifyReadBatchItem(batch, b!, "SIGNED_VP", slow as never, Date.now()),
     /concurrent/u);
   release();
-  await first;
+  // "failed" is terminal (R-F1): the pending first verification cannot succeed.
+  await assert.rejects(first, /failed closed during verification/u);
 });

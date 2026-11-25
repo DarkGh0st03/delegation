@@ -90,9 +90,9 @@ export function scriptedProposal(files, newFiles = []) {
 
 export class ScriptedPlannerModel extends BaseLlm {
   #files; #newFiles; #readTarget; #baseBranch; calls = 0;
-  constructor({snapshotFiles, snapshotDirectories = [], requirement, baseBranch = "main"}) {
+  constructor({snapshotFiles, snapshotDirectories = [], requirement, baseBranch = "main", fileLimit = 12}) {
     super({model: "scripted-planner-no-ai"});
-    this.#files = selectPlanningFiles(snapshotFiles, requirement);
+    this.#files = selectPlanningFiles(snapshotFiles, requirement, fileLimit);
     this.#newFiles = requestedNewFiles(requirement, snapshotFiles, snapshotDirectories);
     this.#baseBranch = baseBranch;
     this.#readTarget = this.#files[0] ??

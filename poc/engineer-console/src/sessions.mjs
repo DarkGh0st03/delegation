@@ -430,7 +430,11 @@ export class EngineerSessions {
     const detail = typeof event.provider_error_detail === "string" ? event.provider_error_detail : null;
     session.gateway_decisions.push({at: event.timestamp, agent: event.agent_role,
       tool: event.tool, resource: event.resource_uri, decision: event.decision,
-      reason: event.reason ?? null, detail, verification_ms: event.verification_ms, opa_ms: event.opa_ms});
+      reason: event.reason ?? null, detail, verification_ms: event.verification_ms, opa_ms: event.opa_ms,
+      // Phase R: which read batch an item belongs to and whether its VP was
+      // verified ("performed") or the batch result reused ("reused").
+      ...(typeof event.read_batch_id === "string"
+        ? {read_batch_id: event.read_batch_id, batch_verification: event.batch_verification ?? null} : {})});
     // Tests that ran and failed are an outcome, not a Gateway error.
     if (event.reason === "tests_failed") session.log.push({at: new Date().toISOString(),
       text: `Gateway: ${event.tool} di ${event.agent_role} autorizzato, test non superati (FAIL verificato del Runner)`});
@@ -684,7 +688,10 @@ export class EngineerSessions {
       this.#log(session, `Planner: Gemini (${geminiModelName()}), con limiti di chiamate e token per sessione`);
     } else {
       model = new ScriptedPlannerModel({snapshotFiles: tree.files, snapshotDirectories: tree.directories,
-        requirement: session.requirement, baseBranch: session.base_branch});
+        requirement: session.requirement, baseBranch: session.base_branch,
+        // Benchmark-only override (Phase R E2E with up to 15 signed reads per Task).
+        fileLimit: /^(1[0-5]|[1-9])$/u.test(process.env.DELEGATION_SCRIPTED_PLAN_FILES ?? "")
+          ? Number(process.env.DELEGATION_SCRIPTED_PLAN_FILES) : 12});
       this.#log(session, "Planner: SIMULATO (nessuna IA, nessun costo)");
     }
 

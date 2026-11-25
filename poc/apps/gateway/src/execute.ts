@@ -149,6 +149,23 @@ export async function executeAuthorization(
   raw: unknown,
   dependencies: ExecuteDependencies
 ): Promise<ExecuteAuthorizationResponse> {
+  try {
+    return await executeAuthorizationOnce(raw, dependencies);
+  } catch (error) {
+    // Phase R fail-closed: a failed Execute of ANY item of a read batch
+    // (verification, OPA, binding, provider, receipt, replay) terminates the
+    // batch, so no later item can reuse its verified VP.
+    if (dependencies.readBatches instanceof TrustedReadBatchStore)
+      dependencies.readBatches.failForRequest(
+        (raw as { request_id?: unknown } | null)?.request_id);
+    throw error;
+  }
+}
+
+async function executeAuthorizationOnce(
+  raw: unknown,
+  dependencies: ExecuteDependencies
+): Promise<ExecuteAuthorizationResponse> {
   if(dependencies.authorityOnlyAdmissions&&
      dependencies.planningRevisions)
     throw new GatewayError(403,"authority_only_binding_denied",

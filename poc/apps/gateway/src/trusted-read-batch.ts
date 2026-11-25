@@ -26,6 +26,13 @@ import type {
 } from "./types.ts";
 
 export const READ_BATCH_TOOL = "read_files";
+/**
+ * Validity window of a read batch, independent of the Prepare TTL needed by
+ * the Runner (20 min for the Test Agent). The revocation status of the Child
+ * is observed once per batch (first Execute), so this bounds how long a
+ * verified result may be reused. Every record of the batch is clamped to it.
+ */
+export const READ_BATCH_TTL_MS = 60_000;
 
 type BatchState = "prepared" | "verifying" | "verified" | "failed";
 
@@ -84,6 +91,16 @@ export class TrustedReadBatchStore {
     return id === undefined ? undefined : this.#batches.get(id);
   }
 
+  /**
+   * Fail-closed: any failed Execute of a batch item (verification, OPA,
+   * binding, provider, receipt) makes the whole batch terminally failed.
+   */
+  failForRequest(requestId: unknown): void {
+    if (typeof requestId !== "string") return;
+    const batch = this.forRequest(requestId);
+    if (batch) batch.state = "failed";
+  }
+
   get size(): number { return this.#batches.size; }
 }
 
@@ -94,9 +111,12 @@ function exactKeys(value: unknown, keys: string[]): value is Record<string, unkn
 
 export function prepareReadBatch(
   raw: unknown,
-  config: GatewayPrepareConfig,
+  config: GatewayPrepareConfig & { read_batch_ttl_ms?: number },
   dependencies: PrepareDependencies & { batches: TrustedReadBatchStore }
 ): PreparedReadBatchResponse {
+  const batchTtl = config.read_batch_ttl_ms ?? READ_BATCH_TTL_MS;
+  if (!Number.isSafeInteger(batchTtl) || batchTtl <= 0 || batchTtl > READ_BATCH_TTL_MS)
+    throw Error(`Read batch window must be 1-${READ_BATCH_TTL_MS} ms`);
   if (!(dependencies.batches instanceof TrustedReadBatchStore) ||
       !(dependencies.authorityOnlyAdmissions instanceof TrustedAuthorityOnlyGatewayAdmissions) ||
       dependencies.planningRevisions)
@@ -112,6 +132,7 @@ export function prepareReadBatch(
     throw Error(`A read batch needs 2-${MAX_TASK_READS} distinct file paths`);
 
   const challenge = randomBytes(32).toString("base64url");
+  const createdMs = (dependencies.nowMs ?? Date.now)();
   const records: PreparedRequestRecord[] = [];
   const responses: PreparedReadBatchResponse["items"] = [];
   try {
@@ -135,13 +156,17 @@ export function prepareReadBatch(
           r.authority_only_plan_task_id !== first.authority_only_plan_task_id ||
           typeof r.pinned_revision !== "string" || r.pinned_revision !== first.pinned_revision))
       throw Error("Read batch items differ in Task, role, authority or pinned revision");
+    // The batch window never exceeds the records' own TTL and replaces it:
+    // a batched record cannot outlive the batch (stage/Execute check it).
+    const expiresAtMs = Math.min(createdMs + batchTtl, ...records.map(r => r.expires_at_ms));
+    for (const r of records) r.expires_at_ms = expiresAtMs;
     const batch: ReadBatch = {
       batch_id: `batch_${randomUUID()}`,
       task_id: first.task_id, agent_role: first.agent_role,
       request_ids: Object.freeze(records.map(r => r.request_id)),
       required_permissions: Object.freeze(records.map(r => Object.freeze({ ...r.required_permission }))),
       challenge, audience: first.audience, pinned_revision: first.pinned_revision!,
-      expires_at_ms: Math.min(...records.map(r => r.expires_at_ms)),
+      expires_at_ms: expiresAtMs,
       state: "prepared"
     };
     dependencies.batches.register(batch);
@@ -204,6 +229,10 @@ export async function verifyReadBatchItem(
       required_permissions: batch.required_permissions.map(p => ({ ...p })),
       signed_vp: signedVp
     });
+    // "failed" is terminal: a concurrent or later failure recorded while
+    // this verification was pending must never be overwritten by success.
+    if ((batch.state as BatchState) !== "verifying")
+      deny("batch failed closed during verification");
     batch.verified = Object.freeze(structuredClone(verified));
     batch.vp_sha256 = digest;
     batch.state = "verified";
