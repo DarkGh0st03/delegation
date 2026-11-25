@@ -78,7 +78,7 @@ export interface GiteaFileMutation {
 }
 
 /** A commit moved onto the signed feature branch via an atomic old-HEAD CAS. */
-/** Phase W: prefix of the owner-private write-set staging refs. */
+/** Phase W: prefix of the isolated write-set staging refs (readable by repository readers; never a work branch). */
 export const WRITE_SET_STAGING_PREFIX="feature/w2-write-set-";
 function isWorkBranch(branch:unknown,base:string):branch is string{
   return typeof branch==="string"&&branch!==base&&
@@ -1005,7 +1005,7 @@ export class GiteaClient {
 
   /**
    * Phase W (W2), owner-only transport: build ONE commit with the whole
-   * write-set on a disposable PRIVATE staging ref created at the exact
+   * write-set on a disposable ISOLATED staging ref (isolated from the work branch and forbidden to agents, NOT confidential) created at the exact
    * pinned HEAD (Gitea ChangeFiles). Updates always carry the owner-pinned
    * blob SHA (W0 S6b: without it Gitea applies no guard); creates fail if the
    * file exists. Gitea rejects the WHOLE request if any operation is invalid
@@ -1129,7 +1129,7 @@ export class GiteaClient {
     return "updated";
   }
 
-  /** Best-effort removal of a private write-set staging ref (never the work branch). */
+  /** Best-effort removal of an isolated write-set staging ref (never the work branch). */
   async deleteWriteSetStagingRef(stagingBranch:string):Promise<void>{
     if(!/^feature\/w2-write-set-[a-f0-9]{28}$/u.test(stagingBranch))
       throw new ProviderConflictError("Only private write-set refs can be deleted");

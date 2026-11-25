@@ -279,3 +279,56 @@ test("W2 baseline untouched: GiteaClient single-file CAS still rejects private p
   await assert.rejects(c.updateFileWithHeadCas({branch:b,path:"a",content:"x",message:"m",requestId:"r",
    expectedHeadSha:"a".repeat(40),expectedBlobSha:"b".repeat(40)}),ProviderConflictError);
 });
+
+test("W2 fix: the batch window expiring DURING the last HEAD reread stops the CAS",async()=>{
+ const h=await setup({permissions:mixed});
+ try{
+  const batch=await prepared(h);
+  await h.execute(batch.items[0]!.request_id);await h.execute(batch.items[1]!.request_id);
+  let trees=0,advanced=false;
+  h.fake.onRequest=c=>{
+   if(c.startsWith("GET /git/trees"))trees++;
+   // P4 done (two tree reads) -> the next work-branch read is the P6 HEAD reread.
+   if(trees>=2&&!advanced&&c.startsWith("GET /branches/feature%2Fsample-change")){
+    advanced=true;h.clock.now+=61_000;}
+  };
+  await assert.rejects(h.execute(batch.items[2]!.request_id),/window expired before the CAS/u);
+  assert.equal(advanced,true);
+  assert.equal(casCalls(h),0);
+  assert.equal(h.fake.head(WORK),h.hash);
+  assert.equal(h.gate.writeSetPhase("task-ws"),"failed");
+ }finally{await h.close();}
+});
+
+test("W2 fix: a batch invalidated during the asynchronous staging never becomes staged",async()=>{
+ // (a) external invalidation (no record consumed): the final state check refuses "staged".
+ const h=await setup({permissions:mixed});
+ try{
+  await h.gate.beginTrustedSequentialWriteSetTask("task-ws","runtime-ws",h.hash);
+  await h.readAll([A,B]);
+  const batch=h.prepareBatch(changes);
+  let invalidated=false;
+  h.fake.onRequest=c=>{if(c.startsWith("GET /contents")&&!invalidated){
+   invalidated=true;h.writeBatches.failForRequest(batch.items[0]!.request_id);}};
+  await assert.rejects(h.stageBatch(batch.batch_id),/invalidated during staging/u);
+  assert.equal(invalidated,true);
+  assert.equal(h.writeBatches.get(batch.batch_id)!.state,"failed");
+  assert.equal(h.gate.writeSetPhase("task-ws"),"failed");   // the durable write-set is failed too
+  await assert.rejects(h.execute(batch.items[0]!.request_id),code("verification_rejected"));
+  assert.equal(casCalls(h),0);
+ }finally{await h.close();}
+ // (b) an early Execute during staging (record consumed): staging is refused, batch failed.
+ const e=await setup({permissions:mixed});
+ try{
+  await e.gate.beginTrustedSequentialWriteSetTask("task-ws","runtime-ws",e.hash);
+  await e.readAll([A,B]);
+  const batch=e.prepareBatch(changes);
+  const early:Promise<unknown>[]=[];
+  e.fake.onRequest=c=>{if(c.startsWith("GET /contents")&&!early.length)
+   early.push(e.execute(batch.items[0]!.request_id).catch(x=>x));};
+  await assert.rejects(e.stageBatch(batch.batch_id));
+  assert.ok(code("verification_rejected")(await early[0]));
+  assert.equal(e.writeBatches.get(batch.batch_id)!.state,"failed");
+  assert.equal(casCalls(e),0);
+ }finally{await e.close();}
+});

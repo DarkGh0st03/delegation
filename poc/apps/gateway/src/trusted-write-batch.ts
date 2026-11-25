@@ -31,7 +31,7 @@ export const WRITE_BATCH_TTL_MS=60_000;
 export const MAX_WRITE_FILES_REQUEST_BYTES=6*1024*1024;
 const MAX_WRITES=8;
 
-type BatchState="prepared"|"staged"|"verifying"|"verified"|"failed";
+type BatchState="prepared"|"staging"|"staged"|"verifying"|"verified"|"failed";
 export interface WriteBatch{
  readonly batch_id:string;
  readonly task_id:string;
@@ -169,15 +169,25 @@ export async function stageWriteBatch(batchId:string,owner:{
  const batch=owner.batches.get(batchId);
  if(!batch||batch.state!=="prepared"||(owner.nowMs??Date.now)()>=batch.expires_at_ms)
   deny("no live prepared write batch");
- batch.state="failed";            // until the durable flight is reserved
+ // "staging" until the durable flight is reserved; an invalidation that
+ // arrives meanwhile ("failed") can never be overwritten by "staged".
+ batch.state="staging";
  const records=batch.request_ids.map(id=>owner.store.get(id));
  if(records.some(r=>!r||r.consumed))deny("write batch records are missing or consumed");
  const rs=records as PreparedRequestRecord[];
- await owner.preflight.stageWriteSet(rs,batch.pinned_revision);
- const staged=await owner.admissions.stageTrustedWriteSet(owner.preflight,rs,batch.batch_id);
+ let staged:Awaited<ReturnType<TrustedAuthorityOnlyGatewayAdmissions["stageTrustedWriteSet"]>>;
+ try{
+  await owner.preflight.stageWriteSet(rs,batch.pinned_revision);
+  staged=await owner.admissions.stageTrustedWriteSet(owner.preflight,rs,batch.batch_id);
+ }catch(error){batch.state="failed";throw error;}
  batch.write_set_digest=staged.write_set_digest;
  batch.plan_task_id=staged.task_id;
  batch.admissions=owner.admissions;
+ if((batch.state as BatchState)!=="staging"){
+  // Invalidated during the asynchronous staging: terminal for the write-set too.
+  owner.admissions.failTrustedWriteSet(staged.task_id,batch.task_id,staged.write_set_digest);
+  deny("write batch was invalidated during staging");
+ }
  batch.state="staged";
  return {write_set_digest:staged.write_set_digest};
 }

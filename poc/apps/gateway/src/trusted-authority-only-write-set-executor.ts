@@ -8,7 +8,7 @@
  *  P2  durable attempt marker (before ANY Gitea write)
  *      byte binding: the bytes sent are the Gateway records' contents, whose
  *      fingerprint, SHA-256 and size are recomputed against the intent
- *  P3  private staging ref at the pinned HEAD + ONE ChangeFiles commit
+ *  P3  isolated staging ref at the pinned HEAD + ONE ChangeFiles commit
  *  P4  exact change set: single parent, files + status (commit AND compare),
  *      contents, git modes (no new symlink/executable, update keeps mode)
  *  P5  strict mode: SECOND full verifyMultiple of the same VP
@@ -107,12 +107,18 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
   const {intent}=this.#admissions.beginTrustedWriteSetPublication(task,runtime,digest);
   this.#inFlight=true;
   let casSent=false,staging:string|undefined;
-  const still=async(checkHead=false)=>{
+  /** Synchronous local checks: admissions state, Root, Child, batch, window. */
+  const local=()=>{
    this.#admissions.assertTrustedWriteSetStillPublishable(task,runtime,digest);
    if(batch.state!=="verified")deny("write batch failed closed during publication");
    if(this.#nowMs()>=batch.expires_at_ms)deny("write batch window expired before the CAS");
+  };
+  const still=async(checkHead=false)=>{
+   local();
    if(checkHead&&(await this.#gitea.getBranchMetadata(this.#branch)).commit_sha!==intent.expected_head_sha)
     deny("work branch advanced before the CAS");
+   // Re-run every local check AFTER the last await (time may have passed).
+   local();
   };
   try{
    if(intent.repository!==this.#repository||intent.branch!==this.#branch)
@@ -121,7 +127,7 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
    // P2: durable single attempt BEFORE any Gitea write.
    await this.#journal.reserveAttempt(intent,digest,batch.batch_id);
    await still();
-   // P3: one commit on a private staging ref at the pinned HEAD.
+   // P3: one commit on an isolated staging ref at the pinned HEAD.
    const stagingBranch="feature/w2-write-set-"+sha(digest+"\n"+batch.batch_id).slice(0,28);
    staging=stagingBranch;
    const staged=await this.#gitea.stageWriteSetCommit({branch:this.#branch,
@@ -164,7 +170,9 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
    }
    // P6: after the last asynchronous step, including the HEAD.
    await still(true);
-   // P7: cas_sent BEFORE the request leaves; then the single CAS.
+   // P7: no await between the last full recheck and cas_sent: the window,
+   // batch, Root and Child are checked synchronously right before the CAS.
+   local();
    this.#admissions.markTrustedWriteSetCasSent(task,runtime,digest);
    casSent=true;
    let outcome:"updated"|"rejected";

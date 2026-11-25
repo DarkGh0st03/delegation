@@ -63,7 +63,7 @@ Sono numeri teorici, non misure di latenza. Oggi un Task ammette una sola scritt
   3. VP con un permesso;
   4. Execute: Rust → OPA → binding → executor.
 - **Executor:** `reserveAttempt` durevole, poi `GiteaClient.updateFileWithHeadCas` / `createFileWithHeadCas`:
-  1. ref privato creato alla HEAD fissata;
+  1. ref di staging isolato creato alla HEAD fissata;
   2. commit del file;
   3. verifica del parent e del contenuto;
   4. `PUT /branches/{branch}` con `old_commit_id`;
@@ -107,7 +107,7 @@ Execute(i) ── consumo monouso → (primo) verifyMultiple #1 │ (altri) rius
   ▼  Execute(ultimo) ⇒ PUBBLICAZIONE (monouso, §3.4)
   P1  stato batch = "validated" (tutti i W convalidati) → passa a "publishing" in modo sincrono
   P2  reserveAttempt durevole dell'intero write-set (prima di qualunque scrittura su Gitea)
-  P3  ref privato dalla HEAD fissata → UN commit ChangeFiles con le W modifiche
+  P3  ref di staging isolato dalla HEAD fissata → UN commit ChangeFiles con le W modifiche
       (sha del blob atteso sempre presente per gli update; create che fallisce se il file esiste)
   P4  verifica dell'esatto insieme (§3.3, W0 S1/S7): parent, elenco e stato dei file, contenuti
   P5  verifyMultiple #2 della STESSA VP sugli stessi W permessi        ← D3, modalità rigorosa
@@ -166,7 +166,7 @@ Le fasi della pubblicazione hanno questo ordine: **P1–P6 precedono l'invio del
 
 | Classe | Quando | Stato del branch | Stato del write-set |
 |---|---|---|---|
-| **Fallimento precedente al CAS** | qualsiasi errore in Prepare, staging, Execute (verifica, OPA, binding, scadenza, replay, VP diversa) o in P1–P6 (commit privato, verifica dell'insieme, seconda verifica, ricontrolli) | nessuna modifica; al più un ref privato | `failed` |
+| **Fallimento precedente al CAS** | qualsiasi errore in Prepare, staging, Execute (verifica, OPA, binding, scadenza, replay, VP diversa) o in P1–P6 (commit privato, verifica dell'insieme, seconda verifica, ricontrolli) | nessuna modifica; al più un ref di staging isolato | `failed` |
 | **Rifiuto certo del CAS** | P7 risponde 422 (HEAD avanzata o `old_commit_id` diverso, W0 S3/S10) e una rilettura conferma la HEAD invariata | nessuna modifica | `failed` |
 | **Esito ambiguo** | P7 inviato, ma la risposta è persa o non classificabile, oppure la rilettura P8 è incoerente | tutto o niente, da riconciliare | `ambiguous` |
 | **Pubblicazione avvenuta, evidenze fallite** | P7 e P8 riusciti, ma una ricevuta, un'osservazione o un'attestazione (P9) falliscono | **tutte** le modifiche pubblicate | `published`, Task **non** finalizzato (§4.4) |
@@ -208,7 +208,7 @@ W0 mostra che Gitea accetta un ChangeFiles di 8 × 2 MB, circa 21 MB di richiest
 | Preflight update/create | riuso per file per l'intent (blob atteso / prova di assenza) |
 | Nuovo `trusted-write-batch.ts` | `prepareWriteBatch`, store, macchina a stati del §3.4, verifica e riuso VP, seconda verifica |
 | Nuovo executor write-set | `reserveAttempt` dell'insieme, P2–P9, evidenze per file |
-| `gitea-client.ts` | `commitFilesWithHeadCas` (ChangeFiles + verifica dell'insieme + CAS); prefisso del ref privato aggiunto alla lista dei ref vietati agli agenti |
+| `gitea-client.ts` | `commitFilesWithHeadCas` (ChangeFiles + verifica dell'insieme + CAS); prefisso del ref di staging isolato aggiunto alla lista dei ref vietati agli agenti |
 | Evidence publisher/observer | ricevuta e osservazione per file, legate al commit comune e al `write_set_digest` |
 | `execute.ts` | ramo write-batch; invalidazione come R-F3 |
 | Client e strumento | `writeFiles(changes[])`, tool `write_files`; `update_file`/`create_file` nascosti quando attivo |
@@ -229,7 +229,7 @@ L'unità è l'insieme delle W scritture di un Task.
 | Evento | Stato del branch di lavoro | Stato del Task |
 |---|---|---|
 | Un elemento non supera OPA, binding o verifica | nessuna modifica del batch | fallito |
-| Lo staging o la verifica dell'insieme falliscono (P3–P4) | nessuna modifica; può restare il ref privato | fallito, ref da rimuovere |
+| Lo staging o la verifica dell'insieme falliscono (P3–P4) | nessuna modifica; può restare il ref di staging isolato | fallito, ref da rimuovere |
 | La seconda verifica fallisce (P5: revoca o scadenza) | nessuna modifica | fallito |
 | Il CAS viene rifiutato (HEAD avanzata, W0 S3) | nessuna modifica | fallito, nessun retry |
 | Il CAS riesce | tutte le modifiche pubblicate | prosegue con le evidenze |
@@ -276,7 +276,7 @@ Le modifiche sono pubblicate, ma il Task resta **non attestato**:
 | W4 | Update solo di file letti; create solo di file assenti e non letti | Regole attuali per file; W0 S5 e S6 |
 | W5 | Una VP, verifica crittografica completa (due volte in modalità rigorosa) | `verifyMultiple` invariato; riuso solo per la VP identica byte per byte |
 | W6 | OPA e binding per ogni operazione | Ogni Execute |
-| W7 | Staging isolato | Ref privato da HEAD fissata, prefisso vietato agli agenti; branch di lavoro invariato fino al CAS (W0 S2) |
+| W7 | Staging isolato | Ref di staging isolato da HEAD fissata, prefisso vietato agli agenti; branch di lavoro invariato fino al CAS (W0 S2) |
 | W8 | Esatto insieme pubblicato | §3.3, P4; W0 S1 e S7 |
 | W9 | Atomic Write-Set Publication | Un commit, un CAS sull'id del commit (W0 S2, S3, S10) |
 | W10 | Evidenze per file | Ricevuta, osservazione ed evidenza durevole per file; attestazioni in ordine |
@@ -386,7 +386,7 @@ Il merge su `main` avverrà solo dopo la revisione dei risultati.
 
 | Caso | Risultato |
 |---|---|
-| S1, ChangeFiles misto (2 update con sha + 2 create) su ref privato | **1 commit**, unico parent = HEAD fissata; `git/commits?files=true` e `compare` riportano esattamente `{a: modified, b: modified, new1: added, new2: added}`; contenuti corretti; 0,40 s |
+| S1, ChangeFiles misto (2 update con sha + 2 create) su ref di staging isolato | **1 commit**, unico parent = HEAD fissata; `git/commits?files=true` e `compare` riportano esattamente `{a: modified, b: modified, new1: added, new2: added}`; contenuti corretti; 0,40 s |
 | S2, isolamento e CAS | branch di lavoro invariato e file nuovi non visibili prima del CAS; un `PUT /branches` con `old_commit_id` pubblica tutto (204, 0,31–0,37 s) |
 | S3, CAS con HEAD avanzata | **422** "branch commit does not match"; branch invariato; commit privato non pubblicato |
 | S4, uno sha errato tra operazioni valide | **422**, intera richiesta rifiutata, nessun commit parziale |
@@ -395,15 +395,15 @@ Il merge su `main` avverrà solo dopo la revisione dei risultati.
 | S6b, update **senza** sha (diagnostico) | **accettato**: nessuna guardia del blob. L'owner deve sempre inviare lo sha (§7) |
 | S7, commit con un file non autorizzato | rilevato sia da `git/commits?files=true` sia da `compare`: la verifica P4 lo rifiuterebbe |
 | S8, update con contenuto identico (diagnostico) | **accettato**, con un commit vuoto (nessun file): il rifiuto dei byte identici resta prima dello staging |
-| S9, ripiego: 3 commit sequenziali sul ref privato + 1 CAS | funziona: `compare` riporta 3 commit e i 3 file; un solo CAS (0,38–0,41 s per commit) |
-| S10, CAS con `old_commit_id` errato | **422**, branch invariato; i ref privati restano finché non vengono rimossi (DELETE 204) |
+| S9, ripiego: 3 commit sequenziali sul ref di staging isolato + 1 CAS | funziona: `compare` riporta 3 commit e i 3 file; un solo CAS (0,38–0,41 s per commit) |
+| S10, CAS con `old_commit_id` errato | **422**, branch invariato; i ref di staging isolati restano finché non vengono rimossi (DELETE 204) |
 | Dimensione | ChangeFiles con 8 × 256 KiB (2,8 MB di richiesta): 201 in 0,55 s; con 8 × 2 MB (21,3 MB): 201 in 0,93 s |
 
 **Conclusioni di W0:**
 1. **ChangeFiles offre garanzie sufficienti** e diventa il meccanismo principale: un commit multi-file per write-set, con rifiuto dell'intera richiesta se un'operazione non è valida (S4–S6). Il ripiego a commit multipli (S9) funziona ma non serve; resta documentato.
 2. **La verifica dell'esatto insieme è affidabile** con due fonti indipendenti dell'API (`git/commits?files=true` e `compare` sul campo `commits[].files`).
 3. **Il CAS sull'id del commit** rifiuta qualunque avanzamento della HEAD e qualunque `old_commit_id` errato (422), senza effetti sul branch.
-4. **Regole lato owner emerse:** inviare sempre lo sha negli update (S6b); rifiutare i byte identici prima dello staging (S8); rimuovere i ref privati dopo il successo (S10); aggiungere il nuovo prefisso dei ref privati alla lista dei branch vietati agli agenti.
+4. **Regole lato owner emerse:** inviare sempre lo sha negli update (S6b); rifiutare i byte identici prima dello staging (S8); rimuovere i ref di staging isolati dopo il successo (S10); aggiungere il nuovo prefisso dei ref di staging isolati alla lista dei branch vietati agli agenti.
 5. I limiti di dimensione sono nostri (§3.5): Gitea accetta richieste ben oltre il limite proposto.
 
 **Limite di W0:** è una prova dell'API di Gitea, non del protocollo. Non coinvolge Gateway, VP, OPA, admissions o journal; quelli sono coperti da W1–W4.
@@ -457,7 +457,7 @@ OPA non è modificato (non rieseguito localmente in questa sessione per l'assenz
   - ramo write-batch di Prepare ed Execute nel Gateway, seconda `verifyMultiple`;
   - executor con `commitFilesWithHeadCas`, `reserveAttempt` dell'insieme, CAS;
   - ricevute e osservazioni per file;
-  - prefisso dei ref privati nella lista dei branch vietati;
+  - prefisso dei ref di staging isolati nella lista dei branch vietati;
   - regressioni W0 con asserzioni esplicite.
 - **W3:** proposer, ciclo adattivo, owner A2A e remoto, stager lato agente, tool `write_files`, console.
 - **Limitazione dichiarata:** per un Task con write-set non esiste il percorso "nessuna modifica" (`reportNoChange`), coerentemente con D5. Il fence prima della scrittura resta disponibile solo per i Task a scrittura singola.
@@ -470,8 +470,8 @@ OPA non è modificato (non rieseguito localmente in questa sessione per l'assenz
 |---|---|
 | `gateway/src/trusted-write-batch.ts` (nuovo) | `prepareWriteBatch`: `write_files` con 2–8 modifiche distinte, chiavi esatte, ≤ 2 MB per file, ≤ 4 MB in totale, richiesta ≤ 6 MiB; un record ordinario per file tramite `prepareAuthorization` invariato; challenge comune; finestra di 60 s; elementi restituiti in ordine canonico. `stageWriteBatch` (solo owner): preflight e write-set flight, digest legato al `batch_id`. `verifyWriteBatchItem`: una `verifyMultiple` al primo Execute, riuso solo per la VP identica byte per byte, VP conservata nella memoria dell'owner per la seconda verifica. Invalidazione del batch per qualsiasi errore |
 | `execute.ts` | ramo write-batch: verifica o riuso → OPA per elemento (invariato) → `assertTrustedWriteSetItemBinding`, che controlla ordine, VP sull'esatto insieme, digest e **batch ID**. Gli elementi non ultimi sono "convalidati" senza effetti; l'ultimo invoca il publisher. Audit con `write_batch_id`, `batch_verification`, `write_set_digest`, `write_set_reverified` e commit |
-| `gateway/src/trusted-authority-only-write-set-executor.ts` (nuovo) | P1–P9 del §3.2. Binding dei byte: i file inviati a ChangeFiles sono **ricostruiti dai record del Gateway**, con fingerprint, SHA-256 e dimensione ricalcolati e confrontati con l'intent; un contenuto modificato dopo lo staging non viene mai inviato. Seconda `verifyMultiple` della stessa VP (modalità rigorosa, default). Ricontrolli dopo ogni `await`. Classificazione del CAS. Ricevute per file. Rimozione del ref privato dopo il successo |
-| `gitea-client.ts` | `stageWriteSetCommit` (ref privato `feature/w2-write-set-<hash>` alla HEAD fissata e un solo commit ChangeFiles, con lo sha sempre presente negli update), `getCommitChanges`, `compareCommitFiles`, `getTreeModes`, `casBranchToCommit` (`updated` / `rejected` / eccezione ambigua, senza retry), `deleteWriteSetStagingRef`. Il prefisso privato è vietato come branch di lavoro anche nei CAS a scrittura singola |
+| `gateway/src/trusted-authority-only-write-set-executor.ts` (nuovo) | P1–P9 del §3.2. Binding dei byte: i file inviati a ChangeFiles sono **ricostruiti dai record del Gateway**, con fingerprint, SHA-256 e dimensione ricalcolati e confrontati con l'intent; un contenuto modificato dopo lo staging non viene mai inviato. Seconda `verifyMultiple` della stessa VP (modalità rigorosa, default). Ricontrolli dopo ogni `await`. Classificazione del CAS. Ricevute per file. Rimozione del ref di staging isolato dopo il successo |
+| `gitea-client.ts` | `stageWriteSetCommit` (ref di staging isolato `feature/w2-write-set-<hash>` alla HEAD fissata e un solo commit ChangeFiles, con lo sha sempre presente negli update), `getCommitChanges`, `compareCommitFiles`, `getTreeModes`, `casBranchToCommit` (`updated` / `rejected` / eccezione ambigua, senza retry), `deleteWriteSetStagingRef`. Il prefisso privato è vietato come branch di lavoro anche nei CAS a scrittura singola |
 | `gateway/src/trusted-authority-only-write-set-evidence.ts` (nuovo) | ricevuta HMAC per file, legata a richiesta, percorso, operazione, contenuto, blob **e** commit comune, `write_set_digest`, `batch_id` e parent fissato; osservatore indipendente che verifica il MAC, la corrispondenza con l'intent e il commit, e rilegge Gitea |
 | Admissions | stato `cas_sent`; `markTrustedWriteSetCasSent`, `recordTrustedWriteSetCasRejected`, `recordTrustedWriteSetCasAmbiguous`; `failTrustedWriteSet` senza effetto dopo l'invio; `batch_id` nel digest e nel binding; attestazione solo tramite l'osservatore del write-set, con il controllo che commit e digest osservati coincidano con quelli pubblicati |
 | Journal degli intent | `reserveAttempt` (un solo tentativo, durevole, prima di qualsiasi scrittura Gitea, anche dopo un riavvio) e `reserveOutcome` |
@@ -488,7 +488,7 @@ OPA non è modificato (non rieseguito localmente in questa sessione per l'assenz
 | 3. Binding di digest, batch, record, challenge e flight | batch ID diverso, digest diverso, challenge diversa, VP diversa, VP parziale, ordine sbagliato |
 | 4. Evidenze legate a commit, digest e batch | osservazione con commit, write-set o batch diversi → rifiutata; contenuto atteso diverso → rifiutato; attestazione con digest diverso → rifiutata |
 | 5. Seconda verifica e ricontrolli | modalità rigorosa: 2 verifiche; modalità standard: 1; revoca simulata dopo la prima verifica → nessun CAS, `failed` |
-| 6. Regressioni W0 | **Gitea reale:** commit misto con insieme esatto, modi e CAS; `old_commit_id` obsoleto con candidato discendente della HEAD corrente → `rejected`; update senza sha rifiutato dal nostro client; byte identici → commit senza quel file, quindi rifiutato dal controllo dell'insieme; ref privati mai usabili come branch di lavoro. **Gitea in memoria:** file estraneo nel commit, cambio di modo, symlink → nessun CAS |
+| 6. Regressioni W0 | **Gitea reale:** commit misto con insieme esatto, modi e CAS; `old_commit_id` obsoleto con candidato discendente della HEAD corrente → `rejected`; update senza sha rifiutato dal nostro client; byte identici → commit senza quel file, quindi rifiutato dal controllo dell'insieme; ref di staging isolati mai usabili come branch di lavoro. **Gitea in memoria:** file estraneo nel commit, cambio di modo, symlink → nessun CAS |
 | 7. Classi di esito | errore prima del CAS; rifiuto certo (HEAD spostata subito prima del CAS → 422 e rilettura → `failed`); esito ambiguo in 4 varianti (risposta persa dopo o prima dell'applicazione, 500, rilettura impossibile) → `ambiguous`, un solo CAS; pubblicazione riuscita con evidenze fallite → `published`, Task non finalizzato |
 
 **Controllo per mutazione** (6 su 6 rilevate):
@@ -499,7 +499,14 @@ OPA non è modificato (non rieseguito localmente in questa sessione per l'assenz
 - evidenza non legata al commit;
 - controllo dei modi rimosso.
 
-**Accessibilità dei ref privati.** I ref `feature/w2-write-set-*` sono branch ordinari, leggibili da chi legge il repository. Contengono solo ciò che sarà pubblicato pochi istanti dopo sul branch di lavoro, nessun segreto. Il Gateway non li accetta mai come branch di lavoro, li rimuove dopo il successo e li conserva per la riconciliazione dopo un fallimento.
+**Isolated staging reference, non riservato.** I ref `feature/w2-write-set-*` sono **isolati** dal branch di lavoro e **vietati agli agenti** attraverso il Gateway: nessun Prepare o Execute li accetta come branch, e i CAS e le scritture del Gateway li rifiutano. **Non** sono però riservati: sono branch ordinari, leggibili da chiunque legga il repository. Contengono soltanto ciò che, se la pubblicazione riesce, compare pochi istanti dopo sul branch di lavoro. Vengono rimossi dopo il successo e conservati per la riconciliazione dopo un fallimento. Nella tesi vanno descritti come *isolated staging reference*, senza attribuire loro proprietà di confidenzialità.
+
+**Correzione dopo la revisione di W2:**
+- **Scadenza durante l'ultima rilettura della HEAD.** Il ricontrollo locale (stato delle admissions, Root, Child, stato del batch, finestra) viene ripetuto **dopo** l'ultima `await` (la rilettura della HEAD in P6) e di nuovo in modo sincrono immediatamente prima di `markTrustedWriteSetCasSent`, senza altre `await` in mezzo. Test: l'orologio avanza di 61 s durante la rilettura della HEAD → nessun CAS, `failed`.
+- **Batch invalidato durante lo staging asincrono.** Lo staging usa lo stato `staging`. Un'invalidazione che arriva nel frattempo lo porta a `failed`, e lo staging non può più impostare `staged`: rifiuta e porta a `failed` anche il write-set durevole. Test: invalidazione esterna durante il preflight, e un Execute anticipato durante il preflight.
+- Entrambe le correzioni sono verificate per mutazione: rimuovendole, i nuovi test falliscono.
+
+**Misura della seconda verifica (W3/W4).** In W2 la durata della seconda `verifyMultiple` ricade nel `provider_ms` dell'executor. W3 la espone separatamente (`reverification_ms`), così che in W4 il costo dell'autorizzazione non venga sottostimato.
 
 **Revoca reale tra staging e pubblicazione: non eseguita in W2.**
 - Il test usa un verificatore simulato che rifiuta dopo la prima verifica.
