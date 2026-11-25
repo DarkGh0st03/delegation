@@ -1,0 +1,841 @@
+config,case,k,rep,stage,rejected,verify_us,error
+root,required_not_delegated,1,0,verify,true,254.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,0,verify,true,202.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,0,verify,true,205.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,0,verify,true,5747.4,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,0,verify,true,211.3,VP challenge does not match the authorization context challenge
+root,revoked_root,1,0,verify,true,4171.8,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,0,verify,false,4202.4,
+root,required_not_delegated,10,0,verify,true,253.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,0,verify,true,246.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,0,verify,true,250.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,0,verify,true,241.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,0,verify,true,21913.4,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,0,verify,true,3986.9,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,0,verify,true,231.4,VP challenge does not match the authorization context challenge
+root,revoked_root,10,0,verify,true,20393.3,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,0,verify,false,20352.9,
+root,required_not_delegated,128,0,verify,true,4717.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,0,verify,true,4546.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,0,verify,true,4547.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,0,verify,true,4636.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,0,verify,true,236185.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,0,verify,true,8182.3,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,0,context,true,2.7,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,0,verify,true,396.5,VP challenge does not match the authorization context challenge
+root,revoked_root,128,0,verify,true,236305.3,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,0,verify,false,236316.4,
+root,required_not_delegated,1,1,verify,true,222.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,1,verify,true,224.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,1,verify,true,201.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,1,verify,true,5735.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,1,verify,true,213.9,VP challenge does not match the authorization context challenge
+root,revoked_root,1,1,verify,true,4218.7,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,1,verify,false,4213.2,
+root,required_not_delegated,10,1,verify,true,254.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,1,verify,true,243.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,1,verify,true,237.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,1,verify,true,251.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,1,verify,true,21982.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,1,verify,true,3994.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,1,verify,true,244.4,VP challenge does not match the authorization context challenge
+root,revoked_root,10,1,verify,true,20376.4,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,1,verify,false,20364.8,
+root,required_not_delegated,128,1,verify,true,4625.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,1,verify,true,4446.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,1,verify,true,4527.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,1,verify,true,4608.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,1,verify,true,236271.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,1,verify,true,8268.5,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,1,context,true,2.7,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,1,verify,true,382.3,VP challenge does not match the authorization context challenge
+root,revoked_root,128,1,verify,true,236314.2,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,1,verify,false,236497.6,
+root,required_not_delegated,1,2,verify,true,239.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,2,verify,true,201.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,2,verify,true,206.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,2,verify,true,5735.9,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,2,verify,true,247.5,VP challenge does not match the authorization context challenge
+root,revoked_root,1,2,verify,true,4194.5,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,2,verify,false,4225.9,
+root,required_not_delegated,10,2,verify,true,270.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,2,verify,true,244.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,2,verify,true,251.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,2,verify,true,239.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,2,verify,true,21957.7,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,2,verify,true,3968.1,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,2,verify,true,230.0,VP challenge does not match the authorization context challenge
+root,revoked_root,10,2,verify,true,20382.3,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,2,verify,false,20338.2,
+root,required_not_delegated,128,2,verify,true,4615.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,2,verify,true,4516.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,2,verify,true,4489.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,2,verify,true,4572.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,2,verify,true,284990.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,2,verify,true,13193.4,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,2,context,true,4.3,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,2,verify,true,614.8,VP challenge does not match the authorization context challenge
+root,revoked_root,128,2,verify,true,240922.7,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,2,verify,false,257781.8,
+root,required_not_delegated,1,3,verify,true,224.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,3,verify,true,259.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,3,verify,true,203.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,3,verify,true,5802.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,3,verify,true,213.3,VP challenge does not match the authorization context challenge
+root,revoked_root,1,3,verify,true,4393.8,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,3,verify,false,4326.2,
+root,required_not_delegated,10,3,verify,true,256.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,3,verify,true,257.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,3,verify,true,236.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,3,verify,true,248.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,3,verify,true,31011.5,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,3,verify,true,6312.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,3,verify,true,515.7,VP challenge does not match the authorization context challenge
+root,revoked_root,10,3,verify,true,27967.3,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,3,verify,false,22168.4,
+root,required_not_delegated,128,3,verify,true,6502.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,3,verify,true,4767.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,3,verify,true,4427.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,3,verify,true,5355.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,3,verify,true,261750.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,3,verify,true,8446.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,3,context,true,2.3,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,3,verify,true,386.2,VP challenge does not match the authorization context challenge
+root,revoked_root,128,3,verify,true,256922.8,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,3,verify,false,284982.8,
+root,required_not_delegated,1,4,verify,true,223.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,4,verify,true,205.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,4,verify,true,218.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,4,verify,true,5913.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,4,verify,true,217.0,VP challenge does not match the authorization context challenge
+root,revoked_root,1,4,verify,true,4224.3,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,4,verify,false,4223.7,
+root,required_not_delegated,10,4,verify,true,254.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,4,verify,true,256.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,4,verify,true,233.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,4,verify,true,247.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,4,verify,true,21911.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,4,verify,true,3970.1,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,4,verify,true,228.0,VP challenge does not match the authorization context challenge
+root,revoked_root,10,4,verify,true,20413.5,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,4,verify,false,20529.4,
+root,required_not_delegated,128,4,verify,true,4447.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,4,verify,true,4461.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,4,verify,true,4504.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,4,verify,true,4592.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,4,verify,true,236421.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,4,verify,true,8377.5,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,4,context,true,2.6,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,4,verify,true,396.0,VP challenge does not match the authorization context challenge
+root,revoked_root,128,4,verify,true,237144.3,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,4,verify,false,239665.7,
+root,required_not_delegated,1,5,verify,true,228.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,5,verify,true,205.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,5,verify,true,207.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,5,verify,true,5855.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,5,verify,true,217.1,VP challenge does not match the authorization context challenge
+root,revoked_root,1,5,verify,true,4208.6,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,5,verify,false,4304.5,
+root,required_not_delegated,10,5,verify,true,260.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,5,verify,true,246.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,5,verify,true,256.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,5,verify,true,244.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,5,verify,true,22079.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,5,verify,true,3970.7,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,5,verify,true,228.4,VP challenge does not match the authorization context challenge
+root,revoked_root,10,5,verify,true,20333.9,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,5,verify,false,20353.1,
+root,required_not_delegated,128,5,verify,true,4611.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,5,verify,true,4456.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,5,verify,true,4651.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,5,verify,true,4582.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,5,verify,true,238709.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,5,verify,true,8470.0,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,5,context,true,2.4,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,5,verify,true,406.3,VP challenge does not match the authorization context challenge
+root,revoked_root,128,5,verify,true,237169.2,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,5,verify,false,237226.4,
+root,required_not_delegated,1,6,verify,true,228.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,6,verify,true,216.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,6,verify,true,199.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,6,verify,true,5770.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,6,verify,true,213.3,VP challenge does not match the authorization context challenge
+root,revoked_root,1,6,verify,true,4198.5,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,6,verify,false,4192.6,
+root,required_not_delegated,10,6,verify,true,257.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,6,verify,true,248.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,6,verify,true,240.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,6,verify,true,285.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,6,verify,true,22236.1,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,6,verify,true,3987.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,6,verify,true,231.2,VP challenge does not match the authorization context challenge
+root,revoked_root,10,6,verify,true,20708.8,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,6,verify,false,21090.0,
+root,required_not_delegated,128,6,verify,true,4583.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,6,verify,true,4672.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,6,verify,true,4486.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,6,verify,true,4623.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,6,verify,true,238207.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,6,verify,true,8444.3,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,6,context,true,2.4,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,6,verify,true,406.5,VP challenge does not match the authorization context challenge
+root,revoked_root,128,6,verify,true,245838.5,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,6,verify,false,243767.4,
+root,required_not_delegated,1,7,verify,true,292.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,7,verify,true,202.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,7,verify,true,207.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,7,verify,true,6072.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,7,verify,true,221.7,VP challenge does not match the authorization context challenge
+root,revoked_root,1,7,verify,true,4266.4,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,7,verify,false,4202.9,
+root,required_not_delegated,10,7,verify,true,272.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,7,verify,true,239.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,7,verify,true,238.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,7,verify,true,246.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,7,verify,true,22596.1,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,7,verify,true,4027.9,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,7,verify,true,246.1,VP challenge does not match the authorization context challenge
+root,revoked_root,10,7,verify,true,20818.6,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,7,verify,false,21847.7,
+root,required_not_delegated,128,7,verify,true,5181.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,7,verify,true,4646.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,7,verify,true,4587.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,7,verify,true,4552.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,7,verify,true,301888.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,7,verify,true,8472.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,7,context,true,2.5,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,7,verify,true,389.7,VP challenge does not match the authorization context challenge
+root,revoked_root,128,7,verify,true,238807.8,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,7,verify,false,238755.8,
+root,required_not_delegated,1,8,verify,true,227.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,8,verify,true,225.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,8,verify,true,198.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,8,verify,true,5765.5,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,8,verify,true,212.7,VP challenge does not match the authorization context challenge
+root,revoked_root,1,8,verify,true,4293.2,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,8,verify,false,4300.9,
+root,required_not_delegated,10,8,verify,true,288.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,8,verify,true,242.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,8,verify,true,239.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,8,verify,true,248.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,8,verify,true,22108.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,8,verify,true,4065.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,8,verify,true,257.4,VP challenge does not match the authorization context challenge
+root,revoked_root,10,8,verify,true,20811.5,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,8,verify,false,20473.0,
+root,required_not_delegated,128,8,verify,true,4452.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,8,verify,true,4663.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,8,verify,true,4435.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,8,verify,true,4644.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,8,verify,true,238065.7,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,8,verify,true,8452.4,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,8,context,true,2.4,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,8,verify,true,400.1,VP challenge does not match the authorization context challenge
+root,revoked_root,128,8,verify,true,240962.8,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,8,verify,false,280208.4,
+root,required_not_delegated,1,9,verify,true,223.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,operation_escalation,1,9,verify,true,205.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+root,unheld_permission_requested,1,9,verify,true,205.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,1,9,verify,true,5761.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,wrong_challenge,1,9,verify,true,207.4,VP challenge does not match the authorization context challenge
+root,revoked_root,1,9,verify,true,4186.1,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,1,9,verify,false,4215.5,
+root,required_not_delegated,10,9,verify,true,252.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,10,9,verify,true,284.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+root,operation_escalation,10,9,verify,true,231.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+root,unheld_permission_requested,10,9,verify,true,245.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,10,9,verify,true,22030.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,10,9,verify,true,3999.5,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,wrong_challenge,10,9,verify,true,229.1,VP challenge does not match the authorization context challenge
+root,revoked_root,10,9,verify,true,20491.7,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,10,9,verify,false,21299.2,
+root,required_not_delegated,128,9,verify,true,4705.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,required_not_disclosed,128,9,verify,true,4629.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+root,operation_escalation,128,9,verify,true,4376.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+root,unheld_permission_requested,128,9,verify,true,4504.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,forged_permission_reused_witness,128,9,verify,true,288557.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+root,witness_swap,128,9,verify,true,8545.6,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+root,batch_over_128,128,9,context,true,2.2,context: Authorization context exceeds 128 required permissions
+root,wrong_challenge,128,9,verify,true,381.0,VP challenge does not match the authorization context challenge
+root,revoked_root,128,9,verify,true,246936.5,Credential urn:delegation:bench:root is revoked
+root,control_valid_batch,128,9,verify,false,305030.7,
+child,required_not_delegated,1,0,verify,true,228.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,0,verify,true,222.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,0,verify,true,226.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,0,verify,true,5715.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,0,verify,true,224.2,VP challenge does not match the authorization context challenge
+child,revoked_root,1,0,verify,true,4213.1,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,0,verify,true,8202.8,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,0,verify,false,8144.2,
+child,required_not_delegated,10,0,verify,true,301.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,0,verify,true,286.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,0,verify,true,264.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,0,verify,true,273.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,0,verify,true,21925.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,0,verify,true,24123.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,0,verify,true,258.1,VP challenge does not match the authorization context challenge
+child,revoked_root,10,0,verify,true,20389.7,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,0,verify,true,40541.9,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,0,verify,false,40504.7,
+child,required_not_delegated,128,0,verify,true,4801.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,0,verify,true,4791.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,0,verify,true,4766.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,0,verify,true,4680.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,0,verify,true,236319.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,0,verify,true,240755.5,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,0,context,true,2.6,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,0,verify,true,568.2,VP challenge does not match the authorization context challenge
+child,revoked_root,128,0,verify,true,237328.6,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,0,verify,true,468212.6,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,0,verify,false,468213.0,
+child,required_not_delegated,1,1,verify,true,240.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,1,verify,true,221.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,1,verify,true,237.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,1,verify,true,5719.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,1,verify,true,223.9,VP challenge does not match the authorization context challenge
+child,revoked_root,1,1,verify,true,4207.5,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,1,verify,true,8147.3,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,1,verify,false,8236.0,
+child,required_not_delegated,10,1,verify,true,299.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,1,verify,true,267.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,1,verify,true,267.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,1,verify,true,275.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,1,verify,true,22007.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,1,verify,true,24339.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,1,verify,true,279.6,VP challenge does not match the authorization context challenge
+child,revoked_root,10,1,verify,true,30125.0,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,1,verify,true,40626.9,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,1,verify,false,42832.5,
+child,required_not_delegated,128,1,verify,true,4807.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,1,verify,true,4839.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,1,verify,true,4775.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,1,verify,true,4756.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,1,verify,true,240199.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,1,verify,true,241467.9,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,1,context,true,2.5,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,1,verify,true,634.3,VP challenge does not match the authorization context challenge
+child,revoked_root,128,1,verify,true,236122.6,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,1,verify,true,471677.1,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,1,verify,false,535137.4,
+child,required_not_delegated,1,2,verify,true,251.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,2,verify,true,218.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,2,verify,true,233.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,2,verify,true,5754.4,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,2,verify,true,223.7,VP challenge does not match the authorization context challenge
+child,revoked_root,1,2,verify,true,4243.7,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,2,verify,true,8156.5,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,2,verify,false,8135.1,
+child,required_not_delegated,10,2,verify,true,320.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,2,verify,true,265.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,2,verify,true,319.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,2,verify,true,273.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,2,verify,true,21943.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,2,verify,true,24160.9,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,2,verify,true,261.8,VP challenge does not match the authorization context challenge
+child,revoked_root,10,2,verify,true,20467.4,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,2,verify,true,40467.2,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,2,verify,false,40482.2,
+child,required_not_delegated,128,2,verify,true,4773.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,2,verify,true,4792.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,2,verify,true,4741.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,2,verify,true,4827.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,2,verify,true,236319.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,2,verify,true,241674.4,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,2,context,true,3.2,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,2,verify,true,604.9,VP challenge does not match the authorization context challenge
+child,revoked_root,128,2,verify,true,236655.5,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,2,verify,true,468641.8,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,2,verify,false,469412.4,
+child,required_not_delegated,1,3,verify,true,243.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,3,verify,true,222.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,3,verify,true,218.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,3,verify,true,5739.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,3,verify,true,253.9,VP challenge does not match the authorization context challenge
+child,revoked_root,1,3,verify,true,4213.2,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,3,verify,true,8159.7,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,3,verify,false,8183.1,
+child,required_not_delegated,10,3,verify,true,283.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,3,verify,true,270.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,3,verify,true,268.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,3,verify,true,276.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,3,verify,true,22014.9,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,3,verify,true,24206.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,3,verify,true,261.7,VP challenge does not match the authorization context challenge
+child,revoked_root,10,3,verify,true,20519.9,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,3,verify,true,40587.6,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,3,verify,false,40499.1,
+child,required_not_delegated,128,3,verify,true,4945.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,3,verify,true,4824.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,3,verify,true,5033.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,3,verify,true,4673.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,3,verify,true,236658.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,3,verify,true,303317.7,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,3,context,true,2.3,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,3,verify,true,639.5,VP challenge does not match the authorization context challenge
+child,revoked_root,128,3,verify,true,239450.4,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,3,verify,true,511650.4,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,3,verify,false,502062.1,
+child,required_not_delegated,1,4,verify,true,238.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,4,verify,true,218.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,4,verify,true,366.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,4,verify,true,8907.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,4,verify,true,352.8,VP challenge does not match the authorization context challenge
+child,revoked_root,1,4,verify,true,5772.0,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,4,verify,true,14304.1,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,4,verify,false,14197.7,
+child,required_not_delegated,10,4,verify,true,436.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,4,verify,true,406.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,4,verify,true,411.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,4,verify,true,434.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,4,verify,true,28671.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,4,verify,true,24316.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,4,verify,true,261.8,VP challenge does not match the authorization context challenge
+child,revoked_root,10,4,verify,true,20470.7,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,4,verify,true,40619.3,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,4,verify,false,41056.3,
+child,required_not_delegated,128,4,verify,true,4758.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,4,verify,true,5069.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,4,verify,true,4765.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,4,verify,true,4677.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,4,verify,true,244507.7,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,4,verify,true,245150.7,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,4,context,true,2.5,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,4,verify,true,571.0,VP challenge does not match the authorization context challenge
+child,revoked_root,128,4,verify,true,284295.9,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,4,verify,true,489347.9,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,4,verify,false,491620.9,
+child,required_not_delegated,1,5,verify,true,243.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,5,verify,true,235.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,5,verify,true,211.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,5,verify,true,5786.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,5,verify,true,225.3,VP challenge does not match the authorization context challenge
+child,revoked_root,1,5,verify,true,5014.7,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,5,verify,true,8186.4,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,5,verify,false,8222.6,
+child,required_not_delegated,10,5,verify,true,303.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,5,verify,true,269.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,5,verify,true,269.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,5,verify,true,274.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,5,verify,true,22699.1,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,5,verify,true,24234.0,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,5,verify,true,280.7,VP challenge does not match the authorization context challenge
+child,revoked_root,10,5,verify,true,20526.0,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,5,verify,true,40744.4,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,5,verify,false,40850.2,
+child,required_not_delegated,128,5,verify,true,4768.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,5,verify,true,4752.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,5,verify,true,4888.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,5,verify,true,4785.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,5,verify,true,239945.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,5,verify,true,245150.1,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,5,context,true,2.6,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,5,verify,true,604.0,VP challenge does not match the authorization context challenge
+child,revoked_root,128,5,verify,true,242049.5,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,5,verify,true,475140.8,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,5,verify,false,475160.4,
+child,required_not_delegated,1,6,verify,true,249.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,6,verify,true,239.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,6,verify,true,214.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,6,verify,true,5778.2,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,6,verify,true,229.8,VP challenge does not match the authorization context challenge
+child,revoked_root,1,6,verify,true,4347.2,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,6,verify,true,8214.4,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,6,verify,false,8215.1,
+child,required_not_delegated,10,6,verify,true,288.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,6,verify,true,289.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,6,verify,true,283.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,6,verify,true,273.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,6,verify,true,22626.7,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,6,verify,true,24266.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,6,verify,true,265.1,VP challenge does not match the authorization context challenge
+child,revoked_root,10,6,verify,true,20596.0,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,6,verify,true,39677.0,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,6,verify,false,41403.3,
+child,required_not_delegated,128,6,verify,true,4802.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,6,verify,true,4768.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,6,verify,true,4635.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,6,verify,true,4898.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,6,verify,true,236428.7,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,6,verify,true,240510.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,6,context,true,3.2,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,6,verify,true,592.5,VP challenge does not match the authorization context challenge
+child,revoked_root,128,6,verify,true,236580.1,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,6,verify,true,468352.0,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,6,verify,false,468791.0,
+child,required_not_delegated,1,7,verify,true,242.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,7,verify,true,219.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,7,verify,true,218.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,7,verify,true,5772.1,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,7,verify,true,226.1,VP challenge does not match the authorization context challenge
+child,revoked_root,1,7,verify,true,4192.7,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,7,verify,true,8169.4,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,7,verify,false,8174.4,
+child,required_not_delegated,10,7,verify,true,284.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,7,verify,true,288.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,7,verify,true,284.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,7,verify,true,275.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,7,verify,true,21924.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,7,verify,true,24142.3,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,7,verify,true,300.6,VP challenge does not match the authorization context challenge
+child,revoked_root,10,7,verify,true,20488.5,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,7,verify,true,40528.4,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,7,verify,false,40543.8,
+child,required_not_delegated,128,7,verify,true,4882.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,7,verify,true,4847.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,7,verify,true,4664.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,7,verify,true,4796.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,7,verify,true,236379.4,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,7,verify,true,240441.1,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,7,context,true,2.5,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,7,verify,true,576.7,VP challenge does not match the authorization context challenge
+child,revoked_root,128,7,verify,true,237612.8,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,7,verify,true,483274.3,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,7,verify,false,495453.5,
+child,required_not_delegated,1,8,verify,true,242.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,8,verify,true,221.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,8,verify,true,255.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,8,verify,true,5827.1,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,8,verify,true,229.2,VP challenge does not match the authorization context challenge
+child,revoked_root,1,8,verify,true,4207.8,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,8,verify,true,8420.2,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,8,verify,false,8521.8,
+child,required_not_delegated,10,8,verify,true,314.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,8,verify,true,292.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,8,verify,true,270.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,8,verify,true,275.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,8,verify,true,22269.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,8,verify,true,25102.7,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,8,verify,true,267.5,VP challenge does not match the authorization context challenge
+child,revoked_root,10,8,verify,true,20597.2,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,8,verify,true,42086.9,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,8,verify,false,41068.8,
+child,required_not_delegated,128,8,verify,true,4684.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,8,verify,true,4812.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,8,verify,true,4783.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,8,verify,true,4814.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,8,verify,true,245318.2,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,8,verify,true,244948.1,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,8,context,true,2.4,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,8,verify,true,570.5,VP challenge does not match the authorization context challenge
+child,revoked_root,128,8,verify,true,241934.4,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,8,verify,true,477652.2,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,8,verify,false,478725.2,
+child,required_not_delegated,1,9,verify,true,239.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,operation_escalation,1,9,verify,true,217.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child,unheld_permission_requested,1,9,verify,true,233.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,1,9,verify,true,6009.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,wrong_challenge,1,9,verify,true,250.4,VP challenge does not match the authorization context challenge
+child,revoked_root,1,9,verify,true,4287.0,Credential urn:delegation:bench:root is revoked
+child,revoked_child,1,9,verify,true,8493.0,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,1,9,verify,false,8438.1,
+child,required_not_delegated,10,9,verify,true,312.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,10,9,verify,true,310.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child,operation_escalation,10,9,verify,true,382.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child,unheld_permission_requested,10,9,verify,true,276.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,10,9,verify,true,22413.4,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,10,9,verify,true,24721.9,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,wrong_challenge,10,9,verify,true,269.8,VP challenge does not match the authorization context challenge
+child,revoked_root,10,9,verify,true,20820.0,Credential urn:delegation:bench:root is revoked
+child,revoked_child,10,9,verify,true,42896.3,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,10,9,verify,false,41397.2,
+child,required_not_delegated,128,9,verify,true,4970.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,required_not_disclosed,128,9,verify,true,4777.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child,operation_escalation,128,9,verify,true,4589.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child,unheld_permission_requested,128,9,verify,true,4855.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,forged_permission_reused_witness,128,9,verify,true,239669.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child,witness_swap,128,9,verify,true,251395.0,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child,batch_over_128,128,9,context,true,2.3,context: Authorization context exceeds 128 required permissions
+child,wrong_challenge,128,9,verify,true,628.0,VP challenge does not match the authorization context challenge
+child,revoked_root,128,9,verify,true,245867.4,Credential urn:delegation:bench:root is revoked
+child,revoked_child,128,9,verify,true,507062.2,Credential urn:delegation:bench:child is revoked
+child,control_valid_batch,128,9,verify,false,596304.6,
+child_dirscope,required_not_delegated,1,0,verify,true,243.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,0,verify,true,219.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,0,verify,true,215.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,0,verify,true,5789.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,0,verify,true,242.8,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,0,verify,true,4235.6,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,0,verify,true,8160.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,0,verify,false,8185.9,
+child_dirscope,required_not_delegated,10,0,verify,true,284.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,0,verify,true,271.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,0,verify,true,267.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,0,verify,true,287.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,0,verify,true,21899.9,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,0,verify,true,23916.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,0,verify,true,280.8,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,0,verify,true,20115.1,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,0,verify,true,40320.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,0,verify,false,40231.9,
+child_dirscope,required_not_delegated,128,0,verify,true,4785.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,0,verify,true,4866.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,0,verify,true,4713.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,0,verify,true,4724.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,0,verify,true,232653.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,0,verify,true,236533.9,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,0,context,true,2.3,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,0,verify,true,577.7,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,0,verify,true,233655.7,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,0,verify,true,466306.7,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,0,verify,false,473249.2,
+child_dirscope,required_not_delegated,1,1,verify,true,257.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,1,verify,true,220.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,1,verify,true,217.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,1,verify,true,5801.2,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,1,verify,true,242.6,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,1,verify,true,4288.3,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,1,verify,true,8289.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,1,verify,false,8328.3,
+child_dirscope,required_not_delegated,10,1,verify,true,302.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,1,verify,true,286.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,1,verify,true,276.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,1,verify,true,278.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,1,verify,true,21932.2,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,1,verify,true,24973.3,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,1,verify,true,289.8,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,1,verify,true,20290.3,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,1,verify,true,40839.3,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,1,verify,false,42665.4,
+child_dirscope,required_not_delegated,128,1,verify,true,4841.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,1,verify,true,4672.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,1,verify,true,4634.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,1,verify,true,4773.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,1,verify,true,234977.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,1,verify,true,243753.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,1,context,true,2.6,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,1,verify,true,582.0,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,1,verify,true,304712.9,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,1,verify,true,465911.7,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,1,verify,false,467302.4,
+child_dirscope,required_not_delegated,1,2,verify,true,240.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,2,verify,true,233.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,2,verify,true,211.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,2,verify,true,5767.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,2,verify,true,225.3,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,2,verify,true,4208.7,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,2,verify,true,8203.8,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,2,verify,false,8186.8,
+child_dirscope,required_not_delegated,10,2,verify,true,304.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,2,verify,true,270.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,2,verify,true,269.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,2,verify,true,276.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,2,verify,true,21972.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,2,verify,true,24234.1,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,2,verify,true,263.0,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,2,verify,true,20139.3,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,2,verify,true,40651.1,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,2,verify,false,40518.6,
+child_dirscope,required_not_delegated,128,2,verify,true,4830.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,2,verify,true,4677.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,2,verify,true,4636.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,2,verify,true,4639.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,2,verify,true,233365.4,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,2,verify,true,238087.0,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,2,context,true,2.3,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,2,verify,true,567.3,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,2,verify,true,236463.0,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,2,verify,true,473895.5,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,2,verify,false,470379.8,
+child_dirscope,required_not_delegated,1,3,verify,true,277.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,3,verify,true,223.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,3,verify,true,220.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,3,verify,true,5869.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,3,verify,true,238.7,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,3,verify,true,4281.4,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,3,verify,true,8280.4,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,3,verify,false,8223.4,
+child_dirscope,required_not_delegated,10,3,verify,true,303.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,3,verify,true,267.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,3,verify,true,266.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,3,verify,true,275.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,3,verify,true,22714.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,3,verify,true,24215.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,3,verify,true,265.3,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,3,verify,true,21300.5,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,3,verify,true,55747.5,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,3,verify,false,48356.2,
+child_dirscope,required_not_delegated,128,3,verify,true,4713.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,3,verify,true,4634.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,3,verify,true,4582.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,3,verify,true,4598.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,3,verify,true,244607.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,3,verify,true,238752.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,3,context,true,2.6,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,3,verify,true,566.5,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,3,verify,true,237721.9,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,3,verify,true,467524.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,3,verify,false,466989.4,
+child_dirscope,required_not_delegated,1,4,verify,true,244.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,4,verify,true,220.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,4,verify,true,228.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,4,verify,true,5782.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,4,verify,true,228.0,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,4,verify,true,4263.2,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,4,verify,true,8208.4,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,4,verify,false,8187.2,
+child_dirscope,required_not_delegated,10,4,verify,true,283.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,4,verify,true,290.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,4,verify,true,303.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,4,verify,true,271.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,4,verify,true,21772.9,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,4,verify,true,24446.1,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,4,verify,true,267.4,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,4,verify,true,20159.6,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,4,verify,true,40242.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,4,verify,false,41261.2,
+child_dirscope,required_not_delegated,128,4,verify,true,4646.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,4,verify,true,4686.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,4,verify,true,4677.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,4,verify,true,4596.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,4,verify,true,249179.8,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,4,verify,true,263940.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,4,context,true,2.6,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,4,verify,true,596.5,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,4,verify,true,238133.9,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,4,verify,true,466129.2,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,4,verify,false,548607.0,
+child_dirscope,required_not_delegated,1,5,verify,true,244.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,5,verify,true,235.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,5,verify,true,233.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,5,verify,true,5832.5,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,5,verify,true,227.7,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,5,verify,true,4249.7,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,5,verify,true,8342.7,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,5,verify,false,8240.7,
+child_dirscope,required_not_delegated,10,5,verify,true,286.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,5,verify,true,291.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,5,verify,true,282.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,5,verify,true,274.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,5,verify,true,21700.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,5,verify,true,23845.0,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,5,verify,true,262.1,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,5,verify,true,20053.4,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,5,verify,true,40192.1,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,5,verify,false,40211.0,
+child_dirscope,required_not_delegated,128,5,verify,true,4654.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,5,verify,true,4860.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,5,verify,true,4824.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,5,verify,true,4785.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,5,verify,true,234019.5,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,5,verify,true,236919.5,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,5,context,true,2.2,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,5,verify,true,605.2,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,5,verify,true,232864.5,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,5,verify,true,468070.5,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,5,verify,false,510797.6,
+child_dirscope,required_not_delegated,1,6,verify,true,244.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,6,verify,true,237.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,6,verify,true,213.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,6,verify,true,5759.2,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,6,verify,true,226.0,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,6,verify,true,4212.8,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,6,verify,true,8179.3,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,6,verify,false,8188.9,
+child_dirscope,required_not_delegated,10,6,verify,true,303.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,6,verify,true,285.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,6,verify,true,268.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,6,verify,true,278.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,6,verify,true,21693.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,6,verify,true,23782.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,6,verify,true,264.1,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,6,verify,true,20109.8,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,6,verify,true,40244.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,6,verify,false,40335.5,
+child_dirscope,required_not_delegated,128,6,verify,true,4778.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,6,verify,true,4866.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,6,verify,true,4722.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,6,verify,true,4719.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,6,verify,true,232041.3,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,6,verify,true,236086.2,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,6,context,true,2.7,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,6,verify,true,577.8,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,6,verify,true,233111.3,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,6,verify,true,464291.7,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,6,verify,false,465356.3,
+child_dirscope,required_not_delegated,1,7,verify,true,245.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,7,verify,true,262.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,7,verify,true,212.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,7,verify,true,5775.5,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,7,verify,true,225.8,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,7,verify,true,4256.7,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,7,verify,true,8309.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,7,verify,false,8218.0,
+child_dirscope,required_not_delegated,10,7,verify,true,289.5,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,7,verify,true,292.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,7,verify,true,310.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,7,verify,true,275.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,7,verify,true,21688.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,7,verify,true,23822.3,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,7,verify,true,262.3,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,7,verify,true,20135.6,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,7,verify,true,40299.4,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,7,verify,false,39998.7,
+child_dirscope,required_not_delegated,128,7,verify,true,4663.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,7,verify,true,4817.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,7,verify,true,4653.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,7,verify,true,4744.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,7,verify,true,232266.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,7,verify,true,236169.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,7,context,true,2.8,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,7,verify,true,577.2,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,7,verify,true,232793.8,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,7,verify,true,464423.6,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,7,verify,false,465317.6,
+child_dirscope,required_not_delegated,1,8,verify,true,247.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,8,verify,true,234.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,8,verify,true,218.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,8,verify,true,5813.7,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,8,verify,true,229.5,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,8,verify,true,4248.8,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,8,verify,true,8271.2,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,8,verify,false,8191.3,
+child_dirscope,required_not_delegated,10,8,verify,true,299.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,8,verify,true,290.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,8,verify,true,266.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,8,verify,true,274.6,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,8,verify,true,22090.2,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,8,verify,true,24060.4,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,8,verify,true,262.1,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,8,verify,true,20247.4,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,8,verify,true,40300.2,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,8,verify,false,40321.1,
+child_dirscope,required_not_delegated,128,8,verify,true,4744.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,8,verify,true,4867.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,8,verify,true,4772.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,8,verify,true,4909.3,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,8,verify,true,231724.0,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,8,verify,true,235940.8,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,8,context,true,2.8,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,8,verify,true,566.0,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,8,verify,true,234906.8,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,8,verify,true,467311.5,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,8,verify,false,479603.9,
+child_dirscope,required_not_delegated,1,9,verify,true,243.7,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,operation_escalation,1,9,verify,true,219.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts#update_file
+child_dirscope,unheld_permission_requested,1,9,verify,true,218.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,1,9,verify,true,5799.6,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,wrong_challenge,1,9,verify,true,242.4,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,1,9,verify,true,4221.0,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,1,9,verify,true,8213.4,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,1,9,verify,false,8319.0,
+child_dirscope,required_not_delegated,10,9,verify,true,295.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,10,9,verify,true,272.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#read_file
+child_dirscope,operation_escalation,10,9,verify,true,268.9,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_009.ts#update_file
+child_dirscope,unheld_permission_requested,10,9,verify,true,275.8,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,10,9,verify,true,22745.4,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,10,9,verify,true,24090.3,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,wrong_challenge,10,9,verify,true,266.9,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,10,9,verify,true,20289.1,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,10,9,verify,true,40402.2,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,10,9,verify,false,40434.0,
+child_dirscope,required_not_delegated,128,9,verify,true,4766.2,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,required_not_disclosed,128,9,verify,true,4639.1,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#read_file
+child_dirscope,operation_escalation,128,9,verify,true,4645.0,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_127.ts#update_file
+child_dirscope,unheld_permission_requested,128,9,verify,true,4656.4,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,forged_permission_reused_witness,128,9,verify,true,233574.2,Could not verify membership for element v1:79:gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem:9:read_file
+child_dirscope,witness_swap,128,9,verify,true,255881.5,Could not verify membership for element v1:74:gitea://gitea.local/team/app/branches/feature%2Fs1/files/src/module_000.ts:9:read_file
+child_dirscope,batch_over_128,128,9,context,true,2.3,context: Authorization context exceeds 128 required permissions
+child_dirscope,wrong_challenge,128,9,verify,true,613.7,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root,128,9,verify,true,272232.6,Credential urn:delegation:bench:root is revoked
+child_dirscope,revoked_child,128,9,verify,true,473189.2,Credential urn:delegation:bench:child is revoked
+child_dirscope,control_valid_batch,128,9,verify,false,483044.8,

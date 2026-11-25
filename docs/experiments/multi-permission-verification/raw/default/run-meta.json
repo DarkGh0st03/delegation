@@ -1,0 +1,26 @@
+{
+  "n_permissions_in_credential": 128,
+  "ks": [
+    1,
+    2,
+    5,
+    10,
+    15,
+    32,
+    64,
+    128
+  ],
+  "reps": 30,
+  "warmup": 3,
+  "negative_reps": 10,
+  "seed": 104372539625765,
+  "configs": [
+    "root",
+    "child",
+    "child_dirscope"
+  ],
+  "features": {
+    "parallel_verification": false
+  },
+  "elapsed_s": 325.151589953
+}
