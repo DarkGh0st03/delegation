@@ -1,0 +1,8 @@
+services:
+  app:
+    image: delegation-app:phase-r
+    pull_policy: never
+    environment:
+      DELEGATION_FREE_MODES: "1"
+      GEMINI_API_KEY: ""
+      DELEGATION_BATCH_READS: "${DELEGATION_BATCH_READS:-1}"

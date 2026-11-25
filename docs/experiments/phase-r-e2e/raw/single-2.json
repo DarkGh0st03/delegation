@@ -1,0 +1,245 @@
+{
+ "label": "single-2",
+ "sid": "s-ccbf500c6f5f",
+ "phase": "completed",
+ "error": null,
+ "permissions": 9,
+ "planning_ms": 8109,
+ "execution_ms": 39259,
+ "total_ms": 47368,
+ "pull_request": {
+  "number": 10,
+  "title": "WIP: [SIMULATA] Add a genre filter to the book list: users can filter books by genre in the API and in the UI, with tests.",
+  "url": "http://gitea:3000/thesis/campus-library/pulls/10",
+  "draft": true,
+  "merged": false
+ },
+ "gateway_decisions": [
+  {
+   "at": "2026-11-25T09:36:34.068Z",
+   "agent": "orchestrator",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/main/files/data/books.json",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "verification_ms": 1050.0202669999853,
+   "opa_ms": 12.29338899999857,
+   "vp_size_bytes": 1476
+  },
+  {
+   "at": "2026-11-25T09:36:43.040Z",
+   "agent": "orchestrator",
+   "tool": "create_branch",
+   "resource": "gitea://gitea.local/thesis/campus-library",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1086.571891999978,
+   "opa_ms": 3.373316999990493
+  },
+  {
+   "at": "2026-11-25T09:36:45.006Z",
+   "agent": "data",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/data/books.json",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1644.640981000004,
+   "opa_ms": 2.0991800000192598
+  },
+  {
+   "at": "2026-11-25T09:36:47.056Z",
+   "agent": "data",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/data/books.json",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1512.0885300000082,
+   "opa_ms": 2.3683209999871906
+  },
+  {
+   "at": "2026-11-25T09:36:51.936Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/data/books.json",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1566.7838989999727,
+   "opa_ms": 4.272534999996424
+  },
+  {
+   "at": "2026-11-25T09:36:53.798Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/test/catalog.test.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1533.0888810000033,
+   "opa_ms": 1.8945039999962319
+  },
+  {
+   "at": "2026-11-25T09:36:55.677Z",
+   "agent": "test",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/test/catalog.test.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1558.9836350000114,
+   "opa_ms": 2.3756149999971967
+  },
+  {
+   "at": "2026-11-25T09:37:01.724Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/data/books.json",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1493.3283129999763,
+   "opa_ms": 3.51742099999683
+  },
+  {
+   "at": "2026-11-25T09:37:03.508Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/test/server.test.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1470.857227999979,
+   "opa_ms": 2.448506999993697
+  },
+  {
+   "at": "2026-11-25T09:37:05.279Z",
+   "agent": "test",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f/files/test/server.test.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1538.827473000012,
+   "opa_ms": 2.334694999997737
+  },
+  {
+   "at": "2026-11-25T09:37:08.677Z",
+   "agent": "test",
+   "tool": "run_tests",
+   "resource": "gitea://gitea.local/thesis/campus-library/branches/feature%2Fs-ccbf500c6f5f",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_runner_execution",
+   "detail": null,
+   "verification_ms": 1499.504461000004,
+   "opa_ms": 2.0821320000104606
+  },
+  {
+   "at": "2026-11-25T09:37:12.623Z",
+   "agent": "orchestrator",
+   "tool": "create_pull_request",
+   "resource": "gitea://gitea.local/thesis/campus-library",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 967.699426999985,
+   "opa_ms": 2.410762000014074
+  }
+ ],
+ "log": [
+  {
+   "at": "2026-11-25T09:36:27.794Z",
+   "text": "Policy della repository applicata da OPA"
+  },
+  {
+   "at": "2026-11-25T09:36:27.794Z",
+   "text": "Profilo di test della repository: 2 fasi (dependency_install, tests), impronta f24c22d1fa77"
+  },
+  {
+   "at": "2026-11-25T09:36:27.819Z",
+   "text": "Snapshot di 14 file e 5 cartelle alla commit 103048e8368e"
+  },
+  {
+   "at": "2026-11-25T09:36:27.820Z",
+   "text": "Gateway avviato (verifica Rust + OPA + Gitea)"
+  },
+  {
+   "at": "2026-11-25T09:36:27.823Z",
+   "text": "Planner: SIMULATO (nessuna IA, nessun costo)"
+  },
+  {
+   "at": "2026-11-25T09:36:27.823Z",
+   "text": "Emissione della Root preliminare di sola lettura..."
+  },
+  {
+   "at": "2026-11-25T09:36:35.178Z",
+   "text": "Proposta pronta: 9 permessi da rivedere"
+  },
+  {
+   "at": "2026-11-25T09:36:35.901Z",
+   "text": "Firma Ed25519 dell'Engineer registrata su 9 permessi di 9"
+  },
+  {
+   "at": "2026-11-25T09:36:35.903Z",
+   "text": "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati"
+  },
+  {
+   "at": "2026-11-25T09:36:35.924Z",
+   "text": "Agenti SIMULATI (nessuna IA): 4 Task pianificati"
+  },
+  {
+   "at": "2026-11-25T09:36:44.497Z",
+   "text": "Orchestrator → data: Leggi e aggiorna data/books.json (sessione s-ccbf500c6f5f)",
+   "assignment": {
+    "agent": "data",
+    "task_id": "t01-data",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T09:36:51.438Z",
+   "text": "Orchestrator → test: Leggi data/books.json e aggiorna test/catalog.test.js con i test del comportamento nuovo",
+   "assignment": {
+    "agent": "test",
+    "task_id": "t02-test",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T09:37:01.308Z",
+   "text": "Orchestrator → test: Leggi data/books.json e aggiorna test/server.test.js con i test del comportamento nuovo",
+   "assignment": {
+    "agent": "test",
+    "task_id": "t03-test",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T09:37:08.165Z",
+   "text": "Orchestrator → test: Esegui i test del progetto sul commit attuale del branch",
+   "assignment": {
+    "agent": "test",
+    "task_id": "t99-test",
+    "operations": "run_tests"
+   }
+  },
+  {
+   "at": "2026-11-25T09:37:10.190Z",
+   "text": "Test avviati nel Runner sul commit 86fe428d3872"
+  },
+  {
+   "at": "2026-11-25T09:37:11.632Z",
+   "text": "Esito del Runner: PASS"
+  },
+  {
+   "at": "2026-11-25T09:37:14.148Z",
+   "text": "Anteprima della Draft PR richiesta allo staging"
+  },
+  {
+   "at": "2026-11-25T09:37:14.149Z",
+   "text": "Completata: Draft PR creata. Il merge resta una decisione umana."
+  }
+ ]
+}

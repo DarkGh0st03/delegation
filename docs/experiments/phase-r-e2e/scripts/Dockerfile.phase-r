@@ -1,0 +1,2 @@
+FROM delegation-app:local
+COPY poc/ /app/poc/
