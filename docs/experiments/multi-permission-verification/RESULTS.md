@@ -3,7 +3,7 @@
 **Esecuzione:** 25/11/2026, `raw/default/` (feature di default, come il binding di produzione).
 **Codice misurato:** core `97547d24`; benchmark al commit `29edb9e8` del branch `experiment/multi-permission-verification-benchmark`.
 **Ambiente:** VM KVM con Intel Xeon @ 2,30 GHz, 4 vCPU, 16 GB; rustc 1.97.0; build `--release` (`raw/default/environment.json`).
-**Protocollo:** 3 warm-up scartati + 30 ripetizioni; 3 configurazioni × 8 valori di k × 2 modalità = **1.440 prove, tutte riuscite** con la profondità attesa. 840 prove negative. Metodologia: `METHODOLOGY.md`. Tabelle complete: `raw/default/summary.md`.
+**Protocollo:** 3 warm-up scartati + 30 ripetizioni; 3 configurazioni × 8 valori di k × 2 modalità = **1.440 prove, tutte riuscite** con la profondità attesa. 840 prove negative (750 richieste non valide, tutte respinte, e 90 controlli validi, tutti accettati; 84 gruppi). Metodologia: `METHODOLOGY.md`. Tabelle complete: `raw/default/summary.md`.
 
 ## 1. Natura delle misure
 
@@ -18,7 +18,7 @@
 
 ## 2. Risultato principale: costo crittografico
 
-Mediane di 30 ripetizioni; tra parentesi l'intervallo bootstrap al 95% del rapporto (2.000 ricampionamenti delle ripetizioni).
+Mediane di 30 ripetizioni; tra parentesi l'intervallo bootstrap **appaiato** al 95% del rapporto (2.000 ricampionamenti delle ripetizioni; le prove singola e multipla della stessa ripetizione restano accoppiate).
 
 | Config | k | VP separate: verifica (ms) | VP unica: verifica (ms) | Speedup verifica | Speedup totale (generazione + verifica) |
 |---|---:|---:|---:|---|---|
@@ -26,13 +26,13 @@ Mediane di 30 ripetizioni; tra parentesi l'intervallo bootstrap al 95% del rappo
 | | 10 | 41,97 | 20,42 | 2,06 (2,05–2,06) | 2,25 (2,24–2,26) |
 | | 15 | 62,81 | 29,42 | 2,14 (2,13–2,14) | 2,35 (2,35–2,36) |
 | | 128 | 538,01 | 237,38 | 2,27 (2,26–2,28) | 2,53 (2,53–2,55) |
-| Child (profondità 1) | 5 | 41,30 | 22,67 | 1,82 (1,80–1,84) | 1,90 (1,87–1,91) |
-| | 10 | 82,48 | 40,94 | 2,01 (1,97–2,04) | 2,12 (2,07–2,14) |
-| | 15 | 124,73 | 59,63 | 2,09 (2,05–2,13) | 2,21 (2,17–2,25) |
+| Child (profondità 1) | 5 | 41,30 | 22,67 | 1,82 (1,80–1,84) | 1,90 (1,88–1,91) |
+| | 10 | 82,48 | 40,94 | 2,01 (1,97–2,03) | 2,12 (2,08–2,14) |
+| | 15 | 124,73 | 59,63 | 2,09 (2,05–2,13) | 2,21 (2,16–2,25) |
 | | 128 | 1.073,93 | 487,15 | 2,20 (2,15–2,26) | 2,35 (2,29–2,41) |
 | Child con Root a directory | 5 | 40,99 | 22,56 | 1,82 (1,80–1,83) | 1,89 (1,87–1,91) |
-| | 10 | 82,06 | 40,37 | 2,03 (2,02–2,08) | 2,14 (2,12–2,19) |
-| | 15 | 123,65 | 58,36 | 2,12 (2,10–2,16) | 2,24 (2,21–2,28) |
+| | 10 | 82,06 | 40,37 | 2,03 (2,02–2,08) | 2,14 (2,13–2,19) |
+| | 15 | 123,65 | 58,36 | 2,12 (2,10–2,15) | 2,24 (2,22–2,27) |
 | | 128 | 1.075,12 | 469,58 | 2,29 (2,25–2,31) | 2,44 (2,39–2,46) |
 
 Per k = 1 le due modalità coincidono (rapporto 1,00), come atteso.
@@ -77,7 +77,7 @@ Quindi le chiamate alle interfacce **non coincidono** con le richieste RPC. Con 
 
 ## 4. Casi negativi
 
-**Tutti i 30 gruppi negativi** (10 ripetizioni ciascuno, k ∈ {1, 10, 128}, tre configurazioni) **sono respinti per il motivo specifico atteso**; i controlli validi sono sempre accettati.
+**84 gruppi** (10 ripetizioni ciascuno, k ∈ {1, 10, 128}, tre configurazioni): **75 gruppi di richieste non valide, 750 prove, tutte respinte per il motivo specifico atteso**; **9 gruppi di controllo valido, 90 prove, tutte accettate**.
 
 | Caso | Motivo del rifiuto (messaggio del core) | Mediana, Child, k = 10 |
 |---|---|---:|

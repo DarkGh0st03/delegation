@@ -29,13 +29,19 @@ def pct(values, p):
 
 
 def bootstrap_ratio(single, multi, n=2000, seed=20261125):
-    """95% percentile-bootstrap CI of median(single)/median(multi), resampling reps."""
+    """Paired 95% percentile-bootstrap CI of median(single)/median(multi).
+
+    `single` and `multi` are dicts rep -> value. The SAME resampled set of
+    repetitions is used for both modes, preserving the pairing of trials that
+    ran within the same repetition (same machine state, same shuffled block).
+    """
+    reps = sorted(set(single) & set(multi))
     rng = random.Random(seed)
     ratios = []
     for _ in range(n):
-        s = [rng.choice(single) for _ in single]
-        m = [rng.choice(multi) for _ in multi]
-        ratios.append(statistics.median(s) / statistics.median(m))
+        idx = [rng.choice(reps) for _ in reps]
+        ratios.append(statistics.median(single[i] for i in idx) /
+                      statistics.median(multi[i] for i in idx))
     return pct(ratios, 2.5), pct(ratios, 97.5)
 
 
@@ -82,8 +88,8 @@ def analyze(run: Path):
         w.writerows(out)
 
     by = {(r["config"], r["mode"], r["k"]): r for r in out}
-    raw = {key: [float(x["verify_us"]) for x in v] for key, v in groups.items()}
-    raw_total = {key: [float(x["total_us"]) for x in v] for key, v in groups.items()}
+    raw = {key: {int(x["rep"]): float(x["verify_us"]) for x in v} for key, v in groups.items()}
+    raw_total = {key: {int(x["rep"]): float(x["total_us"]) for x in v} for key, v in groups.items()}
 
     md = [f"# Summary — {run.name}", "",
           f"- reps: {meta['reps']} (warm-up {meta['warmup']} discarded), seed {meta['seed']}, "
@@ -93,7 +99,7 @@ def analyze(run: Path):
     for config in sorted({r["config"] for r in out}):
         md += [f"## {config}", "",
                "| k | single verify ms (median [p5–p95]) | multi verify ms (median [p5–p95]) | "
-               "ratio single/multi (95% CI) | multi ms/permission | single VPs bytes | multi VP bytes | "
+               "ratio single/multi (paired 95% CI) | multi ms/permission | single VPs bytes | multi VP bytes | "
                "trust queries single / multi |",
                "|---:|---|---|---|---:|---:|---:|---|"]
         ks = sorted({r["k"] for r in out if r["config"] == config})
@@ -109,7 +115,7 @@ def analyze(run: Path):
                 f"| {s['q_total']} / {m['q_total']} |")
         md.append("")
         md += ["| k | single presentation ms | multi presentation ms | single total ms | multi total ms | "
-               "ratio total (95% CI) |", "|---:|---:|---:|---:|---:|---|"]
+               "ratio total (paired 95% CI) |", "|---:|---:|---:|---:|---:|---|"]
         for k in ks:
             s, m = by[(config, "single", k)], by[(config, "multi", k)]
             lo, hi = bootstrap_ratio(raw_total[(config, "single", k)], raw_total[(config, "multi", k)])
@@ -142,7 +148,13 @@ def analyze(run: Path):
         w = csv.DictWriter(fh, fieldnames=list(nout[0].keys()))
         w.writeheader()
         w.writerows(nout)
+    neg_groups = [r for r in nout if r["case"] != "control_valid_batch"]
+    ctl_groups = [r for r in nout if r["case"] == "control_valid_batch"]
     md += ["## Negative cases", "",
+           f"{len(nout)} groups: {len(neg_groups)} invalid-request groups "
+           f"({sum(r['n'] for r in neg_groups)} trials, {sum(r['rejected'] for r in neg_groups)} rejected) and "
+           f"{len(ctl_groups)} valid-control groups ({sum(r['n'] for r in ctl_groups)} trials, "
+           f"{sum(r['n'] - r['rejected'] for r in ctl_groups)} accepted).", "",
            "| config | case | k | n | rejected | as expected | median ms to decision | reason (first) |",
            "|---|---|---:|---:|---:|---|---:|---|"]
     for r in nout:
