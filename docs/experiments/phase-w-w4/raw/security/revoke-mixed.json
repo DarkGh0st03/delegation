@@ -1,0 +1,252 @@
+{
+ "label": "revoke-mixed",
+ "sid": "s-13c7bb6cac61",
+ "phase": "failed",
+ "error": "Esecuzione interrotta: Canonical reviewed owner handoff denied: original Root retirement unconfirmed after ambiguous execution — Causa: Gateway: update_file di backend non riuscito: VerificationRejectedError: Rust Core rejected the signed VP or trust context",
+ "permissions": 16,
+ "planning_ms": 10038,
+ "execution_ms": 33250,
+ "total_ms": 43289,
+ "gateway_decisions": [
+  {
+   "at": "2026-11-25T18:06:28.176Z",
+   "agent": "orchestrator",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/main/files/src/ledger/balance.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "verification_ms": 1205.1651390000043,
+   "opa_ms": 6.356236999999965,
+   "vp_size_bytes": 1472
+  },
+  {
+   "at": "2026-11-25T18:06:37.969Z",
+   "agent": "orchestrator",
+   "tool": "create_branch",
+   "resource": "gitea://gitea.local/thesis/batch-bench",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1113.1298519999982,
+   "opa_ms": 4.14924699999392
+  },
+  {
+   "at": "2026-11-25T18:06:47.569Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/balance.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1659.3037429999968,
+   "opa_ms": 4.808157999999821,
+   "read_batch_id": "batch_1e63739c-8412-4fcc-a5fb-fb229c0a3994",
+   "batch_verification": "performed"
+  },
+  {
+   "at": "2026-11-25T18:06:49.325Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/entries.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 0.045591999994940124,
+   "opa_ms": 2.5325379999994766,
+   "read_batch_id": "batch_1e63739c-8412-4fcc-a5fb-fb229c0a3994",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T18:06:49.410Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/journal.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 0.04356299999926705,
+   "opa_ms": 2.086857999995118,
+   "read_batch_id": "batch_1e63739c-8412-4fcc-a5fb-fb229c0a3994",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T18:06:49.488Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/statements.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 0.05169600000954233,
+   "opa_ms": 1.9958560000086436,
+   "read_batch_id": "batch_1e63739c-8412-4fcc-a5fb-fb229c0a3994",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T18:06:49.925Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/balance.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_write_set_item_staged",
+   "detail": null,
+   "verification_ms": 1592.143430000011,
+   "opa_ms": 3.0535689999960596,
+   "write_batch_id": "wbatch_572cf1fa-dfeb-497c-b403-2f4c03354508",
+   "batch_verification": "performed"
+  },
+  {
+   "at": "2026-11-25T18:06:51.521Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/entries.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_write_set_item_staged",
+   "detail": null,
+   "verification_ms": 0.07888400000229012,
+   "opa_ms": 4.451893999997992,
+   "write_batch_id": "wbatch_572cf1fa-dfeb-497c-b403-2f4c03354508",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T18:06:51.527Z",
+   "agent": "backend",
+   "tool": "create_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/fees.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_write_set_item_staged",
+   "detail": null,
+   "verification_ms": 0.0762469999899622,
+   "opa_ms": 1.6859019999974407,
+   "write_batch_id": "wbatch_572cf1fa-dfeb-497c-b403-2f4c03354508",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T18:06:51.529Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/journal.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_write_set_item_staged",
+   "detail": null,
+   "verification_ms": 0.06180999999924097,
+   "opa_ms": 1.8761990000057267,
+   "write_batch_id": "wbatch_572cf1fa-dfeb-497c-b403-2f4c03354508",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T18:06:51.532Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-13c7bb6cac61/files/src/ledger/statements.js",
+   "decision": "allow",
+   "reason": "provider_unavailable",
+   "detail": "VerificationRejectedError: Rust Core rejected the signed VP or trust context",
+   "verification_ms": 0.17776400000730064,
+   "opa_ms": 1.7418590000015683,
+   "write_batch_id": "wbatch_572cf1fa-dfeb-497c-b403-2f4c03354508",
+   "batch_verification": "reused"
+  }
+ ],
+ "log": [
+  {
+   "at": "2026-11-25T18:06:20.276Z",
+   "text": "Policy della repository applicata da OPA"
+  },
+  {
+   "at": "2026-11-25T18:06:20.277Z",
+   "text": "Profilo di test della repository: 2 fasi (dependency_install, tests), impronta f24c22d1fa77"
+  },
+  {
+   "at": "2026-11-25T18:06:20.316Z",
+   "text": "Snapshot di 23 file e 5 cartelle alla commit c7a8718bffa7"
+  },
+  {
+   "at": "2026-11-25T18:06:20.928Z",
+   "text": "Gateway avviato (verifica Rust + OPA + Gitea)"
+  },
+  {
+   "at": "2026-11-25T18:06:21.055Z",
+   "text": "Planner: SIMULATO (nessuna IA, nessun costo)"
+  },
+  {
+   "at": "2026-11-25T18:06:21.055Z",
+   "text": "Emissione della Root preliminare di sola lettura..."
+  },
+  {
+   "at": "2026-11-25T18:06:29.617Z",
+   "text": "Proposta pronta: 16 permessi da rivedere"
+  },
+  {
+   "at": "2026-11-25T18:06:30.367Z",
+   "text": "Firma Ed25519 dell'Engineer registrata su 16 permessi di 16"
+  },
+  {
+   "at": "2026-11-25T18:06:30.369Z",
+   "text": "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati"
+  },
+  {
+   "at": "2026-11-25T18:06:30.774Z",
+   "text": "Agenti SIMULATI (nessuna IA): 3 Task pianificati"
+  },
+  {
+   "at": "2026-11-25T18:06:39.920Z",
+   "text": "Orchestrator → backend: Applica in un'unica scrittura atomica (write_files): src/ledger/balance.js, src/ledger/entries.js, src/ledger/fees.js, src/ledger/journal.js, src/ledger/statements.js (sessione s-13c7bb6cac61)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t01-backend",
+    "operations": "read_file, update_file, create_file"
+   }
+  },
+  {
+   "at": "2026-11-25T18:06:59.593Z",
+   "text": "W4 probe: {\"mode\":\"revoke\",\"batch_id\":\"wbatch_572cf1fa-dfeb-497c-b403-2f4c03354508\",\"staging_ref\":\"feature/w2-write-set-ef24f181ff9f27847b9d28f7e05e\",\"staged_commit_sha\":\"730fee67766776fb34db0977a805b73f358b6fdf\",\"agent_role\":\"backend\",\"root_credential_id\":\"urn:operational-root:cac5a07c-52be-4217-97dd-37e5e7a6a7fc\",\"child_credential_id\":\"urn:operational-child:1f0353a8-2fcd-4cf7-93d9-d1e9d0d758dc\",\"paused_at\":\"2026-11-25T18:06:52.567Z\",\"agent_staging_access\":[{\"route\":\"/v1/authorization/prepare\",\"tool\":\"read_file\",\"refused\":true,\"error\":\"Authority-only Gateway admission: operation outside signed work branch\"},{\"route\":\"/v1/authorization/prepare\",\"tool\":\"update_file\",\"refused\":true,\"error\":\"Authority-only Gateway admission: operation outside signed work branch\"},{\"route\":\"/v1/authorization/prepare-write-batch\",\"tool\":\"write_files\",\"refused\":true,\"error\":\"Authority-only Gateway admission: operation outside signed work branch\"}],\"revocation\":{\"revoked_credential_id\":\"urn:operational-root:cac5a07c-52be-4217-97dd-37e5e7a6a7fc\",\"ms\":7024,\"confirmed_at\":\"2026-11-25T18:06:59.592Z\"},\"released_at\":\"2026-11-25T18:06:59.592Z\"}"
+  },
+  {
+   "at": "2026-11-25T18:07:00.785Z",
+   "text": "Gateway: update_file di backend non riuscito: VerificationRejectedError: Rust Core rejected the signed VP or trust context"
+  },
+  {
+   "at": "2026-11-25T18:07:02.927Z",
+   "text": "Errore: Esecuzione interrotta: Canonical reviewed owner handoff denied: original Root retirement unconfirmed after ambiguous execution — Causa: Gateway: update_file di backend non riuscito: VerificationRejectedError: Rust Core rejected the signed VP or trust context"
+  }
+ ],
+ "w4_probe": {
+  "mode": "revoke",
+  "batch_id": "wbatch_572cf1fa-dfeb-497c-b403-2f4c03354508",
+  "staging_ref": "feature/w2-write-set-ef24f181ff9f27847b9d28f7e05e",
+  "staged_commit_sha": "730fee67766776fb34db0977a805b73f358b6fdf",
+  "agent_role": "backend",
+  "root_credential_id": "urn:operational-root:cac5a07c-52be-4217-97dd-37e5e7a6a7fc",
+  "child_credential_id": "urn:operational-child:1f0353a8-2fcd-4cf7-93d9-d1e9d0d758dc",
+  "paused_at": "2026-11-25T18:06:52.567Z",
+  "agent_staging_access": [
+   {
+    "route": "/v1/authorization/prepare",
+    "tool": "read_file",
+    "refused": true,
+    "error": "Authority-only Gateway admission: operation outside signed work branch"
+   },
+   {
+    "route": "/v1/authorization/prepare",
+    "tool": "update_file",
+    "refused": true,
+    "error": "Authority-only Gateway admission: operation outside signed work branch"
+   },
+   {
+    "route": "/v1/authorization/prepare-write-batch",
+    "tool": "write_files",
+    "refused": true,
+    "error": "Authority-only Gateway admission: operation outside signed work branch"
+   }
+  ],
+  "revocation": {
+   "revoked_credential_id": "urn:operational-root:cac5a07c-52be-4217-97dd-37e5e7a6a7fc",
+   "ms": 7024,
+   "confirmed_at": "2026-11-25T18:06:59.592Z"
+  },
+  "released_at": "2026-11-25T18:06:59.592Z"
+ },
+ "base_sha": "c7a8718bffa75b3054f1b0aabb9132dbd8fce048",
+ "work_branch": "feature/s-13c7bb6cac61"
+}

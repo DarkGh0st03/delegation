@@ -1,0 +1,14 @@
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"52e7346cc30558f1","success":true,"error_kind":null,"duration_ms":1957}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"52e7346cc30558f1","success":true,"error_kind":null,"duration_ms":3376}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"f4c1a92c7d8633a5","success":true,"error_kind":null,"duration_ms":1983}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"f4c1a92c7d8633a5","success":true,"error_kind":null,"duration_ms":3427}
+{"event":"adk_tool_timing","role":"test","tool":"run_tests","task_ref":"f4c2b5df47dd8522","success":true,"error_kind":null,"duration_ms":3653}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"0d5847c6f68d7e04","success":true,"error_kind":null,"duration_ms":1894}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"0d5847c6f68d7e04","success":true,"error_kind":null,"duration_ms":3190}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"03e421e87ffcbf37","success":true,"error_kind":null,"duration_ms":1882}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"03e421e87ffcbf37","success":true,"error_kind":null,"duration_ms":3261}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"baa191da989bec94","success":true,"error_kind":null,"duration_ms":1955}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"baa191da989bec94","success":true,"error_kind":null,"duration_ms":3147}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"9732cfaa86c28bd7","success":true,"error_kind":null,"duration_ms":1896}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"9732cfaa86c28bd7","success":true,"error_kind":null,"duration_ms":3121}
+{"event":"adk_tool_timing","role":"test","tool":"run_tests","task_ref":"f5a2765ddf0551e8","success":true,"error_kind":null,"duration_ms":3192}

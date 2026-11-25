@@ -37,7 +37,7 @@ import {TrustedWriteBatchStore} from "../../gateway/src/trusted-write-batch.ts";
 export function assembleTrustedAuthorityOnlyNativeEffects({
  gateway:gate,store,giteaClient:client,independentGiteaClient:independentClient,
  runnerClient,runnerPassObserver:runnerObserver,readObserver,repository,
- branch,evidenceKey,directories,nowMs,verifier
+ branch,evidenceKey,directories,nowMs,verifier,writeSetProbe
 }){
  // opt-in only with TWO separately prevalidated 0700 owner folders.
  // Never reinterpret UPDATE evidence for a CREATE effect.
@@ -132,7 +132,8 @@ export function assembleTrustedAuthorityOnlyNativeEffects({
   const wsExecutor=new TrustedAuthorityOnlyWriteSetExecutor({admissions:gate,giteaClient:client,
    journal:wsJournal,publisher:new TrustedGatewayWriteSetEvidencePublisher({
     directory:directories.writeSetReceipts,key:evidenceKey,repository,branch,
-    independentGiteaClient:independentClient,nowMs}),verifier,repository,branch,nowMs});
+    independentGiteaClient:independentClient,nowMs}),verifier,repository,branch,nowMs,
+    ...(writeSetProbe?{beforeStrictReverification:writeSetProbe}:{})});
   writeSet={preflight:wsPreflight,observer:wsObserver,batches,executor:wsExecutor};
  }
  return Object.freeze({

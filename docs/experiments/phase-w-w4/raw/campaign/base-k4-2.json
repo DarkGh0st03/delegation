@@ -1,0 +1,257 @@
+{
+ "label": "base-k4-2",
+ "sid": "s-318311980a00",
+ "phase": "completed",
+ "error": null,
+ "permissions": 11,
+ "planning_ms": 8031,
+ "execution_ms": 43278,
+ "total_ms": 51309,
+ "pull_request": {
+  "number": 77,
+  "title": "WIP: [SIMULATA] Orders returns transfers counts: record each change",
+  "url": "http://gitea:3000/thesis/batch-bench/pulls/77",
+  "draft": true,
+  "merged": false
+ },
+ "gateway_decisions": [
+  {
+   "at": "2026-11-25T18:45:49.351Z",
+   "agent": "orchestrator",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/main/files/src/inventory/counts.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "verification_ms": 1071.4856950000103,
+   "opa_ms": 4.892290999996476,
+   "vp_size_bytes": 1472
+  },
+  {
+   "at": "2026-11-25T18:45:58.634Z",
+   "agent": "orchestrator",
+   "tool": "create_branch",
+   "resource": "gitea://gitea.local/thesis/batch-bench",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1149.8214480000024,
+   "opa_ms": 4.405337000003783
+  },
+  {
+   "at": "2026-11-25T18:46:00.754Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/counts.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1625.824185000005,
+   "opa_ms": 2.8791000000201166
+  },
+  {
+   "at": "2026-11-25T18:46:02.756Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/counts.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1596.215691999998,
+   "opa_ms": 3.082592000020668
+  },
+  {
+   "at": "2026-11-25T18:46:07.746Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/orders.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1649.7268949999998,
+   "opa_ms": 5.164996999985306
+  },
+  {
+   "at": "2026-11-25T18:46:09.834Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/orders.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1660.940911999991,
+   "opa_ms": 3.2202110000071116
+  },
+  {
+   "at": "2026-11-25T18:46:14.603Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/returns.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1685.887946999981,
+   "opa_ms": 4.708520000014687
+  },
+  {
+   "at": "2026-11-25T18:46:16.690Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/returns.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1623.7501869999978,
+   "opa_ms": 2.3757130000158213
+  },
+  {
+   "at": "2026-11-25T18:46:21.562Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/transfers.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1691.7589579999913,
+   "opa_ms": 5.055256999999983
+  },
+  {
+   "at": "2026-11-25T18:46:23.663Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00/files/src/inventory/transfers.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1561.5407180000038,
+   "opa_ms": 2.9129269999975804
+  },
+  {
+   "at": "2026-11-25T18:46:28.571Z",
+   "agent": "test",
+   "tool": "run_tests",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-318311980a00",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_runner_execution",
+   "detail": null,
+   "verification_ms": 1620.7776139999914,
+   "opa_ms": 4.185953999985941
+  },
+  {
+   "at": "2026-11-25T18:46:32.487Z",
+   "agent": "orchestrator",
+   "tool": "create_pull_request",
+   "resource": "gitea://gitea.local/thesis/batch-bench",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1043.8009029999957,
+   "opa_ms": 2.6977749999787193
+  }
+ ],
+ "log": [
+  {
+   "at": "2026-11-25T18:45:43.387Z",
+   "text": "Policy della repository applicata da OPA"
+  },
+  {
+   "at": "2026-11-25T18:45:43.387Z",
+   "text": "Profilo di test della repository: 2 fasi (dependency_install, tests), impronta f24c22d1fa77"
+  },
+  {
+   "at": "2026-11-25T18:45:43.416Z",
+   "text": "Snapshot di 23 file e 5 cartelle alla commit c7a8718bffa7"
+  },
+  {
+   "at": "2026-11-25T18:45:43.417Z",
+   "text": "Gateway avviato (verifica Rust + OPA + Gitea)"
+  },
+  {
+   "at": "2026-11-25T18:45:43.421Z",
+   "text": "Planner: SIMULATO (nessuna IA, nessun costo)"
+  },
+  {
+   "at": "2026-11-25T18:45:43.421Z",
+   "text": "Emissione della Root preliminare di sola lettura..."
+  },
+  {
+   "at": "2026-11-25T18:45:50.465Z",
+   "text": "Proposta pronta: 11 permessi da rivedere"
+  },
+  {
+   "at": "2026-11-25T18:45:51.476Z",
+   "text": "Firma Ed25519 dell'Engineer registrata su 11 permessi di 11"
+  },
+  {
+   "at": "2026-11-25T18:45:51.478Z",
+   "text": "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati"
+  },
+  {
+   "at": "2026-11-25T18:45:51.496Z",
+   "text": "Agenti SIMULATI (nessuna IA): 5 Task pianificati"
+  },
+  {
+   "at": "2026-11-25T18:46:00.236Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/inventory/counts.js (sessione s-318311980a00)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t01-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T18:46:07.173Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/inventory/orders.js (sessione s-318311980a00)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t02-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T18:46:14.114Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/inventory/returns.js (sessione s-318311980a00)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t03-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T18:46:21.030Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/inventory/transfers.js (sessione s-318311980a00)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t04-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T18:46:27.983Z",
+   "text": "Orchestrator → test: Esegui i test del progetto sul commit attuale del branch",
+   "assignment": {
+    "agent": "test",
+    "task_id": "t99-test",
+    "operations": "run_tests"
+   }
+  },
+  {
+   "at": "2026-11-25T18:46:30.210Z",
+   "text": "Test avviati nel Runner sul commit bde35447657e"
+  },
+  {
+   "at": "2026-11-25T18:46:31.630Z",
+   "text": "Esito del Runner: PASS"
+  },
+  {
+   "at": "2026-11-25T18:46:34.236Z",
+   "text": "Anteprima della Draft PR richiesta allo staging"
+  },
+  {
+   "at": "2026-11-25T18:46:34.236Z",
+   "text": "Completata: Draft PR creata. Il merge resta una decisione umana."
+  }
+ ],
+ "w4_probe": null,
+ "base_sha": "c7a8718bffa75b3054f1b0aabb9132dbd8fce048",
+ "work_branch": "feature/s-318311980a00"
+}

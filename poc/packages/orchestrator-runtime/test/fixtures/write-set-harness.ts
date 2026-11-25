@@ -115,7 +115,7 @@ export function verifierFixture(agent:string){
 
 export async function setup(opts:{permissions:{resource:string;operation:string}[];agent?:string;
  batchWrites?:boolean;strict?:boolean;files?:Record<string,string>;modes?:Record<string,string>;
- runtimeTaskId?:string}){
+ runtimeTaskId?:string;beforeStrictReverification?:(ctx:any)=>Promise<void>}){
  const RT=opts.runtimeTaskId??"runtime-ws";
  const fake=new FakeGitea(opts.files??initialFiles,{modes:opts.modes});
  const hash=fake.head("main")!;
@@ -184,6 +184,7 @@ export async function setup(opts:{permissions:{resource:string;operation:string}
  const verifier=verifierFixture(agent);
  const executor=new TrustedAuthorityOnlyWriteSetExecutor({admissions:gate,giteaClient:client(),
   journal:intentJournal,publisher,verifier,strictReverification:opts.strict!==false,
+  ...(opts.beforeStrictReverification?{beforeStrictReverification:opts.beforeStrictReverification}:{}),
   repository:"thesis/sample-app",branch,nowMs:nowFn});
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const writeBatches=new TrustedWriteBatchStore();

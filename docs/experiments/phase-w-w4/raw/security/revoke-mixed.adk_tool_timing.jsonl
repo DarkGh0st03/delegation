@@ -1,0 +1,2 @@
+{"event":"adk_tool_timing","role":"backend","tool":"read_files","task_ref":"e389acbd64bad1ce","success":true,"error_kind":null,"batch_size":4,"duration_ms":2297}
+{"event":"adk_tool_timing","role":"backend","tool":"write_files","task_ref":"e389acbd64bad1ce","success":false,"error_kind":"tool_unavailable","batch_size":5,"duration_ms":11081}

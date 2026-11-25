@@ -90,7 +90,7 @@ async function privateText(file,maxBytes=32768){
 async function prepareCanonicalNativeEffects(authority,options){
  const fields=["store","giteaClient","independentGiteaClient","runnerClient",
   "runnerPassObserver","directories","evidenceKey","installAuthorization"];
- const optional=["readObserver","verifier"].filter(k=>Object.hasOwn(options??{},k));
+ const optional=["readObserver","verifier","writeSetProbe"].filter(k=>Object.hasOwn(options??{},k));
  if(!exact(options,[...fields,...optional]))deny();
  const {installAuthorization,directories,evidenceKey,...clients}=options;
  const repository=authority.snapshot?.repository;
@@ -108,6 +108,7 @@ async function prepareCanonicalNativeEffects(authority,options){
     !Buffer.isBuffer(evidenceKey)||evidenceKey.length!==32||
     !exact(directories,expectedDirs)||
     (hasWriteSet&&typeof clients.verifier?.verifyMultiple!=="function")||
+    (Object.hasOwn(clients,"writeSetProbe")&&(!hasWriteSet||typeof clients.writeSetProbe!=="function"))||
     new Set(Object.values(directories)).size!==expectedDirs.length)
   deny();
  const pins={...directories},key=Buffer.from(evidenceKey);

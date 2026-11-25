@@ -332,3 +332,44 @@ test("W2 fix: a batch invalidated during the asynchronous staging never becomes 
   assert.equal(casCalls(e),0);
  }finally{await e.close();}
 });
+
+test("W4 experiment hook: runs after the verified staging and before the strict re-verification",async()=>{
+ const seen:{calls:number;stagingExists:boolean;headUnchanged:boolean;ctx:Record<string,unknown>}[]=[];
+ let h!:H;
+ h=await setup({permissions:mixed,beforeStrictReverification:async ctx=>{
+  seen.push({calls:h.verifier.calls,stagingExists:h.fake.head(ctx.staging_ref)!==undefined,
+   headUnchanged:h.fake.head(WORK)===h.hash,ctx});
+  h.verifier.revoked=true;                   // what a real on-chain revocation does to the verifier
+ }});
+ try{
+  const batch=await prepared(h);
+  await h.execute(batch.items[0]!.request_id);
+  await h.execute(batch.items[1]!.request_id);
+  await assert.rejects(h.execute(batch.items[2]!.request_id));
+  assert.equal(seen.length,1);
+  assert.equal(seen[0]!.calls,1);            // only the first (batch) verification before the hook
+  assert.equal(seen[0]!.stagingExists,true);
+  assert.equal(seen[0]!.headUnchanged,true);
+  assert.match(String(seen[0]!.ctx.staging_ref),new RegExp("^"+WRITE_SET_STAGING_PREFIX));
+  assert.deepEqual(Object.keys(seen[0]!.ctx).sort(),["agent_role","batch_id","credential_id",
+   "root_credential_id","runtime_task_id","staged_commit_sha","staging_ref"]);
+  assert.equal(h.verifier.calls,2);          // the strict re-verification ran and rejected
+  assert.equal(casCalls(h),0);
+  assert.equal(h.fake.head(WORK),h.hash);
+  assert.equal(h.gate.writeSetPhase("task-ws"),"failed");
+ }finally{await h.close();}
+});
+
+test("W4 experiment hook: positive control publishes; hook refused with the standard mode",async()=>{
+ let n=0;
+ const h=await setup({permissions:mixed,beforeStrictReverification:async()=>{n++;}});
+ try{
+  const batch=await prepared(h);
+  for(const item of batch.items)await h.execute(item.request_id);
+  assert.equal(n,1);
+  assert.equal(casCalls(h),1);
+  assert.notEqual(h.fake.head(WORK),h.hash);
+ }finally{await h.close();}
+ await assert.rejects(setup({permissions:mixed,strict:false,beforeStrictReverification:async()=>{}}),
+  /not bound to the exact trusted Gateway/u);
+});

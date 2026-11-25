@@ -1,0 +1,6 @@
+{"event":"adk_tool_timing","role":"backend","tool":"read_files","task_ref":"9814d3dbc44adbaa","success":true,"error_kind":null,"batch_size":2,"duration_ms":2078}
+{"event":"adk_tool_timing","role":"backend","tool":"write_files","task_ref":"9814d3dbc44adbaa","success":true,"error_kind":null,"batch_size":2,"duration_ms":4992}
+{"event":"adk_tool_timing","role":"test","tool":"run_tests","task_ref":"40a4436bf5b1b587","success":true,"error_kind":null,"duration_ms":3400}
+{"event":"adk_tool_timing","role":"backend","tool":"read_files","task_ref":"fcbd80eca1945098","success":true,"error_kind":null,"batch_size":8,"duration_ms":2504}
+{"event":"adk_tool_timing","role":"backend","tool":"write_files","task_ref":"fcbd80eca1945098","success":true,"error_kind":null,"batch_size":8,"duration_ms":5515}
+{"event":"adk_tool_timing","role":"test","tool":"run_tests","task_ref":"43ef70fc32a1acc1","success":true,"error_kind":null,"duration_ms":3247}

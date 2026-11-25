@@ -1,0 +1,109 @@
+=== ws-k8-1 variant=ws k=8 18:14:32
+{"label":"warmup-ws-k8-1","sid":"s-8a2eb2c54147","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":33.231,"decisions":8,"pr":58}
+{"label":"ws-k8-1","sid":"s-a29147df5d9f","phase":"completed","error":null,"permissions":19,"planning_s":8.029,"execution_s":25.21,"decisions":20,"pr":59}
+=== base-k2-5 variant=base k=2 18:17:19
+{"label":"warmup-base-k2-5","sid":"s-a707a049bfea","phase":"completed","error":null,"permissions":7,"planning_s":9.032,"execution_s":37.266,"decisions":8,"pr":60}
+{"label":"base-k2-5","sid":"s-0174a97c1bd9","phase":"completed","error":null,"permissions":7,"planning_s":8.028,"execution_s":29.195,"decisions":8,"pr":61}
+=== ws-k8-4 variant=ws k=8 18:20:26
+{"label":"warmup-ws-k8-4","sid":"s-19311bcda771","phase":"completed","error":null,"permissions":7,"planning_s":9.035,"execution_s":33.263,"decisions":8,"pr":62}
+{"label":"ws-k8-4","sid":"s-14bb8104aa04","phase":"completed","error":null,"permissions":19,"planning_s":8.031,"execution_s":25.213,"decisions":20,"pr":63}
+=== ws-k2-3 variant=ws k=2 18:23:24
+{"label":"warmup-ws-k2-3","sid":"s-8e30e90efb46","phase":"completed","error":null,"permissions":7,"planning_s":9.043,"execution_s":33.235,"decisions":8,"pr":64}
+{"label":"ws-k2-3","sid":"s-d090505dafeb","phase":"completed","error":null,"permissions":7,"planning_s":8.03,"execution_s":25.183,"decisions":8,"pr":65}
+=== ws-k2-1 variant=ws k=2 18:26:22
+{"label":"warmup-ws-k2-1","sid":"s-4e613601b3ec","phase":"completed","error":null,"permissions":7,"planning_s":9.032,"execution_s":29.202,"decisions":8,"pr":66}
+{"label":"ws-k2-1","sid":"s-3b9d314b03ad","phase":"completed","error":null,"permissions":7,"planning_s":8.029,"execution_s":25.213,"decisions":8,"pr":67}
+=== ws-k2-2 variant=ws k=2 18:29:16
+{"label":"warmup-ws-k2-2","sid":"s-cdaab14f04a0","phase":"completed","error":null,"permissions":7,"planning_s":9.034,"execution_s":33.266,"decisions":8,"pr":68}
+{"label":"ws-k2-2","sid":"s-293838031f58","phase":"completed","error":null,"permissions":7,"planning_s":8.032,"execution_s":26.224,"decisions":8,"pr":69}
+=== base-k8-6 variant=base k=8 18:32:16
+{"label":"warmup-base-k8-6","sid":"s-0e925e011c7f","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":36.25,"decisions":8,"pr":70}
+{"label":"base-k8-6","sid":"s-10621eece723","phase":"completed","error":null,"permissions":19,"planning_s":8.033,"execution_s":71.341,"decisions":20,"pr":71}
+=== base-k8-2 variant=base k=8 18:36:04
+{"label":"warmup-base-k8-2","sid":"s-74f361f8eb13","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":36.264,"decisions":8,"pr":72}
+{"label":"base-k8-2","sid":"s-a570bbabaf98","phase":"completed","error":null,"permissions":19,"planning_s":8.032,"execution_s":71.322,"decisions":20,"pr":73}
+=== base-k4-6 variant=base k=4 18:39:51
+{"label":"warmup-base-k4-6","sid":"s-e90cc7621fbd","phase":"completed","error":null,"permissions":7,"planning_s":9.032,"execution_s":37.24,"decisions":8,"pr":74}
+{"label":"base-k4-6","sid":"s-031200a80698","phase":"completed","error":null,"permissions":11,"planning_s":8.033,"execution_s":44.26,"decisions":12,"pr":75}
+=== base-k4-2 variant=base k=4 18:43:13
+{"label":"warmup-base-k4-2","sid":"s-6437a0c93904","phase":"completed","error":null,"permissions":7,"planning_s":10.045,"execution_s":37.253,"decisions":8,"pr":76}
+{"label":"base-k4-2","sid":"s-318311980a00","phase":"completed","error":null,"permissions":11,"planning_s":8.031,"execution_s":43.278,"decisions":12,"pr":77}
+=== ws-k8-2 variant=ws k=8 18:46:34
+{"label":"warmup-ws-k8-2","sid":"s-66a5e5a4f18f","phase":"completed","error":null,"permissions":7,"planning_s":9.032,"execution_s":33.273,"decisions":8,"pr":78}
+{"label":"ws-k8-2","sid":"s-e02041bfe89a","phase":"completed","error":null,"permissions":19,"planning_s":8.031,"execution_s":25.198,"decisions":20,"pr":79}
+=== base-k8-3 variant=base k=8 18:49:33
+{"label":"warmup-base-k8-3","sid":"s-886e1065be00","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":37.223,"decisions":8,"pr":80}
+{"label":"base-k8-3","sid":"s-5e30dfbe32e8","phase":"completed","error":null,"permissions":19,"planning_s":8.031,"execution_s":71.351,"decisions":20,"pr":81}
+=== ws-k2-5 variant=ws k=2 18:53:21
+{"label":"warmup-ws-k2-5","sid":"s-a1c58bf936f9","phase":"completed","error":null,"permissions":7,"planning_s":9.034,"execution_s":33.23,"decisions":8,"pr":82}
+{"label":"ws-k2-5","sid":"s-fcfd53b0e30f","phase":"completed","error":null,"permissions":7,"planning_s":8.033,"execution_s":26.228,"decisions":8,"pr":83}
+=== ws-k2-6 variant=ws k=2 18:56:21
+{"label":"warmup-ws-k2-6","sid":"s-b83f7fef651e","phase":"completed","error":null,"permissions":7,"planning_s":9.037,"execution_s":33.261,"decisions":8,"pr":84}
+{"label":"ws-k2-6","sid":"s-3eb8ff2c6a54","phase":"completed","error":null,"permissions":7,"planning_s":8.032,"execution_s":25.225,"decisions":8,"pr":85}
+=== base-k8-4 variant=base k=8 18:59:20
+{"label":"warmup-base-k8-4","sid":"s-2bc3aebeb5f7","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":37.268,"decisions":8,"pr":86}
+{"label":"base-k8-4","sid":"s-23f584c3daf7","phase":"completed","error":null,"permissions":19,"planning_s":8.03,"execution_s":71.3,"decisions":20,"pr":87}
+=== ws-k4-1 variant=ws k=4 19:03:09
+{"label":"warmup-ws-k4-1","sid":"s-739b0d6e10d4","phase":"completed","error":null,"permissions":7,"planning_s":9.029,"execution_s":33.222,"decisions":8,"pr":88}
+{"label":"ws-k4-1","sid":"s-3fb007766325","phase":"completed","error":null,"permissions":11,"planning_s":8.029,"execution_s":26.212,"decisions":12,"pr":89}
+=== ws-k8-6 variant=ws k=8 19:06:09
+{"label":"warmup-ws-k8-6","sid":"s-57d76e193f24","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":33.248,"decisions":8,"pr":90}
+{"label":"ws-k8-6","sid":"s-91311b846db2","phase":"completed","error":null,"permissions":19,"planning_s":8.031,"execution_s":26.224,"decisions":20,"pr":91}
+=== ws-k8-5 variant=ws k=8 19:09:08
+{"label":"warmup-ws-k8-5","sid":"s-9722228c9df7","phase":"completed","error":null,"permissions":7,"planning_s":9.032,"execution_s":33.266,"decisions":8,"pr":92}
+{"label":"ws-k8-5","sid":"s-704d943472ab","phase":"completed","error":null,"permissions":19,"planning_s":7.033,"execution_s":25.212,"decisions":20,"pr":93}
+=== ws-k4-6 variant=ws k=4 19:12:06
+{"label":"warmup-ws-k4-6","sid":"s-018d9ad09098","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":33.226,"decisions":8,"pr":94}
+{"label":"ws-k4-6","sid":"s-67da09808178","phase":"completed","error":null,"permissions":11,"planning_s":8.031,"execution_s":25.182,"decisions":12,"pr":95}
+=== ws-k4-5 variant=ws k=4 19:15:04
+{"label":"warmup-ws-k4-5","sid":"s-7c4965995074","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":32.272,"decisions":8,"pr":96}
+{"label":"ws-k4-5","sid":"s-03dd86dfd663","phase":"completed","error":null,"permissions":11,"planning_s":8.03,"execution_s":26.228,"decisions":12,"pr":97}
+=== base-k2-2 variant=base k=2 19:18:03
+{"label":"warmup-base-k2-2","sid":"s-7c5ba64889bb","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":37.272,"decisions":8,"pr":98}
+{"label":"base-k2-2","sid":"s-59cea1a1a3f1","phase":"completed","error":null,"permissions":7,"planning_s":7.026,"execution_s":29.224,"decisions":8,"pr":99}
+=== base-k4-3 variant=base k=4 19:21:08
+{"label":"warmup-base-k4-3","sid":"s-0bd8a269a176","phase":"completed","error":null,"permissions":7,"planning_s":9.03,"execution_s":37.224,"decisions":8,"pr":100}
+{"label":"base-k4-3","sid":"s-30c71a0319c8","phase":"completed","error":null,"permissions":11,"planning_s":7.027,"execution_s":43.258,"decisions":12,"pr":101}
+=== ws-k4-2 variant=ws k=4 19:24:27
+{"label":"warmup-ws-k4-2","sid":"s-c61e068de3af","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":33.214,"decisions":8,"pr":102}
+{"label":"ws-k4-2","sid":"s-cd42326cb757","phase":"completed","error":null,"permissions":11,"planning_s":8.034,"execution_s":25.215,"decisions":12,"pr":103}
+=== ws-k2-4 variant=ws k=2 19:27:27
+{"label":"warmup-ws-k2-4","sid":"s-4bac6c1538ef","phase":"completed","error":null,"permissions":7,"planning_s":9.031,"execution_s":33.234,"decisions":8,"pr":104}
+{"label":"ws-k2-4","sid":"s-9d9ce4f69873","phase":"completed","error":null,"permissions":7,"planning_s":7.028,"execution_s":25.215,"decisions":8,"pr":105}
+=== base-k2-4 variant=base k=2 19:30:24
+{"label":"warmup-base-k2-4","sid":"s-45a9b676c60e","phase":"completed","error":null,"permissions":7,"planning_s":9.034,"execution_s":36.276,"decisions":8,"pr":106}
+{"label":"base-k2-4","sid":"s-4159334897e8","phase":"completed","error":null,"permissions":7,"planning_s":8.026,"execution_s":29.194,"decisions":8,"pr":107}
+=== base-k8-1 variant=base k=8 19:33:30
+{"label":"warmup-base-k8-1","sid":"s-343dd7f24086","phase":"completed","error":null,"permissions":7,"planning_s":9.037,"execution_s":37.252,"decisions":8,"pr":108}
+{"label":"base-k8-1","sid":"s-ecb375dad2b3","phase":"completed","error":null,"permissions":19,"planning_s":7.029,"execution_s":71.396,"decisions":20,"pr":109}
+=== ws-k8-3 variant=ws k=8 19:37:17
+{"label":"warmup-ws-k8-3","sid":"s-4e86763ffe5a","phase":"completed","error":null,"permissions":7,"planning_s":9.035,"execution_s":33.226,"decisions":8,"pr":110}
+{"label":"ws-k8-3","sid":"s-0393e9805349","phase":"completed","error":null,"permissions":19,"planning_s":8.031,"execution_s":25.218,"decisions":20,"pr":111}
+=== ws-k4-4 variant=ws k=4 19:40:16
+{"label":"warmup-ws-k4-4","sid":"s-c1b5052aa4ec","phase":"completed","error":null,"permissions":7,"planning_s":9.038,"execution_s":33.232,"decisions":8,"pr":112}
+{"label":"ws-k4-4","sid":"s-83b6561003d7","phase":"completed","error":null,"permissions":11,"planning_s":8.032,"execution_s":25.198,"decisions":12,"pr":113}
+=== base-k2-6 variant=base k=2 19:43:14
+{"label":"warmup-base-k2-6","sid":"s-ea41b6da3fab","phase":"completed","error":null,"permissions":7,"planning_s":9.032,"execution_s":37.29,"decisions":8,"pr":114}
+{"label":"base-k2-6","sid":"s-7415870c885c","phase":"completed","error":null,"permissions":7,"planning_s":7.03,"execution_s":30.199,"decisions":8,"pr":115}
+=== base-k4-1 variant=base k=4 19:46:21
+{"label":"warmup-base-k4-1","sid":"s-b72e23d08584","phase":"completed","error":null,"permissions":7,"planning_s":9.03,"execution_s":36.247,"decisions":8,"pr":116}
+{"label":"base-k4-1","sid":"s-1c739808e2b1","phase":"completed","error":null,"permissions":11,"planning_s":8.034,"execution_s":43.268,"decisions":12,"pr":117}
+=== base-k4-5 variant=base k=4 19:49:40
+{"label":"warmup-base-k4-5","sid":"s-d513abc1adaa","phase":"completed","error":null,"permissions":7,"planning_s":9.035,"execution_s":37.297,"decisions":8,"pr":118}
+{"label":"base-k4-5","sid":"s-320b278a63cb","phase":"completed","error":null,"permissions":11,"planning_s":8.039,"execution_s":43.251,"decisions":12,"pr":119}
+=== base-k2-3 variant=base k=2 19:53:01
+{"label":"warmup-base-k2-3","sid":"s-aaeaa82edc4e","phase":"completed","error":null,"permissions":7,"planning_s":9.036,"execution_s":37.296,"decisions":8,"pr":120}
+{"label":"base-k2-3","sid":"s-cbac6c6fdb52","phase":"completed","error":null,"permissions":7,"planning_s":8.033,"execution_s":30.238,"decisions":8,"pr":121}
+=== base-k4-4 variant=base k=4 19:56:09
+{"label":"warmup-base-k4-4","sid":"s-6393456e2498","phase":"completed","error":null,"permissions":7,"planning_s":9.032,"execution_s":37.256,"decisions":8,"pr":122}
+{"label":"base-k4-4","sid":"s-f70a703a6a44","phase":"completed","error":null,"permissions":11,"planning_s":7.027,"execution_s":43.259,"decisions":12,"pr":123}
+=== base-k8-5 variant=base k=8 19:59:29
+{"label":"warmup-base-k8-5","sid":"s-e60765a42dee","phase":"completed","error":null,"permissions":7,"planning_s":9.036,"execution_s":37.285,"decisions":8,"pr":124}
+{"label":"base-k8-5","sid":"s-258f0e6ebeba","phase":"completed","error":null,"permissions":19,"planning_s":8.034,"execution_s":71.347,"decisions":20,"pr":125}
+=== ws-k4-3 variant=ws k=4 20:03:17
+{"label":"warmup-ws-k4-3","sid":"s-a09b09c5578e","phase":"completed","error":null,"permissions":7,"planning_s":9.033,"execution_s":33.269,"decisions":8,"pr":126}
+{"label":"ws-k4-3","sid":"s-143db939b455","phase":"completed","error":null,"permissions":11,"planning_s":8.039,"execution_s":26.196,"decisions":12,"pr":127}
+=== base-k2-1 variant=base k=2 20:06:17
+{"label":"warmup-base-k2-1","sid":"s-1468987b0060","phase":"completed","error":null,"permissions":7,"planning_s":9.036,"execution_s":37.3,"decisions":8,"pr":128}
+{"label":"base-k2-1","sid":"s-4f60d5c6ff91","phase":"completed","error":null,"permissions":7,"planning_s":8.033,"execution_s":30.252,"decisions":8,"pr":129}
+campaign done 20:09:37

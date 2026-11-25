@@ -42,6 +42,9 @@ export interface WriteSetPublicationResult{
  readonly files:readonly {path:string;operation:"update_file"|"create_file";
   next_content_sha256:string}[];
 }
+/** Phase W4 experiment hook type (owner-supplied, never agent-reachable). */
+export type WriteSetReverificationProbe=(ctx:Readonly<{batch_id:string;staging_ref:string;
+ staged_commit_sha:string;runtime_task_id:string;agent_role:string;root_credential_id:string;credential_id:string}>)=>Promise<void>;
 export class TrustedAuthorityOnlyWriteSetExecutor{
  readonly #admissions:TrustedAuthorityOnlyGatewayAdmissions;
  readonly #gitea:GiteaClient;
@@ -52,17 +55,20 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
  readonly #repository:string;
  readonly #branch:string;
  readonly #nowMs:()=>number;
+ readonly #beforeReverification?:WriteSetReverificationProbe;
  #inFlight=false;
  constructor(opts:{admissions:TrustedAuthorityOnlyGatewayAdmissions;giteaClient:GiteaClient;
   journal:DurableAuthorityOnlyWriteSetIntentJournal;publisher:TrustedGatewayWriteSetEvidencePublisher;
   verifier:VerifierPort;strictReverification?:boolean;repository:string;branch:string;
-  nowMs?:()=>number}){
+  nowMs?:()=>number;beforeStrictReverification?:WriteSetReverificationProbe}){
   if(!opts||!(opts.admissions instanceof TrustedAuthorityOnlyGatewayAdmissions)||
      !(opts.giteaClient instanceof GiteaClient)||
      !(opts.journal instanceof DurableAuthorityOnlyWriteSetIntentJournal)||
      !TrustedGatewayWriteSetEvidencePublisher.isNative(opts.publisher)||
      typeof opts.verifier?.verifyMultiple!=="function"||
      (opts.strictReverification!==undefined&&typeof opts.strictReverification!=="boolean")||
+     (opts.beforeStrictReverification!==undefined&&(typeof opts.beforeStrictReverification!=="function"||
+      opts.strictReverification===false))||
      !/^[a-z0-9._-]+\/[a-z0-9._-]+$/u.test(opts.repository??"")||
      !GiteaClient.isPinnedRepositoryClient(opts.giteaClient,opts.repository.split("/")[0]!,
       opts.repository.split("/")[1]!)||
@@ -73,6 +79,7 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
   this.#publisher=opts.publisher;this.#verifier=opts.verifier;
   this.#strict=opts.strictReverification!==false;
   this.#repository=opts.repository;this.#branch=opts.branch;this.#nowMs=opts.nowMs??Date.now;
+  this.#beforeReverification=opts.beforeStrictReverification;
  }
  isForAdmissions(a:TrustedAuthorityOnlyGatewayAdmissions):boolean{return a===this.#admissions;}
  get strictReverification():boolean{return this.#strict;}
@@ -161,6 +168,16 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
      deny("write-set changes a file mode or replaces a non-regular file");
    }
    await still();
+   // Phase W4 experiment only (absent in every default deployment): an owner
+   // probe between the verified staging and the strict second verification,
+   // e.g. a real on-chain revocation. It gets IDs only, never a write port;
+   // every local check is repeated after it.
+   if(this.#beforeReverification){
+    await this.#beforeReverification(Object.freeze({batch_id:batch.batch_id,staging_ref:staging,
+     staged_commit_sha:staged.commit_sha,runtime_task_id:runtime,agent_role:batch.agent_role,
+     root_credential_id:verified.root_credential_id,credential_id:verified.credential_id}));
+    await still();
+   }
    // P5: strict mode — second complete verification of the SAME VP.
    let reverificationMs=0;
    if(this.#strict){

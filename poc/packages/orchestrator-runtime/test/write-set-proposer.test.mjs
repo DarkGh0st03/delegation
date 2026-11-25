@@ -17,8 +17,8 @@ const A="apps/backend/a.ts",B="apps/backend/b.ts",N="apps/backend/n.ts";
 const commit="a".repeat(40);
 class OneChoice extends BaseLlm{
  constructor(choice){super({model:"phase-w-scripted-proposer"});this.choice=choice;this.calls=0;}
- async *generateContentAsync(){
-  this.calls++;
+ async *generateContentAsync(request){
+  this.calls++;this.prompt=JSON.stringify(request);
   yield {content:{role:"model",parts:[{text:JSON.stringify(this.choice)}]}};
  }
  connect(){throw Error("No external model connections");}
@@ -69,4 +69,16 @@ test("W3 proposer: a completed write-set Task is accepted as progress only with 
  assert.doesNotThrow(()=>new Proposer(config(next,{batchWrites:true,completed:"write_set"})));
  assert.throws(()=>new Proposer(config(next,{batchWrites:false,completed:"write_set"})),
   /model Task choice denied/u);
+});
+
+test("W3 proposer: the generic workflow keeps one edited file per Task unless batchWrites is on",async()=>{
+ const choice=delegate(writeSet);
+ const on=config(choice,{batchWrites:true});await new Proposer(on).propose();
+ assert.match(on.model.prompt,/one specialist step per Task/u);
+ assert.doesNotMatch(on.model.prompt,/implement the requirement, one edited file per Task/u);
+ assert.match(on.model.prompt,/WRITE-SET \(enabled\)/u);
+ const one=delegate([p("read_file",A),p("update_file",A)]);
+ const off=config(one,{batchWrites:false});await new Proposer(off).propose();
+ assert.match(off.model.prompt,/implement the requirement, one edited file per Task/u);
+ assert.doesNotMatch(off.model.prompt,/WRITE-SET|one specialist step per Task/u);
 });

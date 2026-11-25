@@ -1,0 +1,26 @@
+# Gitea evidence (git for-each-ref / git show inside the Gitea container), 2026-11-25T18:13:05Z
+revoke-mixed work branch feature/s-13c7bb6cac61 HEAD: c7a8718bffa75b3054f1b0aabb9132dbd8fce048 (base c7a8718bffa75b3054f1b0aabb9132dbd8fce048)
+write-set staging refs present:
+  refs/heads/feature/w2-write-set-ef24f181ff9f27847b9d28f7e05e 730fee67766776fb34db0977a805b73f358b6fdf
+latest PR refs:
+  refs/pull/57/head 2026-11-25 18:12:39 +0000 cbcb26ac2d2fd4afcb3a91b6bb3e24334c101cb8
+  refs/pull/56/head 2026-11-25 18:10:07 +0000 2cf18a439598af26c68a5ff49c5faf330bfcf992
+  refs/pull/55/head 2026-11-25 17:33:08 +0000 8aec315445986307033412d70abd4360389668a9
+  refs/pull/54/head 2026-11-25 17:29:42 +0000 c34ffd6b6ee0e38a8006aeb3c17b5032f72b23b7
+control-mixed commit:
+  parents c7a8718bffa75b3054f1b0aabb9132dbd8fce048
+  thesis-gateway: write-set wbatch_b5d0972a-9304-461b-8e87-39b70cfa9d65 [cef47a6faf891890]
+
+ src/ledger/balance.js    | 1 +
+ src/ledger/entries.js    | 1 +
+ src/ledger/fees.js       | 1 +
+ src/ledger/journal.js    | 1 +
+ src/ledger/statements.js | 1 +
+ 5 files changed, 5 insertions(+)
+creates-only commit:
+  parents c7a8718bffa75b3054f1b0aabb9132dbd8fce048
+  thesis-gateway: write-set wbatch_ee89bd02-49fd-4d98-aa93-5cee49ef3040 [058aaa3cd532e78f]
+
+ src/ledger/fees.js  | 1 +
+ src/ledger/taxes.js | 1 +
+ 2 files changed, 2 insertions(+)

@@ -550,3 +550,19 @@ OPA non è modificato (non rieseguito localmente in questa sessione per l'assenz
 **Smoke E2E sullo stack reale** (scripted, nessuna IA; dettagli in `docs/experiments/phase-w-w3/`): con `DELEGATION_BATCH_WRITES=1` la sessione si completa con Draft PR; il Task backend pubblica 4 scritture con una VP e un commit esatto, seconda verifica 1540,8 ms separata dal `provider_ms`; nessun ref di staging residuo. Con l'opzione a `0` la stessa sessione segue il percorso baseline con letture batch della Fase R. Una sola esecuzione per variante: è uno smoke funzionale, non una misura. Lo smoke ha trovato due difetti, corretti prima delle esecuzioni riportate (directory write-set non create dalla console; operazione `write_set` rifiutata dal proposer nell'avanzamento).
 
 **Rimandato a W4:** revoca reale della Child tra staging e CAS; campagna sperimentale completa.
+
+## 15. W4: validazione finale (sicurezza sullo stack reale e campagna)
+
+**Correzione preliminare (proposer adattivo).** Con `batchWrites` la regola generale del workflow non impone più "un file modificato per Task": chiede un Task per passo di uno specialista, con tutte le sue scritture (2–8) in un Task write-set, e mantiene il Task a scrittura singola per un solo file. Senza l'opzione il testo è identico a prima (test `write-set-proposer.test.mjs`, 4 test).
+
+**Hook sperimentale per la prova di revoca.** `TrustedAuthorityOnlyWriteSetExecutor` accetta `beforeStrictReverification`, invocato dopo lo staging verificato (P3–P4) e prima della seconda verifica (P5); dopo l'hook si ripetono tutti i controlli locali. Non è mai presente in un deployment normale: lo passa soltanto la console, nelle sessioni scripted con `DELEGATION_W4_PROBE=revoke|control`, come parametro in-process di `assembleCanonicalOperationalDeployment` (non dal manifest, non da un agente). È rifiutato in modalità standard. Riceve solo identificativi e una funzione che prova le route del Gateway dell'agente sul ref di staging.
+
+**Revoca reale on-chain (decisione approvata: revoca della Root).** Il prodotto espone soltanto la revoca della Root da parte dell'Engineer; il wallet dell'Orchestrator non ha un'operazione di revoca della Child. La prova revoca quindi on-chain la **Root operativa**, antenata della Child, con il percorso reale dell'Engineer (`revokeRoot` → `update_credential_status` → `updateStatusList` su `IssuerRegistry`, Anvil). Va descritta come revoca dell'antenata della catena, non della Child. Nessuna modifica a core Rust, resolver DID o smart contract.
+
+Risultati: `docs/experiments/phase-w-w4/` (`raw/security/`) e `docs/PHASE_W_RESULTS.md`.
+
+**Esiti W4** (dettagli in `docs/PHASE_W_RESULTS.md`):
+- revoca on-chain della Root dopo lo staging: VP valida alla prima verifica, revoca registrata su `IssuerRegistry`, seconda verifica rifiutata, nessun HEAD-CAS, HEAD invariata, sessione fallita, nessuna Draft PR; controllo positivo pubblicato;
+- write-set misto (4 update + 1 create) e write-set di sole creazioni pubblicati sullo stack reale;
+- route del Gateway dell'agente sul ref di staging: 3/3 rifiutate in entrambe le sessioni;
+- campagna 36/36 (k = 2, 4, 8; 6 ripetizioni; seed 20261125): VP 6 contro 2k + 4, Task 2 contro k + 1, commit 1 contro k, OPA invariato; tempo di esecuzione 0,849 / 0,594 / 0,353 della baseline; la verifica crittografica spiega il 36–45% del guadagno.

@@ -261,7 +261,34 @@ export class EngineerSessions {
       "../../apps/orchestrator/src/canonical-owner-deployment.mjs");
     const {createProtectedCanonicalOperationalProvision} = await import(
       "../../apps/orchestrator/src/trusted-authority-only-owner-bootstrap.mjs");
+    // Phase W4 experiment only (opt-in, scripted sessions with batch writes):
+    // between the verified staging and the strict second verification the
+    // Engineer revokes the operational Root on-chain ("revoke"), or does not
+    // ("control"); both record what the agent's own Gateway routes do with
+    // the isolated staging ref. Never set in a normal session.
+    const probeMode = batchWrites && scripted ? process.env.DELEGATION_W4_PROBE : undefined;
+    let probed = false;
+    const experimentWriteSetProbe = probeMode === "revoke" || probeMode === "control"
+      ? async ctx => {
+        if (probed) return;
+        probed = true;
+        const record = {mode: probeMode, batch_id: ctx.batch_id, staging_ref: ctx.staging_ref,
+          staged_commit_sha: ctx.staged_commit_sha, agent_role: ctx.agent_role,
+          root_credential_id: ctx.root_credential_id, child_credential_id: ctx.credential_id,
+          paused_at: new Date().toISOString()};
+        record.agent_staging_access = await ctx.attemptAgentStagingAccess(ctx.agent_role);
+        if (probeMode === "revoke") {
+          const t0 = Date.now();
+          await this.#core.credentials.revokeRoot(ctx.root_credential_id);
+          record.revocation = {revoked_credential_id: ctx.root_credential_id, ms: Date.now() - t0,
+            confirmed_at: new Date().toISOString()};
+        }
+        record.released_at = new Date().toISOString();
+        session.w4_probe = record; this.#save(session);
+        this.#log(session, "W4 probe: " + JSON.stringify(record));
+      } : undefined;
     const operational = await assembleCanonicalOperationalDeployment({
+      ...(experimentWriteSetProbe ? {experimentWriteSetProbe} : {}),
       pins: {snapshot: live.snapshot, preliminaryRoot: live.preliminaryRoot,
         workBranch: session.work_branch, gateway: {gatewayBaseUrl: live.gatewayBaseUrl}},
       config: {

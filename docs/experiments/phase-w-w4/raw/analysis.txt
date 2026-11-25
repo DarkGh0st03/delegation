@@ -1,0 +1,70 @@
+# Phase W4 campaign analysis (bootstrap seed 20261125, 10000 resamples)
+measured sessions completed: 36; not completed: none
+
+## k = 2 writes
+base n=6 execution_ms median=29712 min=29194 max=30252
+     tasks/childDCs=[3] VPs=[8] verifications=[8] OPA=[8] decisions=[8] commits=[2] tool_calls=[5] tool_count_consistent=True
+     verification_ms median=11319 (of which strict re-verification median=0)
+ws   n=6 execution_ms median=25220 min=25183 max=26228
+     tasks/childDCs=[2] VPs=[6] verifications=[7] OPA=[8] decisions=[8] commits=[1] tool_calls=[3] tool_count_consistent=True
+     verification_ms median=9689 (of which strict re-verification median=1602)
+delta execution (ws - base) median = -4492 ms, 95% CI [-5025, -2996]; ratio ws/base = 0.849 [0.834, 0.897]
+delta verification time (ws - base) median = -1630 ms -> share of the execution delta = 36%
+
+## k = 4 writes
+base n=6 execution_ms median=43264 min=43251 max=44260
+     tasks/childDCs=[5] VPs=[12] verifications=[12] OPA=[12] decisions=[12] commits=[4] tool_calls=[9] tool_count_consistent=True
+     verification_ms median=17891 (of which strict re-verification median=0)
+ws   n=6 execution_ms median=25706 min=25182 max=26228
+     tasks/childDCs=[2] VPs=[6] verifications=[7] OPA=[12] decisions=[12] commits=[1] tool_calls=[3] tool_count_consistent=True
+     verification_ms median=9971 (of which strict re-verification median=1646)
+delta execution (ws - base) median = -17558 ms, 95% CI [-18088, -17044]; ratio ws/base = 0.594 [0.582, 0.606]
+delta verification time (ws - base) median = -7920 ms -> share of the execution delta = 45%
+
+## k = 8 writes
+base n=6 execution_ms median=71344 min=71300 max=71396
+     tasks/childDCs=[9] VPs=[20] verifications=[20] OPA=[20] decisions=[20] commits=[8] tool_calls=[17] tool_count_consistent=True
+     verification_ms median=30550 (of which strict re-verification median=0)
+ws   n=6 execution_ms median=25212 min=25198 max=26224
+     tasks/childDCs=[2] VPs=[6] verifications=[7] OPA=[20] decisions=[20] commits=[1] tool_calls=[3] tool_count_consistent=True
+     verification_ms median=9598 (of which strict re-verification median=1649)
+delta execution (ws - base) median = -46132 ms, 95% CI [-46160, -45620]; ratio ws/base = 0.353 [0.353, 0.361]
+delta verification time (ws - base) median = -20953 ms -> share of the execution delta = 45%
+
+## per session
+base-k2-1 {"commits": 2, "decisions": 8, "execution_ms": 30252, "opa": 8, "pr": 129, "reverification_ms": 0, "tasks": 3, "tool_calls": 5, "tool_calls_consistent": true, "verification_ms": 11678.269801000046, "verifications": 8, "vps": 8}
+base-k2-2 {"commits": 2, "decisions": 8, "execution_ms": 29224, "opa": 8, "pr": 99, "reverification_ms": 0, "tasks": 3, "tool_calls": 5, "tool_calls_consistent": true, "verification_ms": 11366.828691000032, "verifications": 8, "vps": 8}
+base-k2-3 {"commits": 2, "decisions": 8, "execution_ms": 30238, "opa": 8, "pr": 121, "reverification_ms": 0, "tasks": 3, "tool_calls": 5, "tool_calls_consistent": true, "verification_ms": 11749.149992999999, "verifications": 8, "vps": 8}
+base-k2-4 {"commits": 2, "decisions": 8, "execution_ms": 29194, "opa": 8, "pr": 107, "reverification_ms": 0, "tasks": 3, "tool_calls": 5, "tool_calls_consistent": true, "verification_ms": 11270.945808999968, "verifications": 8, "vps": 8}
+base-k2-5 {"commits": 2, "decisions": 8, "execution_ms": 29195, "opa": 8, "pr": 61, "reverification_ms": 0, "tasks": 3, "tool_calls": 5, "tool_calls_consistent": true, "verification_ms": 10954.860710000008, "verifications": 8, "vps": 8}
+base-k2-6 {"commits": 2, "decisions": 8, "execution_ms": 30199, "opa": 8, "pr": 115, "reverification_ms": 0, "tasks": 3, "tool_calls": 5, "tool_calls_consistent": true, "verification_ms": 11261.285567000014, "verifications": 8, "vps": 8}
+ws-k2-1 {"commits": 1, "decisions": 8, "execution_ms": 25213, "opa": 8, "pr": 67, "reverification_ms": 1604.55686099999, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9672.282249000025, "verifications": 7, "vps": 6}
+ws-k2-2 {"commits": 1, "decisions": 8, "execution_ms": 26224, "opa": 8, "pr": 69, "reverification_ms": 1610.325284999999, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9705.957735000004, "verifications": 7, "vps": 6}
+ws-k2-3 {"commits": 1, "decisions": 8, "execution_ms": 25183, "opa": 8, "pr": 65, "reverification_ms": 1573.185135000007, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9514.314527999988, "verifications": 7, "vps": 6}
+ws-k2-4 {"commits": 1, "decisions": 8, "execution_ms": 25215, "opa": 8, "pr": 105, "reverification_ms": 1520.8678910000017, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9599.619254999969, "verifications": 7, "vps": 6}
+ws-k2-5 {"commits": 1, "decisions": 8, "execution_ms": 26228, "opa": 8, "pr": 83, "reverification_ms": 1663.4694470000104, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 10208.232409000047, "verifications": 7, "vps": 6}
+ws-k2-6 {"commits": 1, "decisions": 8, "execution_ms": 25225, "opa": 8, "pr": 85, "reverification_ms": 1599.289671000006, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9856.032583000022, "verifications": 7, "vps": 6}
+base-k4-1 {"commits": 4, "decisions": 12, "execution_ms": 43268, "opa": 12, "pr": 117, "reverification_ms": 0, "tasks": 5, "tool_calls": 9, "tool_calls_consistent": true, "verification_ms": 17410.381372999982, "verifications": 12, "vps": 12}
+base-k4-2 {"commits": 4, "decisions": 12, "execution_ms": 43278, "opa": 12, "pr": 77, "reverification_ms": 0, "tasks": 5, "tool_calls": 9, "tool_calls_consistent": true, "verification_ms": 17981.531153999968, "verifications": 12, "vps": 12}
+base-k4-3 {"commits": 4, "decisions": 12, "execution_ms": 43258, "opa": 12, "pr": 101, "reverification_ms": 0, "tasks": 5, "tool_calls": 9, "tool_calls_consistent": true, "verification_ms": 17678.881051999953, "verifications": 12, "vps": 12}
+base-k4-4 {"commits": 4, "decisions": 12, "execution_ms": 43259, "opa": 12, "pr": 123, "reverification_ms": 0, "tasks": 5, "tool_calls": 9, "tool_calls_consistent": true, "verification_ms": 17800.00613699996, "verifications": 12, "vps": 12}
+base-k4-5 {"commits": 4, "decisions": 12, "execution_ms": 43251, "opa": 12, "pr": 119, "reverification_ms": 0, "tasks": 5, "tool_calls": 9, "tool_calls_consistent": true, "verification_ms": 18041.46970299995, "verifications": 12, "vps": 12}
+base-k4-6 {"commits": 4, "decisions": 12, "execution_ms": 44260, "opa": 12, "pr": 75, "reverification_ms": 0, "tasks": 5, "tool_calls": 9, "tool_calls_consistent": true, "verification_ms": 18690.99962300007, "verifications": 12, "vps": 12}
+ws-k4-1 {"commits": 1, "decisions": 12, "execution_ms": 26212, "opa": 12, "pr": 89, "reverification_ms": 1638.5375200000126, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9757.207636000006, "verifications": 7, "vps": 6}
+ws-k4-2 {"commits": 1, "decisions": 12, "execution_ms": 25215, "opa": 12, "pr": 103, "reverification_ms": 1609.5634870000067, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9950.156414000026, "verifications": 7, "vps": 6}
+ws-k4-3 {"commits": 1, "decisions": 12, "execution_ms": 26196, "opa": 12, "pr": 127, "reverification_ms": 1667.3416980000038, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 10181.787598000024, "verifications": 7, "vps": 6}
+ws-k4-4 {"commits": 1, "decisions": 12, "execution_ms": 25198, "opa": 12, "pr": 113, "reverification_ms": 1805.8691829999734, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9990.89656199995, "verifications": 7, "vps": 6}
+ws-k4-5 {"commits": 1, "decisions": 12, "execution_ms": 26228, "opa": 12, "pr": 97, "reverification_ms": 1654.3519629999937, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 10313.620385999966, "verifications": 7, "vps": 6}
+ws-k4-6 {"commits": 1, "decisions": 12, "execution_ms": 25182, "opa": 12, "pr": 95, "reverification_ms": 1615.397415000014, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9903.569878999959, "verifications": 7, "vps": 6}
+base-k8-1 {"commits": 8, "decisions": 20, "execution_ms": 71396, "opa": 20, "pr": 109, "reverification_ms": 0, "tasks": 9, "tool_calls": 17, "tool_calls_consistent": true, "verification_ms": 30646.046950000018, "verifications": 20, "vps": 20}
+base-k8-2 {"commits": 8, "decisions": 20, "execution_ms": 71322, "opa": 20, "pr": 73, "reverification_ms": 0, "tasks": 9, "tool_calls": 17, "tool_calls_consistent": true, "verification_ms": 30043.964402999933, "verifications": 20, "vps": 20}
+base-k8-3 {"commits": 8, "decisions": 20, "execution_ms": 71351, "opa": 20, "pr": 81, "reverification_ms": 0, "tasks": 9, "tool_calls": 17, "tool_calls_consistent": true, "verification_ms": 31090.526798999985, "verifications": 20, "vps": 20}
+base-k8-4 {"commits": 8, "decisions": 20, "execution_ms": 71300, "opa": 20, "pr": 87, "reverification_ms": 0, "tasks": 9, "tool_calls": 17, "tool_calls_consistent": true, "verification_ms": 30353.563781000033, "verifications": 20, "vps": 20}
+base-k8-5 {"commits": 8, "decisions": 20, "execution_ms": 71347, "opa": 20, "pr": 125, "reverification_ms": 0, "tasks": 9, "tool_calls": 17, "tool_calls_consistent": true, "verification_ms": 31853.949859000015, "verifications": 20, "vps": 20}
+base-k8-6 {"commits": 8, "decisions": 20, "execution_ms": 71341, "opa": 20, "pr": 71, "reverification_ms": 0, "tasks": 9, "tool_calls": 17, "tool_calls_consistent": true, "verification_ms": 30454.6231860001, "verifications": 20, "vps": 20}
+ws-k8-1 {"commits": 1, "decisions": 20, "execution_ms": 25210, "opa": 20, "pr": 59, "reverification_ms": 1683.2005859999917, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9829.985306000017, "verifications": 7, "vps": 6}
+ws-k8-2 {"commits": 1, "decisions": 20, "execution_ms": 25198, "opa": 20, "pr": 79, "reverification_ms": 1610.201774999994, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9610.564343000035, "verifications": 7, "vps": 6}
+ws-k8-3 {"commits": 1, "decisions": 20, "execution_ms": 25218, "opa": 20, "pr": 111, "reverification_ms": 1618.5500360000005, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9584.708148999955, "verifications": 7, "vps": 6}
+ws-k8-4 {"commits": 1, "decisions": 20, "execution_ms": 25213, "opa": 20, "pr": 63, "reverification_ms": 1561.612706999993, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9547.699135999952, "verifications": 7, "vps": 6}
+ws-k8-5 {"commits": 1, "decisions": 20, "execution_ms": 25212, "opa": 20, "pr": 93, "reverification_ms": 1678.7803439999989, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9549.787932000007, "verifications": 7, "vps": 6}
+ws-k8-6 {"commits": 1, "decisions": 20, "execution_ms": 26224, "opa": 20, "pr": 91, "reverification_ms": 1696.359018999996, "tasks": 2, "tool_calls": 3, "tool_calls_consistent": true, "verification_ms": 9977.827288999979, "verifications": 7, "vps": 6}

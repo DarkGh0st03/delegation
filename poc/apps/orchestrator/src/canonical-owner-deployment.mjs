@@ -65,8 +65,12 @@ async function token(file){
 }
 
 /** Shared in-process composition. Model construction does not perform inference. */
-export async function assembleCanonicalOperationalDeployment({pins,config:c,loadModelFactory}){
+export async function assembleCanonicalOperationalDeployment({pins,config:c,loadModelFactory,
+ experimentWriteSetProbe}){
  if(typeof loadModelFactory!=="function")deny();
+ // Phase W4 experiment only: an in-process owner probe (never from a manifest,
+ // an environment variable read here, an agent or a model).
+ if(experimentWriteSetProbe!==undefined&&typeof experimentWriteSetProbe!=="function")deny();
  const standardKeys=["directory","giteaUrl","giteaWriterFile","giteaReaderFile",
   "runnerUrl","runnerTokenFile","opaUrl","evidenceKeyFile","orchestratorTokenFile",
   "workerTokens","workerPorts","rootIndex","childIndices","draftTitle","draftBody",
@@ -214,6 +218,24 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   nativeEffects:{store,giteaClient,independentGiteaClient,runnerClient,runnerPassObserver,
    readObserver,directories,evidenceKey,
    ...(batchWritesEnabled?{verifier:rootGateway.verifier}:{}),
+   ...(batchWritesEnabled&&experimentWriteSetProbe?{writeSetProbe:async ctx=>experimentWriteSetProbe({...ctx,
+    // What an agent's own tools could do with the staging ref: the SAME
+    // role-bound in-process Gateway routes the worker uses (expected: refused).
+    async attemptAgentStagingAccess(role){
+     const out=[];
+     const tries=[["/v1/authorization/prepare",{tool:"read_file",arguments:{branch:ctx.staging_ref,path:"README.md"}}],
+      ["/v1/authorization/prepare",{tool:"update_file",arguments:{branch:ctx.staging_ref,path:"README.md",content:"x"}}],
+      ["/v1/authorization/prepare-write-batch",{tool:"write_files",arguments:{branch:ctx.staging_ref,changes:[
+       {path:"README.md",operation:"update_file",content:"x"},{path:"w4-probe.txt",operation:"create_file",content:"x"}]}}]];
+     for(const [route,req] of tries){
+      try{
+       const r=await workerFetch(role)(gatewayUrl+route,{method:"POST",
+        body:JSON.stringify({task_id:ctx.runtime_task_id,agent_role:role,...req})});
+       out.push({route,tool:req.tool,refused:!(r.status>=200&&r.status<300),status:r.status});
+      }catch(error){out.push({route,tool:req.tool,refused:true,error:String(error?.message??error).slice(0,200)});}
+     }
+     return out;
+    }})}:{}),
    installAuthorization(deps){authorization=Object.freeze({...rootGateway,...deps,repository,
     ...(readBatches?{readBatches}:{})});}},
   localWorkers:{directory:c.directory,projectTestSourceProfile:testSourceProfileOf(projectProfile),
