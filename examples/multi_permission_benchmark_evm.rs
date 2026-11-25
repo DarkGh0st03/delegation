@@ -442,7 +442,7 @@ fn setup(e: Env) -> Result<World, String> {
         vec![Permission::new(format!("{BRANCH_URI}/directories/src"), Operation::ReadFile)?])?;
     let mk_child = |id: &str, idx: &str, parent: &VerifiableCredential<DelegationCredential>| {
         orchestrator.issue_delegation_verifiable_credential(ctx.clone(), id.to_string(), entry(idx, STATUS_ORCHESTRATOR),
-            "2026-01-01T00:00:00Z".into(), BACKEND.0.into(), Duration::new(3600, 0), files.clone(), Some(parent.clone()))
+            "2026-01-01T00:00:00Z".into(), BACKEND.0.into(), Duration::new(7200, 0), files.clone(), Some(parent.clone()))
     };
     let child_exact = mk_child("urn:delegation:bench1b:child", "2", &root_exact)?;
     let child_dir = mk_child("urn:delegation:bench1b:child-dir", "4", &root_dir)?;

@@ -1,0 +1,61 @@
+config,case,k,rep,rejected,verify_us,rpc_calls,error
+root,required_not_delegated,10,0,true,696901.9,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,0,true,676041.8,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,0,true,1446394.6,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,0,false,1531070.0,27,
+child,required_not_delegated,10,0,true,734831.7,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,0,true,680687.8,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,0,true,1526638.9,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,0,true,1498347.8,25,Timestamp is greater than expiration time 1795596439887391759
+child_dirscope,required_not_delegated,10,0,true,707188.2,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,0,true,674752.3,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,0,true,1439300.1,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,0,true,1583425.3,25,Timestamp is greater than expiration time 1795596439896126085
+root,required_not_delegated,10,1,true,706131.0,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,1,true,679673.5,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,1,true,1504542.6,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,1,false,1518444.0,27,
+child,required_not_delegated,10,1,true,754830.2,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,1,true,724547.1,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,1,true,1449542.3,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,1,true,1458062.9,25,Timestamp is greater than expiration time 1795596439887391759
+child_dirscope,required_not_delegated,10,1,true,752105.7,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,1,true,717165.5,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,1,true,1468455.3,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,1,true,1401659.7,25,Timestamp is greater than expiration time 1795596439896126085
+root,required_not_delegated,10,2,true,746395.4,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,2,true,704701.2,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,2,true,1539997.9,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,2,false,1565351.6,27,
+child,required_not_delegated,10,2,true,671330.3,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,2,true,697909.9,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,2,true,1458749.0,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,2,true,1435263.7,25,Timestamp is greater than expiration time 1795596439887391759
+child_dirscope,required_not_delegated,10,2,true,658345.6,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,2,true,694152.3,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,2,true,1498210.8,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,2,true,1465214.3,25,Timestamp is greater than expiration time 1795596439896126085
+root,required_not_delegated,10,3,true,662267.5,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,3,true,677580.4,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,3,true,1471461.3,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,3,false,1500659.1,27,
+child,required_not_delegated,10,3,true,675400.8,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,3,true,715258.9,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,3,true,1453217.9,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,3,true,1395666.0,25,Timestamp is greater than expiration time 1795596439887391759
+child_dirscope,required_not_delegated,10,3,true,666074.7,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,3,true,721918.3,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,3,true,1415763.9,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,3,true,1421190.4,25,Timestamp is greater than expiration time 1795596439896126085
+root,required_not_delegated,10,4,true,709855.9,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,4,true,689183.6,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,4,true,1465985.3,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,4,false,1446339.2,27,
+child,required_not_delegated,10,4,true,720921.1,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,4,true,665068.3,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,4,true,1472705.7,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,4,true,1405164.2,25,Timestamp is greater than expiration time 1795596439887391759
+child_dirscope,required_not_delegated,10,4,true,689085.9,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,4,true,665550.0,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,4,true,1438843.7,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,4,true,1444045.7,25,Timestamp is greater than expiration time 1795596439896126085

@@ -1,0 +1,21 @@
+{
+  "phase": "1b",
+  "ks": [
+    1,
+    2,
+    5,
+    10,
+    15
+  ],
+  "reps": 20,
+  "warmup": 2,
+  "proxy_reps": 3,
+  "latency_path": "direct",
+  "count_path": "proxy",
+  "negative_reps": 5,
+  "negative_k": 10,
+  "seed": 116503482661,
+  "n_permissions_in_credential": 128,
+  "verifier": "rebuilt per verification like services/delegation-core-node verify_real",
+  "elapsed_s": 4052.308098607
+}
