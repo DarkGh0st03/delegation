@@ -180,9 +180,11 @@ export class PrivateMcpTaskRegistry {
     // Prepare (exact Gitea reads, distinct, the first being the primary one).
     if(prepared.required_permissions!==undefined){
       const list=prepared.required_permissions;
-      if(!Array.isArray(list)||list.length<2||list.length>15||
+      // Phase W write batch: 2-8 exact update/create permissions, never mixed with reads.
+      const writes=Array.isArray(list)&&list.every(p=>p?.operation==="update_file"||p?.operation==="create_file");
+      if(!Array.isArray(list)||list.length<2||list.length>(writes?8:15)||
          list.some(p=>!p||typeof p.resource!=="string"||
-           !p.resource.startsWith("gitea://")||p.operation!=="read_file")||
+           !p.resource.startsWith("gitea://")||(!writes&&p.operation!=="read_file"))||
          new Set(list.map(p=>p.resource)).size!==list.length||
          list[0]!.resource!==prepared.required_permission.resource||
          list[0]!.operation!==prepared.required_permission.operation)

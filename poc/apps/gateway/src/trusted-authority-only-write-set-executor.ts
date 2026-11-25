@@ -37,6 +37,8 @@ export interface WriteSetPublicationResult{
  readonly provider:"gitea";readonly performed:true;readonly tool:"write_files";
  readonly branch:string;readonly commit_sha:string;readonly previous_head_sha:string;
  readonly write_set_digest:string;readonly batch_id:string;readonly reverified:boolean;
+ /** Duration of the second (strict) verifyMultiple, measured separately from the provider. */
+ readonly reverification_ms:number;
  readonly files:readonly {path:string;operation:"update_file"|"create_file";
   next_content_sha256:string}[];
 }
@@ -160,13 +162,16 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
    }
    await still();
    // P5: strict mode — second complete verification of the SAME VP.
+   let reverificationMs=0;
    if(this.#strict){
+    const t0=performance.now();
     const again=await this.#verifier.verifyMultiple!({presenter:batch.agent_role,audience:batch.audience,
      challenge:batch.challenge,required_permissions:batch.required_permissions.map(p=>({...p})),
      signed_vp:batch.signed_vp!});
     if(again.presenter_id!==verified.presenter_id||again.credential_id!==verified.credential_id||
        again.root_credential_id!==verified.root_credential_id)
      deny("second verification does not confirm the same delegation");
+    reverificationMs=performance.now()-t0;
    }
    // P6: after the last asynchronous step, including the HEAD.
    await still(true);
@@ -198,7 +203,7 @@ export class TrustedAuthorityOnlyWriteSetExecutor{
    await this.#gitea.deleteWriteSetStagingRef(stagingBranch).catch(()=>undefined);
    return Object.freeze({provider:"gitea",performed:true,tool:"write_files",branch:this.#branch,
     commit_sha:staged.commit_sha,previous_head_sha:intent.expected_head_sha,write_set_digest:digest,
-    batch_id:batch.batch_id,reverified:this.#strict,
+    batch_id:batch.batch_id,reverified:this.#strict,reverification_ms:reverificationMs,
     files:Object.freeze(intent.items.map(i=>({path:i.path,operation:i.operation,
      next_content_sha256:i.next_content_sha256})))});
   }catch(error){

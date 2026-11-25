@@ -9,7 +9,8 @@ import {sanitizeTypecheckErrors} from '../../../apps/test-runner-controller/src/
 import {BaseLlm,LlmAgent,Runner,InMemorySessionService} from '@google/adk';
 import {MAX_ADAPTIVE_SOURCE_OBSERVATIONS} from '../../plan-contracts/src/planning-limits.mjs';
 import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,readUpdateGrantShape,isProjectTestCreateGrant,isProjectTestSource,
- isTrustedProjectTestSourceProfile,readCreateGrantShape,isProjectTestReadCreateGrant}
+ isTrustedProjectTestSourceProfile,readCreateGrantShape,isProjectTestReadCreateGrant,
+ readsWriteSetGrantShape,isProjectTestWriteSetGrant}
  from '../../plan-contracts/src/gitea-permission-containment.mjs';
 import {ROLE_SKILLS} from "../../plan-contracts/src/agent-roles.mjs";
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -56,7 +57,10 @@ class SingleDecisionModel extends BaseLlm{
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
  constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,verifiedFailureHistory,specialistNoChanges,nextEpoch,decisionKind='agent',executionProgress,maxVerifiedFailures=2,
- projectTestSourceProfile}){
+ projectTestSourceProfile,batchWrites=false}){
+  if(typeof batchWrites!=='boolean')fail();
+  /** Phase W (trusted owner option, never model-selected): write-set Tasks. */
+  this.batchWrites=batchWrites;
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
@@ -279,6 +283,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     'independently_verified_specialist_no_changes lists Tasks whose specialist read edited_path and reported that the file already satisfies the instruction (a legitimate outcome, possible several times). You supervise these claims: if the requirement is met, continue with the remaining work; if you judge that the file still needs a change, delegate a new edit with a more precise instruction. When the Test agent reports that a failing test file needs no change, the test already checks the intended behaviour: repair the application file that the test exercises (with its application specialist) instead of the test. A new independently completed Test run is required before ready_for_pr.',
     'Do NOT delegate a read-only Task to read a file you are about to edit, or the files that edit depends on: put those reads in the edit Task itself (every extra Task costs a new Child credential and more model calls).',
     'To CREATE a new file, delegate ONE Task with create_file of that file PLUS read_file of the existing signed files it is written from (for a new test: the component or module it tests and the types/API it uses): the specialist reads each granted file once, then creates the file. The new file itself is never among the reads. At most 15 reads per Task, one create.',
+    ...(this.batchWrites?['WRITE-SET (enabled): when ONE specialist must change or create several files for the same step, prefer ONE Task with all of them (2 to 8 writes, at most 16 permissions in total): update_file of each file to change PLUS read_file of that same file, create_file of each new file, and read_file of the existing files they depend on. All writes of the Task are published together in one commit, or none is. Use separate Tasks for different specialists.']:[]),
     'A read_file-only investigation Task (exactly ONE read_file of ONE exact file inside the original Engineer scope, for any specialist) is useful ONLY to diagnose an independently verified Test failure: never before an edit or a create, whose Task carries its own reads. An independently signed read-only Child and original Engineer grant are mandatory; reading never proves a repair.',
     'User-interface work always ends with a STYLING PASS: once the Frontend Task(s) that implement the behaviour are done, delegate one more Frontend Task whose edited file is the signed styling file (stylesheet, CSS module or theme), with read grants for that styling file, the changed page/component and one similar existing page or component, instructing it to make the new elements consistent with the rest of the application (font, colours, spacing, radius, layout, hover/focus states). Do it before the final run_tests, so the tested commit is the styled one. If no styling file is signed (e.g. utility classes in the markup), ask for that consistency in the page edit itself. Frontend Tasks that edit a page also read the signed styling file and a similar existing page or component.',
     'Generic workflow for ANY requirement: (1) the application specialists (Backend, Frontend and, when their files are in scope, Data, Docs, DevOps) implement the requirement, one edited file per Task with read grants for its dependencies; data a feature needs comes before the code that reads it, documentation after the code it describes; for user-interface changes the Frontend styling pass comes last among them; (2) the Test specialist creates or updates project test sources under '+this.projectTestSourceProfile.roots.join(', ')+' (suffixes '+this.projectTestSourceProfile.suffixes.join(', ')+') that cover the NEW behaviour, with read grants for the changed application files in the same Task; (3) one final Test run_tests Task on the latest HEAD; (4) ready_for_pr only after an independently verified PASS.',
@@ -422,6 +427,11 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      (raw.agent_id!=='test'||isProjectTestRepairGrant(selected,this.projectTestSourceProfile));
    // ONE new file: read_file of the existing signed files it is written
    // from (e.g. the component a new test covers), then its create_file.
+   // Phase W (owner opt-in): ONE write-set of 2..8 files of the same
+   // specialist, each update with its read; contents are published together.
+   const exactNativeWriteSet=this.batchWrites&&!!readsWriteSetGrantShape(selected)&&
+     (isFileSpecialist(raw.agent_id)||
+      (raw.agent_id==='test'&&isProjectTestWriteSetGrant(selected,this.projectTestSourceProfile)));
    const exactNativeReadCreate=!!readCreateGrantShape(selected)&&
      (isFileSpecialist(raw.agent_id)||
       (raw.agent_id==='test'&&isProjectTestReadCreateGrant(selected,this.projectTestSourceProfile)));
@@ -433,17 +443,18 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    const testRoots=()=>'test sources are '+this.projectTestSourceProfile.roots.join(', ')+
      ' ('+this.projectTestSourceProfile.suffixes.join(', ')+')';
    const edited=selected.find(p=>['update_file','create_file'].includes(p.operation));
-   if(raw.agent_id==='test'&&edited&&
+   if(raw.agent_id==='test'&&edited&&!exactNativeWriteSet&&
       !(edited.operation==='update_file'?isProjectTestRepairGrant(selected,this.projectTestSourceProfile):
         isProjectTestCreateGrant([edited],this.projectTestSourceProfile)))
     fail('the Test agent may only write project test sources ('+shown(edited)+'; '+testRoots()+')');
    if(selected.some(p=>p.operation==='create_pull_request'))
     fail('a specialist Task cannot open a pull request');
    if((this.decisionKind==='adaptive'&&
-       !(scopedRead||oneNativeEffect||exactNativeReadCas||exactNativeReadCreate))||
-      (!scopedRead&&!exactNativeReadCas&&!exactNativeReadCreate&&
+       !(scopedRead||oneNativeEffect||exactNativeReadCas||exactNativeReadCreate||exactNativeWriteSet))||
+      (!scopedRead&&!exactNativeReadCas&&!exactNativeReadCreate&&!exactNativeWriteSet&&
        selected.filter(p=>['update_file','create_file','run_tests'].includes(p.operation)).length!==1))
-    fail('a Task needs exactly one edited file (plus its reads) or one test run');
+    fail(this.batchWrites?'a Task needs one edited file (plus its reads), one write-set of 2-8 files of one specialist (each update with its read), or one test run':
+     'a Task needs exactly one edited file (plus its reads) or one test run');
   }
   const choice=Object.freeze({task_id:raw.task_id,agent_id:raw.agent_id,
    depends_on:Object.freeze([...raw.depends_on]),

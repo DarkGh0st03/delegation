@@ -21,6 +21,15 @@ import {TrustedGatewayGiteaReadEvidencePublisher}
 import {TrustedGatewayRunnerPassEvidencePublisher} from "../../gateway/src/trusted-authority-only-runner-evidence.ts";
 import {assembleTrustedAuthorityOnlyNativeCreateEffects}
  from "./trusted-authority-only-native-create-effects.mjs";
+import {DurableAuthorityOnlyWriteSetIntentJournal}
+ from "../../gateway/src/trusted-authority-only-write-set-intent-journal.ts";
+import {TrustedAuthorityOnlyWriteSetPreflight}
+ from "../../gateway/src/trusted-authority-only-write-set-preflight.ts";
+import {TrustedGatewayWriteSetEvidencePublisher,AuthenticatedWriteSetCompletionObserver}
+ from "../../gateway/src/trusted-authority-only-write-set-evidence.ts";
+import {TrustedAuthorityOnlyWriteSetExecutor}
+ from "../../gateway/src/trusted-authority-only-write-set-executor.ts";
+import {TrustedWriteBatchStore} from "../../gateway/src/trusted-write-batch.ts";
 
 /** Compose provider ports for the admitted Gateway without executing effects.
  * The Review Host must verify the binding before Branch or A2A execution.
@@ -28,7 +37,7 @@ import {assembleTrustedAuthorityOnlyNativeCreateEffects}
 export function assembleTrustedAuthorityOnlyNativeEffects({
  gateway:gate,store,giteaClient:client,independentGiteaClient:independentClient,
  runnerClient,runnerPassObserver:runnerObserver,readObserver,repository,
- branch,evidenceKey,directories,nowMs
+ branch,evidenceKey,directories,nowMs,verifier
 }){
  // opt-in only with TWO separately prevalidated 0700 owner folders.
  // Never reinterpret UPDATE evidence for a CREATE effect.
@@ -106,13 +115,35 @@ export function assembleTrustedAuthorityOnlyNativeEffects({
   independentGiteaClient:independentClient,
   repository,branch,nowMs
  });
+ // Phase W (opt-in): write-set components, only for a Gateway that admits
+ // write-set Tasks and with TWO separately prevalidated 0700 owner folders.
+ if(Object.hasOwn(directories,"writeSetIntent")!==Object.hasOwn(directories,"writeSetReceipts"))
+  throw Error("Native write-set effects require both independent owner directories");
+ let writeSet;
+ if(Object.hasOwn(directories,"writeSetIntent")){
+  if(gate.batchWritesEnabled!==true||typeof verifier?.verifyMultiple!=="function")
+   throw Error("Native write-set effects require batch-writes admissions and the native verifier");
+  const wsJournal=new DurableAuthorityOnlyWriteSetIntentJournal(directories.writeSetIntent);
+  const wsPreflight=new TrustedAuthorityOnlyWriteSetPreflight({admissions:gate,giteaClient:client,
+   journal:wsJournal,repository,branch,nowMs});
+  const wsObserver=new AuthenticatedWriteSetCompletionObserver({directory:directories.writeSetReceipts,
+   key:evidenceKey,repository,branch,giteaClient:independentClient,nowMs});
+  const batches=new TrustedWriteBatchStore();
+  const wsExecutor=new TrustedAuthorityOnlyWriteSetExecutor({admissions:gate,giteaClient:client,
+   journal:wsJournal,publisher:new TrustedGatewayWriteSetEvidencePublisher({
+    directory:directories.writeSetReceipts,key:evidenceKey,repository,branch,
+    independentGiteaClient:independentClient,nowMs}),verifier,repository,branch,nowMs});
+  writeSet={preflight:wsPreflight,observer:wsObserver,batches,executor:wsExecutor};
+ }
  return Object.freeze({
   binding:Object.freeze({
    store,mutation:preflight,runner:runnerPreflight,giteaClient:client,
    mutationObserver:observer,...(readObserver===undefined?{}:{readObserver}),
    ...(create?{create:create.preflight,createObserver:create.observer}:{}),
    runnerPassObserver:runnerObserver,failureObserver:failObserver,
-   pullRequestExecutor:prExecutor,branchExecutor
+   pullRequestExecutor:prExecutor,branchExecutor,
+   ...(writeSet?{writeSet:Object.freeze({preflight:writeSet.preflight,observer:writeSet.observer,
+    batches:writeSet.batches})}:{})
   }),
   authorization:Object.freeze({
    authorityOnlyReadEnabled:true,authorityOnlyReceiptWriter:readPublisher,
@@ -121,7 +152,8 @@ export function assembleTrustedAuthorityOnlyNativeEffects({
     authorityOnlyCreateExecutor:create.executor}:{}),
    authorityOnlyRunnerEnabled:true,authorityOnlyRunnerExecutor:runnerExecutor,
    authorityOnlyPullRequestEnabled:true,authorityOnlyPullRequestExecutor:prExecutor,
-   authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:branchExecutor
+   authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:branchExecutor,
+   ...(writeSet?{writeBatches:writeSet.batches,authorityOnlyWriteSetExecutor:writeSet.executor}:{})
   })
  });
 }

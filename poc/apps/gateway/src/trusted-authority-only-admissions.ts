@@ -283,7 +283,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   this.#nowMs=opts.nowMs??Date.now;
  }
  /** Phase W: whether write-set Tasks are admitted at all (default: no). */
- get batchWritesEnabled():boolean{return this.#batchWrites;}
+ get batchWritesEnabled():boolean{return #batchWrites in this&&this.#batchWrites;}
  get phase():Phase{return this.#phase;}
  get registeredTaskCount():number{return this.#tasks.size;}
  get stagedCompletedTaskCount():number{return this.#completed.size;}

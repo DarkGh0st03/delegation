@@ -475,12 +475,15 @@ async function executeAuthorizationOnce(
         operation: record.required_permission.operation, decision: "allow",
         reason: "verified_policy_allowed_gitea_write_set_published", verification_ms: verificationMs,
         opa_ms: opaMs, policy_decision: "allow", policy_version: policyDecision.policy_version,
-        provider_ms: elapsed(providerStarted, durationNow), provider_result: "success",
+        // The strict second verification is authorization cost, not provider time.
+        provider_ms: Math.max(0, elapsed(providerStarted, durationNow) - published.reverification_ms),
+        provider_result: "success",
         total_ms: elapsed(totalStarted, durationNow),
         vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
         chain_depth: verified.hierarchy_depth, disclosed_permission_count: verified.permissions.length,
         provider_commit_sha: published.commit_sha, ...batchAudit,
         write_set_digest: published.write_set_digest, write_set_reverified: published.reverified,
+        write_set_reverification_ms: published.reverification_ms,
         provider: "gitea"
       } as never);
       return { request_id: record.request_id, decision: "allow", verified_delegation: verified,

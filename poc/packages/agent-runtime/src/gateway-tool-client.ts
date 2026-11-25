@@ -26,7 +26,8 @@ export type SpecializedToolName = (typeof SPECIALIZED_TOOL_NAMES)[number];
 export interface TrustedEffectStagingPort {
   stage(requestId:string):Promise<unknown>;
   /** Optional exact read-only effect pin from the authenticated Task registry. */
-  stagedTool?:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update"|"read_then_create";
+  stagedTool?:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update"|"read_then_create"|
+    "read_then_write_set";
   /** Owner-only independent native evidence confirmation, never model data. */
   attest?(requestId:string,tool:"read_file"|"update_file"|"create_file"):Promise<void>;
   reportNoChange?(requestId:string):Promise<void>;
@@ -35,6 +36,10 @@ export interface TrustedEffectStagingPort {
   /** read_then_update/read_then_create: signed reads before the single write,
    * as fixed by the owner's durable effect manifest (never model data). */
   readonly plannedReads?:number;
+  /** Phase W: owner staging of the Gateway write batch (ID only) and the
+   * owner attestation of its per-file evidence after the single HEAD-CAS. */
+  stageWriteSet?(batchId:string):Promise<unknown>;
+  attestWriteSet?(batchId:string):Promise<void>;
 }
 
 export interface GatewayControlledToolClientConfig {
@@ -165,6 +170,10 @@ export class GatewayControlledToolClient {
     const nativeCreateRoleAllowed=APPLICATION_ROLES.includes(this.#agentRole)||
       (this.#agentRole==="test"&&isProjectTestSource(args.path,
         this.#trustedEffectStager?.projectTestSourceProfile));
+    // Phase W: a write-set Task writes ONLY through write_files (one batch).
+    if(this.#trustedEffectStager?.stagedTool==="read_then_write_set"&&tool!=="read_file")
+      throw new ControlledToolError("authorization_denied",
+        "A write-set Task writes all its signed files with write_files, in one batch");
     if(this.#trustedEffectStager?.stagedTool==="read_then_update"&&
        tool!=="read_file"&&tool!=="update_file")
       throw new ControlledToolError("authorization_denied",
@@ -247,8 +256,9 @@ export class GatewayControlledToolClient {
     // flight. Legacy mutation/Runner ports keep their previous behavior.
     // A read in an update Task is NOT silently converted into a second flight.
     const mixed=this.#trustedEffectStager?.stagedTool==="read_then_update";
+    const writeSetTask=this.#trustedEffectStager?.stagedTool==="read_then_write_set";
     const ownerRead=tool==="read_file"&&
-      (this.#trustedEffectStager?.stagedTool==="read_file"||mixed||mixedCreate);
+      (this.#trustedEffectStager?.stagedTool==="read_file"||mixed||mixedCreate||writeSetTask);
     const ownerWrite=(tool==="update_file"||tool==="run_tests")&&
       (this.#trustedEffectStager?.stagedTool===undefined||
        this.#trustedEffectStager?.stagedTool===tool||
@@ -416,7 +426,8 @@ export class GatewayControlledToolClient {
        blob_sha:result.blob_sha
       });
     }
-    if(tool==="read_file"&&this.#trustedEffectStager?.stagedTool==="read_then_update"&&
+    if(tool==="read_file"&&(this.#trustedEffectStager?.stagedTool==="read_then_update"||
+        this.#trustedEffectStager?.stagedTool==="read_then_write_set")&&
        typeof args.path==="string"&&execution&&typeof execution==="object"&&
        typeof (execution as {content?:unknown}).content==="string")
       this.#readContentSha256.set(args.path,createHash("sha256")
@@ -427,7 +438,126 @@ export class GatewayControlledToolClient {
   /** Phase R: batch reads are possible only in an owner-staged reads+write Task. */
   get supportsBatchReads():boolean{
     const staged=this.#trustedEffectStager?.stagedTool;
-    return staged==="read_then_update"||staged==="read_then_create";
+    return staged==="read_then_update"||staged==="read_then_create"||staged==="read_then_write_set";
+  }
+
+  /** Phase W: batch writes are possible only in an owner-staged write-set Task. */
+  get supportsBatchWrites():boolean{
+    const p=this.#trustedEffectStager;
+    return p?.stagedTool==="read_then_write_set"&&typeof p.stageWriteSet==="function"&&
+      typeof p.attestWriteSet==="function";
+  }
+
+  /**
+   * Phase W: write ALL the signed files of this write-set Task with ONE VP.
+   * One Gateway write-batch Prepare (N ordinary update/create records with
+   * one challenge), owner staging of the write-set (owner preflight + durable
+   * flight), ONE wallet presentation disclosing the N Gateway-derived
+   * permissions, then the N Executes in the canonical order returned by the
+   * Gateway: the first N-1 are only validated, the last publishes the whole
+   * set with one commit and one HEAD-CAS. Finally the owner attests every
+   * per-file evidence. Contents come from the model; paths and operations
+   * must be exactly the signed writes (checked by the Gateway and owner).
+   */
+  async writeFiles(branch:string,changes:readonly {path:string;operation:"update_file"|"create_file";
+    content:string}[]):Promise<{commit_sha:string;files:{path:string;operation:string}[]}>{
+    this.#signal?.throwIfAborted();
+    const port=this.#trustedEffectStager;
+    if(!this.supportsBatchWrites||!port?.stageWriteSet||!port.attestWriteSet)
+      throw new ControlledToolError("authorization_denied",
+        "Batch writes require an owner-staged signed write-set Task");
+    if(!Array.isArray(changes)||changes.length<2||changes.length>8||
+       new Set(changes.map(c=>c?.path)).size!==changes.length||
+       changes.some(c=>!c||typeof c.path!=="string"||typeof c.content!=="string"||
+        (c.operation!=="update_file"&&c.operation!=="create_file")))
+      throw new ControlledToolError("invalid_tool_call",
+        "write_files needs 2-8 distinct {path, operation, content} changes");
+    for(const c of changes)
+      if(c.operation==="update_file"&&this.#readContentSha256.get(c.path)===
+         createHash("sha256").update(c.content,"utf8").digest("hex"))
+        throw new ControlledToolError("invalid_tool_call",
+          `The new content of ${c.path} is identical to the file read: every signed file must change`);
+    const timeout=()=>this.#signal
+      ?AbortSignal.any([this.#signal,AbortSignal.timeout(this.#timeoutMs)])
+      :AbortSignal.timeout(this.#timeoutMs);
+    let prepareResponse:Response;
+    try{
+      prepareResponse=await this.#fetch(`${this.#gatewayBaseUrl}/v1/authorization/prepare-write-batch`,{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({task_id:this.#taskId,agent_role:this.#agentRole,tool:"write_files",
+          arguments:{branch,changes:changes.map(c=>({path:c.path,operation:c.operation,content:c.content}))}}),
+        signal:timeout()});
+    }catch(error){
+      throw new ControlledToolError("tool_unavailable",
+        `Gateway write batch prepare is unavailable: ${error instanceof Error?error.message:String(error)}`,
+        {reason:"upstream_unavailable"});
+    }
+    const body=await parseJson(prepareResponse,"Gateway write batch prepare");
+    if(!prepareResponse.ok)
+      throw new ControlledToolError(prepareResponse.status>=500?"tool_unavailable":"invalid_tool_call",
+        errorMessage(body,`Gateway write batch prepare failed with HTTP ${prepareResponse.status}`),
+        {statusCode:prepareResponse.status,
+         reason:prepareResponse.status>=500?"upstream_unavailable":"gateway_prepare_rejected"});
+    const batch=body as {batch_id?:unknown;audience?:unknown;challenge?:unknown;expires_at?:unknown;items?:unknown};
+    const items=Array.isArray(batch.items)?batch.items as
+      {request_id?:unknown;path?:unknown;operation?:unknown;required_permission?:unknown}[]:[];
+    const byPath=new Map(changes.map(c=>[c.path,c]));
+    if(typeof batch.batch_id!=="string"||typeof batch.audience!=="string"||
+       typeof batch.challenge!=="string"||typeof batch.expires_at!=="string"||
+       items.length!==changes.length||
+       new Set(items.map(i=>i?.path)).size!==items.length||
+       items.some(i=>typeof i?.request_id!=="string"||typeof i.path!=="string"||
+        byPath.get(i.path)?.operation!==i.operation||
+        !i.required_permission||typeof i.required_permission!=="object"))
+      throw new ControlledToolError("tool_unavailable","Gateway write batch prepare returned a malformed challenge");
+    try{await port.stageWriteSet(batch.batch_id);}
+    catch{throw new ControlledToolError("tool_unavailable","Trusted write-set staging failed");}
+    this.#signal?.throwIfAborted();
+    const permissions=items.map(i=>i.required_permission as PreparedGatewayAuthorization["required_permission"]);
+    const prepared:PreparedGatewayAuthorization={request_id:batch.batch_id,audience:batch.audience,
+      challenge:batch.challenge,required_permission:permissions[0]!,required_permissions:permissions,
+      expires_at:batch.expires_at};
+    // ONE presentation for the whole write-set.
+    const signedVp=this.#cryptoPresentation
+      ?await this.#cryptoPresentation.createSignedPresentation(prepared)
+      :await this.#evidenceHandler.createPresentation(prepared);
+    let published:Record<string,unknown>|undefined;
+    for(const [index,item] of items.entries()){
+      this.#signal?.throwIfAborted();
+      let response:Response;
+      try{
+        response=await this.#fetch(`${this.#gatewayBaseUrl}/v1/authorization/execute`,{
+          method:"POST",headers:{"content-type":"application/json"},
+          body:JSON.stringify({request_id:item.request_id,signed_vp:signedVp}),signal:timeout()});
+      }catch(error){
+        throw new ControlledToolError("tool_unavailable",
+          `Gateway execute is unavailable: ${error instanceof Error?error.message:String(error)}`);
+      }
+      const executeBody=await parseJson(response,"Gateway execute");
+      if(!response.ok)
+        throw new ControlledToolError(response.status>=500?"tool_unavailable":"authorization_denied",
+          errorMessage(executeBody,`Gateway execute failed with HTTP ${response.status}`),
+          {statusCode:response.status,reason:response.status>=500?"upstream_unavailable":
+            safeToolFailureReason((executeBody as {error?:unknown})?.error)??"gateway_execute_unclassified"});
+      const bound=executeBody!==null&&typeof executeBody==="object"
+        ?executeBody as {request_id?:unknown;decision?:unknown;execution?:unknown}:null;
+      const ex=bound?.execution!==null&&typeof bound?.execution==="object"
+        ?bound.execution as Record<string,unknown>:null;
+      const last=index===items.length-1;
+      if(bound?.request_id!==item.request_id||bound?.decision!=="allow"||!ex||ex.provider!=="gitea"||
+         (last?(ex.performed!==true||ex.tool!=="write_files"||ex.branch!==branch||
+           typeof ex.commit_sha!=="string"||!/^[a-f0-9]{40}$/u.test(ex.commit_sha)):
+          (ex.performed!==false||ex.write_set_item_validated!==true||ex.write_batch_id!==batch.batch_id)))
+        throw new ControlledToolError("authorization_denied","Write batch lacks the exact Gateway execution receipt");
+      if(last)published=ex;
+    }
+    const files=Array.isArray(published!.files)?published!.files as {path?:unknown;operation?:unknown}[]:[];
+    if(files.length!==changes.length||files.some(f=>byPath.get(f.path as string)?.operation!==f.operation))
+      throw new ControlledToolError("authorization_denied","Published write-set differs from the requested changes");
+    try{await port.attestWriteSet(batch.batch_id);}
+    catch{throw new ControlledToolError("tool_unavailable","Trusted independent write-set attestation failed");}
+    return {commit_sha:published!.commit_sha as string,
+      files:files.map(f=>({path:f.path as string,operation:f.operation as string}))};
   }
 
   /**

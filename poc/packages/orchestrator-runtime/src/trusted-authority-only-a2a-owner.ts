@@ -42,8 +42,10 @@ import type {
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 import {isProjectTestRepairGrant,isTestAgentReadGrant,isProjectTestCreateGrant,readUpdateGrantShape,
- readCreateGrantShape,isProjectTestReadCreateGrant}
+ readCreateGrantShape,isProjectTestReadCreateGrant,readsWriteSetGrantShape,isProjectTestWriteSetGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
+import {TrustedAuthorityOnlySequentialWriteSetStager}
+ from "../../../apps/gateway/src/trusted-authority-only-sequential-write-set-stager.ts";
 import {SPECIALIST_ROLES,APPLICATION_ROLES,REQUIRED_SPECIALISTS} from "../../plan-contracts/src/agent-roles.mjs";
 import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 
@@ -223,7 +225,12 @@ export class TrustedAuthorityOnlyA2AOwner {
     deny("Task file resource not canonical");
    filePermissions.push({path,operation:p.operation});
   }
-  if(effects!==1||filePermissions.length>32)
+  // Phase W (opt-in on the Gateway): ONE write-set Task, 2..8 signed writes.
+  const typedWriteSet=this.#gateway.batchWritesEnabled===true&&
+    !!readsWriteSetGrantShape(row.permissions)&&
+    (APPLICATION_ROLES.includes(role)||
+     (role==="test"&&isProjectTestWriteSetGrant(row.permissions,this.#gateway.projectTestSourceProfile)));
+  if((typedWriteSet?effects<2||effects>8:effects!==1)||filePermissions.length>32)
    deny("Task needs one native read, mutation or Runner effect");
   // One exact edited file plus its signed context reads (shared shape rule).
   const typedMixed=!!readUpdateGrantShape(row.permissions);
@@ -243,7 +250,7 @@ export class TrustedAuthorityOnlyA2AOwner {
   // are separate, serial, individually observed Child Tasks.
   if((hasRunner&&(row.permissions.length!==1||
       filePermissions.length!==0))||
-     (!hasRunner&&!typedMixed&&!typedMixedCreate&&
+     (!hasRunner&&!typedMixed&&!typedMixedCreate&&!typedWriteSet&&
       (row.permissions.length!==1||filePermissions.length!==1)))
    deny("native A2A Task cannot combine unrelated read/write/Runner grants");
   // Read-only investigation by the Test Agent: ONE exact Engineer-signed
@@ -253,9 +260,9 @@ export class TrustedAuthorityOnlyA2AOwner {
      filePermissions[0].operation==="read_file"&&!signedTestRead)
    deny("Test read requires one exact Engineer-signed file");
   if(role==="test"&&filePermissions.some(p=>p.operation==="create_file")&&
-     !signedTestCreate&&!signedTestReadCreate)
+     !signedTestCreate&&!signedTestReadCreate&&!typedWriteSet)
    deny("Test CREATE requires one exact signed project-test source");
-  if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&
+  if(role==="test"&&filePermissions.some(p=>p.operation==="update_file")&&!typedWriteSet&&
      !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
    deny("Test update requires an exact project test repair grant");
   if(typedMixedCreate&&
@@ -263,7 +270,7 @@ export class TrustedAuthorityOnlyA2AOwner {
       input.effectStager.stagedTool!=="read_then_create"||
       typeof input.effectStager.attest!=="function"))
    deny("reads + create Task requires owner-controlled mixed staging");
-  if(!typedMixedCreate&&filePermissions.some(p=>p.operation==="create_file")&&
+  if(!typedMixedCreate&&!typedWriteSet&&filePermissions.some(p=>p.operation==="create_file")&&
      (filePermissions.length!==1||
       !(APPLICATION_ROLES.includes(role)||signedTestCreate)||
       !TrustedAuthorityOnlyCreateEffectStager.isNativeForOwner(
@@ -277,6 +284,11 @@ export class TrustedAuthorityOnlyA2AOwner {
   if((!typedMixed&&input.effectStager.stagedTool==="read_then_update")||
      (!typedMixedCreate&&input.effectStager.stagedTool==="read_then_create"))
    deny("mixed staging cannot replace an ordinary Task grant");
+  if(typedWriteSet&&!TrustedAuthorityOnlySequentialWriteSetStager.isNativeForOwner(
+      input.effectStager,this.#gateway,input.taskId,input.runtimeTaskId))
+   deny("write-set Task requires the original native owner write-set stager");
+  if(!typedWriteSet&&(input.effectStager.stagedTool as string)==="read_then_write_set")
+   deny("write-set staging cannot replace an ordinary Task grant");
   const paths=[...new Set(filePermissions.map(x=>x.path))];
   const subtask:DeterministicSubtask=Object.freeze({
    subtask_id:input.taskId,branch,
@@ -360,7 +372,7 @@ export class TrustedAuthorityOnlyA2AOwner {
      provider_completion_attested:false as const
     });
     this.#reported.set(input.runtimeTaskId,report);
-    if(typedMixed||typedMixedCreate)this.#mixedReports.add(input.runtimeTaskId);
+    if(typedMixed||typedMixedCreate||typedWriteSet)this.#mixedReports.add(input.runtimeTaskId);
     if(signedTestRead)this.#testReadReports.add(input.runtimeTaskId);
     if(signedTestCreate)this.#testCreateReports.add(input.runtimeTaskId);
     return report;

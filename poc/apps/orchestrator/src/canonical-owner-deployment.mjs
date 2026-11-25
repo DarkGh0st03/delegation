@@ -14,6 +14,7 @@ import {canonicalRepositoryUri} from "../../gateway/src/canonical.ts";
 import {InMemoryAuditSink,InMemoryRequestStore,prepareAuthorization} from "../../gateway/src/prepare.ts";
 import {executeAuthorization} from "../../gateway/src/execute.ts";
 import {TrustedReadBatchStore,prepareReadBatch} from "../../gateway/src/trusted-read-batch.ts";
+import {prepareWriteBatch} from "../../gateway/src/trusted-write-batch.ts";
 import {AuthenticatedRunnerCompletionObserver} from "../../gateway/src/trusted-authority-only-runner-evidence.ts";
 import {AuthenticatedGiteaReadCompletionObserver} from "../../gateway/src/trusted-authority-only-gitea-evidence.ts";
 import {AuthenticatedGiteaMutationCompletionObserver} from "../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
@@ -75,12 +76,15 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  const nativeCreateEnabled=c?.enableNativeCreateFile===true;
  // Phase R (opt-in): specialists read all signed files of a Task with ONE VP.
  const batchReadsEnabled=c?.enableBatchReads===true;
+ // Phase W (opt-in): write-set Tasks with ONE VP and ONE atomic publication.
+ const batchWritesEnabled=c?.enableBatchWrites===true;
  const readBatches=batchReadsEnabled?new TrustedReadBatchStore():undefined;
  // Only an explicit protected 0600 owner manifest may request the
  // post-failure authenticated diagnostic-read-before-UPDATE policy.
  const requireVerifiedRepairDiagnostic=c?.requireVerifiedRepairDiagnostic===true;
  const optionalKeys=[...(nativeCreateEnabled?["enableNativeCreateFile"]:[]),
   ...(batchReadsEnabled?["enableBatchReads"]:[]),
+  ...(batchWritesEnabled?["enableBatchWrites"]:[]),
   ...(Object.hasOwn(c??{},"baseBranch")?["baseBranch"]:[]),
   ...(requireVerifiedRepairDiagnostic?["requireVerifiedRepairDiagnostic"]:[]),
   ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[]),
@@ -139,7 +143,8 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   policy:new OpaPolicyClient({baseUrl:opaUrl}),executor:new GiteaExecutor(giteaClient)};
  const directories=Object.fromEntries([
   "mutationIntent","giteaReceipts","runnerIntent","runnerFailureReceipts","runnerPassReceipts",
-  ...(nativeCreateEnabled?["createIntent","createReceipts"]:[])
+  ...(nativeCreateEnabled?["createIntent","createReceipts"]:[]),
+  ...(batchWritesEnabled?["writeSetIntent","writeSetReceipts"]:[])
  ].map(name=>[name,join(c.directory,name)]));
  const evidenceKey=Buffer.from(key,"hex");
  const observation={key:evidenceKey,repository:repoName,branch,giteaClient:independentGiteaClient};
@@ -187,6 +192,13 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
    return Response.json(prepareReadBatch(body,{
     audience:"cloud-access-gateway",request_ttl_ms:role==="test"?1200000:120000,repository
    },{...authorization,batches:readBatches}),{status:201});
+  // Phase W: same role binding; only when the native write-set path is installed.
+  if(batchWritesEnabled&&authorization.writeBatches&&
+     String(url)===gatewayUrl+"/v1/authorization/prepare-write-batch"&&
+     body.agent_role===role&&role!=="orchestrator")
+   return Response.json(prepareWriteBatch(body,{
+    audience:"cloud-access-gateway",request_ttl_ms:role==="test"?1200000:120000,repository
+   },{...authorization,batches:authorization.writeBatches}),{status:201});
   if(String(url)===gatewayUrl+"/v1/authorization/execute"&&
      store.get(body.request_id)?.agent_role===role)
    return Response.json(await executeAuthorization(body,{...authorization,signal:init.signal}));
@@ -201,6 +213,7 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   rootReservation:{directory:reservationDirectory,index:c.rootIndex,validitySeconds:7200},
   nativeEffects:{store,giteaClient,independentGiteaClient,runnerClient,runnerPassObserver,
    readObserver,directories,evidenceKey,
+   ...(batchWritesEnabled?{verifier:rootGateway.verifier}:{}),
    installAuthorization(deps){authorization=Object.freeze({...rootGateway,...deps,repository,
     ...(readBatches?{readBatches}:{})});}},
   localWorkers:{directory:c.directory,projectTestSourceProfile:testSourceProfileOf(projectProfile),
@@ -208,7 +221,8 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
    role,{port:c.workerPorts[role],adk:{model:model(),gatewayBaseUrl:gatewayUrl,
     adapterToken:workerTokens[i],fetchFn:workerFetch(role),
     gatewayTimeoutMs:role==="test"?900000:60000,
-    ...(batchReadsEnabled?{batchReads:true}:{})}}
+    ...(batchReadsEnabled?{batchReads:true}:{}),
+    ...(batchWritesEnabled?{batchWrites:true}:{})}}
   ]))},
   workflow:{
    createBranch:{model:model(),branch,baseBranch,permission:{resource,operation:"create_branch"}},

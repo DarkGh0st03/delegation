@@ -114,7 +114,9 @@ export function verifierFixture(agent:string){
 }
 
 export async function setup(opts:{permissions:{resource:string;operation:string}[];agent?:string;
- batchWrites?:boolean;strict?:boolean;files?:Record<string,string>;modes?:Record<string,string>}){
+ batchWrites?:boolean;strict?:boolean;files?:Record<string,string>;modes?:Record<string,string>;
+ runtimeTaskId?:string}){
+ const RT=opts.runtimeTaskId??"runtime-ws";
  const fake=new FakeGitea(opts.files??initialFiles,{modes:opts.modes});
  const hash=fake.head("main")!;
  fake.createBranch(branch,"main");
@@ -167,8 +169,8 @@ export async function setup(opts:{permissions:{resource:string;operation:string}
   completionObserver:observer,projectTestSourceProfile:SAMPLE_TEST_SOURCES,
   ...(opts.batchWrites===false?{}:{batchWritesEnabled:true}),nowMs:nowFn});
  await gate.activate(sessionId,hash);
- await gate.bindTrustedTask("task-ws","runtime-ws",agent as never);
- await gate.enrollTrustedIssuedChild("task-ws","runtime-ws",issuer);
+ await gate.bindTrustedTask("task-ws",RT,agent as never);
+ await gate.enrollTrustedIssuedChild("task-ws",RT,issuer);
  const client=()=>new GiteaClient({baseUrl:"http://gitea.fixture.invalid",token:"fixture-token",
   owner:"thesis",repository:"sample-app",baseBranch:"main",fetchFn:fake.fetch as never});
  const intentJournal=new DurableAuthorityOnlyWriteSetIntentJournal(d("ws-intents"));
@@ -189,7 +191,7 @@ export async function setup(opts:{permissions:{resource:string;operation:string}
  const config={audience:"cloud-access-gateway",request_ttl_ms:1_200_000,repository:repo};
  const prepDeps=()=>({store,audit,authorityOnlyAdmissions:gate,nowMs:nowFn,requestId:()=>`req-${n++}`});
  const prepare=(tool:string,path:string,content?:string,challenge="ws-challenge")=>{
-  const out=prepareAuthorization({task_id:"runtime-ws",agent_role:agent as never,tool:tool as never,
+  const out=prepareAuthorization({task_id:RT,agent_role:agent as never,tool:tool as never,
    arguments:{branch,path,...(content!==undefined?{content}:{})} as never},config,
    {...prepDeps(),challenge:()=>challenge});
   return store.get(out.request_id)!;
@@ -199,11 +201,11 @@ export async function setup(opts:{permissions:{resource:string;operation:string}
    const r=prepare("read_file",path);
    await gate.stageTrustedSequentialReadEffect(r);
    readEvidence.set(r.request_id,createHash("sha256").update("read:"+path).digest("hex"));
-   await gate.attestTrustedSequentialReadEffect("task-ws","runtime-ws");
+   await gate.attestTrustedSequentialReadEffect("task-ws",RT);
   }
  };
  const prepareBatch=(changes:{path:string;operation:string;content:string}[])=>prepareWriteBatch(
-  {task_id:"runtime-ws",agent_role:agent,tool:"write_files",arguments:{branch,changes}},config,
+  {task_id:RT,agent_role:agent,tool:"write_files",arguments:{branch,changes}},config,
   {...prepDeps(),batches:writeBatches});
  const stageBatch=(batchId:string)=>stageWriteBatch(batchId,{batches:writeBatches,store,admissions:gate,
   preflight,nowMs:nowFn});
@@ -218,7 +220,7 @@ export async function setup(opts:{permissions:{resource:string;operation:string}
   issuer_id:"did:thesis:orchestrator",permissions:perms,hierarchy_depth:1,
   expiration:"0",root_credential_id:"urn:w:operational"});
  const close=()=>rm(directory,{recursive:true,force:true});
- return {gate,preflight,publisher,wsObserver,executor,verifier,store,audit,writeBatches,fake,hash,clock,
+ return {RT,gate,preflight,publisher,wsObserver,executor,verifier,store,audit,writeBatches,fake,hash,clock,
   client,intentJournal,prepare,readAll,prepareBatch,stageBatch,execute,verified,close};
 }
 export const writesOf=(perms:{resource:string;operation:string}[])=>perms.filter(x=>x.operation!=="read_file");

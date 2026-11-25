@@ -167,6 +167,8 @@ export interface ExecuteAuditEvent {
   write_batch_id?: string;
   write_set_digest?: string;
   write_set_reverified?: boolean;
+  /** Duration of the strict second verification (excluded from provider_ms). */
+  write_set_reverification_ms?: number;
   batch_verification?: "performed" | "reused";
   provider: "mock" | "gitea" | "runner";
 }

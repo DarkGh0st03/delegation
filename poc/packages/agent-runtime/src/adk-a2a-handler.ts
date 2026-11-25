@@ -73,6 +73,8 @@ export interface AdkA2ATaskHandlerConfig {
   gatewayTimeoutMs?: number;
   /** Phase R: trusted host option, one VP for all signed reads of a Task. */
   batchReads?: boolean;
+  /** Phase W: write all signed files of a write-set Task with ONE VP (write_files). */
+  batchWrites?: boolean;
   /** Private Task signer for one-shot crypto VP proofs; not model tools. */
   mcpTaskRegistry?:PrivateMcpTaskRegistry;
   fetchFn?: FetchLike;
@@ -394,6 +396,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       trustedTaskPaths:context.subtask.relevant_paths,
       trustedFilePermissions:grants,
       ...(config.batchReads===true?{batchReads:true}:{}),
+      ...(config.batchWrites===true?{batchWrites:true}:{}),
       ...(taskRef?{diagnosticTaskRef:taskRef}:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });

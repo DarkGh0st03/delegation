@@ -63,7 +63,7 @@ export function simulatedMarker(path, sessionId) {
  * reads, in the same Task, the application files changed before it (N signed
  * reads + ONE write, like a real specialist reading the code it tests).
  */
-export function simulatedExecutionPlan(approved, sessionId, testSources) {
+export function simulatedExecutionPlan(approved, sessionId, testSources, {batchWrites = false} = {}) {
   const byPath = new Map();
   let runTests, branch, pullRequest;
   for (const p of approved) {
@@ -105,6 +105,35 @@ export function simulatedExecutionPlan(approved, sessionId, testSources) {
     t.permissions = [...context.map(c => pick(c.read)), ...t.permissions];
     t.instruction = `Leggi ${t.reads.join(", ")} e ${t.op === "create" ? "crea" : "aggiorna"} ` +
       `${t.path} con i test del comportamento nuovo`;
+  }
+  if (batchWrites) {
+    // Phase W: consecutive writes of ONE specialist become one write-set Task
+    // (2..8 writes, at most 16 permissions: reads + writes, each update with its read).
+    const group = items => {
+      const out = [];
+      for (const item of items) {
+        const last = out.at(-1);
+        const perms = t => [...new Map(t.permissions.map(p => [p.resource + "\0" + p.operation, p])).values()];
+        if (last && last.agent_id === item.agent_id && (last.op === "update" || last.op === "create" || last.op === "write_set") &&
+            (item.op === "update" || item.op === "create")) {
+          const ws = last.op === "write_set" ? last : {agent_id: last.agent_id, op: "write_set",
+            writes: [{path: last.path, op: last.op}], reads: [...(last.reads ?? []), ...(last.op === "update" ? [last.path] : [])],
+            permissions: last.permissions};
+          const merged = {...ws, writes: [...ws.writes, {path: item.path, op: item.op}],
+            reads: [...new Set([...ws.reads, ...(item.reads ?? []), ...(item.op === "update" ? [item.path] : [])])],
+            permissions: perms({permissions: [...ws.permissions, ...item.permissions]})};
+          if (merged.writes.length <= 8 && merged.permissions.length <= 16) {
+            merged.instruction = `Applica in un'unica scrittura atomica (write_files): ${merged.writes.map(w => w.path).join(", ")} (sessione ${sessionId})`;
+            out[out.length - 1] = merged;
+            continue;
+          }
+        }
+        out.push(item);
+      }
+      return out;
+    };
+    work.splice(0, work.length, ...group(work));
+    tests.splice(0, tests.length, ...group(tests));
   }
   const embedded = tests.some(t => t.reads);
   const room = 24 - work.length - tests.length - (runTests ? 1 : 0);
@@ -212,7 +241,7 @@ export class ScriptedWorkerModel extends Scripted {
     // Context files first, the edited file last: its content is the last read.
     // A new file is not read (it does not exist yet): only its context.
     for (const f of this.#queue)
-      f.readOrder = f.op === "create" ? [...(f.reads ?? [])] : [...(f.reads ?? []), f.path];
+      f.readOrder = f.op === "create" || f.op === "write_set" ? [...(f.reads ?? [])] : [...(f.reads ?? []), f.path];
     this.#planned = [...this.#queue];
   }
   #planned = [];
@@ -240,6 +269,30 @@ export class ScriptedWorkerModel extends Scripted {
       if (turn === 1) { yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path}); return; }
       this.#queue.shift(); this.#turn = 0;
       yield say(`Letto ${path}: il comportamento nuovo verrà coperto dai test.`);
+      return;
+    }
+    // Phase W: a write-set Task reads its signed files, then ONE write_files.
+    if (op === "write_set") {
+      const reads = item.reads ?? [];
+      const batchRead = reads.length >= 2 && offersTool(request, "read_files");
+      const readTurns = batchRead ? 1 : reads.length;
+      if (turn <= readTurns) {
+        yield batchRead ? call(`read-${this.calls}`, "read_files", {branch: this.#branch})
+          : call(`read-${this.calls}`, "read_file", {branch: this.#branch, path: reads[turn - 1]});
+        return;
+      }
+      if (turn === readTurns + 1) {
+        const changes = item.writes.map(w => {
+          if (w.op === "create") return {path: w.path, operation: "create_file", content: this.#content(w.path, "")};
+          const previous = readContentFor(request, w.path);
+          if (typeof previous !== "string") throw Error("Scripted worker: read result not found for " + w.path);
+          return {path: w.path, operation: "update_file", content: this.#content(w.path, previous)};
+        });
+        yield call(`write-${this.calls}`, "write_files", {branch: this.#branch, changes});
+        return;
+      }
+      this.#queue.shift(); this.#turn = 0;
+      yield say(`Scritti insieme ${item.writes.map(w => w.path).join(", ")} (${label}).`);
       return;
     }
     // Phase R: with read_files offered, ONE call reads every signed file.

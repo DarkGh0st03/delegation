@@ -37,7 +37,8 @@ export interface TrustedEffectTaskOwnerPins {
   childCredentialId:string;
   presenterId:string;
   branch:string;
-  operation:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update"|"read_then_create";
+  operation:"read_file"|"update_file"|"create_file"|"run_tests"|"read_then_update"|"read_then_create"|
+   "read_then_write_set";
   /** Required for a pinned read or update; never model provided. */
   path?:string;
   /** Owner-side gateway stager, permanently bound to its original request store. */
@@ -50,8 +51,10 @@ interface Entry {
  attempted:boolean;
  /** Private read->CAS sequencing: no agent supplied claim can skip attestation. */
  mixedPhase:"read_ready"|"read_pending"|"read_attested"|
-  "update_pending"|"finished"|"failed";
+  "update_pending"|"write_set_pending"|"write_set_staged"|"finished"|"failed";
  mixedRequest?:string;
+ /** Phase W: the one Gateway write batch of this Task. */
+ writeBatch?:string;
  /** Reads granted by the signed Task (edited file + its context files). */
  plannedReads:number;
  attestedReads:number;
@@ -82,6 +85,21 @@ function readCreateHints(hints:readonly {operation?:unknown;path?:unknown}[],
   return null;
  return reads.length;
 }
+/** Phase W write-set hints: 0..MAX_TASK_READS distinct reads, then 2..8
+ * distinct writes (an update only of a read file, a create only of an
+ * unread file), at most 16 in total; nothing else. Returns the read count. */
+function writeSetHints(hints:readonly {operation?:unknown;path?:unknown}[]):
+ {reads:number;writes:string[]}|null{
+ const reads=hints.filter(r=>r?.operation==="read_file").map(r=>r.path);
+ const writes=hints.filter(r=>r?.operation==="update_file"||r?.operation==="create_file");
+ if(reads.length>MAX_TASK_READS||writes.length<2||writes.length>8||
+    reads.length+writes.length!==hints.length||hints.length>16||
+    [...reads,...writes.map(w=>w.path)].some(x=>typeof x!=="string")||
+    new Set(reads).size!==reads.length||new Set(writes.map(w=>w.path)).size!==writes.length||
+    writes.some(w=>(w.operation==="update_file")!==reads.includes(w.path)))
+  return null;
+ return {reads:reads.length,writes:writes.map(w=>w.path as string)};
+}
 /** Mixed Task: signed reads, then the one write fixed by the owner pins. */
 const MIXED=new Set(["read_then_update","read_then_create"]);
 const finalWrite=(operation:string)=>operation==="read_then_create"?"create_file":"update_file";
@@ -105,7 +123,12 @@ export class TrustedEffectStagingTaskRegistry {
      !ID.test(input.planTaskId)||!ID.test(input.childCredentialId)||
      !DID.test(input.presenterId)||
      !trustedFileRole(input.role)||
-     !["read_file","update_file","create_file","run_tests","read_then_update","read_then_create"].includes(input.operation)||
+     !["read_file","update_file","create_file","run_tests","read_then_update","read_then_create",
+       "read_then_write_set"].includes(input.operation)||
+     (input.operation==="read_then_write_set"&&
+      (input.effectStager?.stagedTool!=="read_then_write_set"||typeof input.effectStager.attest!=="function"||
+       typeof input.effectStager.stageWriteSet!=="function"||
+       typeof input.effectStager.attestWriteSet!=="function"||input.path!==undefined))||
       (input.operation==="create_file"&&
        (input.effectStager.stagedTool!=="create_file"||
         (input.role==="test"&&!isProjectTestSource(input.path,this.#testSources))))||
@@ -122,7 +145,7 @@ export class TrustedEffectStagingTaskRegistry {
       input.path.split("/").some(p=>p==="."||p===".."||!p))
     deny(input.operation==="read_file"?"canonical read path required":
      "canonical update path required");
-  }else if(input.role!=="test"||input.path!==undefined){
+  }else if(input.operation!=="read_then_write_set"&&(input.role!=="test"||input.path!==undefined)){
    deny("run_tests must be an exact Test Task without file path");
   }
   if(input.role==="test"&&
@@ -176,6 +199,12 @@ export class TrustedEffectStagingTaskRegistry {
          !Array.isArray(sub.relevant_paths)||
          sub.relevant_paths.length!==hints.length||
          !hints.every(row=>sub.relevant_paths.includes(row.path))
+       : p.operation==="read_then_write_set"
+       ? writeSetHints(hints)===null||sub.approved_run_tests!==false||
+         !Array.isArray(sub.relevant_paths)||
+         sub.relevant_paths.length!==new Set(hints.map(h=>h.path)).size||
+         !hints.every(row=>sub.relevant_paths.includes(row.path))||
+         (p.role==="test"&&!writeSetHints(hints)!.writes.every(w=>isProjectTestSource(w,this.#testSources)))
        : p.operation==="create_file"
        ? hints.length!==1||
          hints[0]?.operation!=="create_file"||
@@ -191,13 +220,24 @@ export class TrustedEffectStagingTaskRegistry {
    deny("A2A identity/operation differs from trusted owner Task pins");
   if(p.operation==="read_then_update")b.plannedReads=readUpdateHints(hints,p.path!)!;
   if(p.operation==="read_then_create")b.plannedReads=readCreateHints(hints,p.path!)!;
+  const writeSet=p.operation==="read_then_write_set";
+  if(writeSet)b.plannedReads=writeSetHints(hints)!.reads;
   return Object.freeze({
    stagedTool:p.operation,
    projectTestSourceProfile:this.#testSources,
    stage:async(requestId:string):Promise<unknown>=>{
     if(this.#retired||b.state!=="selected"||
-       (!MIXED.has(p.operation)&&b.attempted))
+       (!MIXED.has(p.operation)&&!writeSet&&b.attempted))
      deny("one-shot owner effect already consumed or retired");
+    if(writeSet){
+      // Only the signed reads are staged per request; the writes go as ONE batch.
+      if((b.mixedPhase!=="read_ready"&&b.mixedPhase!=="read_attested")||b.attestedReads>=b.plannedReads)
+       deny("write-set read out of sequence or no read left");
+      b.mixedPhase="read_pending";b.mixedRequest=requestId;
+      if(typeof requestId!=="string"||!ID.test(requestId)){b.mixedPhase="failed";deny("malformed read request ID");}
+      try{return await b.stager.stage(requestId);}
+      catch(error){b.mixedPhase="failed";throw error;}
+    }
     if(MIXED.has(p.operation)){
       const phase=b.mixedPhase;
       if(phase!=="read_ready"&&phase!=="read_attested")
@@ -228,8 +268,9 @@ export class TrustedEffectStagingTaskRegistry {
    }:{}),
    attest:async(requestId:string,tool:"read_file"|"update_file"|"create_file"):Promise<void>=>{
     if(this.#retired||b.state!=="selected"||
-       !MIXED.has(p.operation)||
+       !(MIXED.has(p.operation)||writeSet)||
        (b.mixedPhase!=="read_pending"&&b.mixedPhase!=="update_pending")||
+       (writeSet&&(b.mixedPhase!=="read_pending"||tool!=="read_file"))||
        !ID.test(requestId)||requestId!==b.mixedRequest||
        tool!==(b.mixedPhase==="read_pending"?"read_file":finalWrite(p.operation))||
        typeof b.stager.attest!=="function")
@@ -239,7 +280,26 @@ export class TrustedEffectStagingTaskRegistry {
     await b.stager.attest(requestId,tool);
     if(phase==="read_pending")b.attestedReads+=1;
     b.mixedPhase=phase==="read_pending"?"read_attested":"finished";
-   }
+   },
+   ...(writeSet?{
+    plannedReads:b.plannedReads,
+    stageWriteSet:async(batchId:string):Promise<unknown>=>{
+     if(this.#retired||b.state!=="selected"||b.writeBatch!==undefined||
+        b.attestedReads!==b.plannedReads||(b.mixedPhase!=="read_attested"&&b.mixedPhase!=="read_ready")||
+        typeof batchId!=="string"||!/^wbatch_[0-9a-f-]{36}$/u.test(batchId))
+      deny("write-set staging requires every signed read attested and one batch");
+     b.mixedPhase="write_set_pending";b.writeBatch=batchId;
+     try{const r=await b.stager.stageWriteSet!(batchId);b.mixedPhase="write_set_staged";return r;}
+     catch(error){b.mixedPhase="failed";throw error;}
+    },
+    attestWriteSet:async(batchId:string):Promise<void>=>{
+     if(this.#retired||b.state!=="selected"||b.mixedPhase!=="write_set_staged"||b.writeBatch!==batchId)
+      deny("write-set attestation requires the staged batch");
+     b.mixedPhase="failed";
+     await b.stager.attestWriteSet!(batchId);
+     b.mixedPhase="finished";
+    }
+   }:{})
   });
  }
  /** Host-controlled cleanup after A2A completion, failure or cancellation. */

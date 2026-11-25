@@ -10,7 +10,8 @@ import {isRunnerPhaseName} from '../../plan-contracts/src/project-profile.mjs';
 // one terminal (no-Child) decision; 25 is the hard owner-only turn ceiling.
 const deny=s=>{throw Error('Authority-only adaptive work loop: '+s);};
 export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSteps=8,signal,requireVerifiedRepairDiagnostic=false,
- projectTestSourceProfile}){
+ projectTestSourceProfile,batchWrites=false}){
+ if(typeof batchWrites!=='boolean')deny('invalid original owner loop configuration');
  if(!(model instanceof BaseLlm)||!Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>25||
     !hooks||['readContext','beforeDecision','executeTask','confirmReady','retire']
      .some(k=>typeof hooks[k]!=='function')||
@@ -36,7 +37,7 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
    // The owner's test-source rule (project profile) is passed as a trusted
    // object, never through the cloned, model-visible progress context.
    const decide=()=>new TrustedAuthorityOnlyAdkDecisionProposer({
-    ...before,model,decisionKind:'adaptive',projectTestSourceProfile
+    ...before,model,decisionKind:'adaptive',projectTestSourceProfile,batchWrites
    }).propose();
    const decision=await (hooks.runDecision?hooks.runDecision(decide):decide());
    signal?.throwIfAborted();
