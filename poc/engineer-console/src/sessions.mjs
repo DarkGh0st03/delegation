@@ -236,7 +236,8 @@ export class EngineerSessions {
     const sub = [...["gateway-tasks", "issuer-children", "gateway-children", "effect-fences",
       "sequences"].map(d => join("journals", d)), "status-reservations", "secrets",
       "mutationIntent", "giteaReceipts", "runnerIntent", "runnerFailureReceipts",
-      "runnerPassReceipts", "createIntent", "createReceipts"];
+      "runnerPassReceipts", "createIntent", "createReceipts",
+      ...(batchWrites ? ["writeSetIntent", "writeSetReceipts"] : [])];
     for (const d of ["", "journals", ...sub]) {
       mkdirSync(join(execDir, d), {recursive: true, mode: 0o700}); chmodSync(join(execDir, d), 0o700);
     }

@@ -514,3 +514,39 @@ OPA non è modificato (non rieseguito localmente in questa sessione per l'assenz
 - Resta valida la dichiarazione del TOCTOU residuo del §4.3.
 
 **Non incluso in W2** (W3): stager e IPC lato agente, tool `write_files`, proposer, owner A2A e remoto, console e modelli scripted, cablaggio nel deployment canonico (`canonical-owner-deployment.mjs`).
+
+## 14. W3: integrazione agente, IPC, owner, proposer, deployment e console
+
+**Catena di un Task write-set** (R letture + W scritture, 2 ≤ W ≤ 8, ≤ 16 effetti):
+1. il modello chiama le letture (`read_files` o `read_file`), poi **una sola volta** `write_files` con l'insieme esatto delle scritture firmate (D4, D5);
+2. `GatewayControlledToolClient.writeFiles` → `POST /v1/authorization/prepare-write-batch` (route legata al ruolo, mai all'Orchestrator);
+3. staging del proprietario via IPC autenticata (`stage_write_set`, solo il batch ID): preflight, intent durevoli, write-set flight;
+4. **una** presentazione con i permessi derivati dal Gateway;
+5. N Execute: i primi N−1 restituiscono `write_set_item_validated` senza effetto, l'ultimo pubblica (ChangeFiles + seconda verifica rigorosa + un solo HEAD-CAS);
+6. attestazione del proprietario via IPC (`attest_write_set`): le N evidenze per file in ordine canonico, poi il sigillo finale del Task;
+7. completamento A2A del proprietario come per i Task misti.
+
+**Componenti:**
+- tool `write_files` (`adk-specialized-agents.ts`): offerto solo se il Task è write-set *e* esiste uno stager write-set del proprietario; nasconde `update_file`/`create_file`; rifiuta prima del Gateway insiemi parziali, operazioni diverse e una seconda chiamata; un esito per file.
+- stager del proprietario `TrustedAuthorityOnlySequentialWriteSetStager` (Gateway, senza endpoint): stati `read_ready → read_pending → reads_done → write_set_staged → finalized`, ogni errore porta a `failed`; l'agente fornisce soltanto ID.
+- IPC (`trusted-effect-staging-unix-ipc.ts`, `trusted-effect-staging-task-registry.ts`): operazione `read_then_write_set`, azioni `stage_write_set`/`attest_write_set`, controllo di fase su entrambi i lati.
+- owner A2A e owner remoto: riconoscono la forma write-set solo con `batchWritesEnabled` e richiedono lo stager nativo dello stesso proprietario (brand check).
+- proposer adattivo: con `batchWrites` propone Task write-set (≤ 8 scritture, ≤ 16 effetti); senza l'opzione il comportamento è invariato.
+- deployment canonico: `enableBatchWrites`, directory `writeSetIntent`/`writeSetReceipts`, verificatore del Gateway passato all'executor, route `prepare-write-batch`.
+- console e modelli scripted: opt-in `DELEGATION_BATCH_WRITES=1` (**default spento**); il piano scripted raggruppa gli elementi consecutivi dello stesso agente in Task write-set.
+
+**Compatibilità.** Con `DELEGATION_BATCH_WRITES` assente o diverso da `1` nessun componente cambia comportamento: il percorso a scrittura singola (baseline) e le letture batch della Fase R restano quelli già misurati. Le suite esistenti passano senza modifiche alle asserzioni.
+
+**Osservabilità della seconda verifica.** L'executor misura la `verifyMultiple` rigorosa (`reverification_ms`, `performance.now()`). L'audit dell'Execute di pubblicazione registra `write_set_reverification_ms` e `provider_ms = max(0, elapsed − reverification_ms)`, così il costo crittografico non viene attribuito al provider. La console riporta `write_batch_id`, `batch_verification`, `reverification_ms`, `provider_ms` e `commit_sha`.
+
+**Isolated staging reference.** Invariato rispetto a W2: i ref di staging sono isolati dal branch di lavoro e vietati agli agenti attraverso il Gateway, ma **non** sono intrinsecamente riservati.
+
+**Test W3:**
+- tool `write_files`: 3 test (offerta, rifiuti locali, assenza nella baseline);
+- catena completa su componenti reali (client, IPC Unix autenticata, registry, stager, Gateway, executor, Gitea in memoria): pubblicazione con una VP e un commit; chiamate non conformi sui canali del proprietario rifiutate; batch che non è l'insieme firmato rifiutato allo staging, nessuna pubblicazione.
+
+- proposer: 3 test (Task write-set accettato solo con `batchWrites`; forma write-set imposta; avanzamento con un Task write-set completato accettato solo con l'opzione).
+
+**Smoke E2E sullo stack reale** (scripted, nessuna IA; dettagli in `docs/experiments/phase-w-w3/`): con `DELEGATION_BATCH_WRITES=1` la sessione si completa con Draft PR; il Task backend pubblica 4 scritture con una VP e un commit esatto, seconda verifica 1540,8 ms separata dal `provider_ms`; nessun ref di staging residuo. Con l'opzione a `0` la stessa sessione segue il percorso baseline con letture batch della Fase R. Una sola esecuzione per variante: è uno smoke funzionale, non una misura. Lo smoke ha trovato due difetti, corretti prima delle esecuzioni riportate (directory write-set non create dalla console; operazione `write_set` rifiutata dal proposer nell'avanzamento).
+
+**Rimandato a W4:** revoca reale della Child tra staging e CAS; campagna sperimentale completa.

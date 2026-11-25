@@ -114,7 +114,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    for(const item of executionProgress.completed_work){
     if(!exact(item,['task_id','agent_id','operation','instruction'])||ids.has(item.task_id)||
        !prior.some(p=>p.task_id===item.task_id&&p.agent_id===item.agent_id)||
-       !['create_branch','read_file','update_file','create_file','run_tests','create_pull_request'].includes(item.operation)||
+       !(['create_branch','read_file','update_file','create_file','run_tests','create_pull_request'].includes(item.operation)||
+         (batchWrites&&item.operation==='write_set'))||
        typeof item.instruction!=='string'||!item.instruction.trim()||
        item.instruction.length>4000||/[\x00-\x1f\x7f]/u.test(item.instruction))fail();
     ids.add(item.task_id);
