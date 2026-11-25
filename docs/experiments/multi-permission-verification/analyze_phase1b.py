@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Summarize Phase 1b (real trust layer). Standard library only.
 
-Usage: python3 -I analyze_phase1b.py <raw/real-evm>
+Usage: python3 -I analyze_phase1b.py <latency-run-dir> [<counts-run-dir>]
+If a counts run is given, RPC counts and negative cases are taken from it.
 Latency statistics use ONLY rows with path=direct (no proxy in the path);
 RPC counts use ONLY rows with path=proxy. Writes summary.md / summary.csv.
 """
@@ -32,8 +33,11 @@ def paired_ci(single, multi, n=2000, seed=20261125):
     return pct(out, 2.5), pct(out, 97.5)
 
 
-def main(run: Path):
-    rows = list(csv.DictReader(open(run / "positive.csv")))
+def main(run: Path, counts: Path = None):
+    rows = [r for r in csv.DictReader(open(run / "positive.csv"))
+            if counts is None or r["path"] == "direct"]
+    if counts is not None:
+        rows += [r for r in csv.DictReader(open(counts / "positive.csv")) if r["path"] == "proxy"]
     bad = [r for r in rows if r["ok"] != "true"]
     direct = defaultdict(list)
     proxy = defaultdict(list)
@@ -75,7 +79,8 @@ def main(run: Path):
 
     md = [f"# Phase 1b summary — {run.name}", "",
           f"- positive rows: {len(rows)} (direct {sum(len(v) for v in direct.values())}, proxy {sum(len(v) for v in proxy.values())}); failed: {len(bad)}",
-          "- latency: path=direct only; RPC counts: path=proxy only", ""]
+          "- latency: path=direct only; RPC counts: path=proxy only",
+          f"- latency source: {run.name}; counts/negatives source: {(counts or run).name}", ""]
     for config in sorted({r["config"] for r in summary}):
         ks = sorted({r["k"] for r in summary if r["config"] == config})
         md += [f"## {config}", "",
@@ -106,7 +111,7 @@ def main(run: Path):
             md.append(f"| {k} | {f(s)} | {f(m)} |")
         md.append("")
 
-    neg = list(csv.DictReader(open(run / "negative.csv")))
+    neg = list(csv.DictReader(open((counts or run) / "negative.csv")))
     ng = defaultdict(list)
     for r in neg:
         ng[(r["config"], r["case"])].append(r)
@@ -123,4 +128,4 @@ def main(run: Path):
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]))
+    main(Path(sys.argv[1]), Path(sys.argv[2]) if len(sys.argv) > 2 else None)
