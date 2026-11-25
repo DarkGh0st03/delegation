@@ -111,3 +111,74 @@ test("reads + one create: the new file is created from distinct EXISTING files i
   [...Array.from({length:MAX_TASK_READS+1},(_,i)=>r("src/f"+i+".ts")),c(test)]
  ])assert.equal(readCreateGrantShape(bad),null,JSON.stringify(bad.map(p=>p.operation)));
 });
+
+// ---------------------------------------------------------------- Phase W (W1)
+test("write-set shape: decision table D1/D2 (<= 8 writes, <= 16 permissions)",async()=>{
+ const {readsWriteSetGrantShape,MAX_TASK_WRITES,MAX_TASK_EFFECTS}=await import("../src/gitea-permission-containment.mjs");
+ assert.equal(MAX_TASK_WRITES,8);assert.equal(MAX_TASK_EFFECTS,16);
+ const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fx/files/";
+ const p=(operation,path)=>({operation,resource:base+path});
+ const task=(r,u,c)=>[
+  ...Array.from({length:r},(_,i)=>p("read_file",`src/r${String(i).padStart(2,"0")}.ts`)),
+  ...Array.from({length:u},(_,i)=>p("update_file",`src/r${String(i).padStart(2,"0")}.ts`)),
+  ...Array.from({length:c},(_,i)=>p("create_file",`src/new${i}.ts`))];
+ for(const [r,u,c,ok] of [[10,3,0,true],[8,8,0,true],[6,4,4,true],[15,2,0,false],[2,2,7,false],
+   [0,0,3,true],[0,0,2,true],[0,0,9,false],[1,1,0,false],[0,0,1,false],[14,2,0,true],[0,0,8,true]]){
+  const shape=readsWriteSetGrantShape(task(r,u,c));
+  assert.equal(!!shape,ok,`R=${r} U=${u} C=${c}`);
+  if(shape){assert.equal(shape.reads.length,r);assert.equal(shape.writes.length,u+c);}
+ }
+});
+
+test("write-set shape: update only of a read file, create only of an unread file, distinct exact files",async()=>{
+ const {readsWriteSetGrantShape}=await import("../src/gitea-permission-containment.mjs");
+ const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fx/files/";
+ const other="gitea://gitea.local/thesis/sample-app/branches/feature%2Fy/files/";
+ const p=(operation,path,b=base)=>({operation,resource:b+path});
+ const a="src/a.ts",b="src/b.ts",n="src/n.ts";
+ const ok=readsWriteSetGrantShape([p("read_file",b),p("read_file",a),p("update_file",b),p("create_file",n),p("update_file",a)]);
+ // Canonical order (by resource), independent of the grant order.
+ assert.deepEqual(ok.writes.map(w=>[w.operation,w.path]),[["update_file",a],["update_file",b],["create_file",n]]);
+ assert.deepEqual(ok.reads,[base+a,base+b]);
+ for(const [label,bad] of [
+  ["update of an unread file",[p("read_file",a),p("update_file",a),p("update_file",b)]],
+  ["create of a read file",[p("read_file",a),p("update_file",a),p("create_file",a)]],
+  ["two writes on one file",[p("read_file",a),p("update_file",a),p("create_file",a)]],
+  ["duplicate read",[p("read_file",a),p("read_file",a),p("update_file",a),p("create_file",n)]],
+  ["duplicate create",[p("create_file",n),p("create_file",n)]],
+  ["foreign operation",[p("read_file",a),p("update_file",a),p("create_file",n),p("run_tests",a)]],
+  ["directory scope",[{operation:"create_file",resource:base.replace("/files/","/directories/")+"src"},p("create_file",n)]],
+  ["another branch",[p("create_file",n),p("create_file",b,other)]],
+  ["traversal",[p("create_file",n),p("create_file","src/../x.ts")]],
+  ["encoded path",[p("create_file",n),p("create_file","src/%2E%2E/x.ts")]],
+  ["extra key",[p("create_file",n),{...p("create_file",b),extra:1}]],
+  ["single write (baseline shape)",[p("read_file",a),p("update_file",a)]],
+  ["not an array",null]
+ ])assert.equal(readsWriteSetGrantShape(bad),null,label);
+});
+
+test("write-set shape: the single-write baseline shapes are unchanged and disjoint",async()=>{
+ const m=await import("../src/gitea-permission-containment.mjs");
+ const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fx/files/";
+ const p=(operation,path)=>({operation,resource:base+path});
+ const single=[p("read_file","src/a.ts"),p("update_file","src/a.ts")];
+ assert.ok(m.readWriteGrantShape(single));
+ assert.equal(m.readsWriteSetGrantShape(single),null);
+ const multi=[p("read_file","src/a.ts"),p("update_file","src/a.ts"),p("create_file","src/n.ts")];
+ assert.equal(m.readWriteGrantShape(multi),null);
+ assert.ok(m.readsWriteSetGrantShape(multi));
+});
+
+test("Test-agent write-set: every write must be a project test source",async()=>{
+ const {isProjectTestWriteSetGrant}=await import("../src/gitea-permission-containment.mjs");
+ const {SAMPLE_TEST_SOURCES}=await import("./fixtures/test-sources.mjs");
+ const base="gitea://gitea.local/thesis/sample-app/branches/feature%2Fx/files/";
+ const p=(operation,path)=>({operation,resource:base+path});
+ assert.ok(isProjectTestWriteSetGrant([p("read_file","apps/backend/a.ts"),
+  p("read_file","tests/backend/a.test.ts"),p("update_file","tests/backend/a.test.ts"),
+  p("create_file","tests/backend/b.test.ts")],SAMPLE_TEST_SOURCES));
+ assert.equal(isProjectTestWriteSetGrant([p("read_file","apps/backend/a.ts"),
+  p("update_file","apps/backend/a.ts"),p("create_file","tests/backend/b.test.ts")],SAMPLE_TEST_SOURCES),false);
+ assert.equal(isProjectTestWriteSetGrant([p("create_file","tests/backend/b.test.ts"),
+  p("create_file","tests/backend/c.test.ts")],undefined),false);
+});

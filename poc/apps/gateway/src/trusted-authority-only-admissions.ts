@@ -1,6 +1,6 @@
 import {giteaPermissionCovers,isProjectTestRepairGrant,isTestAgentReadGrant,readUpdateGrantShape,exactFilePath,isProjectTestCreateGrant,isProjectTestSource,
  readCreateGrantShape,readWriteGrantShape,isProjectTestReadCreateGrant,
- isTrustedProjectTestSourceProfile}
+ isTrustedProjectTestSourceProfile,readsWriteSetGrantShape,isProjectTestWriteSetGrant}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * opt-in, in-process Gateway admission of permission-only Engineer
@@ -39,9 +39,12 @@ import {DurableAuthorityOnlyChildJournal}
 import {DurableAuthorityOnlyTaskFenceJournal,
  type TrustedTaskFlight}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts";
-import {DurableAuthorityOnlySequentialEffectJournal,isReadUpdatePlan,
- type TrustedSequentialManifest,type TrustedSequentialFlight}
+import {DurableAuthorityOnlySequentialEffectJournal,isReadUpdatePlan,isReadWriteSetPlan,
+ type TrustedSequentialManifest,type TrustedSequentialFlight,type TrustedWriteSetFlight}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-sequential-effect-journal.ts";
+import {TrustedAuthorityOnlyWriteSetPreflight}
+ from "./trusted-authority-only-write-set-preflight.ts";
+import type {TrustedWriteSetIntent} from "./trusted-authority-only-write-set-intent-journal.ts";
 import {TrustedAuthorityOnlyCompletionObserver,
  type TrustedCompletionExpectation,
  type ObservedTrustedTaskCompletion}
@@ -90,11 +93,38 @@ interface SequentialTaskProgress {
  /** Original owner-pinned Gitea HEAD for both immutable typed effects. */
  pinnedHead?:string;
  writeFenced?:true;
+ /** Phase W: the single durable write-set flight of this Task, if staged. */
+ writeSet?:WriteSetProgress;
 }
-/** Reads planned by a typed reads->update manifest (0 when untyped). */
+/** Phase W write-set states; "failed" and "ambiguous" are terminal. */
+type WriteSetPhase="staged"|"validated"|"publishing"|"published"|"failed"|"ambiguous";
+interface WriteSetProgress{
+ readonly flight:TrustedWriteSetFlight;
+ readonly intent:TrustedWriteSetIntent;
+ readonly digest:string;
+ /** Exact signed write permissions (pairs), the batch VP must disclose. */
+ readonly permissions:readonly string[];
+ phase:WriteSetPhase;
+ validated:number;
+ commit_sha?:string;
+}
+function isWriteSetManifest(m:TrustedSequentialManifest):boolean{
+ return m.write_plan!==undefined;
+}
+/** Deterministic JSON: object keys sorted recursively (arrays keep order). */
+function canonicalJson(v:unknown):string{
+ if(Array.isArray(v))return "["+v.map(canonicalJson).join(",")+"]";
+ if(v&&typeof v==="object")return "{"+Object.keys(v).sort().map(k=>
+  JSON.stringify(k)+":"+canonicalJson((v as Record<string,unknown>)[k])).join(",")+"}";
+ return JSON.stringify(v);
+}
+/** Reads planned by a typed manifest (0 when untyped): reads->update, or
+ * Phase W reads->write-set (R >= 0 reads before the write plan). */
 function plannedReads(m:TrustedSequentialManifest):number{
- return m.effect_plan!==undefined&&isReadUpdatePlan(m.effect_plan,m.total_effects)
-  ?m.total_effects-1:0;
+ if(m.effect_plan===undefined)return 0;
+ if(m.write_plan!==undefined)
+  return isReadWriteSetPlan(m.effect_plan,m.total_effects)?m.total_effects-m.write_plan.length:0;
+ return isReadUpdatePlan(m.effect_plan,m.total_effects)?m.total_effects-1:0;
 }
 function assertObservedCompletion(
  expected:TrustedCompletionExpectation,observed:unknown,nowMs:number
@@ -116,6 +146,7 @@ function assertObservedCompletion(
 export class TrustedAuthorityOnlyGatewayAdmissions {
  /** Test-source rule of the repository's Engineer-approved project profile. */
  readonly #testSources:unknown;
+ readonly #batchWrites:boolean;
  readonly #baseBranch:string;
  get projectTestSourceProfile():unknown{
   // An object that only borrows this prototype has no rule: nothing is a
@@ -190,6 +221,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   effectFenceJournal?:DurableAuthorityOnlyTaskFenceJournal;
   sequentialEffectJournal?:DurableAuthorityOnlySequentialEffectJournal;
   completionObserver?:TrustedAuthorityOnlyCompletionObserver;
+  /** Phase W, opt-in: admit Tasks with an atomic write-set (2..8 writes). */
+  batchWritesEnabled?:boolean;
   /** Where the Test agent may write: the repository's project profile. */
   projectTestSourceProfile?:unknown;
   /** Repository base branch (branch creation source and PR target). */
@@ -238,8 +271,13 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("independent owner-private sequential effect journal required");
   this.#sequentialEffectJournal=opts.sequentialEffectJournal;
   this.#completionObserver=opts.completionObserver;
+  if(opts.batchWritesEnabled!==undefined&&typeof opts.batchWritesEnabled!=="boolean")
+   deny("batch writes option must be a boolean");
+  this.#batchWrites=opts.batchWritesEnabled===true;
   this.#nowMs=opts.nowMs??Date.now;
  }
+ /** Phase W: whether write-set Tasks are admitted at all (default: no). */
+ get batchWritesEnabled():boolean{return this.#batchWrites;}
  get phase():Phase{return this.#phase;}
  get registeredTaskCount():number{return this.#tasks.size;}
  get stagedCompletedTaskCount():number{return this.#completed.size;}
@@ -272,7 +310,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   // A read-only sequence, active flight, intermediate receipt or final Task
   // must never be eligible for a new remote binding.
   const pristineMixed=mixed!==undefined&&
-    plannedReads(mixed.manifest)>=1&&mixed.completed===0&&
+    (plannedReads(mixed.manifest)>=1||isWriteSetManifest(mixed.manifest))&&
+    mixed.completed===0&&mixed.writeSet===undefined&&
     mixed.latest_evidence_sha256===null&&mixed.active===undefined&&
     mixed.readRevision===undefined&&(mixed.readPaths?.size??0)===0&&
     mixed.manifest.session_id===root.session_id&&
@@ -1058,7 +1097,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const child=this.#enrolledChildren.get(record.task_id);
   const taskId=bound?.row.task_id;
   const state=taskId?this.#sequential.get(taskId):undefined;
-  if(!bound||!child||!state||state.active||
+  if(!bound||!child||!state||state.active||state.writeSet!==undefined||
      this.#flights.has(taskId!)||
      state.completed>=state.manifest.total_effects||
      (state.manifest.effect_plan!==undefined&&
@@ -1083,7 +1122,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
   if(pair(canonical.required_permission)!==pair(record.required_permission))
    deny("sequential read differs from canonical Gateway Prepare");
-  const {effect_plan:typedPlan,...base}=state.manifest;
+  const {effect_plan:typedPlan,write_plan:_writePlan,...base}=state.manifest;
   const next:TrustedSequentialFlight=Object.freeze({
    ...base,
    ...(typedPlan!==undefined?{operation:"read_file" as const}:{}),
@@ -1141,6 +1180,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const child=this.#enrolledChildren.get(record.task_id);
   const reads=state?plannedReads(state.manifest):0;
   if(!state||!child||reads<1||state.completed!==reads||state.active||
+     isWriteSetManifest(state.manifest)||
      state.manifest.effect_plan?.at(-1)!==record.request.tool||
      !SHA64.test(state.latest_evidence_sha256??"")||
      !SHA40.test(state.readRevision??"")||
@@ -1263,6 +1303,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!journal||!(observer instanceof TrustedAuthorityOnlyCompletionObserver)||
      this.#completionInFlight||this.#flightInFlight||!state||!active||
      !bound||!child||!flight||bound.row.task_id!==taskId||
+     isWriteSetManifest(state.manifest)||
      plannedReads(state.manifest)<1||
      state.completed!==plannedReads(state.manifest)||
      !SHA64.test(state.latest_evidence_sha256??"")||
@@ -1443,7 +1484,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      state.manifest.runtime_task_id!==runtimeTaskId||
      state.completed!==state.manifest.total_effects||
      !state.latest_evidence_sha256||
-     !SHA64.test(state.latest_evidence_sha256))
+     !SHA64.test(state.latest_evidence_sha256)||
+     (isWriteSetManifest(state.manifest)&&state.writeSet?.phase!=="published"))
    deny("incomplete or ambiguous sequential Task cannot unlock dependencies");
   this.#completionInFlight=true;
   try{
@@ -1460,6 +1502,365 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    });
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
+ }
+ // ------------------------------------------------------------------
+ // Phase W (W1): atomic write-set Tasks. Opt-in (batchWritesEnabled).
+ // No method below performs or authorizes a provider write: the Gateway
+ // executor (W2) publishes only after these owner checks.
+ // ------------------------------------------------------------------
+ /** Signed write-set shape with the original role constraints. */
+ #writeSetShape(row:RegisteredAuthorityOnlyTask){
+  if(!this.#batchWrites)return null;
+  const shape=readsWriteSetGrantShape(row.permissions);
+  if(!shape)return null;
+  return APPLICATION_ROLES.includes(row.agent_id)||
+   (row.agent_id==="test"&&isProjectTestWriteSetGrant(row.permissions,this.#testSources))?shape:null;
+ }
+ /**
+  * Reserve the immutable typed manifest of a write-set Task: R reads, then
+  * the exact signed writes in canonical order (write_plan). Derived only
+  * from the Coordinator-registered Task embedded in the enrolled Child.
+  */
+ async beginTrustedSequentialWriteSetTask(taskId:string,runtimeTaskId:string,
+  expectedHeadSha:string):
+ Promise<Readonly<{
+  status:"sequential_write_set_manifest_reserved_staged";
+  task_id:string;total_effects:number;reads:number;writes:number;
+  gateway_execution_authorized:false
+ }>>{
+  const root=this.#live(),journal=this.#sequentialEffectJournal;
+  if(!this.#batchWrites)deny("write-set Tasks are not enabled on this Gateway");
+  if(!journal||!SHA40.test(expectedHeadSha)||
+     !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
+     this.#flightInFlight||this.#completionInFlight||this.#bindingInFlight||
+     this.#sequential.has(taskId)||this.#flights.has(taskId)||
+     this.#completed.has(taskId))
+   deny("write-set Task requires quiescent owner and durable proof dependencies");
+  const bound=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  const shape=bound?this.#writeSetShape(bound.row):null;
+  if(!bound||!child||bound.row.task_id!==taskId||!shape||
+     bound.row.root_credential_id!==root.root_credential_id||
+     bound.row.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||child.epoch!==bound.row.epoch||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("write-set requires one exact native Child write-set grant");
+  const reads=shape.reads.length,total=reads+shape.writes.length;
+  const manifest:TrustedSequentialManifest=Object.freeze({
+   session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,
+   task_id:taskId,runtime_task_id:runtimeTaskId,epoch:bound.row.epoch,
+   credential_id:child.credential_id,total_effects:total,
+   effect_plan:Object.freeze([...shape.reads.map(()=>"read_file" as const),
+    ...shape.writes.map(w=>w.operation)]),
+   write_plan:Object.freeze(shape.writes.map((w,i)=>Object.freeze({
+    sequence:reads+1+i,operation:w.operation,resource:w.resource})))
+  });
+  this.#flightInFlight=true;
+  try{
+   await journal.reserveManifest(manifest);
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("write-set Child expired during manifest reservation");
+   this.#sequential.set(taskId,{manifest,completed:0,latest_evidence_sha256:null,
+    pinnedHead:expectedHeadSha,readPaths:new Set()});
+   return Object.freeze({status:"sequential_write_set_manifest_reserved_staged",
+    task_id:taskId,total_effects:total,reads,writes:shape.writes.length,
+    gateway_execution_authorized:false});
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
+ /**
+  * Owner preflight binding (no flight, no write): the Gateway-held Prepare
+  * records of the write-set must be EXACTLY the signed write plan, after
+  * every signed read was attested at the pinned HEAD. Fingerprints and
+  * permissions are recomputed here; nothing is taken from the caller.
+  * Returns the items in canonical (write-plan) order.
+  */
+ assertTrustedWriteSetIntentBinding(records:readonly PreparedRequestRecord[]){
+  const root=this.#live();
+  if(!this.#batchWrites)deny("write-set Tasks are not enabled on this Gateway");
+  if(!Array.isArray(records)||records.length<2||records.length>8||
+     records.some(r=>!r||typeof r!=="object"))
+   deny("write-set requires 2..8 original Prepare records");
+  const first=records[0]!;
+  const bound=this.#tasks.get(first.task_id);
+  const child=this.#enrolledChildren.get(first.task_id);
+  const taskId=bound?.row.task_id;
+  const state=taskId?this.#sequential.get(taskId):undefined;
+  const plan=state?.manifest.write_plan;
+  const reads=state?plannedReads(state.manifest):0;
+  if(!bound||!child||!taskId||!state||!plan||!this.#writeSetShape(bound.row)||
+     state.active||state.writeSet!==undefined||this.#flights.has(taskId)||
+     this.#completed.has(taskId)||state.completed!==reads||
+     (reads>0&&(!SHA64.test(state.latest_evidence_sha256??"")||
+       state.readRevision!==state.pinnedHead))||
+     !SHA40.test(state.pinnedHead??"")||plan.length!==records.length||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
+     child.credential_id===root.root_credential_id||
+     child.epoch!==bound.row.epoch||child.agent_did!==bound.row.agent_did||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     state.manifest.credential_id!==child.credential_id||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("write-set lacks attested reads, exact signed Task or enrolled native Child");
+  const byPair=new Map(records.map(r=>[pair(r.required_permission??{} as Permission),r]));
+  if(byPair.size!==records.length||new Set(records.map(r=>r.request_id)).size!==records.length)
+   deny("write-set repeats a file or a request");
+  const challenge=first.challenge;
+  let branch:string|undefined;
+  const items=plan.map(w=>{
+   const record=byPair.get(pair({resource:w.resource,operation:w.operation}));
+   if(!record)deny("write-set differs from the exact signed write plan");
+   const args=record.request?.arguments as {branch?:unknown;path?:unknown;content?:unknown}|undefined;
+   if(record.consumed!==false||record.request.tool!==w.operation||
+      record.task_id!==first.task_id||record.agent_role!==bound.row.agent_id||
+      record.authority_only_digest!==root.authority_digest||
+      record.authority_only_plan_task_id!==taskId||
+      record.authority_only_agent_did!==bound.row.agent_did||
+      record.challenge!==challenge||record.audience!==first.audience||
+      record.pinned_revision!==state.pinnedHead||
+      record.expires_at_ms<=this.#now()||
+      !args||typeof args.path!=="string"||typeof args.branch!=="string"||
+      typeof args.content!=="string"||Buffer.byteLength(args.content,"utf8")<1||
+      Buffer.byteLength(args.content,"utf8")>2_000_000||args.content.includes("\0")||
+      (branch!==undefined&&args.branch!==branch))
+    deny("write-set Prepare does not match the signed Task, Child or pinned HEAD");
+   branch=args.branch;
+   // An update targets a file read in this Task; a create, a file not read.
+   if((w.operation==="update_file")!==(state.readPaths?.has(args.path)===true))
+    deny("update must target a read file and create an unread file");
+   const canonical=this.preflightCanonicalRequest({task_id:record.task_id,
+    agent_role:record.agent_role,tool:record.request.tool,arguments:record.request.arguments});
+   const fingerprint=createHash("sha256").update(JSON.stringify({task_id:record.task_id,
+    agent_role:record.agent_role,request:record.request})).digest("hex");
+   if(pair(canonical.required_permission)!==pair(record.required_permission)||
+      fingerprint!==record.request_fingerprint)
+    deny("write-set Prepare differs from canonical Gateway permission or fingerprint");
+   return Object.freeze({sequence:w.sequence,operation:w.operation,path:args.path,
+    resource:w.resource,request_id:record.request_id,
+    request_fingerprint:record.request_fingerprint,content:args.content});
+  });
+  return Object.freeze({session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,task_id:taskId,runtime_task_id:first.task_id,
+   epoch:bound.row.epoch,agent_did:bound.row.agent_did,agent_role:bound.row.agent_id,
+   credential_id:child.credential_id,branch:branch!,pinned_head_sha:state.pinnedHead!,
+   challenge,items:Object.freeze(items)});
+ }
+ /**
+  * Reserve the ONE durable write-set flight of the Task. The digest binds
+  * the whole write-set (context, ordered items, owner-observed blob SHAs or
+  * absence proofs, content hashes) and is built ONLY from Gateway-held
+  * records and the owner write-set preflight's reserved intent.
+  */
+ async stageTrustedWriteSet(preflight:TrustedAuthorityOnlyWriteSetPreflight,
+  records:readonly PreparedRequestRecord[]):
+ Promise<Readonly<{status:"sequential_write_set_reserved_staged";task_id:string;
+  first_sequence:number;writes:number;write_set_digest:string;gateway_execution_authorized:false}>>{
+  const journal=this.#sequentialEffectJournal;
+  if(!journal||this.#flightInFlight||this.#completionInFlight)
+   deny("missing or concurrent write-set reservation");
+  if(!TrustedAuthorityOnlyWriteSetPreflight.isNativeForAdmissions(preflight,this))
+   deny("write-set intents must come from this Gateway's owner preflight");
+  const intent=TrustedAuthorityOnlyWriteSetPreflight.prototype.getReservedIntent.call(preflight,records);
+  const bound=this.assertTrustedWriteSetIntentBinding(records);
+  const state=this.#sequential.get(bound.task_id)!;
+  if(intent.session_id!==bound.session_id||intent.authority_digest!==bound.authority_digest||
+     intent.root_credential_id!==bound.root_credential_id||intent.task_id!==bound.task_id||
+     intent.runtime_task_id!==bound.runtime_task_id||intent.epoch!==bound.epoch||
+     intent.agent_did!==bound.agent_did||intent.credential_id!==bound.credential_id||
+     intent.branch!==bound.branch||intent.expected_head_sha!==bound.pinned_head_sha||
+     intent.challenge!==bound.challenge||intent.items.length!==bound.items.length||
+     !intent.items.every((it,i)=>{const b=bound.items[i]!;
+      return it.sequence===b.sequence&&it.operation===b.operation&&it.path===b.path&&
+       it.resource===b.resource&&it.request_id===b.request_id&&
+       it.request_fingerprint===b.request_fingerprint&&
+       it.next_content_sha256===createHash("sha256").update(b.content,"utf8").digest("hex")&&
+       it.next_content_bytes===Buffer.byteLength(b.content,"utf8");}))
+   deny("owner write-set intent differs from the Gateway-held records");
+  const digest=createHash("sha256").update(canonicalJson({
+   schema:"authority-only-write-set-digest-v1",
+   context:{session_id:bound.session_id,authority_digest:bound.authority_digest,
+    root_credential_id:bound.root_credential_id,task_id:bound.task_id,
+    runtime_task_id:bound.runtime_task_id,epoch:bound.epoch,credential_id:bound.credential_id,
+    agent_did:bound.agent_did,agent_role:bound.agent_role,repository:intent.repository,
+    branch:bound.branch,pinned_head_sha:bound.pinned_head_sha,challenge:bound.challenge},
+   items:intent.items.map(it=>({sequence:it.sequence,request_id:it.request_id,
+    request_fingerprint:it.request_fingerprint,operation:it.operation,path:it.path,
+    resource:it.resource,expected_blob_sha:it.expected_blob_sha,
+    old_path_absent_at_pinned_head:it.old_path_absent_at_pinned_head,
+    next_content_sha256:it.next_content_sha256,next_content_bytes:it.next_content_bytes}))
+  }),"utf8").digest("hex");
+  const {effect_plan:_e,write_plan:_w,...base}=state.manifest;
+  const flight:TrustedWriteSetFlight=Object.freeze({...base,
+   first_sequence:bound.items[0]!.sequence,
+   previous_evidence_sha256:state.latest_evidence_sha256,
+   write_set_digest:digest,
+   items:Object.freeze(intent.items.map(it=>Object.freeze({sequence:it.sequence,
+    operation:it.operation,resource:it.resource,request_id:it.request_id,
+    request_fingerprint:it.request_fingerprint})))});
+  this.#flightInFlight=true;
+  try{
+   await journal.reserveWriteSet(flight);
+   this.#live();
+   const child=this.#enrolledChildren.get(bound.runtime_task_id);
+   if(!child||this.#now()>=Date.parse(child.expires_at))
+    deny("Child expired during write-set reservation");
+   state.writeSet={flight,intent,digest,
+    permissions:Object.freeze(bound.items.map(it=>pair({resource:it.resource,operation:it.operation}))),
+    phase:"staged",validated:0};
+   return Object.freeze({status:"sequential_write_set_reserved_staged",task_id:bound.task_id,
+    first_sequence:flight.first_sequence,writes:flight.items.length,write_set_digest:digest,
+    gateway_execution_authorized:false});
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
+ #writeSetState(taskId:string,runtimeTaskId:string,digest:string){
+  const state=this.#sequential.get(taskId),ws=state?.writeSet;
+  const bound=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  if(!state||!ws||!bound||!child||bound.row.task_id!==taskId||
+     state.manifest.runtime_task_id!==runtimeTaskId||ws.digest!==digest||
+     !SHA64.test(digest))
+   deny("no matching durable write-set for this Task");
+  return {state,ws,bound,child};
+ }
+ /**
+  * After native Rust VP and OPA of ONE write-set item (Gateway Execute):
+  * the consumed record must be the NEXT item in canonical order of the
+  * staged write-set, the VP must disclose exactly the signed writes and
+  * come from the enrolled Child. No provider write is authorized here.
+  */
+ assertTrustedWriteSetItemBinding(record:PreparedRequestRecord,verified:VerifiedDelegation,
+  writeSetDigest:string):Readonly<TrustedCompletionExpectation&{sequence:number;
+   validated_all:boolean}>{
+  const root=this.#live();
+  const bound=record&&this.#tasks.get(record.task_id);
+  const taskId=bound?.row.task_id;
+  if(!bound||!taskId||this.#flightInFlight||this.#completionInFlight)
+   deny("write-set item lacks a trusted Task");
+  const {state,ws,child}=this.#writeSetState(taskId,record.task_id,writeSetDigest);
+  const item=ws.flight.items[ws.validated];
+  const disclosed=Array.isArray(verified?.permissions)?verified.permissions.map(p=>pair(p)).sort():[];
+  const fail=(reason:string):never=>{ws.phase="failed";deny(reason);};
+  if(ws.phase!=="staged")deny("write-set is not accepting item validations");
+  if(!item||record.consumed!==true||record.request_id!==item.request_id||
+     record.request_fingerprint!==item.request_fingerprint||
+     record.request.tool!==item.operation||
+     pair(record.required_permission)!==pair({resource:item.resource,operation:item.operation})||
+     record.authority_only_digest!==root.authority_digest||
+     record.expires_at_ms<=this.#now()||
+     record.challenge!==ws.intent.challenge)
+   fail("write-set item out of order, replayed or not the staged request");
+  if(!verified||verified.presenter_id!==bound.row.agent_did||
+     verified.credential_id!==child.credential_id||
+     verified.root_credential_id!==root.root_credential_id||
+     !Number.isSafeInteger(verified.hierarchy_depth)||verified.hierarchy_depth<1||
+     JSON.stringify(disclosed)!==JSON.stringify([...ws.permissions].sort())||
+     child.root_credential_id!==root.root_credential_id||
+     this.#now()>=Date.parse(child.expires_at)||this.#completed.has(taskId))
+   fail("write-set VP is not the enrolled Child's VP over exactly the signed writes");
+  ws.validated++;
+  if(ws.validated===ws.flight.items.length)ws.phase="validated";
+  return Object.freeze({session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,task_id:taskId,runtime_task_id:record.task_id,
+   epoch:bound.row.epoch,agent_did:bound.row.agent_did,credential_id:child.credential_id,
+   request_id:item.request_id,request_fingerprint:item.request_fingerprint,
+   sequence:item.sequence,validated_all:ws.phase==="validated"});
+ }
+ /**
+  * Single-use transition validated -> publishing, synchronous (before any
+  * await of the publisher). A replayed or concurrent call is rejected and
+  * cannot publish twice. Returns the owner-reserved publication descriptor.
+  */
+ beginTrustedWriteSetPublication(taskId:string,runtimeTaskId:string,writeSetDigest:string):
+ Readonly<{status:"write_set_publication_started";intent:TrustedWriteSetIntent;
+  write_set_digest:string;provider_write_authorized:false}>{
+  this.#live();
+  const {ws,child}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
+  if(ws.phase!=="validated")deny("write-set publication requires every item validated, once");
+  if(this.#now()>=Date.parse(child.expires_at)){ws.phase="failed";deny("Child expired before publication");}
+  ws.phase="publishing";
+  return Object.freeze({status:"write_set_publication_started",intent:ws.intent,
+   write_set_digest:ws.digest,provider_write_authorized:false});
+ }
+ /** Pre-CAS recheck after every asynchronous publisher step (P6). */
+ assertTrustedWriteSetStillPublishable(taskId:string,runtimeTaskId:string,writeSetDigest:string):void{
+  const {ws,child}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
+  if(ws.phase!=="publishing")deny("write-set is no longer publishing");
+  try{this.#live();}catch(error){ws.phase="failed";throw error;}
+  if(this.#now()>=Date.parse(child.expires_at)){ws.phase="failed";deny("Child expired before CAS");}
+ }
+ /** publishing -> published, only with the CAS commit observed by the owner. */
+ recordTrustedWriteSetPublished(taskId:string,runtimeTaskId:string,writeSetDigest:string,
+  commitSha:string):void{
+  const {ws}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
+  if(ws.phase!=="publishing"||!SHA40.test(commitSha))deny("write-set was not publishing");
+  ws.phase="published";ws.commit_sha=commitSha;
+ }
+ /**
+  * Terminal failure. Before the CAS request was sent: "failed" (nothing was
+  * published). After it was sent without a certain outcome: "ambiguous"
+  * (reconciliation, never a retry). Neither unlocks dependencies.
+  */
+ failTrustedWriteSet(taskId:string,runtimeTaskId:string,writeSetDigest:string,
+  casRequestSent:boolean):void{
+  const {ws}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
+  if(ws.phase==="published")deny("a published write-set cannot be failed; its evidence is pending");
+  ws.phase=casRequestSent&&ws.phase==="publishing"?"ambiguous":
+   ws.phase==="ambiguous"?"ambiguous":"failed";
+ }
+ /**
+  * Attest the NEXT write of a PUBLISHED write-set, strictly in canonical
+  * order, from the owner completion observer (receipt + independent Gitea
+  * reread). Never before publication, never out of order (the journal
+  * also enforces the evidence chain durably).
+  */
+ async attestTrustedWriteSetEffect(taskId:string,runtimeTaskId:string,writeSetDigest:string,
+  observer:TrustedAuthorityOnlyCompletionObserver):Promise<Readonly<{
+   status:"write_set_effect_attested_staged";task_id:string;sequence:number;
+   gateway_execution_authorized:false}>>{
+  const root=this.#live(),journal=this.#sequentialEffectJournal;
+  if(!journal||!(observer instanceof TrustedAuthorityOnlyCompletionObserver)||
+     this.#completionInFlight||this.#flightInFlight)
+   deny("write-set attestation requires the owner completion observer");
+  const {state,ws,bound,child}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
+  const item=ws.flight.items.find(i=>i.sequence===state.completed+1);
+  if(ws.phase!=="published"||!item||
+     ws.flight.root_credential_id!==root.root_credential_id||
+     ws.flight.credential_id!==child.credential_id||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("write evidence requires a published write-set and the next item in order");
+  const expected:TrustedCompletionExpectation=Object.freeze({
+   session_id:ws.flight.session_id,authority_digest:ws.flight.authority_digest,
+   root_credential_id:ws.flight.root_credential_id,task_id:taskId,
+   runtime_task_id:runtimeTaskId,epoch:ws.flight.epoch,credential_id:ws.flight.credential_id,
+   agent_did:bound.row.agent_did,request_id:item.request_id,
+   request_fingerprint:item.request_fingerprint});
+  this.#completionInFlight=true;
+  try{
+   const observed=await observer.observe(expected);
+   assertObservedCompletion(expected,observed,this.#now());
+   await journal.reserveEvidence({session_id:ws.flight.session_id,
+    authority_digest:ws.flight.authority_digest,root_credential_id:ws.flight.root_credential_id,
+    task_id:ws.flight.task_id,runtime_task_id:ws.flight.runtime_task_id,epoch:ws.flight.epoch,
+    credential_id:ws.flight.credential_id,total_effects:ws.flight.total_effects,
+    sequence:item.sequence,operation:item.operation,
+    previous_evidence_sha256:state.latest_evidence_sha256,
+    request_id:item.request_id,request_fingerprint:item.request_fingerprint,
+    evidence_sha256:observed.evidence_sha256,completed_at_ms:observed.completed_at_ms});
+   this.#live();
+   state.completed=item.sequence;
+   state.latest_evidence_sha256=observed.evidence_sha256;
+   return Object.freeze({status:"write_set_effect_attested_staged",task_id:taskId,
+    sequence:item.sequence,gateway_execution_authorized:false});
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#completionInFlight=false;}
+ }
+ /** Read-only state of a write-set (owner diagnostics and tests). */
+ writeSetPhase(taskId:string):WriteSetPhase|undefined{
+  return this.#sequential.get(taskId)?.writeSet?.phase;
  }
  /**
   * Irreversibly fence a mixed Backend/Frontend Task after an attested read,
@@ -1522,7 +1923,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      state.manifest.authority_digest!==root.authority_digest||
      state.manifest.root_credential_id!==root.root_credential_id||
      state.manifest.credential_id!==child.credential_id||
-     plannedReads(state.manifest)<1||
+     (plannedReads(state.manifest)<1&&!isWriteSetManifest(state.manifest))||
      state.completed!==state.manifest.total_effects||
      state.active!==undefined||this.#flights.has(taskId)||
      !SHA64.test(state.latest_evidence_sha256??"")||
@@ -1917,7 +2318,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const child=this.#enrolledChildren.get(record.task_id);
   const taskId=bound?.row.task_id;
   const sequential=taskId?this.#sequential.get(taskId):undefined;
-  const readAttested=!!sequential&&plannedReads(sequential.manifest)>=1&&
+  const readAttested=!!sequential&&!isWriteSetManifest(sequential.manifest)&&
+    plannedReads(sequential.manifest)>=1&&
     sequential.completed===plannedReads(sequential.manifest)&&!sequential.active&&
     SHA64.test(sequential.latest_evidence_sha256??"")&&
     SHA40.test(sequential.readRevision??"")&&
@@ -1992,7 +2394,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   // EVERY signed read is attested at the same pinned HEAD.
   const single=perms.length===1&&perms[0]?.operation==="create_file"&&!sequential;
   const shape=readCreateGrantShape(perms);
-  const readsAttested=!!shape&&!!sequential&&
+  const readsAttested=!!shape&&!!sequential&&!isWriteSetManifest(sequential.manifest)&&
     sequential.manifest.effect_plan?.at(-1)==="create_file"&&
     plannedReads(sequential.manifest)===shape.reads.length&&
     sequential.completed===plannedReads(sequential.manifest)&&!sequential.active&&

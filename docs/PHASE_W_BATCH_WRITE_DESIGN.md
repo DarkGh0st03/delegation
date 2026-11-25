@@ -1,6 +1,6 @@
 # Fase W — Scritture multiple atomiche: progetto, invarianti e semantica
 
-**Stato:** progetto aggiornato dopo la revisione e risultati di W0 (§11). L'implementazione produttiva W1–W4 non è iniziata e attende l'approvazione.
+**Stato:** progetto approvato (D1–D5); W0 completata (§11); **W1 implementata** (§12), in revisione. W2–W4 non sono iniziate.
 **Branch:** `feature/batch-write-design` (da `main` @ `b3222ee1`, dopo il merge della Fase R, PR #42).
 **Fuori ambito:**
 - parallelismo dei Task, sottodelega ricorsiva, Trusted Agent Registry on-chain;
@@ -129,6 +129,20 @@ Il Gateway, non il client, calcola un **`write_set_digest`**: lo SHA-256 della s
 - **contesto:** `session_id`, `authority_digest`, `root_credential_id`, `task_id`, `runtime_task_id`, `epoch`, `child_credential_id`, `agent_did`, ruolo, branch di lavoro, `pinned_head_sha`, `batch_id`, `challenge`;
 - **elementi, in ordine canonico** (ordinati per percorso, con `sequence = R + 1 + indice`): `request_id`, `request_fingerprint`, `operation`, `path`, `required_permission`, `expected_blob_sha` (update) o `absent: true` (create), `next_content_sha256`, `next_content_bytes`.
 
+**Provenienza dei dati.** Il digest è costruito **solo** con:
+- i record del Prepare custoditi dal Gateway (`InMemoryRequestStore`), di cui le admissions **ricalcolano** fingerprint e permesso canonico;
+- l'intent riservato dal **preflight del proprietario** (`TrustedAuthorityOnlyWriteSetPreflight`). Le admissions ne verificano il marchio privato della classe e lo leggono con la chiamata via prototype. Blob SHA degli update e prove di assenza dei create provengono esclusivamente dalle letture Gitea del proprietario alla HEAD fissata.
+
+Nessun blob SHA, prova di assenza, ordine o percorso viene accettato dal modello, da A2A o dal chiamante.
+
+**Canonicalizzazione.** L'ordine canonico (per risorsa) e la serializzazione JSON a chiavi ordinate rendono il digest **deterministico per lo stesso insieme di record**, indipendentemente dall'ordine in cui il modello elenca i file. **Non** è un identificatore del solo contenuto: due Prepare diversi dello stesso insieme di modifiche producono digest diversi, perché cambiano challenge e `request_id`. È voluto: il digest identifica un'autorizzazione monouso, non una patch.
+
+**Scope dell'Engineer e permessi del Task.** Sono due insiemi distinti e vanno tenuti separati:
+- **scope firmato dall'Engineer:** i permessi approvati nella ricevuta firmata, che formano la Root operativa;
+- **permessi del Task:** quelli proposti dall'Orchestrator, ammessi dal Coordinator solo se contenuti nello scope (`registerTask`, contenimento verificato sulla ricevuta firmata) e incorporati nella Child.
+
+La forma `readsWriteSetGrantShape`, il `write_plan` del manifest e il digest sono valutati **sui permessi del Task**, cioè sulla riga registrata dal Coordinator e sulla Child iscritta, mai sullo scope dell'Engineer. Uno scope ampio, per esempio una directory, non rende ammissibile un write-set che non sia esattamente firmato nel Task.
+
 Il digest viene:
 1. registrato nel manifest e nel write-set flight durevoli (staging);
 2. ricalcolato e confrontato a ogni Execute, prima del commit privato (P3), prima del CAS (P7) e nelle evidenze per file (P9);
@@ -146,12 +160,24 @@ L'ordine canonico rende il digest indipendente dall'ordine in cui il modello ele
 
 ### 3.4 Transizioni terminali e pubblicazione monouso
 
-Stati del write-batch: `prepared → verifying → validating → validated → publishing → published`, più due stati terminali: `failed` e `ambiguous`.
-- **`failed` è terminale**, come R-F1. Qualsiasi errore di un Execute del batch porta a `failed`, come R-F3: verifica, OPA, binding, scadenza, replay, VP diversa, errore asincrono. In P1–P8 l'errore arriva prima del CAS, quindi nessun effetto sul branch.
-- **La pubblicazione è monouso.** Il passaggio a `publishing` avviene in modo sincrono, prima di qualunque `await`. Solo l'Execute che lo esegue può pubblicare: un secondo Execute (replay del `request_id` o richiesta concorrente) trova il record consumato o lo stato non `validated` e viene rifiutato. Il rifiuto porta il batch a `failed` solo se la pubblicazione non è ancora iniziata.
-- **Ripetizione impedita anche dopo un riavvio.** `reserveAttempt` del write-set è durevole prima di P3. Al riavvio il journal mostra il tentativo riservato e il Task resta terminale.
-- **`ambiguous`:** una risposta del CAS persa, oppure una rilettura P8 incoerente. È terminale: nessun retry, riconciliazione manuale tramite il `write_set_digest` nel messaggio del commit.
-- **Dopo ogni `await`** (P2–P5), il controllo P6 verifica che lo stato sia ancora `publishing` e che non sia cambiato nient'altro. Un cambiamento porta a `failed` prima del CAS.
+Stati del write-batch (admissions): `staged → validated → publishing → published`, più due stati terminali, `failed` e `ambiguous`.
+
+Le fasi della pubblicazione hanno questo ordine: **P1–P6 precedono l'invio del CAS, P7 è il CAS, P8–P9 lo seguono.** Gli esiti si distinguono così:
+
+| Classe | Quando | Stato del branch | Stato del write-set |
+|---|---|---|---|
+| **Fallimento precedente al CAS** | qualsiasi errore in Prepare, staging, Execute (verifica, OPA, binding, scadenza, replay, VP diversa) o in P1–P6 (commit privato, verifica dell'insieme, seconda verifica, ricontrolli) | nessuna modifica; al più un ref privato | `failed` |
+| **Rifiuto certo del CAS** | P7 risponde 422 (HEAD avanzata o `old_commit_id` diverso, W0 S3/S10) e una rilettura conferma la HEAD invariata | nessuna modifica | `failed` |
+| **Esito ambiguo** | P7 inviato, ma la risposta è persa o non classificabile, oppure la rilettura P8 è incoerente | tutto o niente, da riconciliare | `ambiguous` |
+| **Pubblicazione avvenuta, evidenze fallite** | P7 e P8 riusciti, ma una ricevuta, un'osservazione o un'attestazione (P9) falliscono | **tutte** le modifiche pubblicate | `published`, Task **non** finalizzato (§4.4) |
+
+**Regole:**
+- `failed` e `ambiguous` sono terminali, nessuna transizione ne esce. `published` non può tornare a `failed` (`failTrustedWriteSet` lo rifiuta): le evidenze restano pendenti e il Task non viene concluso.
+- **Pubblicazione monouso.** `validated → publishing` avviene in modo sincrono (`beginTrustedWriteSetPublication`), prima di qualunque `await` del publisher. Una seconda chiamata viene rifiutata. `reserveAttempt` dell'insieme è durevole prima di P3, quindi neppure dopo un riavvio si ripubblica.
+
+**Replay o errore concorrente durante `publishing`:**
+- **Prima dell'invio del CAS:** un replay di un elemento (record già consumato), un Execute concorrente di un elemento del batch o qualsiasi errore asincrono portano il write-set a `failed`. Il publisher ricontrolla lo stato dopo **ogni** `await` (P6, `assertTrustedWriteSetStillPublishable`) e si ferma prima del CAS. Non viene inviato nulla a Gitea.
+- **Dopo l'invio del CAS:** nessun evento concorrente può cambiare l'esito. Il replay viene rifiutato (record consumato), ma il write-set passa soltanto a `published` (esito certo osservato dal proprietario, `recordTrustedWriteSetPublished` con il commit) oppure ad `ambiguous` (`failTrustedWriteSet(..., casRequestSent=true)`). Mai a `failed`, perché l'effetto potrebbe essere avvenuto. Mai un nuovo tentativo.
 
 ### 3.5 Limiti sulle dimensioni
 
@@ -351,7 +377,7 @@ Il merge su `main` avverrà solo dopo la revisione dei risultati.
 
 - **Setup:** repository usa e getta `thesis/w0-spike` creato con l'account admin. Tutte le operazioni usano il **token del Gateway**, collaboratore in scrittura, come in produzione.
 - **Script e dati:** `docs/experiments/phase-w-w0/w0-spike.mjs`, `w0-size.mjs`, `w0-results.jsonl`, `w0-size.jsonl`.
-- **Esito:** 11 casi su 11 superati, dopo la correzione di due errori nello script, non di Gitea, nella prima esecuzione.
+- **Esito:** 9 casi con asserzione superati e 2 casi **diagnostici**, S6b e S8, che osservano il comportamento di Gitea senza un'asserzione di successo (nei risultati grezzi compaiono con `ok: true` per costruzione). Nella prima esecuzione due casi erano falliti per errori nello script, non di Gitea, poi corretti. Quando diventeranno test di regressione (W2/W4), S6b e S8 avranno asserzioni esplicite sul comportamento atteso dal nostro codice: sha sempre inviato e byte identici rifiutati prima dello staging.
 
 | Caso | Risultato |
 |---|---|
@@ -361,9 +387,9 @@ Il merge su `main` avverrà solo dopo la revisione dei risultati.
 | S4, uno sha errato tra operazioni valide | **422**, intera richiesta rifiutata, nessun commit parziale |
 | S5, create di un file esistente tra operazioni valide | **422**, intera richiesta rifiutata, nessun commit parziale |
 | S6, update di un file inesistente | **404**, nessun commit |
-| S6b, update **senza** sha | **accettato**: nessuna guardia del blob. L'owner deve sempre inviare lo sha (§7) |
+| S6b, update **senza** sha (diagnostico) | **accettato**: nessuna guardia del blob. L'owner deve sempre inviare lo sha (§7) |
 | S7, commit con un file non autorizzato | rilevato sia da `git/commits?files=true` sia da `compare`: la verifica P4 lo rifiuterebbe |
-| S8, update con contenuto identico | **accettato**, con un commit vuoto (nessun file): il rifiuto dei byte identici resta prima dello staging |
+| S8, update con contenuto identico (diagnostico) | **accettato**, con un commit vuoto (nessun file): il rifiuto dei byte identici resta prima dello staging |
 | S9, ripiego: 3 commit sequenziali sul ref privato + 1 CAS | funziona: `compare` riporta 3 commit e i 3 file; un solo CAS (0,38–0,41 s per commit) |
 | S10, CAS con `old_commit_id` errato | **422**, branch invariato; i ref privati restano finché non vengono rimossi (DELETE 204) |
 | Dimensione | ChangeFiles con 8 × 256 KiB (2,8 MB di richiesta): 201 in 0,55 s; con 8 × 2 MB (21,3 MB): 201 in 0,93 s |
@@ -375,4 +401,58 @@ Il merge su `main` avverrà solo dopo la revisione dei risultati.
 4. **Regole lato owner emerse:** inviare sempre lo sha negli update (S6b); rifiutare i byte identici prima dello staging (S8); rimuovere i ref privati dopo il successo (S10); aggiungere il nuovo prefisso dei ref privati alla lista dei branch vietati agli agenti.
 5. I limiti di dimensione sono nostri (§3.5): Gitea accetta richieste ben oltre il limite proposto.
 
-**Limite di W0:** è una prova dell'API di Gitea, non del protocollo. Non coinvolge Gateway, VP, OPA, admissions o journal; quelli saranno coperti da W1–W4.
+**Limite di W0:** è una prova dell'API di Gitea, non del protocollo. Non coinvolge Gateway, VP, OPA, admissions o journal; quelli sono coperti da W1–W4.
+
+**Da consolidare in W2/W4:**
+- accessibilità dei ref di staging (chi li vede e chi li può spostare);
+- completezza del diff, compresa la **modalità dei file** (eseguibilità, symlink);
+- CAS con `old_commit_id` obsoleto anche quando il commit candidato è **discendente** della HEAD corrente.
+
+## 12. W1: grant, admissions, manifest, write-set flight e journal
+
+**Implementazione** (branch `feature/batch-write-design`), tutta opt-in. Senza `batchWritesEnabled` nessun nuovo percorso è raggiungibile.
+
+| Componente | Contenuto |
+|---|---|
+| `plan-contracts/.../gitea-permission-containment.mjs` | `readsWriteSetGrantShape` (R 0–15, W 2–8, ≤ 16, file esatti distinti di un solo branch, update solo di file letti, create solo di file non letti, sole creazioni senza letture), `isProjectTestWriteSetGrant`, `MAX_TASK_WRITES = 8`, `MAX_TASK_EFFECTS = 16`. Le forme a scrittura singola sono invariate e disgiunte |
+| `orchestrator-runtime/.../sequential-effect-journal.ts` | piano tipato `isReadWriteSetPlan`; `write_plan` canonico nel manifest; `reserveWriteSet` (**un solo** flight durevole per Task, O_EXCL, uguale al `write_plan`, concatenato all'ultima lettura attestata); scrittura come flight individuale vietata; evidenze delle scritture **in ordine e concatenate**; finalizzazione invariata |
+| `gateway/.../write-set-intent-journal.ts` (nuovo) | intent per file del write-set, riservato **una volta** per Task; limiti: 2–8 file, 2.000.000 byte per file, 4.000.000 byte in totale, update con blob, create con assenza, nessun update a vuoto. I journal degli intent a scrittura singola (uno per Task) non sono toccati |
+| `gateway/.../write-set-preflight.ts` (nuovo) | preflight del proprietario, **nessuna scrittura**: blob SHA degli update e 404 dei create letti dal proprietario alla HEAD fissata, HEAD invariata prima e dopo, update identici rifiutati |
+| `gateway/.../admissions.ts` | `beginTrustedSequentialWriteSetTask`, `assertTrustedWriteSetIntentBinding`, `stageTrustedWriteSet` (digest), `assertTrustedWriteSetItemBinding` (ordine canonico, VP della Child sull'esatto insieme), `beginTrustedWriteSetPublication` (monouso), `assertTrustedWriteSetStillPublishable` (P6), `recordTrustedWriteSetPublished`, `failTrustedWriteSet` (`failed` / `ambiguous`), `attestTrustedWriteSetEffect` (solo dopo la pubblicazione, in ordine); finalizzazione solo per un write-set `published` con tutte le evidenze. I percorsi a scrittura singola (intent, staging, binding) rifiutano esplicitamente i Task con write-set |
+
+**Test** (tutti verdi):
+- plan-contracts 31 (+4);
+- orchestrator-runtime 345 (+13: 5 journal, 8 admissions su componenti reali, cioè sessione Engineer, Coordinator, emissione della Child, journal durevoli, osservatore di completamento, `GiteaClient` con HTTP simulato);
+- Gateway 245 (+2, journal degli intent);
+- agent-runtime 216, console 61, orchestrator 74, Runner 50, mcp-shared 26: invariati.
+
+OPA non è modificato (non rieseguito localmente in questa sessione per l'assenza del daemon Docker; lo esegue la CI).
+
+**Copertura dei sette punti della revisione:**
+
+| Punto | Test |
+|---|---|
+| 1. Contenimento dei permessi e normalizzazione | forma: tabella D1/D2, file esatti, stesso branch, attraversamenti, percorsi codificati, chiavi estranee, scope a directory rifiutati; admissions: Prepare con fingerprint e permesso canonico ricalcolati |
+| 2. Combinazioni di letture, update e create | flusso completo R = 2, U = 2, C = 1; update di un file non letto e create di un file letto rifiutati |
+| 3. Sole creazioni senza letture | write-set di 2 create con `first_sequence = 1` (journal e admissions) |
+| 4. Binding dell'intero write-set | insieme parziale, record fuori piano, challenge diversa, preflight contraffatto, digest diverso, VP di un altro presentatore o con un sottoinsieme dei permessi |
+| 5. Unico flight durevole | seconda `reserveWriteSet` (EEXIST); scrittura come flight individuale; letture dopo lo staging |
+| 6. Nessuna attestazione anticipata o fuori ordine | attestazione prima della pubblicazione; ricevuta del secondo file prima del primo; evidenze fuori ordine nel journal; finalizzazione prima della pubblicazione |
+| 7. Baseline e funzionalità disabilitata | `batchWritesEnabled` assente: percorso indisponibile; grant a scrittura singola: write-set rifiutato e manifest baseline ammesso; percorsi a scrittura singola che rifiutano i Task con write-set; tutte le suite esistenti invariate |
+
+**Controllo per mutazione:**
+- **rilevati:** binding non ordinato (M1), pubblicazione non monouso (M3), intent di update a scrittura singola accettato per un write-set (M5);
+- **ridondanti per costruzione**, documentati: tre guardie sopravvivono perché un controllo precedente produce lo stesso rifiuto, e restano come difesa in profondità:
+  - il blocco dello staging a scrittura singola (M2), già rifiutato dall'intent binding;
+  - la finalizzazione senza pubblicazione (M4), perché le evidenze richiedono la pubblicazione;
+  - la lettura dopo lo staging (M6), perché le letture sono già esaurite.
+
+**Non incluso in W1** (rimandato):
+- **W2:**
+  - ramo write-batch di Prepare ed Execute nel Gateway, seconda `verifyMultiple`;
+  - executor con `commitFilesWithHeadCas`, `reserveAttempt` dell'insieme, CAS;
+  - ricevute e osservazioni per file;
+  - prefisso dei ref privati nella lista dei branch vietati;
+  - regressioni W0 con asserzioni esplicite.
+- **W3:** proposer, ciclo adattivo, owner A2A e remoto, stager lato agente, tool `write_files`, console.
+- **Limitazione dichiarata:** per un Task con write-set non esiste il percorso "nessuna modifica" (`reportNoChange`), coerentemente con D5. Il fence prima della scrittura resta disponibile solo per i Task a scrittura singola.

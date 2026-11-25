@@ -171,6 +171,59 @@ export function readWriteGrantShape(permissions) {
  const create=readCreateGrantShape(permissions);
  return create?Object.freeze({write:create.create,operation:"create_file",reads:create.reads}):null;
 }
+/** Phase W: maximum number of writes in ONE write-set Task (decision D1). */
+export const MAX_TASK_WRITES=8;
+/** Phase W: maximum total permissions/effects of a Task (decision D2). */
+export const MAX_TASK_EFFECTS=16;
+/**
+ * Phase W shape of a native "reads + write-set" Task grant (opt-in; the
+ * single-write shapes above stay the baseline and are NOT matched here):
+ * 0..MAX_TASK_READS read_file of DISTINCT exact files, then 2..MAX_TASK_WRITES
+ * writes on DISTINCT exact files, total <= MAX_TASK_EFFECTS, nothing else:
+ *  - update_file of a file READ in the same Task;
+ *  - create_file of a file NOT read in the Task (absence is proven later, at
+ *    the pinned HEAD, by the trusted owner preflight, never by this shape).
+ * Zero reads are allowed only when every write is a create. All resources are
+ * exact canonical file URIs of ONE repository branch.
+ * This describes the signed Task grant SHAPE only (embedded in the Child);
+ * it is not the Engineer-approved scope and not an authorization.
+ * Returns {reads, writes:[{resource, operation, path}]} in canonical order
+ * (sorted by resource), or null.
+ */
+export function readsWriteSetGrantShape(permissions) {
+ if(!Array.isArray(permissions)||permissions.length<2||
+    permissions.length>MAX_TASK_EFFECTS)return null;
+ const reads=[],writes=[];
+ for(const p of permissions){
+  if(!p||typeof p!=="object"||Object.keys(p).sort().join(",")!=="operation,resource"||
+     typeof p.resource!=="string")return null;
+  const s=scope(p.resource);
+  if(s?.kind!=="files")return null;
+  if(p.operation==="read_file")reads.push({resource:p.resource,prefix:s.prefix});
+  else if(p.operation==="update_file"||p.operation==="create_file")
+   writes.push({resource:p.resource,operation:p.operation,path:s.path.join("/"),prefix:s.prefix});
+  else return null;
+ }
+ if(reads.length>MAX_TASK_READS||writes.length<2||writes.length>MAX_TASK_WRITES)return null;
+ const prefix=(reads[0]??writes[0]).prefix;
+ if([...reads,...writes].some(x=>x.prefix!==prefix))return null;
+ const readSet=new Set(reads.map(r=>r.resource));
+ const writeSet=new Set(writes.map(w=>w.resource));
+ if(readSet.size!==reads.length||writeSet.size!==writes.length)return null;
+ for(const w of writes){
+  if(w.operation==="update_file"&&!readSet.has(w.resource))return null;
+  if(w.operation==="create_file"&&readSet.has(w.resource))return null;
+ }
+ const sorted=writes.map(({resource,operation,path})=>Object.freeze({resource,operation,path}))
+  .sort((a,b)=>a.resource<b.resource?-1:a.resource>b.resource?1:0);
+ return Object.freeze({reads:Object.freeze([...readSet].sort()),writes:Object.freeze(sorted)});
+}
+/** Test write-set: the Test agent may write (update or create) ONLY project
+ * test sources; it may read any signed file in the same Task. */
+export function isProjectTestWriteSetGrant(permissions,profile) {
+ const shape=readsWriteSetGrantShape(permissions);
+ return !!shape&&shape.writes.every(w=>isProjectTestSource(w.path,profile));
+}
 /** Test may CREATE only a project test source; it may READ any signed file
  * (the application code the new test covers) in the same Task. */
 export function isProjectTestReadCreateGrant(permissions,profile) {
