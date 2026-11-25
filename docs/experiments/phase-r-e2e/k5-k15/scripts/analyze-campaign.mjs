@@ -3,8 +3,18 @@ import {readFileSync, readdirSync} from "node:fs";
 const dir = process.argv[2] ?? "e2e2";
 const med = a => { const s = [...a].sort((x, y) => x - y); const n = s.length;
   return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : NaN; };
-// Deterministic PRNG for the bootstrap.
-let seed = 20261125; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+// Deterministic PRNG for the bootstrap: mulberry32, exact 32-bit integer
+// arithmetic (Math.imul, >>>), so no product exceeds 2^53. The first version
+// used an LCG whose product seed*1103515245 could exceed Number.MAX_SAFE_INTEGER
+// (rounded, deterministic but not the intended generator).
+let seed = 20261125 >>> 0;
+const rnd = () => {
+  seed = (seed + 0x6D2B79F5) >>> 0;
+  let t = seed;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 const pick = a => a[Math.floor(rnd() * a.length)];
 function bootDiff(a, b, B = 10000) { // CI of median(b) - median(a), unpaired
   const d = []; for (let i = 0; i < B; i++)

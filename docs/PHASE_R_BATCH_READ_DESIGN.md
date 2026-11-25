@@ -51,7 +51,7 @@ Con k letture: **k turni del modello, k VP, k verifiche Rust** (circa k × 1,5 s
 | R12 | Esecuzione sequenziale dei Task e un solo flight attivo | Invariato: gli elementi sono eseguiti uno alla volta; il batch non introduce concorrenza |
 | R13 | Nessuna nuova autorità | Nessun cambiamento a credenziali, Task, grant, OPA o core; il batch può solo raggruppare letture già firmate nel Task |
 
-**Differenza semantica da dichiarare.** Lo stato di revoca viene osservato una volta per batch, alla verifica, invece che una volta per lettura. La finestra è limitata alla durata del batch, al massimo 60 s dal Prepare (non più il TTL del Prepare, che per il Test Agent è di 20 minuti). La revoca della Root operativa da parte dell'Engineer, cioè il ritiro della sessione, e la scadenza della Child restano controllate a ogni elemento.
+**Differenza semantica da dichiarare.** Lo stato di revoca viene osservato una volta per batch, alla verifica, invece che una volta per lettura. La finestra è limitata alla durata del batch, al massimo 60 s dal Prepare (non più il TTL del Prepare, che per il Test Agent è di 20 minuti). Una revoca on-chain avvenuta dopo la verifica iniziale non viene ricontrollata per le letture successive dello stesso batch: è un compromesso esplicito tra prestazioni e freschezza dell'autorizzazione, non equivalente alla verifica per lettura del percorso baseline. Dettagli e natura delle prove in `PHASE_R_RESULTS.md` §5. La revoca della Root operativa da parte dell'Engineer, cioè il ritiro della sessione, e la scadenza della Child restano controllate a ogni elemento.
 
 ## 4. Verifica prevista
 

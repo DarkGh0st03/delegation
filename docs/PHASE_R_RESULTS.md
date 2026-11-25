@@ -117,6 +117,17 @@ Riferimenti a `PHASE_R_BATCH_READ_DESIGN.md` §3:
 
 **Controllo per mutazione.** Ho ripristinato il codice precedente alle correzioni e rieseguito i nuovi test: falliscono 7 test su 11 senza la correzione di `execute.ts` e 5 test senza quelle di `trusted-read-batch.ts`.
 
+**Finestra di riuso e semantica di revoca.** Da dichiarare nella tesi come compromesso esplicito tra prestazioni e freschezza dell'autorizzazione; il batch non è equivalente a una verifica aggiornata della revoca per ogni lettura.
+- La VP del batch viene verificata **una volta**, al primo Execute. In quel momento il core Rust controlla anche lo stato di revoca on-chain della catena.
+- Gli elementi successivi riusano il risultato solo per la VP identica byte per byte ed entro la finestra del batch: **al massimo 60 s dal Prepare** (`READ_BATCH_TTL_MS`). La finestra decorre dal Prepare, non dal momento della revoca.
+- Una revoca on-chain della Child o della Root avvenuta dopo la verifica iniziale **non viene ricontrollata** per le letture successive dello stesso batch. Diventa efficace al più tardi alla scadenza della finestra; ogni batch successivo verifica di nuovo e la osserva.
+- Restano invece controllati **per ogni lettura** (admissions `#live` e `expires_at`): il ritiro della sessione e della Root operativa da parte dell'Engineer, la scadenza della Root e della Child, la scadenza del record.
+- Con la verifica singola lo stato di revoca viene osservato a ogni lettura; questo è il percorso baseline, sempre disponibile (`DELEGATION_BATCH_READS=0`).
+
+**Natura delle prove sulla revoca.**
+- Il test "on-chain revocation after the batch verification…" (`trusted-read-batch-fail-closed.test.ts`) usa un **verificatore simulato** che, dopo la prima verifica, comincia a rifiutare. Dimostra la semantica del Gateway (riuso entro la finestra, rifiuto dopo, nuova verifica per un nuovo batch). **Non** è una prova E2E di revoca intermedia sulla blockchain reale.
+- La revoca on-chain osservata dal core (Status List aggiornata su `IssuerRegistry`, Anvil) è stata misurata nella Fase 1b come caso negativo con **Root revocata on-chain** (`RESULTS_PHASE1B.md` sul branch `experiment/multi-permission-verification-benchmark`): la verifica immediatamente successiva la osserva. Non è stata eseguita un'E2E con revoca on-chain **durante** un batch del workflow operativo.
+
 **Revoca, comportamento verificato:**
 - **Revoca on-chain della Child dopo la verifica del batch:** gli elementi dello stesso batch continuano a riusare la verifica fino alla scadenza della finestra, al massimo 60 s dal Prepare. Dopo la scadenza vengono rifiutati, e un nuovo batch ripete la verifica e osserva la revoca.
 - **Ritiro della Root operativa e scadenza della Child:** restano controllati per elemento dalle admissions (`#live`, `expires_at`) in staging, binding e attestazione. Non ho aggiunto test specifici, perché questi controlli valgono già per le letture singole e sono coperti dai test esistenti sulle admissions reali.
@@ -139,23 +150,25 @@ Riferimenti a `PHASE_R_BATCH_READ_DESIGN.md` §3:
 - Le due varianti differiscono solo per `DELEGATION_BATCH_READS`.
 - **Deviazione dall'ordine casuale:** `batch-k15-5` è fallita all'avvio dell'esecuzione, prima di qualsiasi lettura, con "Protected canonical deployment configuration denied" (conservata in `raw/failed/`). L'ho ripetuta in coda alla campagna.
 
-**Risultati:** 24/24 sessioni misurate `completed` con Draft PR, tutte le decisioni `allow`.
+**Risultati:** 24 sessioni misurate valide su 25 tentativi. Il tentativo fallito (`batch-k15-5`, primo tentativo) resta documentato in `raw/failed/`. Tutte le 24 sessioni valide sono `completed` con Draft PR e tutte le decisioni sono `allow`.
 - **Batch:** in ogni sessione una sola verifica `performed`, 4 riusi (k = 5) o 14 (k = 15), un solo `read_batch_id`.
 - **Baseline:** nessun campo di batch.
 - **OPA:** valutata a ogni decisione (18 o 48) in entrambe le varianti.
 
-Mediane (n = 6 per cella); IC 95% da bootstrap non appaiato della differenza delle mediane (batch − baseline):
+Mediane (n = 6 per cella); IC 95% da bootstrap non appaiato della differenza delle mediane (batch − baseline), 10.000 ricampionamenti, generatore mulberry32 con seme 20261125.
+
+> **Correzione del bootstrap.** La prima versione di `analyze-campaign.mjs` usava un generatore congruenziale il cui prodotto poteva superare 2^53 e veniva arrotondato. Ho sostituito il generatore con mulberry32 (aritmetica intera a 32 bit esatta) e ricalcolato gli intervalli offline, senza ripetere esperimenti. Le mediane non cambiano; gli estremi degli intervalli cambiano al più di 0,06 s. Il generatore dell'ordine delle esecuzioni (`make-plan.mjs`) è conservato com'era quando è stato eseguito: è deterministico e `plan-campaign.txt` si riproduce identico.
 
 | k | Metrica | Baseline | Batch | Differenza | IC 95% | Rapporto |
 |---|---|---|---|---|---|---|
-| 5 | Σ verifiche Gateway per sessione | 27,50 s | 21,36 s | −6,14 s | [−6,60, −5,68] | 1,29× |
+| 5 | Σ verifiche Gateway per sessione | 27,50 s | 21,36 s | −6,14 s | [−6,60, −5,64] | 1,29× |
 | 5 | Σ verifiche delle letture | 15,56 s | 9,34 s | −6,22 s | [−6,54, −5,93] | 1,67× |
 | 5 | Fase di lettura del Task Test (tool lato agente) | 9,69 s | 2,32 s | −7,37 s | [−7,49, −7,18] | 4,18× |
 | 5 | **Esecuzione, firma → completamento** | **59,31 s** | **50,28 s** | **−9,04 s** | [−9,06, −8,51] | 1,18× |
-| 15 | Σ verifiche Gateway per sessione | 75,48 s | 53,87 s | −21,61 s | [−23,32, −19,94] | 1,40× |
-| 15 | Σ verifiche delle letture | 47,62 s | 25,51 s | −22,11 s | [−23,16, −20,92] | 1,87× |
-| 15 | Fase di lettura del Task Test | 29,03 s | 3,32 s | −25,70 s | [−26,53, −24,81] | 8,73× |
-| 15 | **Esecuzione, firma → completamento** | **146,59 s** | **121,52 s** | **−25,07 s** | [−27,10, −24,06] | 1,21× |
+| 15 | Σ verifiche Gateway per sessione | 75,48 s | 53,87 s | −21,61 s | [−23,26, −19,97] | 1,40× |
+| 15 | Σ verifiche delle letture | 47,62 s | 25,51 s | −22,11 s | [−23,21, −20,92] | 1,87× |
+| 15 | Fase di lettura del Task Test | 29,03 s | 3,32 s | −25,70 s | [−26,54, −24,81] | 8,73× |
+| 15 | **Esecuzione, firma → completamento** | **146,59 s** | **121,52 s** | **−25,07 s** | [−27,11, −24,06] | 1,21× |
 
 **Lettura dei risultati:**
 - **Workflow complessivo.** Con k = 5 e k = 15 il vantaggio è misurabile e gli intervalli non includono lo zero: −9 s e −25 s, cioè circa −15% e −17%. Con k = 2 la differenza era nel rumore.
@@ -163,6 +176,11 @@ Mediane (n = 6 per cella); IC 95% da bootstrap non appaiato della differenza del
 - **Fase di lettura.** Lo speedup del Task Test (4,2× con k = 5, 8,7× con k = 15) supera quello della sola verifica, per la stessa ragione.
 - **Verifiche delle letture.** Σ include anche le 4 o 14 letture singole dei Task backend (k = 1), che il batch non tocca.
 - **Granularità dei tempi.** I tempi complessivi sono molto stabili (dispersione < 1 s) e quantizzati sul campionamento di stato a 1 s del driver.
+
+**Limiti di generalizzazione.**
+- Il workload è scripted, senza modello di IA: i turni del modello hanno costo quasi nullo.
+- Le ripetizioni sono 6 per cella, su un solo repository di benchmark e una sola macchina.
+- Gli intervalli descrivono questo workload e non si estendono automaticamente ai workflow con Gemini: lì i turni del modello e la loro variabilità pesano di più sul tempo complessivo.
 
 **Questione preesistente, fuori dall'ambito della Fase R** (presente anche su `main`): il fallimento intermittente di `batch-k15-5` nasce nella validazione della configurazione del deployment (`canonical-owner-deployment.mjs`). La causa più probabile, non dimostrata perché le porte non vengono registrate, è `freePort()` in `engineer-console/src/sessions.mjs`: apre e chiude una porta alla volta, quindi due ruoli possono ricevere la stessa porta effimera, e la configurazione rifiuta le porte duplicate. La correzione proposta è riservare tutte le porte prima di chiuderle. Non l'ho applicata.
 
