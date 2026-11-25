@@ -100,6 +100,8 @@ export interface AdkSpecializedAgentConfig {
   gatewayClient: GatewayControlledToolClient;
   /** Trusted prebound Test Task hint, not a grant: Gateway enforces it. */
   trustedRunTestsAllowed?: boolean;
+  /** Phase R (trusted host option): read all signed files with ONE VP via read_files. */
+  batchReads?: boolean;
 }
 
 export interface AdkSpecializedAgent {
@@ -178,6 +180,11 @@ export function createAdkSpecializedAgent(
   const readablePaths=taskPaths.filter(path=>availableTools.includes("read_file")&&
     hasGrant("read_file",path));
   const readOnly=readablePaths.filter(path=>!writable.includes(path));
+  // Phase R: in an owner-staged reads+write Task with 2+ signed reads, the
+  // model gets ONE read_files call (all signed reads, one VP) instead of
+  // read_file. The paths are the signed Task grants, never model arguments.
+  const batchReads=config.batchReads===true&&readablePaths.length>=2&&
+    config.gatewayClient.supportsBatchReads;
   const skill=`Implement the approved ${config.role} software-engineering Task within its exact signed permissions.`;
   // Never carry the demo-specific feature narrative, file lists or
   // performance instructions into a general Engineer-approved Task.
@@ -193,9 +200,15 @@ export function createAdkSpecializedAgent(
     "Approved writable existing files:",...list(writable),"",
     "Approved creatable files:",...list(creatable),"",
     "Read and write are independent permissions: never assume either from the other.",
-    "Each granted operation may be used exactly ONCE in this Task: read EVERY approved readable file once (in any order; they are the file to edit and the files it depends on), then make the single write (update_file or create_file) or the single run_tests. After the write or the test run, call no more tools and reply only with a short report: repeated, extra or out-of-order tool calls are refused and make the Task fail.",
+    ...(batchReads?[
+      "Call read_files exactly ONCE, first: in one authorized step it returns EVERY approved readable file (the file to edit and the files it depends on). Then make the single write (update_file or create_file). After the write, call no more tools and reply only with a short report: repeated, extra or out-of-order tool calls are refused and make the Task fail."
+    ]:[
+      "Each granted operation may be used exactly ONCE in this Task: read EVERY approved readable file once (in any order; they are the file to edit and the files it depends on), then make the single write (update_file or create_file) or the single run_tests. After the write or the test run, call no more tools and reply only with a short report: repeated, extra or out-of-order tool calls are refused and make the Task fail."
+    ]),
     "If, after reading, the file to edit already does exactly what the instruction asks, do NOT write it: reply with a short report saying that no change is needed and why. This is a valid outcome that the Orchestrator takes into account.",
-    "Before every update_file, first call read_file for that exact existing path in this same Task.",
+    batchReads
+      ?"Before update_file, the edited file must be among the files returned by read_files in this same Task."
+      :"Before every update_file, first call read_file for that exact existing path in this same Task.",
     "Use the content returned by that successful read to construct the full replacement. A read from a previous Task is not evidence for this Task.",
     "If that read is not authorized, fails, or the source is unavailable, do not attempt to write; report the limitation.",
     "Read only approved source and context. Do not request any file outside the authorized lists.",
@@ -278,7 +291,7 @@ export function createAdkSpecializedAgent(
     .filter(definition=>
       // Absent is NOT a Runner grant.
       (definition.name==="run_tests"&&config.trustedRunTestsAllowed===true) ||
-      (definition.name==="read_file"&&readablePaths.length>0) ||
+      (definition.name==="read_file"&&readablePaths.length>0&&!batchReads) ||
       (definition.name==="update_file"&&writable.length>0) ||
       (definition.name==="create_file"&&creatable.length>0))
     // All declared model tools run through the signed Gateway FunctionTools.
@@ -362,6 +375,63 @@ export function createAdkSpecializedAgent(
       }
     });
   });
+  if(batchReads){
+    const name="read_files";
+    let used=false;
+    tools.push(new FunctionTool({
+      name,
+      description:"Read ALL approved readable files of this Task in one authorized step (one signed presentation). Call it once, before the write.",
+      parameters:z.object({branch:z.literal(branch)}),
+      execute:async(args)=>{
+        const started=performance.now();
+        let success=false;
+        let errorKind:ControlledToolErrorKind|null=null;
+        let failureReason:string|undefined;
+        try{
+          config.signal?.throwIfAborted();
+          if(used)throw new ControlledToolError("invalid_tool_call",
+            "read_files was already used in this Task");
+          used=true;
+          if((args as {branch?:unknown}).branch!==branch)
+            throw new ControlledToolError("invalid_tool_call","Branch differs from the signed Task branch");
+          const result=await config.gatewayClient.readFiles(branch,readablePaths);
+          config.signal?.throwIfAborted();
+          const payload={ok:true as const,result};
+          success=true;
+          // One read_file outcome per file, exactly as the single-read path
+          // reports it (path + Gitea revision), so Task accounting is unchanged.
+          for(const file of result.files){
+            const path=file&&typeof file==="object"?(file as {path?:unknown}).path:undefined;
+            config.onToolOutcome?.({name:"read_file",arguments:{branch,path},
+              payload:{ok:true as const,result:file}});
+          }
+          return payload;
+        }catch(error){
+          if(error instanceof ControlledToolError){
+            errorKind=error.kind;failureReason=error.reason;
+            const payload=controlledToolErrorPayload(error);
+            config.onToolOutcome?.({name:"read_file",
+              arguments:{branch,paths:[...readablePaths]},payload});
+            return payload;
+          }
+          errorKind="tool_unavailable";
+          const payload=controlledToolErrorPayload(new ControlledToolError("tool_unavailable","Controlled tool failed"));
+          config.onToolOutcome?.({name:"read_file",
+            arguments:{branch,paths:[...readablePaths]},payload});
+          return payload;
+        }finally{
+          process.stdout.write(JSON.stringify({
+            event:"adk_tool_timing",role:config.role,tool:name,
+            ...(taskRef?{task_ref:taskRef}:{}),
+            success,error_kind:errorKind,
+            ...(failureReason?{reason:failureReason}:{}),
+            batch_size:readablePaths.length,
+            duration_ms:Math.round(performance.now()-started)
+          })+"\n");
+        }
+      }
+    }));
+  }
 
   const agent = new LlmAgent({
     name: `delegated_${config.role}`,

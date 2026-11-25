@@ -1,0 +1,73 @@
+=== single-k15-4 variant=single k=15 12:53:07
+{"label":"warmup-single-k15-4","sid":"s-51a4e5610d6d","phase":"completed","error":null,"permissions":13,"planning_s":9.035,"execution_s":67.408,"decisions":18,"pr":5}
+{"label":"single-k15-4","sid":"s-e4a6d583ca47","phase":"completed","error":null,"permissions":33,"planning_s":8.038,"execution_s":147.668,"decisions":48,"pr":6}
+=== batch-k15-1 variant=batch k=15 12:58:32
+{"label":"warmup-batch-k15-1","sid":"s-644cb36bf0a2","phase":"completed","error":null,"permissions":13,"planning_s":9.038,"execution_s":57.319,"decisions":18,"pr":7}
+{"label":"batch-k15-1","sid":"s-ecaee95a7aab","phase":"completed","error":null,"permissions":33,"planning_s":8.035,"execution_s":122.512,"decisions":48,"pr":8}
+=== batch-k15-6 variant=batch k=15 13:03:31
+{"label":"warmup-batch-k15-6","sid":"s-ab57317adaeb","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":57.311,"decisions":18,"pr":9}
+{"label":"batch-k15-6","sid":"s-68afeda16901","phase":"completed","error":null,"permissions":33,"planning_s":8.031,"execution_s":120.538,"decisions":48,"pr":10}
+=== batch-k5-6 variant=batch k=5 13:08:29
+{"label":"warmup-batch-k5-6","sid":"s-a6d086cdc70b","phase":"completed","error":null,"permissions":13,"planning_s":9.034,"execution_s":57.316,"decisions":18,"pr":11}
+{"label":"batch-k5-6","sid":"s-0296f10befc5","phase":"completed","error":null,"permissions":13,"planning_s":8.03,"execution_s":50.298,"decisions":18,"pr":12}
+=== single-k5-3 variant=single k=5 13:12:17
+{"label":"warmup-single-k5-3","sid":"s-b146d6987678","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":66.377,"decisions":18,"pr":13}
+{"label":"single-k5-3","sid":"s-75498613280b","phase":"completed","error":null,"permissions":13,"planning_s":8.032,"execution_s":59.332,"decisions":18,"pr":14}
+=== batch-k15-3 variant=batch k=15 13:16:23
+{"label":"warmup-batch-k15-3","sid":"s-f59b392c3b76","phase":"completed","error":null,"permissions":13,"planning_s":9.036,"execution_s":58.359,"decisions":18,"pr":15}
+{"label":"batch-k15-3","sid":"s-dc836ce275cc","phase":"completed","error":null,"permissions":33,"planning_s":7.028,"execution_s":122.539,"decisions":48,"pr":16}
+=== batch-k5-3 variant=batch k=5 13:21:24
+{"label":"warmup-batch-k5-3","sid":"s-583495e57504","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":57.361,"decisions":18,"pr":17}
+{"label":"batch-k5-3","sid":"s-63a7937e8304","phase":"completed","error":null,"permissions":13,"planning_s":8.033,"execution_s":50.29,"decisions":18,"pr":18}
+=== batch-k15-5 variant=batch k=15 13:25:12
+{"label":"warmup-batch-k15-5","sid":"s-2e40c49ef9d0","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":57.326,"decisions":18,"pr":19}
+{"label":"batch-k15-5","sid":"s-9e05a2a8e430","phase":"failed","error":"Esecuzione interrotta: Protected canonical deployment configuration denied","permissions":33,"planning_s":8.032,"execution_s":0.117,"decisions":1}
+=== single-k15-2 variant=single k=15 13:28:09
+{"label":"warmup-single-k15-2","sid":"s-ddca00e808c5","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":66.371,"decisions":18,"pr":20}
+{"label":"single-k15-2","sid":"s-d38b6125362a","phase":"completed","error":null,"permissions":33,"planning_s":8.027,"execution_s":146.602,"decisions":48,"pr":21}
+=== batch-k5-5 variant=batch k=5 13:33:42
+{"label":"warmup-batch-k5-5","sid":"s-58b452d0b2ef","phase":"completed","error":null,"permissions":13,"planning_s":9.029,"execution_s":57.35,"decisions":18,"pr":22}
+{"label":"batch-k5-5","sid":"s-1788ea4ccbcf","phase":"completed","error":null,"permissions":13,"planning_s":8.031,"execution_s":50.261,"decisions":18,"pr":23}
+=== single-k15-6 variant=single k=15 13:37:30
+{"label":"warmup-single-k15-6","sid":"s-ea10a4724cb1","phase":"completed","error":null,"permissions":13,"planning_s":9.036,"execution_s":63.328,"decisions":18,"pr":24}
+{"label":"single-k15-6","sid":"s-d3a170665ff7","phase":"completed","error":null,"permissions":33,"planning_s":8.033,"execution_s":146.565,"decisions":48,"pr":25}
+=== single-k15-5 variant=single k=15 13:43:00
+{"label":"warmup-single-k15-5","sid":"s-469843b7d555","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":66.377,"decisions":18,"pr":26}
+{"label":"single-k15-5","sid":"s-eca30d7602a4","phase":"completed","error":null,"permissions":33,"planning_s":8.029,"execution_s":146.657,"decisions":48,"pr":27}
+=== batch-k5-4 variant=batch k=5 13:48:27
+{"label":"warmup-batch-k5-4","sid":"s-a3f822c56322","phase":"completed","error":null,"permissions":13,"planning_s":9.034,"execution_s":57.339,"decisions":18,"pr":28}
+{"label":"batch-k5-4","sid":"s-e5099badea8a","phase":"completed","error":null,"permissions":13,"planning_s":8.033,"execution_s":51.305,"decisions":18,"pr":29}
+=== single-k5-2 variant=single k=5 13:52:16
+{"label":"warmup-single-k5-2","sid":"s-d0d426751a18","phase":"completed","error":null,"permissions":13,"planning_s":9.035,"execution_s":67.352,"decisions":18,"pr":30}
+{"label":"single-k5-2","sid":"s-0c46ac51c6fb","phase":"completed","error":null,"permissions":13,"planning_s":8.031,"execution_s":59.303,"decisions":18,"pr":31}
+=== batch-k15-4 variant=batch k=15 13:56:23
+{"label":"warmup-batch-k15-4","sid":"s-ab8dc4f206c4","phase":"completed","error":null,"permissions":13,"planning_s":9.032,"execution_s":57.342,"decisions":18,"pr":32}
+{"label":"batch-k15-4","sid":"s-ef4a1e5f482b","phase":"completed","error":null,"permissions":33,"planning_s":8.033,"execution_s":119.491,"decisions":48,"pr":33}
+=== batch-k5-1 variant=batch k=5 14:01:21
+{"label":"warmup-batch-k5-1","sid":"s-3f26e8bc2726","phase":"completed","error":null,"permissions":13,"planning_s":9.035,"execution_s":57.313,"decisions":18,"pr":34}
+{"label":"batch-k5-1","sid":"s-326eed0db4ba","phase":"completed","error":null,"permissions":13,"planning_s":8.043,"execution_s":50.264,"decisions":18,"pr":35}
+=== single-k5-5 variant=single k=5 14:05:08
+{"label":"warmup-single-k5-5","sid":"s-3793a4d6025a","phase":"completed","error":null,"permissions":13,"planning_s":9.034,"execution_s":67.366,"decisions":18,"pr":36}
+{"label":"single-k5-5","sid":"s-93f5e9248a27","phase":"completed","error":null,"permissions":13,"planning_s":8.041,"execution_s":59.322,"decisions":18,"pr":37}
+=== single-k5-6 variant=single k=5 14:09:15
+{"label":"warmup-single-k5-6","sid":"s-887264048821","phase":"completed","error":null,"permissions":13,"planning_s":9.036,"execution_s":66.345,"decisions":18,"pr":38}
+{"label":"single-k5-6","sid":"s-9414c5583b9a","phase":"completed","error":null,"permissions":13,"planning_s":8.033,"execution_s":59.32,"decisions":18,"pr":39}
+=== single-k5-1 variant=single k=5 14:13:20
+{"label":"warmup-single-k5-1","sid":"s-42497c1928e0","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":66.372,"decisions":18,"pr":40}
+{"label":"single-k5-1","sid":"s-e9dd71ef40bf","phase":"completed","error":null,"permissions":13,"planning_s":8.029,"execution_s":59.308,"decisions":18,"pr":41}
+=== batch-k15-2 variant=batch k=15 14:17:26
+{"label":"warmup-batch-k15-2","sid":"s-8d43bb0476ea","phase":"completed","error":null,"permissions":13,"planning_s":9.036,"execution_s":58.311,"decisions":18,"pr":42}
+{"label":"batch-k15-2","sid":"s-07464aa65a49","phase":"completed","error":null,"permissions":33,"planning_s":8.033,"execution_s":122.495,"decisions":48,"pr":43}
+=== single-k15-1 variant=single k=15 14:22:27
+{"label":"warmup-single-k15-1","sid":"s-8727f1077974","phase":"completed","error":null,"permissions":13,"planning_s":9.034,"execution_s":66.339,"decisions":18,"pr":44}
+{"label":"single-k15-1","sid":"s-458f2c78697e","phase":"completed","error":null,"permissions":33,"planning_s":8.03,"execution_s":146.577,"decisions":48,"pr":45}
+=== single-k15-3 variant=single k=15 14:28:00
+{"label":"warmup-single-k15-3","sid":"s-5916220e3b34","phase":"completed","error":null,"permissions":13,"planning_s":9.032,"execution_s":66.352,"decisions":18,"pr":46}
+{"label":"single-k15-3","sid":"s-4fcf5c84985c","phase":"completed","error":null,"permissions":33,"planning_s":8.029,"execution_s":146.579,"decisions":48,"pr":47}
+=== batch-k5-2 variant=batch k=5 14:33:32
+{"label":"warmup-batch-k5-2","sid":"s-7b84a82b4281","phase":"completed","error":null,"permissions":13,"planning_s":9.032,"execution_s":57.312,"decisions":18,"pr":48}
+{"label":"batch-k5-2","sid":"s-cf83cec8e7f1","phase":"completed","error":null,"permissions":13,"planning_s":8.034,"execution_s":50.263,"decisions":18,"pr":49}
+=== single-k5-4 variant=single k=5 14:37:20
+{"label":"warmup-single-k5-4","sid":"s-7076c122beb9","phase":"completed","error":null,"permissions":13,"planning_s":9.032,"execution_s":63.31,"decisions":18,"pr":50}
+{"label":"single-k5-4","sid":"s-d0e44c68a71a","phase":"completed","error":null,"permissions":13,"planning_s":8.031,"execution_s":59.29,"decisions":18,"pr":51}
+campaign done 14:41:34

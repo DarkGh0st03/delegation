@@ -176,6 +176,18 @@ export class PrivateMcpTaskRegistry {
         typeof prepared.expires_at!=="string") {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
+    // Phase R read batch: every permission comes from the Gateway batch
+    // Prepare (exact Gitea reads, distinct, the first being the primary one).
+    if(prepared.required_permissions!==undefined){
+      const list=prepared.required_permissions;
+      if(!Array.isArray(list)||list.length<2||list.length>15||
+         list.some(p=>!p||typeof p.resource!=="string"||
+           !p.resource.startsWith("gitea://")||p.operation!=="read_file")||
+         new Set(list.map(p=>p.resource)).size!==list.length||
+         list[0]!.resource!==prepared.required_permission.resource||
+         list[0]!.operation!==prepared.required_permission.operation)
+        throw new PrivateMcpTaskError("invalid_tool_call");
+    }
     const deadline=Date.parse(prepared.expires_at);
     // Bound requests currently waiting for Adapter signing, NOT completed
     // one-shot challenges. Completed request IDs remain as replay tombstones

@@ -1,0 +1,339 @@
+{
+ "label": "batch-k5-6",
+ "sid": "s-0296f10befc5",
+ "phase": "completed",
+ "error": null,
+ "permissions": 13,
+ "planning_ms": 8030,
+ "execution_ms": 50298,
+ "total_ms": 58328,
+ "pull_request": {
+  "number": 12,
+  "title": "WIP: [SIMULATA] Ledger: record each change",
+  "url": "http://gitea:3000/thesis/batch-bench/pulls/12",
+  "draft": true,
+  "merged": false
+ },
+ "gateway_decisions": [
+  {
+   "at": "2026-11-25T13:11:25.548Z",
+   "agent": "orchestrator",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/main/files/src/ledger/balance.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "verification_ms": 1148.4440860000032,
+   "opa_ms": 3.599482999998145,
+   "vp_size_bytes": 1472
+  },
+  {
+   "at": "2026-11-25T13:11:34.188Z",
+   "agent": "orchestrator",
+   "tool": "create_branch",
+   "resource": "gitea://gitea.local/thesis/batch-bench",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1054.4041549999965,
+   "opa_ms": 3.395021000003908
+  },
+  {
+   "at": "2026-11-25T13:11:36.339Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/balance.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1661.5723379999981,
+   "opa_ms": 2.2614230000181124
+  },
+  {
+   "at": "2026-11-25T13:11:38.354Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/balance.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1629.4093480000156,
+   "opa_ms": 2.671811999985948
+  },
+  {
+   "at": "2026-11-25T13:11:43.368Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/entries.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1676.659948000015,
+   "opa_ms": 6.621566999994684
+  },
+  {
+   "at": "2026-11-25T13:11:45.462Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/entries.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1642.388368999993,
+   "opa_ms": 4.0883580000081565
+  },
+  {
+   "at": "2026-11-25T13:11:50.373Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/journal.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1694.560832999996,
+   "opa_ms": 4.247049999976298
+  },
+  {
+   "at": "2026-11-25T13:11:52.471Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/journal.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1631.1331329999957,
+   "opa_ms": 2.5841310000105295
+  },
+  {
+   "at": "2026-11-25T13:11:57.363Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/statements.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1611.3731920000282,
+   "opa_ms": 3.7399140000052284
+  },
+  {
+   "at": "2026-11-25T13:11:59.356Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/statements.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1551.6893700000073,
+   "opa_ms": 2.4757469999894965
+  },
+  {
+   "at": "2026-11-25T13:12:04.261Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/balance.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1740.3884180000168,
+   "opa_ms": 4.734227999986615,
+   "read_batch_id": "batch_2d31af96-c51f-4577-a4a2-0b9c2cd5cfe5",
+   "batch_verification": "performed"
+  },
+  {
+   "at": "2026-11-25T13:12:06.089Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/entries.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 0.04785599999013357,
+   "opa_ms": 1.9062850000045728,
+   "read_batch_id": "batch_2d31af96-c51f-4577-a4a2-0b9c2cd5cfe5",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T13:12:06.172Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/journal.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 0.037462999986018986,
+   "opa_ms": 2.1330420000012964,
+   "read_batch_id": "batch_2d31af96-c51f-4577-a4a2-0b9c2cd5cfe5",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T13:12:06.263Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/src/ledger/statements.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 0.08332100001280196,
+   "opa_ms": 2.185430000012275,
+   "read_batch_id": "batch_2d31af96-c51f-4577-a4a2-0b9c2cd5cfe5",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T13:12:06.351Z",
+   "agent": "test",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/test/ledger.test.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 0.05433199999970384,
+   "opa_ms": 2.3119040000019595,
+   "read_batch_id": "batch_2d31af96-c51f-4577-a4a2-0b9c2cd5cfe5",
+   "batch_verification": "reused"
+  },
+  {
+   "at": "2026-11-25T13:12:06.736Z",
+   "agent": "test",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5/files/test/ledger.test.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1712.2538709999935,
+   "opa_ms": 2.7105659999942873
+  },
+  {
+   "at": "2026-11-25T13:12:11.307Z",
+   "agent": "test",
+   "tool": "run_tests",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-0296f10befc5",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_runner_execution",
+   "detail": null,
+   "verification_ms": 1629.8021960000042,
+   "opa_ms": 6.720853000006173
+  },
+  {
+   "at": "2026-11-25T13:12:15.278Z",
+   "agent": "orchestrator",
+   "tool": "create_pull_request",
+   "resource": "gitea://gitea.local/thesis/batch-bench",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1129.3052600000228,
+   "opa_ms": 2.1299829999916255
+  }
+ ],
+ "log": [
+  {
+   "at": "2026-11-25T13:11:18.958Z",
+   "text": "Policy della repository applicata da OPA"
+  },
+  {
+   "at": "2026-11-25T13:11:18.958Z",
+   "text": "Profilo di test della repository: 2 fasi (dependency_install, tests), impronta f24c22d1fa77"
+  },
+  {
+   "at": "2026-11-25T13:11:18.992Z",
+   "text": "Snapshot di 23 file e 5 cartelle alla commit c7a8718bffa7"
+  },
+  {
+   "at": "2026-11-25T13:11:18.994Z",
+   "text": "Gateway avviato (verifica Rust + OPA + Gitea)"
+  },
+  {
+   "at": "2026-11-25T13:11:18.998Z",
+   "text": "Planner: SIMULATO (nessuna IA, nessun costo)"
+  },
+  {
+   "at": "2026-11-25T13:11:18.999Z",
+   "text": "Emissione della Root preliminare di sola lettura..."
+  },
+  {
+   "at": "2026-11-25T13:11:26.741Z",
+   "text": "Proposta pronta: 13 permessi da rivedere"
+  },
+  {
+   "at": "2026-11-25T13:11:27.041Z",
+   "text": "Firma Ed25519 dell'Engineer registrata su 13 permessi di 13"
+  },
+  {
+   "at": "2026-11-25T13:11:27.042Z",
+   "text": "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati"
+  },
+  {
+   "at": "2026-11-25T13:11:27.061Z",
+   "text": "Agenti SIMULATI (nessuna IA): 6 Task pianificati"
+  },
+  {
+   "at": "2026-11-25T13:11:35.778Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/ledger/balance.js (sessione s-0296f10befc5)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t01-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T13:11:42.724Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/ledger/entries.js (sessione s-0296f10befc5)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t02-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T13:11:49.724Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/ledger/journal.js (sessione s-0296f10befc5)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t03-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T13:11:56.747Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/ledger/statements.js (sessione s-0296f10befc5)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t04-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T13:12:03.722Z",
+   "text": "Orchestrator → test: Leggi src/ledger/balance.js, src/ledger/entries.js, src/ledger/journal.js, src/ledger/statements.js e aggiorna test/ledger.test.js con i test del comportamento nuovo",
+   "assignment": {
+    "agent": "test",
+    "task_id": "t05-test",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T13:12:10.658Z",
+   "text": "Orchestrator → test: Esegui i test del progetto sul commit attuale del branch",
+   "assignment": {
+    "agent": "test",
+    "task_id": "t99-test",
+    "operations": "run_tests"
+   }
+  },
+  {
+   "at": "2026-11-25T13:12:12.958Z",
+   "text": "Test avviati nel Runner sul commit e7499b1f1bfd"
+  },
+  {
+   "at": "2026-11-25T13:12:14.462Z",
+   "text": "Esito del Runner: PASS"
+  },
+  {
+   "at": "2026-11-25T13:12:17.049Z",
+   "text": "Anteprima della Draft PR richiesta allo staging"
+  },
+  {
+   "at": "2026-11-25T13:12:17.050Z",
+   "text": "Completata: Draft PR creata. Il merge resta una decisione umana."
+  }
+ ]
+}

@@ -71,6 +71,8 @@ export interface AdkA2ATaskHandlerConfig {
   maxModelCallMs?: number;
   generateContentConfig?: AdkGenerationConfig;
   gatewayTimeoutMs?: number;
+  /** Phase R: trusted host option, one VP for all signed reads of a Task. */
+  batchReads?: boolean;
   /** Private Task signer for one-shot crypto VP proofs; not model tools. */
   mcpTaskRegistry?:PrivateMcpTaskRegistry;
   fetchFn?: FetchLike;
@@ -391,6 +393,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       trustedBranch:context.subtask.branch,
       trustedTaskPaths:context.subtask.relevant_paths,
       trustedFilePermissions:grants,
+      ...(config.batchReads===true?{batchReads:true}:{}),
       ...(taskRef?{diagnosticTaskRef:taskRef}:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });
