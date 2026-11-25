@@ -1,8 +1,9 @@
 # Phase 1b summary — real-evm
 
-- positive rows: 690 (direct 600, proxy 90); failed: 45
-- negative cases as expected: False
+- positive rows: 690 (direct 600, proxy 90); failed: 0
+- negative cases as expected: True
 - latency: path=direct only; RPC counts: path=proxy only
+- latency source: real-evm; counts/negatives source: real-evm-counts
 
 ## child
 
@@ -28,11 +29,11 @@ JSON-RPC traffic per authorization (proxy rows; requests / calls: eth_call, eth_
 
 | k | separate VPs | single VP |
 |---:|---|---|
-| 1 | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) |
-| 2 | varies:[34, 56] / varies:[50, 80] (varies:[12, 24], varies:[4, 6], varies:[26, 38], varies:[8, 12]) | 17 / 25 (6, 2, 13, 4) |
-| 5 | varies:[85, 140] / varies:[125, 200] (varies:[30, 60], varies:[10, 15], varies:[65, 95], varies:[20, 30]) | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) |
-| 10 | varies:[170, 280] / varies:[250, 400] (varies:[60, 120], varies:[20, 30], varies:[130, 190], varies:[40, 60]) | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) |
-| 15 | varies:[255, 420] / varies:[375, 600] (varies:[90, 180], varies:[30, 45], varies:[195, 285], varies:[60, 90]) | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) |
+| 1 | 28 / 40 (12, 3, 19, 6) | 28 / 40 (12, 3, 19, 6) |
+| 2 | 56 / 80 (24, 6, 38, 12) | 28 / 40 (12, 3, 19, 6) |
+| 5 | 140 / 200 (60, 15, 95, 30) | 28 / 40 (12, 3, 19, 6) |
+| 10 | 280 / 400 (120, 30, 190, 60) | 28 / 40 (12, 3, 19, 6) |
+| 15 | 420 / 600 (180, 45, 285, 90) | 28 / 40 (12, 3, 19, 6) |
 
 ## child_dirscope
 
@@ -58,11 +59,11 @@ JSON-RPC traffic per authorization (proxy rows; requests / calls: eth_call, eth_
 
 | k | separate VPs | single VP |
 |---:|---|---|
-| 1 | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) |
-| 2 | varies:[34, 56] / varies:[50, 80] (varies:[12, 24], varies:[4, 6], varies:[26, 38], varies:[8, 12]) | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) |
-| 5 | 85 / 125 (30, 10, 65, 20) | varies:[17, 28] / varies:[25, 40] (varies:[6, 12], varies:[2, 3], varies:[13, 19], varies:[4, 6]) |
-| 10 | varies:[170, 192] / varies:[250, 280] (varies:[60, 72], varies:[20, 22], varies:[130, 142], varies:[40, 44]) | 17 / 25 (6, 2, 13, 4) |
-| 15 | varies:[255, 420] / varies:[375, 600] (varies:[90, 180], varies:[30, 45], varies:[195, 285], varies:[60, 90]) | 17 / 25 (6, 2, 13, 4) |
+| 1 | 28 / 40 (12, 3, 19, 6) | 28 / 40 (12, 3, 19, 6) |
+| 2 | 56 / 80 (24, 6, 38, 12) | 28 / 40 (12, 3, 19, 6) |
+| 5 | 140 / 200 (60, 15, 95, 30) | 28 / 40 (12, 3, 19, 6) |
+| 10 | 280 / 400 (120, 30, 190, 60) | 28 / 40 (12, 3, 19, 6) |
+| 15 | 420 / 600 (180, 45, 285, 90) | 28 / 40 (12, 3, 19, 6) |
 
 ## root
 
@@ -98,15 +99,15 @@ JSON-RPC traffic per authorization (proxy rows; requests / calls: eth_call, eth_
 
 | config | case | n | rejected | median s | reason |
 |---|---|---:|---:|---:|---|
-| child | control_valid_batch | 5 | 5 | 1.435 | Timestamp is greater than expiration time 1795596439887391759 |
-| child | required_not_delegated | 5 | 5 | 0.721 | Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branc |
-| child | revoked_root_onchain | 5 | 5 | 1.459 | Credential urn:delegation:bench1b:root is revoked |
-| child | wrong_challenge | 5 | 5 | 0.698 | VP challenge does not match the authorization context challenge |
-| child_dirscope | control_valid_batch | 5 | 5 | 1.444 | Timestamp is greater than expiration time 1795596439896126085 |
-| child_dirscope | required_not_delegated | 5 | 5 | 0.689 | Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branc |
-| child_dirscope | revoked_root_onchain | 5 | 5 | 1.439 | Credential urn:delegation:bench1b:root-dir is revoked |
-| child_dirscope | wrong_challenge | 5 | 5 | 0.694 | VP challenge does not match the authorization context challenge |
-| root | control_valid_batch | 5 | 0 | 1.518 |  |
-| root | required_not_delegated | 5 | 5 | 0.706 | Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branc |
-| root | revoked_root_onchain | 5 | 5 | 1.471 | Credential urn:delegation:bench1b:root is revoked |
-| root | wrong_challenge | 5 | 5 | 0.680 | VP challenge does not match the authorization context challenge |
+| child | control_valid_batch | 5 | 0 | 2.314 |  |
+| child | required_not_delegated | 5 | 5 | 0.695 | Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branc |
+| child | revoked_root_onchain | 5 | 5 | 1.496 | Credential urn:delegation:bench1b:root is revoked |
+| child | wrong_challenge | 5 | 5 | 0.710 | VP challenge does not match the authorization context challenge |
+| child_dirscope | control_valid_batch | 5 | 0 | 2.288 |  |
+| child_dirscope | required_not_delegated | 5 | 5 | 0.672 | Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branc |
+| child_dirscope | revoked_root_onchain | 5 | 5 | 1.573 | Credential urn:delegation:bench1b:root-dir is revoked |
+| child_dirscope | wrong_challenge | 5 | 5 | 0.684 | VP challenge does not match the authorization context challenge |
+| root | control_valid_batch | 5 | 0 | 1.512 |  |
+| root | required_not_delegated | 5 | 5 | 0.708 | Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branc |
+| root | revoked_root_onchain | 5 | 5 | 1.530 | Credential urn:delegation:bench1b:root is revoked |
+| root | wrong_challenge | 5 | 5 | 0.688 | VP challenge does not match the authorization context challenge |

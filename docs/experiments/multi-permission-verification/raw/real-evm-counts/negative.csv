@@ -1,0 +1,61 @@
+config,case,k,rep,rejected,verify_us,rpc_calls,error
+root,required_not_delegated,10,0,true,744961.7,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,0,true,676557.3,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,0,true,1535955.7,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,0,false,1576374.0,27,
+child,required_not_delegated,10,0,true,768980.0,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,0,true,680948.2,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,0,true,1464555.7,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,0,false,2196080.0,40,
+child_dirscope,required_not_delegated,10,0,true,670443.5,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,0,true,683946.4,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,0,true,1573330.8,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,0,false,2286954.7,40,
+root,required_not_delegated,10,1,true,765167.2,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,1,true,680168.6,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,1,true,1515849.9,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,1,false,1502352.0,27,
+child,required_not_delegated,10,1,true,694838.9,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,1,true,749940.4,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,1,true,1549526.2,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,1,false,2292572.1,40,
+child_dirscope,required_not_delegated,10,1,true,709657.5,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,1,true,745864.7,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,1,true,1574660.0,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,1,false,2287662.4,40,
+root,required_not_delegated,10,2,true,679706.5,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,2,true,734308.8,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,2,true,1544991.1,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,2,false,1511873.9,27,
+child,required_not_delegated,10,2,true,685077.8,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,2,true,710438.1,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,2,true,1515999.8,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,2,false,2366844.5,40,
+child_dirscope,required_not_delegated,10,2,true,714588.4,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,2,true,741959.7,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,2,true,1597079.5,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,2,false,2315767.9,40,
+root,required_not_delegated,10,3,true,708164.2,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,3,true,688174.2,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,3,true,1529870.7,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,3,false,1498953.6,27,
+child,required_not_delegated,10,3,true,682650.9,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,3,true,782725.0,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,3,true,1496355.9,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,3,false,2314374.6,40,
+child_dirscope,required_not_delegated,10,3,true,671993.0,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,3,true,673828.5,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,3,true,1401270.8,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,3,false,2237564.2,40,
+root,required_not_delegated,10,4,true,706187.6,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+root,wrong_challenge,10,4,true,773710.3,12,VP challenge does not match the authorization context challenge
+root,revoked_root_onchain,10,4,true,1411162.2,25,Credential urn:delegation:bench1b:root is revoked
+root,control_valid_batch,10,4,false,1559669.3,27,
+child,required_not_delegated,10,4,true,727206.2,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child,wrong_challenge,10,4,true,689948.9,12,VP challenge does not match the authorization context challenge
+child,revoked_root_onchain,10,4,true,1471250.0,25,Credential urn:delegation:bench1b:root is revoked
+child,control_valid_batch,10,4,false,2341244.4,40,
+child_dirscope,required_not_delegated,10,4,true,669318.3,12,Required permissions not disclosed in the VP: gitea://gitea.local/team/app/branches/feature%2Fs1/files/secrets/deploy_key.pem#read_file
+child_dirscope,wrong_challenge,10,4,true,664697.2,12,VP challenge does not match the authorization context challenge
+child_dirscope,revoked_root_onchain,10,4,true,1514107.6,25,Credential urn:delegation:bench1b:root-dir is revoked
+child_dirscope,control_valid_batch,10,4,false,2375135.2,40,
