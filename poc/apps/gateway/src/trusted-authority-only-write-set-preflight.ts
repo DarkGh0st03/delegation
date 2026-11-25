@@ -51,7 +51,7 @@ export class TrustedAuthorityOnlyWriteSetPreflight{
      typeof opts.branch!=="string"||
      !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(opts.branch)||
      opts.branch.includes("..")||opts.branch.includes("//")||
-     /^feature\/(r302-internal-|r3832-create-|w1-write-set-)/u.test(opts.branch))
+     /^feature\/(r302-internal-|r3832-create-|w2-write-set-)/u.test(opts.branch))
    deny("original Gateway, pinned Gitea repository and signed branch required");
   this.#admissions=opts.admissions;this.#client=opts.giteaClient;
   this.#journal=opts.journal;this.#repository=opts.repository;

@@ -1,6 +1,6 @@
 # Fase W — Scritture multiple atomiche: progetto, invarianti e semantica
 
-**Stato:** progetto approvato (D1–D5); W0 completata (§11); **W1 implementata** (§12), in revisione. W2–W4 non sono iniziate.
+**Stato:** progetto approvato (D1–D5); W0 (§11) e W1 (§12) completate e approvate; **W2 implementata** (§13), in revisione. W3–W4 non sono iniziate.
 **Branch:** `feature/batch-write-design` (da `main` @ `b3222ee1`, dopo il merge della Fase R, PR #42).
 **Fuori ambito:**
 - parallelismo dei Task, sottodelega ricorsiva, Trusted Agent Registry on-chain;
@@ -160,7 +160,7 @@ L'ordine canonico rende il digest indipendente dall'ordine in cui il modello ele
 
 ### 3.4 Transizioni terminali e pubblicazione monouso
 
-Stati del write-batch (admissions): `staged → validated → publishing → published`, più due stati terminali, `failed` e `ambiguous`.
+Stati del write-batch (admissions): `staged → validated → publishing → cas_sent → published`, più due stati terminali, `failed` e `ambiguous`. `publishing` significa "CAS non ancora inviato"; `cas_sent` significa che la richiesta CAS può essere arrivata a Gitea.
 
 Le fasi della pubblicazione hanno questo ordine: **P1–P6 precedono l'invio del CAS, P7 è il CAS, P8–P9 lo seguono.** Gli esiti si distinguono così:
 
@@ -175,9 +175,14 @@ Le fasi della pubblicazione hanno questo ordine: **P1–P6 precedono l'invio del
 - `failed` e `ambiguous` sono terminali, nessuna transizione ne esce. `published` non può tornare a `failed` (`failTrustedWriteSet` lo rifiuta): le evidenze restano pendenti e il Task non viene concluso.
 - **Pubblicazione monouso.** `validated → publishing` avviene in modo sincrono (`beginTrustedWriteSetPublication`), prima di qualunque `await` del publisher. Una seconda chiamata viene rifiutata. `reserveAttempt` dell'insieme è durevole prima di P3, quindi neppure dopo un riavvio si ripubblica.
 
-**Replay o errore concorrente durante `publishing`:**
-- **Prima dell'invio del CAS:** un replay di un elemento (record già consumato), un Execute concorrente di un elemento del batch o qualsiasi errore asincrono portano il write-set a `failed`. Il publisher ricontrolla lo stato dopo **ogni** `await` (P6, `assertTrustedWriteSetStillPublishable`) e si ferma prima del CAS. Non viene inviato nulla a Gitea.
-- **Dopo l'invio del CAS:** nessun evento concorrente può cambiare l'esito. Il replay viene rifiutato (record consumato), ma il write-set passa soltanto a `published` (esito certo osservato dal proprietario, `recordTrustedWriteSetPublished` con il commit) oppure ad `ambiguous` (`failTrustedWriteSet(..., casRequestSent=true)`). Mai a `failed`, perché l'effetto potrebbe essere avvenuto. Mai un nuovo tentativo.
+**Replay o errore concorrente (W2):**
+- **Prima dell'invio del CAS** (`staged`, `validated`, `publishing`): un replay di un elemento, un Execute concorrente o qualsiasi errore asincrono portano il write-set a `failed` (`failTrustedWriteSet`). Il publisher ricontrolla lo stato dopo **ogni** `await` e si ferma prima del CAS: a Gitea non viene inviata alcuna scrittura sul branch di lavoro.
+- **Subito prima della richiesta CAS**, in modo sincrono e dopo un ultimo controllo di Root e Child, il publisher esegue `markTrustedWriteSetCasSent` e lo stato passa a `cas_sent`.
+- **Dopo l'invio** (`cas_sent`): un errore esterno, come il replay di un elemento, **non cambia lo stato**. `failTrustedWriteSet` lascia `cas_sent` invariato, quindi non può classificare come `failed` né come `ambiguous` una pubblicazione avviata o avvenuta. Solo il publisher che ha inviato il CAS classifica l'esito:
+  - `recordTrustedWriteSetPublished`: la rilettura mostra il branch al commit;
+  - `recordTrustedWriteSetCasRejected` → `failed`: Gitea ha rifiutato con 409 o 422 e la rilettura conferma che il branch non è il commit;
+  - `recordTrustedWriteSetCasAmbiguous` → `ambiguous`: qualsiasi altro esito.
+- `published`, `failed` e `ambiguous` non cambiano più. In nessun caso c'è un nuovo tentativo.
 
 ### 3.5 Limiti sulle dimensioni
 
@@ -456,3 +461,49 @@ OPA non è modificato (non rieseguito localmente in questa sessione per l'assenz
   - regressioni W0 con asserzioni esplicite.
 - **W3:** proposer, ciclo adattivo, owner A2A e remoto, stager lato agente, tool `write_files`, console.
 - **Limitazione dichiarata:** per un Task con write-set non esiste il percorso "nessuna modifica" (`reportNoChange`), coerentemente con D5. Il fence prima della scrittura resta disponibile solo per i Task a scrittura singola.
+
+## 13. W2: Gateway, write-batch, executor, seconda verifica, ChangeFiles, HEAD-CAS, evidenze
+
+**Implementazione** (opt-in; senza `batchWritesEnabled` e senza executor configurato nessun nuovo percorso è raggiungibile):
+
+| Componente | Contenuto |
+|---|---|
+| `gateway/src/trusted-write-batch.ts` (nuovo) | `prepareWriteBatch`: `write_files` con 2–8 modifiche distinte, chiavi esatte, ≤ 2 MB per file, ≤ 4 MB in totale, richiesta ≤ 6 MiB; un record ordinario per file tramite `prepareAuthorization` invariato; challenge comune; finestra di 60 s; elementi restituiti in ordine canonico. `stageWriteBatch` (solo owner): preflight e write-set flight, digest legato al `batch_id`. `verifyWriteBatchItem`: una `verifyMultiple` al primo Execute, riuso solo per la VP identica byte per byte, VP conservata nella memoria dell'owner per la seconda verifica. Invalidazione del batch per qualsiasi errore |
+| `execute.ts` | ramo write-batch: verifica o riuso → OPA per elemento (invariato) → `assertTrustedWriteSetItemBinding`, che controlla ordine, VP sull'esatto insieme, digest e **batch ID**. Gli elementi non ultimi sono "convalidati" senza effetti; l'ultimo invoca il publisher. Audit con `write_batch_id`, `batch_verification`, `write_set_digest`, `write_set_reverified` e commit |
+| `gateway/src/trusted-authority-only-write-set-executor.ts` (nuovo) | P1–P9 del §3.2. Binding dei byte: i file inviati a ChangeFiles sono **ricostruiti dai record del Gateway**, con fingerprint, SHA-256 e dimensione ricalcolati e confrontati con l'intent; un contenuto modificato dopo lo staging non viene mai inviato. Seconda `verifyMultiple` della stessa VP (modalità rigorosa, default). Ricontrolli dopo ogni `await`. Classificazione del CAS. Ricevute per file. Rimozione del ref privato dopo il successo |
+| `gitea-client.ts` | `stageWriteSetCommit` (ref privato `feature/w2-write-set-<hash>` alla HEAD fissata e un solo commit ChangeFiles, con lo sha sempre presente negli update), `getCommitChanges`, `compareCommitFiles`, `getTreeModes`, `casBranchToCommit` (`updated` / `rejected` / eccezione ambigua, senza retry), `deleteWriteSetStagingRef`. Il prefisso privato è vietato come branch di lavoro anche nei CAS a scrittura singola |
+| `gateway/src/trusted-authority-only-write-set-evidence.ts` (nuovo) | ricevuta HMAC per file, legata a richiesta, percorso, operazione, contenuto, blob **e** commit comune, `write_set_digest`, `batch_id` e parent fissato; osservatore indipendente che verifica il MAC, la corrispondenza con l'intent e il commit, e rilegge Gitea |
+| Admissions | stato `cas_sent`; `markTrustedWriteSetCasSent`, `recordTrustedWriteSetCasRejected`, `recordTrustedWriteSetCasAmbiguous`; `failTrustedWriteSet` senza effetto dopo l'invio; `batch_id` nel digest e nel binding; attestazione solo tramite l'osservatore del write-set, con il controllo che commit e digest osservati coincidano con quelli pubblicati |
+| Journal degli intent | `reserveAttempt` (un solo tentativo, durevole, prima di qualsiasi scrittura Gitea, anche dopo un riavvio) e `reserveOutcome` |
+
+**Test:**
+- orchestrator-runtime 360 (+15), su componenti reali (Prepare/Execute, admissions, journal, preflight, executor, evidenze) e un Gitea in memoria fedele alle semantiche osservate in W0;
+- Gateway 245 più 3 test di integrazione opt-in sul **Gitea 28 reale**, eseguiti nel container e superati (`docs/experiments/phase-w-w2/real-gitea-regression.txt`);
+- OPA 52/52; le altre suite sono invariate.
+
+| Punto della revisione | Test |
+|---|---|
+| 1. Prima e dopo l'invio del CAS | stato `cas_sent` esplicito; replay durante ChangeFiles → `failed`, nessun CAS; replay durante il CAS → `published`; errore esterno dopo l'invio senza effetto |
+| 2. Byte inviati uguali agli intent | contenuto di un record modificato dopo lo staging → nessuna chiamata ChangeFiles, nessun CAS |
+| 3. Binding di digest, batch, record, challenge e flight | batch ID diverso, digest diverso, challenge diversa, VP diversa, VP parziale, ordine sbagliato |
+| 4. Evidenze legate a commit, digest e batch | osservazione con commit, write-set o batch diversi → rifiutata; contenuto atteso diverso → rifiutato; attestazione con digest diverso → rifiutata |
+| 5. Seconda verifica e ricontrolli | modalità rigorosa: 2 verifiche; modalità standard: 1; revoca simulata dopo la prima verifica → nessun CAS, `failed` |
+| 6. Regressioni W0 | **Gitea reale:** commit misto con insieme esatto, modi e CAS; `old_commit_id` obsoleto con candidato discendente della HEAD corrente → `rejected`; update senza sha rifiutato dal nostro client; byte identici → commit senza quel file, quindi rifiutato dal controllo dell'insieme; ref privati mai usabili come branch di lavoro. **Gitea in memoria:** file estraneo nel commit, cambio di modo, symlink → nessun CAS |
+| 7. Classi di esito | errore prima del CAS; rifiuto certo (HEAD spostata subito prima del CAS → 422 e rilettura → `failed`); esito ambiguo in 4 varianti (risposta persa dopo o prima dell'applicazione, 500, rilettura impossibile) → `ambiguous`, un solo CAS; pubblicazione riuscita con evidenze fallite → `published`, Task non finalizzato |
+
+**Controllo per mutazione** (6 su 6 rilevate):
+- seconda verifica rimossa;
+- controllo dell'insieme esatto rimosso;
+- binding dei byte rimosso;
+- errore esterno dopo l'invio che porta ad `ambiguous`;
+- evidenza non legata al commit;
+- controllo dei modi rimosso.
+
+**Accessibilità dei ref privati.** I ref `feature/w2-write-set-*` sono branch ordinari, leggibili da chi legge il repository. Contengono solo ciò che sarà pubblicato pochi istanti dopo sul branch di lavoro, nessun segreto. Il Gateway non li accetta mai come branch di lavoro, li rimuove dopo il successo e li conserva per la riconciliazione dopo un fallimento.
+
+**Revoca reale tra staging e pubblicazione: non eseguita in W2.**
+- Il test usa un verificatore simulato che rifiuta dopo la prima verifica.
+- Una prova on-chain richiede VP reali emesse dal core nativo, cioè l'intero percorso della console. È prevista nell'E2E di W4: un punto di pausa del proprietario tra lo staging e il CAS, durante il quale la Child viene revocata sulla Status List su Anvil, come nella Fase 1b.
+- Resta valida la dichiarazione del TOCTOU residuo del §4.3.
+
+**Non incluso in W2** (W3): stager e IPC lato agente, tool `write_files`, proposer, owner A2A e remoto, console e modelli scripted, cablaggio nel deployment canonico (`canonical-owner-deployment.mjs`).

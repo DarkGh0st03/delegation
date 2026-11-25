@@ -134,6 +134,38 @@ export class DurableAuthorityOnlyWriteSetIntentJournal{
   const d=await open(this.#directory,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
   try{await d.sync();}finally{await d.close();}
  }
+ async #exclusive(name:string,record:object):Promise<void>{
+  await this.#dir();
+  const fd=await open(join(this.#directory,name),
+   constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
+  try{await fd.writeFile(JSON.stringify(record)+"\n","utf8");await fd.sync();}
+  finally{await fd.close();}
+  const d=await open(this.#directory,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+  try{await d.sync();}finally{await d.close();}
+ }
+ /**
+  * W2: the ONE publication attempt of this write-set, durable BEFORE any
+  * Gitea write (staging ref, ChangeFiles, CAS). A second attempt — replay,
+  * concurrent call or restart — fails with EEXIST: never a re-publication.
+  */
+ async reserveAttempt(intent:TrustedWriteSetIntent,writeSetDigest:string,batchId:string):Promise<void>{
+  const stored=await this.read(intent.session_id,intent.task_id);
+  if(JSON.stringify(stored)!==JSON.stringify(intent)||!SHA64.test(writeSetDigest)||!ID.test(batchId))
+   deny("attempt does not match the reserved write-set intent");
+  await this.#exclusive(this.#name(intent.session_id,intent.task_id).replace(".write-set-intent.json",
+   ".attempt.json"),{schema:"authority-only-write-set-attempt-v1",session_id:intent.session_id,
+   task_id:intent.task_id,write_set_digest:writeSetDigest,batch_id:batchId});
+ }
+ /** W2: the single recorded outcome of the attempt (no retry is ever derived from it). */
+ async reserveOutcome(intent:TrustedWriteSetIntent,writeSetDigest:string,outcome:
+  "failed_before_cas"|"cas_rejected"|"ambiguous"|"published",commitSha:string|null):Promise<void>{
+  if(!SHA64.test(writeSetDigest)||(commitSha!==null&&!SHA40.test(commitSha))||
+     (outcome==="published")!==(commitSha!==null))
+   deny("invalid write-set outcome");
+  await this.#exclusive(this.#name(intent.session_id,intent.task_id).replace(".write-set-intent.json",
+   ".outcome.json"),{schema:"authority-only-write-set-outcome-v1",session_id:intent.session_id,
+   task_id:intent.task_id,write_set_digest:writeSetDigest,outcome,commit_sha:commitSha});
+ }
  async read(sessionId:string,taskId:string):Promise<TrustedWriteSetIntent>{
   await this.#dir();
   const fd=await open(join(this.#directory,this.#name(sessionId,taskId)),

@@ -45,6 +45,8 @@ import {DurableAuthorityOnlySequentialEffectJournal,isReadUpdatePlan,isReadWrite
 import {TrustedAuthorityOnlyWriteSetPreflight}
  from "./trusted-authority-only-write-set-preflight.ts";
 import type {TrustedWriteSetIntent} from "./trusted-authority-only-write-set-intent-journal.ts";
+import {AuthenticatedWriteSetCompletionObserver}
+ from "./trusted-authority-only-write-set-evidence.ts";
 import {TrustedAuthorityOnlyCompletionObserver,
  type TrustedCompletionExpectation,
  type ObservedTrustedTaskCompletion}
@@ -96,12 +98,16 @@ interface SequentialTaskProgress {
  /** Phase W: the single durable write-set flight of this Task, if staged. */
  writeSet?:WriteSetProgress;
 }
-/** Phase W write-set states; "failed" and "ambiguous" are terminal. */
-type WriteSetPhase="staged"|"validated"|"publishing"|"published"|"failed"|"ambiguous";
+/** Phase W write-set states. "publishing" = before the CAS request is sent;
+ * "cas_sent" = the CAS request may have reached Gitea. "failed" and
+ * "ambiguous" are terminal; "published" never becomes "failed". */
+type WriteSetPhase="staged"|"validated"|"publishing"|"cas_sent"|"published"|"failed"|"ambiguous";
 interface WriteSetProgress{
  readonly flight:TrustedWriteSetFlight;
  readonly intent:TrustedWriteSetIntent;
  readonly digest:string;
+ /** Gateway write-batch the digest (and every item) is bound to. */
+ readonly batch_id:string;
  /** Exact signed write permissions (pairs), the batch VP must disclose. */
  readonly permissions:readonly string[];
  phase:WriteSetPhase;
@@ -1656,7 +1662,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   * records and the owner write-set preflight's reserved intent.
   */
  async stageTrustedWriteSet(preflight:TrustedAuthorityOnlyWriteSetPreflight,
-  records:readonly PreparedRequestRecord[]):
+  records:readonly PreparedRequestRecord[],batchId:string):
  Promise<Readonly<{status:"sequential_write_set_reserved_staged";task_id:string;
   first_sequence:number;writes:number;write_set_digest:string;gateway_execution_authorized:false}>>{
   const journal=this.#sequentialEffectJournal;
@@ -1664,6 +1670,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("missing or concurrent write-set reservation");
   if(!TrustedAuthorityOnlyWriteSetPreflight.isNativeForAdmissions(preflight,this))
    deny("write-set intents must come from this Gateway's owner preflight");
+  if(typeof batchId!=="string"||!ID.test(batchId))deny("write-set requires its Gateway batch ID");
   const intent=TrustedAuthorityOnlyWriteSetPreflight.prototype.getReservedIntent.call(preflight,records);
   const bound=this.assertTrustedWriteSetIntentBinding(records);
   const state=this.#sequential.get(bound.task_id)!;
@@ -1686,7 +1693,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
     root_credential_id:bound.root_credential_id,task_id:bound.task_id,
     runtime_task_id:bound.runtime_task_id,epoch:bound.epoch,credential_id:bound.credential_id,
     agent_did:bound.agent_did,agent_role:bound.agent_role,repository:intent.repository,
-    branch:bound.branch,pinned_head_sha:bound.pinned_head_sha,challenge:bound.challenge},
+    branch:bound.branch,pinned_head_sha:bound.pinned_head_sha,challenge:bound.challenge,
+    batch_id:batchId},
    items:intent.items.map(it=>({sequence:it.sequence,request_id:it.request_id,
     request_fingerprint:it.request_fingerprint,operation:it.operation,path:it.path,
     resource:it.resource,expected_blob_sha:it.expected_blob_sha,
@@ -1708,7 +1716,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    const child=this.#enrolledChildren.get(bound.runtime_task_id);
    if(!child||this.#now()>=Date.parse(child.expires_at))
     deny("Child expired during write-set reservation");
-   state.writeSet={flight,intent,digest,
+   state.writeSet={flight,intent,digest,batch_id:batchId,
     permissions:Object.freeze(bound.items.map(it=>pair({resource:it.resource,operation:it.operation}))),
     phase:"staged",validated:0};
    return Object.freeze({status:"sequential_write_set_reserved_staged",task_id:bound.task_id,
@@ -1733,7 +1741,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   * come from the enrolled Child. No provider write is authorized here.
   */
  assertTrustedWriteSetItemBinding(record:PreparedRequestRecord,verified:VerifiedDelegation,
-  writeSetDigest:string):Readonly<TrustedCompletionExpectation&{sequence:number;
+  writeSetDigest:string,batchId:string):Readonly<TrustedCompletionExpectation&{sequence:number;
    validated_all:boolean}>{
   const root=this.#live();
   const bound=record&&this.#tasks.get(record.task_id);
@@ -1745,6 +1753,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const disclosed=Array.isArray(verified?.permissions)?verified.permissions.map(p=>pair(p)).sort():[];
   const fail=(reason:string):never=>{ws.phase="failed";deny(reason);};
   if(ws.phase!=="staged")deny("write-set is not accepting item validations");
+  if(ws.batch_id!==batchId)fail("write-set item belongs to another Gateway batch");
   if(!item||record.consumed!==true||record.request_id!==item.request_id||
      record.request_fingerprint!==item.request_fingerprint||
      record.request.tool!==item.operation||
@@ -1792,24 +1801,49 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   try{this.#live();}catch(error){ws.phase="failed";throw error;}
   if(this.#now()>=Date.parse(child.expires_at)){ws.phase="failed";deny("Child expired before CAS");}
  }
- /** publishing -> published, only with the CAS commit observed by the owner. */
+ /**
+  * publishing -> cas_sent, synchronously and IMMEDIATELY before the CAS
+  * request leaves the Gateway, after a last Root/Child recheck. From here
+  * no error can produce "failed": only "published", a CERTAIN rejection
+  * ("failed" via recordTrustedWriteSetCasRejected) or "ambiguous".
+  */
+ markTrustedWriteSetCasSent(taskId:string,runtimeTaskId:string,writeSetDigest:string):void{
+  this.assertTrustedWriteSetStillPublishable(taskId,runtimeTaskId,writeSetDigest);
+  this.#writeSetState(taskId,runtimeTaskId,writeSetDigest).ws.phase="cas_sent";
+ }
+ /** cas_sent -> failed ONLY on a certain rejection (Gitea refused and the
+  * branch was reread and is not the commit). */
+ recordTrustedWriteSetCasRejected(taskId:string,runtimeTaskId:string,writeSetDigest:string):void{
+  const {ws}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
+  if(ws.phase!=="cas_sent")deny("no CAS request was sent for this write-set");
+  ws.phase="failed";
+ }
+ /** cas_sent -> published, only with the commit the owner reread on the branch. */
  recordTrustedWriteSetPublished(taskId:string,runtimeTaskId:string,writeSetDigest:string,
   commitSha:string):void{
   const {ws}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
-  if(ws.phase!=="publishing"||!SHA40.test(commitSha))deny("write-set was not publishing");
+  if(ws.phase!=="cas_sent"||!SHA40.test(commitSha))deny("write-set CAS was not sent");
   ws.phase="published";ws.commit_sha=commitSha;
  }
  /**
-  * Terminal failure. Before the CAS request was sent: "failed" (nothing was
-  * published). After it was sent without a certain outcome: "ambiguous"
-  * (reconciliation, never a retry). Neither unlocks dependencies.
+  * Fail-closed on ANY error OUTSIDE the publisher (Execute of an item,
+  * replay, concurrent call). Before the CAS request is sent -> "failed"
+  * (nothing was published; the publisher's next recheck stops before the
+  * CAS). Once the CAS request is sent ("cas_sent"), ONLY the publisher that
+  * sent it classifies the outcome: an external error leaves the state
+  * unchanged, so it can never turn a started or completed publication into
+  * "failed" (or "ambiguous"). Terminal and published states are kept.
   */
- failTrustedWriteSet(taskId:string,runtimeTaskId:string,writeSetDigest:string,
-  casRequestSent:boolean):void{
+ failTrustedWriteSet(taskId:string,runtimeTaskId:string,writeSetDigest:string):WriteSetPhase{
   const {ws}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
-  if(ws.phase==="published")deny("a published write-set cannot be failed; its evidence is pending");
-  ws.phase=casRequestSent&&ws.phase==="publishing"?"ambiguous":
-   ws.phase==="ambiguous"?"ambiguous":"failed";
+  if(ws.phase==="staged"||ws.phase==="validated"||ws.phase==="publishing")ws.phase="failed";
+  return ws.phase;
+ }
+ /** Publisher only: cas_sent -> ambiguous (lost or unclassifiable CAS outcome). */
+ recordTrustedWriteSetCasAmbiguous(taskId:string,runtimeTaskId:string,writeSetDigest:string):void{
+  const {ws}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
+  if(ws.phase!=="cas_sent")deny("no CAS request was sent for this write-set");
+  ws.phase="ambiguous";
  }
  /**
   * Attest the NEXT write of a PUBLISHED write-set, strictly in canonical
@@ -1818,13 +1852,13 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   * also enforces the evidence chain durably).
   */
  async attestTrustedWriteSetEffect(taskId:string,runtimeTaskId:string,writeSetDigest:string,
-  observer:TrustedAuthorityOnlyCompletionObserver):Promise<Readonly<{
+  observer:AuthenticatedWriteSetCompletionObserver):Promise<Readonly<{
    status:"write_set_effect_attested_staged";task_id:string;sequence:number;
    gateway_execution_authorized:false}>>{
   const root=this.#live(),journal=this.#sequentialEffectJournal;
-  if(!journal||!(observer instanceof TrustedAuthorityOnlyCompletionObserver)||
+  if(!journal||!AuthenticatedWriteSetCompletionObserver.isNative(observer)||
      this.#completionInFlight||this.#flightInFlight)
-   deny("write-set attestation requires the owner completion observer");
+   deny("write-set attestation requires the owner write-set observer");
   const {state,ws,bound,child}=this.#writeSetState(taskId,runtimeTaskId,writeSetDigest);
   const item=ws.flight.items.find(i=>i.sequence===state.completed+1);
   if(ws.phase!=="published"||!item||
@@ -1840,7 +1874,13 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    request_fingerprint:item.request_fingerprint});
   this.#completionInFlight=true;
   try{
-   const observed=await observer.observe(expected);
+   const intentItem=ws.intent.items.find(i=>i.sequence===item.sequence)!;
+   const {commit_sha:observedCommit,write_set_digest:observedDigest,...observed}=
+    await AuthenticatedWriteSetCompletionObserver.prototype.observe.call(observer,{expected,
+     publication:{write_set_digest:ws.digest,batch_id:ws.batch_id,commit_sha:ws.commit_sha!,
+      previous_head_sha:ws.intent.expected_head_sha},item:intentItem});
+   if(observedCommit!==ws.commit_sha||observedDigest!==ws.digest)
+    deny("write evidence belongs to another commit or write-set");
    assertObservedCompletion(expected,observed,this.#now());
    await journal.reserveEvidence({session_id:ws.flight.session_id,
     authority_digest:ws.flight.authority_digest,root_credential_id:ws.flight.root_credential_id,

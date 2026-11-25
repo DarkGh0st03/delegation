@@ -30,6 +30,8 @@ import type { TrustedGatewayGiteaReadEvidencePublisher }
  from "./trusted-authority-only-gitea-publisher.ts";
 import { InMemoryRequestStore } from "./prepare.ts";
 import { TrustedReadBatchStore, verifyReadBatchItem } from "./trusted-read-batch.ts";
+import { TrustedWriteBatchStore, verifyWriteBatchItem } from "./trusted-write-batch.ts";
+import { TrustedAuthorityOnlyWriteSetExecutor } from "./trusted-authority-only-write-set-executor.ts";
 import type {
   AuditSink,
   ExecuteAuthorizationRequest,
@@ -140,6 +142,9 @@ export interface ExecuteDependencies {
   authorityOnlyPullRequestEnabled?:boolean;
   /** Phase R: owner-only store of operational read batches (one VP per batch). */
   readBatches?: TrustedReadBatchStore;
+  /** Phase W (opt-in): write-set batches and their one-shot publisher. */
+  writeBatches?: TrustedWriteBatchStore;
+  authorityOnlyWriteSetExecutor?: TrustedAuthorityOnlyWriteSetExecutor;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -157,6 +162,11 @@ export async function executeAuthorization(
     // batch, so no later item can reuse its verified VP.
     if (dependencies.readBatches instanceof TrustedReadBatchStore)
       dependencies.readBatches.failForRequest(
+        (raw as { request_id?: unknown } | null)?.request_id);
+    // Phase W: same fail-closed rule; the admissions classify the write-set
+    // from their own state (never "failed" once the CAS request was sent).
+    if (dependencies.writeBatches instanceof TrustedWriteBatchStore)
+      dependencies.writeBatches.failForRequest(
         (raw as { request_id?: unknown } | null)?.request_id);
     throw error;
   }
@@ -256,9 +266,24 @@ async function executeAuthorizationOnce(
   // SAME byte-identical VP result is reused; OPA/binding stay per record.
   const readBatch = dependencies.readBatches instanceof TrustedReadBatchStore
     ? dependencies.readBatches.forRequest(record.request_id) : undefined;
-  let batchAudit: { read_batch_id?: string; batch_verification?: "performed" | "reused" } = {};
+  let batchAudit: { read_batch_id?: string; write_batch_id?: string;
+    batch_verification?: "performed" | "reused" } = {};
+  const writeBatch = dependencies.writeBatches instanceof TrustedWriteBatchStore
+    ? dependencies.writeBatches.forRequest(record.request_id) : undefined;
   try {
-    if (readBatch) {
+    if (writeBatch) {
+      if (!record.authority_only_digest || !dependencies.authorityOnlyAdmissions ||
+          dependencies.authorityOnlyAdmissions.batchWritesEnabled !== true ||
+          !(dependencies.verifier instanceof DirectCoreRustVerifier) ||
+          !(dependencies.authorityOnlyWriteSetExecutor instanceof TrustedAuthorityOnlyWriteSetExecutor) ||
+          !dependencies.authorityOnlyWriteSetExecutor.isForAdmissions(dependencies.authorityOnlyAdmissions) ||
+          dependencies.planningRevisions)
+        throw new VerificationRejectedError("Write batches require the native authority-only write-set path");
+      const result = await verifyWriteBatchItem(writeBatch, record, request.signed_vp,
+        dependencies.verifier, nowMs);
+      verified = result.verified;
+      batchAudit = { write_batch_id: result.batch_id, batch_verification: result.batch_verification };
+    } else if (readBatch) {
       if (!record.authority_only_digest || !dependencies.authorityOnlyAdmissions ||
           dependencies.authorityOnlyReadEnabled !== true ||
           !(dependencies.verifier instanceof DirectCoreRustVerifier) ||
@@ -392,6 +417,91 @@ async function executeAuthorizationOnce(
       provider
     });
     throw new GatewayError(403, "policy_denied", "Workflow policy denied the operation");
+  }
+
+  // Phase W: a write-set item is bound by the admissions to the staged
+  // write-set (canonical order, exact VP scope, digest, batch). Only the
+  // LAST validated item publishes, through the one-shot write-set executor.
+  if (writeBatch) {
+    const admissions = dependencies.authorityOnlyAdmissions!;
+    let binding: ReturnType<TrustedAuthorityOnlyGatewayAdmissions["assertTrustedWriteSetItemBinding"]>;
+    try {
+      binding = admissions.assertTrustedWriteSetItemBinding(record, verified,
+        writeBatch.write_set_digest!, writeBatch.batch_id);
+    } catch {
+      dependencies.audit.emit({
+        event: "authorization_executed", timestamp: new Date(nowMs).toISOString(),
+        request_id: record.request_id, task_id: record.task_id, agent_role: record.agent_role,
+        tool: record.request.tool, resource_uri: record.required_permission.resource,
+        operation: record.required_permission.operation, decision: "deny",
+        reason: "authority_only_execution_not_enabled", verification_ms: verificationMs,
+        opa_ms: opaMs, policy_decision: "allow", policy_version: policyDecision.policy_version,
+        provider_ms: 0, provider_result: "not_called", total_ms: elapsed(totalStarted, durationNow),
+        vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"), ...batchAudit, provider
+      });
+      throw new GatewayError(403, "authority_only_execution_not_enabled",
+        "Write-set item is not bound to the staged write-set");
+    }
+    if (!binding.validated_all) {
+      dependencies.audit.emit({
+        event: "authorization_executed", timestamp: new Date(nowMs).toISOString(),
+        request_id: record.request_id, task_id: record.task_id, agent_role: record.agent_role,
+        tool: record.request.tool, resource_uri: record.required_permission.resource,
+        operation: record.required_permission.operation, decision: "allow",
+        reason: "verified_policy_allowed_write_set_item_staged", verification_ms: verificationMs,
+        opa_ms: opaMs, policy_decision: "allow", policy_version: policyDecision.policy_version,
+        provider_ms: 0, provider_result: "not_called", total_ms: elapsed(totalStarted, durationNow),
+        vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
+        chain_depth: verified.hierarchy_depth, disclosed_permission_count: verified.permissions.length,
+        ...batchAudit, provider
+      });
+      return {
+        request_id: record.request_id, decision: "allow", verified_delegation: verified,
+        policy: policyDecision,
+        execution: { provider: "gitea", performed: false, tool: record.request.tool,
+          write_set_item_validated: true, write_batch_id: writeBatch.batch_id,
+          sequence: binding.sequence } as never
+      };
+    }
+    const records = writeBatch.request_ids.map(id => dependencies.store.get(id)!);
+    const providerStarted = durationNow();
+    try {
+      const published = await dependencies.authorityOnlyWriteSetExecutor!.publishAfterVerifiedRustOpa({
+        batch: writeBatch, records, policy: policyDecision, verified });
+      dependencies.audit.emit({
+        event: "authorization_executed", timestamp: new Date(nowMs).toISOString(),
+        request_id: record.request_id, task_id: record.task_id, agent_role: record.agent_role,
+        tool: record.request.tool, resource_uri: record.required_permission.resource,
+        operation: record.required_permission.operation, decision: "allow",
+        reason: "verified_policy_allowed_gitea_write_set_published", verification_ms: verificationMs,
+        opa_ms: opaMs, policy_decision: "allow", policy_version: policyDecision.policy_version,
+        provider_ms: elapsed(providerStarted, durationNow), provider_result: "success",
+        total_ms: elapsed(totalStarted, durationNow),
+        vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
+        chain_depth: verified.hierarchy_depth, disclosed_permission_count: verified.permissions.length,
+        provider_commit_sha: published.commit_sha, ...batchAudit,
+        write_set_digest: published.write_set_digest, write_set_reverified: published.reverified,
+        provider: "gitea"
+      } as never);
+      return { request_id: record.request_id, decision: "allow", verified_delegation: verified,
+        policy: policyDecision, execution: published as never };
+    } catch (error) {
+      const conflict = error instanceof ProviderConflictError;
+      dependencies.audit.emit({
+        event: "authorization_executed", timestamp: new Date(nowMs).toISOString(),
+        request_id: record.request_id, task_id: record.task_id, agent_role: record.agent_role,
+        tool: record.request.tool, resource_uri: record.required_permission.resource,
+        operation: record.required_permission.operation, decision: "allow",
+        reason: conflict ? "provider_conflict" : "provider_unavailable", verification_ms: verificationMs,
+        opa_ms: opaMs, policy_decision: "allow", policy_version: policyDecision.policy_version,
+        provider_ms: elapsed(providerStarted, durationNow), provider_result: "error",
+        total_ms: elapsed(totalStarted, durationNow),
+        vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
+        provider_error_detail: providerErrorDetail(error), ...batchAudit, provider
+      });
+      if (conflict) throw new GatewayError(409, "provider_conflict", (error as Error).message);
+      throw new GatewayError(503, "provider_unavailable", "Write-set publication failed or is ambiguous");
+    }
   }
 
   // Native VP and OPA have both executed. Only an explicitly enabled,
