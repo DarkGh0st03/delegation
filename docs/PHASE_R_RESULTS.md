@@ -1,6 +1,8 @@
 # Fase R — Risultati: letture multiple operative con una sola VP
 
-**Branch:** `feature/batch-read-authorization` (implementazione `a3d8a658`, progetto `152327b9`). `main` invariato (`97547d24`).
+**Branch:** `feature/batch-read-authorization` (implementazione `a3d8a658`, progetto `152327b9`, correzioni della revisione `740d9bc9`). `main` invariato (`97547d24`).
+
+> Le sezioni 1–4 descrivono la prima campagna (k = 2, `f4735c57`). La revisione (R-F1, R-F2, R-F3) e la campagna con k = 5 e k = 15 sono nelle sezioni 5 e 6.
 **Progetto e invarianti:** `docs/PHASE_R_BATCH_READ_DESIGN.md` (R1–R13).
 **Dati grezzi e script:** `docs/experiments/phase-r-e2e/` (`raw/`, `scripts/`).
 Nessuna API a pagamento: tutte le sessioni sono in modalità `scripted`, con `GEMINI_API_KEY` vuota. Core Rust, resolver DID e smart contract non sono stati modificati.
@@ -104,3 +106,67 @@ Riferimenti a `PHASE_R_BATCH_READ_DESIGN.md` §3:
 - **Strumentazione:** gli eventi di audit `read_batch_id` / `batch_verification` sono nel sink di audit in memoria del Gateway e non esposti dalla console. Il riuso è osservato tramite `verification_ms` ≈ 0,05 ms e `adk_tool_timing.batch_size = 2`.
 - **Costo di avvio dei processi:** lo startup dei processi `node` del resolver did:ethr resta non isolato, come già annotato nella Fase 1b.
 - **Fase W:** non avviata, in attesa della revisione di questi risultati.
+
+## 5. Revisione: correzioni R-F1, R-F2, R-F3 (`740d9bc9`)
+
+| Punto | Problema | Correzione | Test |
+|---|---|---|---|
+| R-F1 | Una seconda verifica concorrente portava il batch a `failed`, ma la prima `verifyMultiple` ancora pendente poteva poi riportarlo a `verified` | `failed` è terminale: al termine della verifica, se lo stato non è più `verifying`, la verifica viene rifiutata | primo, secondo e terzo elemento rifiutati; il verificatore viene chiamato una sola volta |
+| R-F2 | La finestra di riuso era pari al TTL del Prepare (20 min per il Test Agent) | Finestra propria del batch di 60 s (`READ_BATCH_TTL_MS`, configurabile solo verso il basso). La scadenza di ogni record del batch viene ridotta alla finestra | finestra di 60 s anche con TTL di 20 min; scadenza a metà batch che ferma gli elementi rimanenti e termina il batch; revoca dopo la verifica |
+| R-F3 | Il batch veniva invalidato solo da un fallimento della verifica crittografica | `executeAuthorization` invalida il batch per **qualsiasi** errore di un suo elemento: verifica, scadenza, OPA, binding, provider, ricevuta, replay o VP diversa | Gateway: per ognuno di OPA, binding, provider e ricevuta, un client non conforme che prosegue riceve `verification_rejected` sugli elementi successivi; anche un fallimento sul primo elemento, un replay o una VP estranea terminano il batch. Proprietario (IPC Unix reale + stager reale): dopo un Execute negato o un'attestazione fallita, staging, attestazione e scrittura vengono rifiutati anche se chiamati direttamente |
+
+**Controllo per mutazione.** Ho ripristinato il codice precedente alle correzioni e rieseguito i nuovi test: falliscono 7 test su 11 senza la correzione di `execute.ts` e 5 test senza quelle di `trusted-read-batch.ts`.
+
+**Revoca, comportamento verificato:**
+- **Revoca on-chain della Child dopo la verifica del batch:** gli elementi dello stesso batch continuano a riusare la verifica fino alla scadenza della finestra, al massimo 60 s dal Prepare. Dopo la scadenza vengono rifiutati, e un nuovo batch ripete la verifica e osserva la revoca.
+- **Ritiro della Root operativa e scadenza della Child:** restano controllati per elemento dalle admissions (`#live`, `expires_at`) in staging, binding e attestazione. Non ho aggiunto test specifici, perché questi controlli valgono già per le letture singole e sono coperti dai test esistenti sulle admissions reali.
+- **Un limite dichiarato:** il fixture IPC modella l'osservatore di completamento con una ricevuta per richiesta. Nel sistema reale l'attestazione richiede `observer.observe` sulla ricevuta HMAC del Gateway (`trusted-authority-only-admissions.ts`, `attestTrustedSequentialReadEffect`); il caso dell'osservatore che fallisce è coperto dal test esistente "bogus completion observer fails closed".
+
+**Osservabilità.** Le decisioni Gateway della console (`gateway_decisions`) espongono `read_batch_id` e `batch_verification` (`performed` / `reused`). Il riuso non si deduce più dalla latenza.
+
+**Test aggiornati.** Gateway 243 (+11), orchestrator-runtime 332 (+2), agent-runtime 216, console 61, orchestrator 74, plan-contracts 27, Runner 50, mcp-shared 26. OPA e core Rust non sono stati modificati.
+
+## 6. E2E scripted con k = 5 e k = 15 (`740d9bc9`)
+
+**Repository di benchmark.** `thesis/batch-bench`, creato nel Gitea locale con le stesse protezioni degli import della console (`k5-k15/scripts/seed-batch-bench.mjs`). Contiene 4 moduli `src/ledger/*`, 14 moduli `src/inventory/*` e `test/ledger.test.js`, `test/inventory.test.js`.
+- **k = 5**, requisito "Ledger: record each change": 13 permessi, 4 Task backend con k = 1, un Task Test con 5 letture + 1 update, `run_tests`, PR; 18 decisioni per sessione.
+- **k = 15**, requisito "Inventory: record each change": 33 permessi, 14 Task backend, un Task Test con 15 letture + 1 update; 48 decisioni per sessione.
+- **Limite del planner scripted:** è di 12 file e l'ho portato a 15 solo per il benchmark (`DELEGATION_SCRIPTED_PLAN_FILES`; il valore predefinito resta 12).
+
+**Protocollo:**
+- 6 ripetizioni per cella (2 valori di k × 2 varianti = 24 esecuzioni) in ordine casuale con seme fisso (`make-plan.mjs`, seme 20261125, `plan-campaign.txt`).
+- Per ogni esecuzione: stack completo riavviato (Anvil e app insieme), una sessione di riscaldamento scartata, poi la sessione misurata.
+- Le due varianti differiscono solo per `DELEGATION_BATCH_READS`.
+- **Deviazione dall'ordine casuale:** `batch-k15-5` è fallita all'avvio dell'esecuzione, prima di qualsiasi lettura, con "Protected canonical deployment configuration denied" (conservata in `raw/failed/`). L'ho ripetuta in coda alla campagna.
+
+**Risultati:** 24/24 sessioni misurate `completed` con Draft PR, tutte le decisioni `allow`.
+- **Batch:** in ogni sessione una sola verifica `performed`, 4 riusi (k = 5) o 14 (k = 15), un solo `read_batch_id`.
+- **Baseline:** nessun campo di batch.
+- **OPA:** valutata a ogni decisione (18 o 48) in entrambe le varianti.
+
+Mediane (n = 6 per cella); IC 95% da bootstrap non appaiato della differenza delle mediane (batch − baseline):
+
+| k | Metrica | Baseline | Batch | Differenza | IC 95% | Rapporto |
+|---|---|---|---|---|---|---|
+| 5 | Σ verifiche Gateway per sessione | 27,50 s | 21,36 s | −6,14 s | [−6,60, −5,68] | 1,29× |
+| 5 | Σ verifiche delle letture | 15,56 s | 9,34 s | −6,22 s | [−6,54, −5,93] | 1,67× |
+| 5 | Fase di lettura del Task Test (tool lato agente) | 9,69 s | 2,32 s | −7,37 s | [−7,49, −7,18] | 4,18× |
+| 5 | **Esecuzione, firma → completamento** | **59,31 s** | **50,28 s** | **−9,04 s** | [−9,06, −8,51] | 1,18× |
+| 15 | Σ verifiche Gateway per sessione | 75,48 s | 53,87 s | −21,61 s | [−23,32, −19,94] | 1,40× |
+| 15 | Σ verifiche delle letture | 47,62 s | 25,51 s | −22,11 s | [−23,16, −20,92] | 1,87× |
+| 15 | Fase di lettura del Task Test | 29,03 s | 3,32 s | −25,70 s | [−26,53, −24,81] | 8,73× |
+| 15 | **Esecuzione, firma → completamento** | **146,59 s** | **121,52 s** | **−25,07 s** | [−27,10, −24,06] | 1,21× |
+
+**Lettura dei risultati:**
+- **Workflow complessivo.** Con k = 5 e k = 15 il vantaggio è misurabile e gli intervalli non includono lo zero: −9 s e −25 s, cioè circa −15% e −17%. Con k = 2 la differenza era nel rumore.
+- **Da dove viene il risparmio.** Sul Gateway, k − 1 verifiche Child da circa 1,5 s ciascuna. Lato agente, si risparmiano anche k − 1 round trip di Prepare e di firma e k − 1 turni del modello.
+- **Fase di lettura.** Lo speedup del Task Test (4,2× con k = 5, 8,7× con k = 15) supera quello della sola verifica, per la stessa ragione.
+- **Verifiche delle letture.** Σ include anche le 4 o 14 letture singole dei Task backend (k = 1), che il batch non tocca.
+- **Granularità dei tempi.** I tempi complessivi sono molto stabili (dispersione < 1 s) e quantizzati sul campionamento di stato a 1 s del driver.
+
+**Questione preesistente, fuori dall'ambito della Fase R** (presente anche su `main`): il fallimento intermittente di `batch-k15-5` nasce nella validazione della configurazione del deployment (`canonical-owner-deployment.mjs`). La causa più probabile, non dimostrata perché le porte non vengono registrate, è `freePort()` in `engineer-console/src/sessions.mjs`: apre e chiude una porta alla volta, quindi due ruoli possono ricevere la stessa porta effimera, e la configurazione rifiuta le porte duplicate. La correzione proposta è riservare tutte le porte prima di chiuderle. Non l'ho applicata.
+
+**File:**
+- `docs/experiments/phase-r-e2e/k5-k15/raw/`: JSON delle sessioni, `adk_tool_timing` per esecuzione, log della campagna, `analysis.txt`.
+- `docs/experiments/phase-r-e2e/k5-k15/scripts/`: `campaign.sh`, `make-plan.mjs`, `plan-campaign.txt`, `seed-batch-bench.mjs`, `analyze-campaign.mjs`.
+- Riproduzione dell'analisi: `node scripts/analyze-campaign.mjs raw` dalla cartella `k5-k15`.

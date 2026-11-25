@@ -1,0 +1,4 @@
+=== batch-k15-5 variant=batch k=15 14:43:00
+{"label":"warmup-batch-k15-5","sid":"s-aa7d9998831c","phase":"completed","error":null,"permissions":13,"planning_s":9.033,"execution_s":57.297,"decisions":18,"pr":52}
+{"label":"batch-k15-5","sid":"s-6a6c91bfc6ae","phase":"completed","error":null,"permissions":33,"planning_s":8.03,"execution_s":119.531,"decisions":48,"pr":53}
+campaign done 14:47:57

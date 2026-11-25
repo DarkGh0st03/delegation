@@ -45,13 +45,13 @@ Con k letture: **k turni del modello, k VP, k verifiche Rust** (circa k × 1,5 s
 | R6 | Verifica crittografica completa: firma, presentatore, audience, challenge, catena, attenuazione, witness, revoca, trust anchor | Una `verifyMultiple` del core, invariato, su tutti i permessi del batch; il batch intero viene rifiutato se manca un permesso (atomicità già misurata nella Fase 1) |
 | R7 | OPA per ogni operazione | Invariato: OPA viene valutata a ogni Execute, per elemento |
 | R8 | Monouso e anti-replay | Ogni `request_id` viene consumato prima della verifica; la VP del batch è valida solo per i record del batch (stessa challenge, impronta della VP fissata dopo la prima verifica); un'altra VP o un record fuori batch vengono rifiutati |
-| R9 | Scadenza | Il batch scade con i suoi record (TTL del Prepare); la scadenza della Child e la Root attiva vengono ricontrollate per elemento dalle admissions (`#live`, `expires_at`) |
-| R10 | Fail-closed | Un fallimento della verifica del batch lo segna come fallito: nessun elemento successivo può eseguire; gli errori del provider restano terminali come oggi |
+| R9 | Scadenza | Il batch ha una finestra propria di 60 s (`READ_BATCH_TTL_MS`, configurabile solo verso il basso), indipendente dal TTL del Prepare (20 min per il Test Agent, necessario al Runner); la scadenza di ogni record del batch è ridotta alla finestra. La scadenza della Child e la Root attiva vengono ricontrollate per elemento dalle admissions (`#live`, `expires_at`) |
+| R10 | Fail-closed | Lo stato `failed` è terminale (anche rispetto a una verifica ancora pendente). Qualsiasi Execute fallito di un elemento (verifica, OPA, binding, provider, ricevuta, replay, scadenza) termina il batch: nessun elemento successivo può riusare la VP verificata. Lato proprietario lo stager resta in `read_pending` e rifiuta staging e attestazioni successive |
 | R11 | Journal ed evidenze per file | Invariati: un flight durevole, una ricevuta HMAC e un'attestazione indipendente per ogni lettura, concatenati come oggi |
 | R12 | Esecuzione sequenziale dei Task e un solo flight attivo | Invariato: gli elementi sono eseguiti uno alla volta; il batch non introduce concorrenza |
 | R13 | Nessuna nuova autorità | Nessun cambiamento a credenziali, Task, grant, OPA o core; il batch può solo raggruppare letture già firmate nel Task |
 
-**Differenza semantica da dichiarare.** Lo stato di revoca viene osservato una volta per batch, alla verifica, invece che una volta per lettura. La finestra è limitata alla durata del batch, al massimo pari al TTL del Prepare. La revoca della Root operativa da parte dell'Engineer, cioè il ritiro della sessione, e la scadenza della Child restano controllate a ogni elemento.
+**Differenza semantica da dichiarare.** Lo stato di revoca viene osservato una volta per batch, alla verifica, invece che una volta per lettura. La finestra è limitata alla durata del batch, al massimo 60 s dal Prepare (non più il TTL del Prepare, che per il Test Agent è di 20 minuti). La revoca della Root operativa da parte dell'Engineer, cioè il ritiro della sessione, e la scadenza della Child restano controllate a ogni elemento.
 
 ## 4. Verifica prevista
 

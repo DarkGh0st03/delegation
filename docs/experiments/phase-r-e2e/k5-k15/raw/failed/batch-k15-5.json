@@ -1,0 +1,65 @@
+{
+ "label": "batch-k15-5",
+ "sid": "s-9e05a2a8e430",
+ "phase": "failed",
+ "error": "Esecuzione interrotta: Protected canonical deployment configuration denied",
+ "permissions": 33,
+ "planning_ms": 8032,
+ "execution_ms": 117,
+ "total_ms": 8149,
+ "gateway_decisions": [
+  {
+   "at": "2026-11-25T13:28:07.959Z",
+   "agent": "orchestrator",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/main/files/src/inventory/alerts.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "verification_ms": 1210.2356909999799,
+   "opa_ms": 4.5322950000118,
+   "vp_size_bytes": 1471
+  }
+ ],
+ "log": [
+  {
+   "at": "2026-11-25T13:28:01.450Z",
+   "text": "Policy della repository applicata da OPA"
+  },
+  {
+   "at": "2026-11-25T13:28:01.450Z",
+   "text": "Profilo di test della repository: 2 fasi (dependency_install, tests), impronta f24c22d1fa77"
+  },
+  {
+   "at": "2026-11-25T13:28:01.480Z",
+   "text": "Snapshot di 23 file e 5 cartelle alla commit c7a8718bffa7"
+  },
+  {
+   "at": "2026-11-25T13:28:01.482Z",
+   "text": "Gateway avviato (verifica Rust + OPA + Gitea)"
+  },
+  {
+   "at": "2026-11-25T13:28:01.486Z",
+   "text": "Planner: SIMULATO (nessuna IA, nessun costo)"
+  },
+  {
+   "at": "2026-11-25T13:28:01.487Z",
+   "text": "Emissione della Root preliminare di sola lettura..."
+  },
+  {
+   "at": "2026-11-25T13:28:09.215Z",
+   "text": "Proposta pronta: 33 permessi da rivedere"
+  },
+  {
+   "at": "2026-11-25T13:28:09.514Z",
+   "text": "Firma Ed25519 dell'Engineer registrata su 33 permessi di 33"
+  },
+  {
+   "at": "2026-11-25T13:28:09.515Z",
+   "text": "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati"
+  },
+  {
+   "at": "2026-11-25T13:28:09.519Z",
+   "text": "Errore: Esecuzione interrotta: Protected canonical deployment configuration denied"
+  }
+ ]
+}

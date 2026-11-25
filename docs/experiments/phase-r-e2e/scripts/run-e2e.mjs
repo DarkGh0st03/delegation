@@ -2,17 +2,24 @@
 import {writeFileSync} from "node:fs";
 import {api,login,password} from "./console.mjs";
 const label=process.argv[2]??"run", out=process.argv[3];
-const REQ="Add a genre filter to the book list: users can filter books by genre in the API and in the UI, with tests.";
+const REPO=process.argv[4]??"campus-library";
+const REQ=process.argv[5]??"Add a genre filter to the book list: users can filter books by genre in the API and in the UI, with tests.";
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 await login();
-const t0=Date.now();
-const created=await api("POST","/api/requests",{repository:"campus-library",requirement:REQ}).catch(async e=>{
+let t0=Date.now();
+const created=await api("POST","/api/requests",{repository:REPO,requirement:REQ}).catch(async e=>{
   if(!/repository/i.test(e.message))throw e;
-  return api("POST","/api/requests",{repository:"thesis/campus-library",requirement:REQ});
+  return api("POST","/api/requests",{repository:"thesis/"+REPO,requirement:REQ});
 });
 const requestId=created.request?.id??created.id;
-const started=await api("POST",`/api/requests/${requestId}/planning`,{mode:"scripted"});
+// Wait (up to 10 min) for the Engineer Rust core and Gateway verifier after a restart.
+let started;
+for(let i=0;;i++){
+  try{started=await api("POST",`/api/requests/${requestId}/planning`,{mode:"scripted"});break;}
+  catch(e){if(!/409/.test(e.message)||!/pronti/.test(e.message)||i>300)throw e;await sleep(2000);}
+}
 const sid=started.session?.id??started.id;
+t0=Date.now();
 const wait=async(phases,limitMs)=>{
   const end=Date.now()+limitMs;
   for(;;){
