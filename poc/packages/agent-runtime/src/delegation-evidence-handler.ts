@@ -12,6 +12,12 @@ export interface PreparedGatewayAuthorization {
     resource: string;
     operation: string;
   };
+  /** Phase R read batch only: ALL Gateway-derived permissions of the batch
+   * (the first equals required_permission). One VP discloses all of them. */
+  required_permissions?: {
+    resource: string;
+    operation: string;
+  }[];
   expires_at: string;
 }
 
@@ -98,7 +104,9 @@ export class DelegationEvidenceHandler {
     this.#signal?.throwIfAborted();
     const request: PresentationRequest = {
       credential_id: this.#evidence.credential_id,
-      disclosed_permissions: [prepared.required_permission],
+      disclosed_permissions: prepared.required_permissions
+        ? prepared.required_permissions.map(p => ({ resource: p.resource, operation: p.operation }))
+        : [prepared.required_permission],
       audience: prepared.audience,
       challenge: prepared.challenge
     };

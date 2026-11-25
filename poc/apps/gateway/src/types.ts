@@ -161,6 +161,9 @@ export interface ExecuteAuditEvent {
   runner_status?: "pass" | "fail";
   runner_project_tests_status?: "pass" | "fail";
   runner_log_reference?: string;
+  /** Phase R: operational read batch and whether this item ran or reused its VP verification. */
+  read_batch_id?: string;
+  batch_verification?: "performed" | "reused";
   provider: "mock" | "gitea" | "runner";
 }
 

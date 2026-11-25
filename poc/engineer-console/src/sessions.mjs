@@ -279,6 +279,9 @@ export class EngineerSessions {
         // earlier real pilots); free runs stop at the first one.
         executionBudget: {maxDecisions: Math.min(childCount + 1, 25), maxVerifiedFailures},
         ...(createEnabled ? {enableNativeCreateFile: true} : {}),
+        // Phase R: one VP for all signed reads of a Task (opt-out for the
+        // single-read baseline with DELEGATION_BATCH_READS=0).
+        ...(process.env.DELEGATION_BATCH_READS === "0" ? {} : {enableBatchReads: true}),
         // The owner refuses a title with surrounding blanks: trim after cutting.
         draftTitle: ((scripted ? "[SIMULATA] " : "") +
           session.requirement.replace(/\s+/gu, " ").slice(0, 120)).trim(),

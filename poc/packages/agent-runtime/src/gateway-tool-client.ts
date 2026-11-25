@@ -423,4 +423,123 @@ export class GatewayControlledToolClient {
         .update((execution as {content:string}).content,"utf8").digest("hex"));
     return execution;
   }
+
+  /** Phase R: batch reads are possible only in an owner-staged reads+write Task. */
+  get supportsBatchReads():boolean{
+    const staged=this.#trustedEffectStager?.stagedTool;
+    return staged==="read_then_update"||staged==="read_then_create";
+  }
+
+  /**
+   * Phase R: read ALL the given signed files of this Task with ONE VP.
+   * One Gateway batch Prepare (N ordinary role-bound read records sharing a
+   * challenge), one wallet presentation disclosing the N Gateway-derived
+   * permissions, then for each file, in order: owner staging -> Execute ->
+   * exact Gitea receipt -> owner attestation (unchanged per-file evidence).
+   * `paths` come from the trusted signed Task, never from the model.
+   */
+  async readFiles(branch:string,paths:readonly string[]):Promise<{files:unknown[]}>{
+    this.#signal?.throwIfAborted();
+    if(!this.supportsBatchReads||typeof this.#trustedEffectStager?.attest!=="function")
+      throw new ControlledToolError("authorization_denied",
+        "Batch reads require an owner-staged signed reads+write Task");
+    if(!Array.isArray(paths)||paths.length<2||new Set(paths).size!==paths.length)
+      throw new ControlledToolError("invalid_tool_call","A batch read needs distinct signed paths");
+    const timeout=()=>this.#signal
+      ?AbortSignal.any([this.#signal,AbortSignal.timeout(this.#timeoutMs)])
+      :AbortSignal.timeout(this.#timeoutMs);
+    let prepareResponse:Response;
+    try{
+      prepareResponse=await this.#fetch(`${this.#gatewayBaseUrl}/v1/authorization/prepare-read-batch`,{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({task_id:this.#taskId,agent_role:this.#agentRole,
+          tool:"read_files",arguments:{branch,paths:[...paths]}}),
+        signal:timeout()
+      });
+    }catch(error){
+      throw new ControlledToolError("tool_unavailable",
+        `Gateway batch prepare is unavailable: ${error instanceof Error?error.message:String(error)}`,
+        {reason:"upstream_unavailable"});
+    }
+    const body=await parseJson(prepareResponse,"Gateway batch prepare");
+    if(!prepareResponse.ok)
+      throw new ControlledToolError(prepareResponse.status>=500?"tool_unavailable":"invalid_tool_call",
+        errorMessage(body,`Gateway batch prepare failed with HTTP ${prepareResponse.status}`),
+        {statusCode:prepareResponse.status,
+         reason:prepareResponse.status>=500?"upstream_unavailable":"gateway_prepare_rejected"});
+    const batch=body as {batch_id?:unknown;audience?:unknown;challenge?:unknown;
+      expires_at?:unknown;items?:unknown};
+    const items=Array.isArray(batch.items)?batch.items as
+      {request_id?:unknown;path?:unknown;required_permission?:unknown}[]:[];
+    if(typeof batch.batch_id!=="string"||typeof batch.audience!=="string"||
+       typeof batch.challenge!=="string"||typeof batch.expires_at!=="string"||
+       items.length!==paths.length||
+       items.some((item,i)=>typeof item?.request_id!=="string"||item.path!==paths[i]||
+         !item.required_permission||typeof item.required_permission!=="object"))
+      throw new ControlledToolError("tool_unavailable",
+        "Gateway batch prepare returned a malformed authorization challenge");
+    const permissions=items.map(item=>item.required_permission as
+      PreparedGatewayAuthorization["required_permission"]);
+    const prepared:PreparedGatewayAuthorization={
+      request_id:batch.batch_id,audience:batch.audience,challenge:batch.challenge,
+      required_permission:permissions[0]!,required_permissions:permissions,
+      expires_at:batch.expires_at
+    };
+    this.#signal?.throwIfAborted();
+    // ONE presentation for the whole batch (the wallet sees only the batch ID).
+    const signedVp=this.#cryptoPresentation
+      ?await this.#cryptoPresentation.createSignedPresentation(prepared)
+      :await this.#evidenceHandler.createPresentation(prepared);
+    const files:unknown[]=[];
+    for(const [i,item] of items.entries()){
+      const requestId=item.request_id as string;
+      const path=paths[i]!;
+      try{
+        await this.#trustedEffectStager.stage(requestId);
+      }catch{
+        throw new ControlledToolError("tool_unavailable","Trusted effect staging failed");
+      }
+      this.#signal?.throwIfAborted();
+      let executeResponse:Response;
+      try{
+        executeResponse=await this.#fetch(`${this.#gatewayBaseUrl}/v1/authorization/execute`,{
+          method:"POST",headers:{"content-type":"application/json"},
+          body:JSON.stringify({request_id:requestId,signed_vp:signedVp}),signal:timeout()
+        });
+      }catch(error){
+        throw new ControlledToolError("tool_unavailable",
+          `Gateway execute is unavailable: ${error instanceof Error?error.message:String(error)}`);
+      }
+      const executeBody=await parseJson(executeResponse,"Gateway execute");
+      if(!executeResponse.ok)
+        throw new ControlledToolError(executeResponse.status>=500?"tool_unavailable":"authorization_denied",
+          errorMessage(executeBody,`Gateway execute failed with HTTP ${executeResponse.status}`),
+          {statusCode:executeResponse.status,
+           reason:executeResponse.status>=500?"upstream_unavailable":
+             safeToolFailureReason((executeBody as {error?:unknown})?.error)??"gateway_execute_unclassified"});
+      const bound=executeBody!==null&&typeof executeBody==="object"
+        ?executeBody as {request_id?:unknown;decision?:unknown;execution?:unknown}:null;
+      if(bound?.request_id!==requestId||bound?.decision!=="allow")
+        throw new ControlledToolError("authorization_denied",
+          "Authority-only Gateway execute response lacks exact request decision",
+          {reason:"gateway_execute_unclassified"});
+      const observed=bound.execution!==null&&typeof bound.execution==="object"
+        ?bound.execution as Record<string,unknown>:null;
+      if(!observed||observed.provider!=="gitea"||observed.performed!==true||
+         observed.tool!=="read_file"||observed.branch!==branch||observed.path!==path||
+         typeof observed.revision!=="string"||!/^[a-f0-9]{40}$/u.test(observed.revision))
+        throw new ControlledToolError("authorization_denied",
+          "Batch read lacks exact Gitea execution receipt");
+      try{
+        await this.#trustedEffectStager.attest(requestId,"read_file");
+      }catch{
+        throw new ControlledToolError("tool_unavailable","Trusted independent effect attestation failed");
+      }
+      if(typeof observed.content==="string")
+        this.#readContentSha256.set(path,createHash("sha256").update(observed.content,"utf8").digest("hex"));
+      files.push(observed);
+      this.#signal?.throwIfAborted();
+    }
+    return {files};
+  }
 }

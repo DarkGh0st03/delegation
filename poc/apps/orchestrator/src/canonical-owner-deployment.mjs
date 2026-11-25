@@ -13,6 +13,7 @@ import {loadDirectCoreRustVerifier} from "../../gateway/src/direct-core-loader.t
 import {canonicalRepositoryUri} from "../../gateway/src/canonical.ts";
 import {InMemoryAuditSink,InMemoryRequestStore,prepareAuthorization} from "../../gateway/src/prepare.ts";
 import {executeAuthorization} from "../../gateway/src/execute.ts";
+import {TrustedReadBatchStore,prepareReadBatch} from "../../gateway/src/trusted-read-batch.ts";
 import {AuthenticatedRunnerCompletionObserver} from "../../gateway/src/trusted-authority-only-runner-evidence.ts";
 import {AuthenticatedGiteaReadCompletionObserver} from "../../gateway/src/trusted-authority-only-gitea-evidence.ts";
 import {AuthenticatedGiteaMutationCompletionObserver} from "../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts";
@@ -72,10 +73,14 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
  // No implicit CREATE enablement from an environment variable or agent payload:
  // only the already protected 0600 owner deployment manifest may opt in.
  const nativeCreateEnabled=c?.enableNativeCreateFile===true;
+ // Phase R (opt-in): specialists read all signed files of a Task with ONE VP.
+ const batchReadsEnabled=c?.enableBatchReads===true;
+ const readBatches=batchReadsEnabled?new TrustedReadBatchStore():undefined;
  // Only an explicit protected 0600 owner manifest may request the
  // post-failure authenticated diagnostic-read-before-UPDATE policy.
  const requireVerifiedRepairDiagnostic=c?.requireVerifiedRepairDiagnostic===true;
  const optionalKeys=[...(nativeCreateEnabled?["enableNativeCreateFile"]:[]),
+  ...(batchReadsEnabled?["enableBatchReads"]:[]),
   ...(Object.hasOwn(c??{},"baseBranch")?["baseBranch"]:[]),
   ...(requireVerifiedRepairDiagnostic?["requireVerifiedRepairDiagnostic"]:[]),
   ...(Object.hasOwn(c??{},"executionBudget")?["executionBudget"]:[]),
@@ -176,6 +181,12 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
    return Response.json(prepareAuthorization(body,{
     audience:"cloud-access-gateway",request_ttl_ms:role==="test"?1200000:120000,repository
    },authorization),{status:201});
+  // Same role binding as the single Prepare; never the Root/Orchestrator.
+  if(readBatches&&String(url)===gatewayUrl+"/v1/authorization/prepare-read-batch"&&
+     body.agent_role===role&&role!=="orchestrator")
+   return Response.json(prepareReadBatch(body,{
+    audience:"cloud-access-gateway",request_ttl_ms:role==="test"?1200000:120000,repository
+   },{...authorization,batches:readBatches}),{status:201});
   if(String(url)===gatewayUrl+"/v1/authorization/execute"&&
      store.get(body.request_id)?.agent_role===role)
    return Response.json(await executeAuthorization(body,{...authorization,signal:init.signal}));
@@ -190,12 +201,14 @@ export async function assembleCanonicalOperationalDeployment({pins,config:c,load
   rootReservation:{directory:reservationDirectory,index:c.rootIndex,validitySeconds:7200},
   nativeEffects:{store,giteaClient,independentGiteaClient,runnerClient,runnerPassObserver,
    readObserver,directories,evidenceKey,
-   installAuthorization(deps){authorization=Object.freeze({...rootGateway,...deps,repository});}},
+   installAuthorization(deps){authorization=Object.freeze({...rootGateway,...deps,repository,
+    ...(readBatches?{readBatches}:{})});}},
   localWorkers:{directory:c.directory,projectTestSourceProfile:testSourceProfileOf(projectProfile),
    workers:Object.fromEntries(roles.map((role,i)=>[
    role,{port:c.workerPorts[role],adk:{model:model(),gatewayBaseUrl:gatewayUrl,
     adapterToken:workerTokens[i],fetchFn:workerFetch(role),
-    gatewayTimeoutMs:role==="test"?900000:60000}}
+    gatewayTimeoutMs:role==="test"?900000:60000,
+    ...(batchReadsEnabled?{batchReads:true}:{})}}
   ]))},
   workflow:{
    createBranch:{model:model(),branch,baseBranch,permission:{resource,operation:"create_branch"}},

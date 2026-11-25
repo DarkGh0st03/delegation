@@ -149,6 +149,30 @@ function findContent(value, depth) {
   return undefined;
 }
 
+/** Whether the runtime offers a tool to the model in this ADK request. */
+export function offersTool(request, name) {
+  if (request?.toolsDict && Object.hasOwn(request.toolsDict, name)) return true;
+  return (request?.config?.tools ?? []).some(t =>
+    (t?.functionDeclarations ?? []).some(d => d?.name === name));
+}
+
+/** Content of `path` as returned by the latest successful read (single or batch). */
+export function readContentFor(request, path) {
+  let hit;
+  const walk = (value, depth) => {
+    if (depth > 14 || !value || typeof value !== "object") return;
+    if (typeof value.path === "string" && value.path === path && typeof value.content === "string")
+      hit = value.content;
+    for (const child of Array.isArray(value) ? value : Object.values(value)) {
+      if (typeof child === "string" && child.length < 2_000_000 && child.trim().startsWith("{")) {
+        try { walk(JSON.parse(child), depth + 1); } catch { /* plain text */ }
+      } else walk(child, depth + 1);
+    }
+  };
+  walk(request?.contents ?? request, 0);
+  return hit;
+}
+
 /** Task IDs the owner reports as independently Gateway-completed. */
 export function completedTaskIds(request) {
   const ids = new Set();
@@ -216,6 +240,26 @@ export class ScriptedWorkerModel extends Scripted {
       if (turn === 1) { yield call(`read-${this.calls}`, "read_file", {branch: this.#branch, path}); return; }
       this.#queue.shift(); this.#turn = 0;
       yield say(`Letto ${path}: il comportamento nuovo verrà coperto dai test.`);
+      return;
+    }
+    // Phase R: with read_files offered, ONE call reads every signed file.
+    const batch = (op === "create" || op === "update") && item.readOrder.length >= 2 &&
+      offersTool(request, "read_files");
+    if (batch) {
+      if (turn === 1) { yield call(`read-${this.calls}`, "read_files", {branch: this.#branch}); return; }
+      if (turn === 2) {
+        if (op === "create") {
+          yield call(`create-${this.calls}`, "create_file",
+            {branch: this.#branch, path, content: this.#content(path, "")});
+          return;
+        }
+        const previous = readContentFor(request, path);
+        if (typeof previous !== "string") throw Error("Scripted worker: batch read result not found for " + path);
+        yield call(`update-${this.calls}`, "update_file", {branch: this.#branch, path, content: this.#content(path, previous)});
+        return;
+      }
+      this.#queue.shift(); this.#turn = 0;
+      yield say(`${op === "create" ? "Creato" : "Aggiornato"} ${path} (${label}).`);
       return;
     }
     if (op === "create") {

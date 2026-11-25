@@ -29,6 +29,7 @@ import type { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-
 import type { TrustedGatewayGiteaReadEvidencePublisher }
  from "./trusted-authority-only-gitea-publisher.ts";
 import { InMemoryRequestStore } from "./prepare.ts";
+import { TrustedReadBatchStore, verifyReadBatchItem } from "./trusted-read-batch.ts";
 import type {
   AuditSink,
   ExecuteAuthorizationRequest,
@@ -137,6 +138,8 @@ export interface ExecuteDependencies {
   authorityOnlyBranchEnabled?:boolean;
   authorityOnlyPullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
   authorityOnlyPullRequestEnabled?:boolean;
+  /** Phase R: owner-only store of operational read batches (one VP per batch). */
+  readBatches?: TrustedReadBatchStore;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -231,8 +234,24 @@ export async function executeAuthorization(
 
   const verificationStarted = durationNow();
   let verified: VerifiedDelegation;
+  // Phase R: a record created by prepareReadBatch is verified once per batch
+  // (multi-permission VP over all Gateway-derived permissions), then the
+  // SAME byte-identical VP result is reused; OPA/binding stay per record.
+  const readBatch = dependencies.readBatches instanceof TrustedReadBatchStore
+    ? dependencies.readBatches.forRequest(record.request_id) : undefined;
+  let batchAudit: { read_batch_id?: string; batch_verification?: "performed" | "reused" } = {};
   try {
-    verified = await dependencies.verifier.verify({
+    if (readBatch) {
+      if (!record.authority_only_digest || !dependencies.authorityOnlyAdmissions ||
+          dependencies.authorityOnlyReadEnabled !== true ||
+          !(dependencies.verifier instanceof DirectCoreRustVerifier) ||
+          dependencies.planningRevisions)
+        throw new VerificationRejectedError("Read batches require the native authority-only read path");
+      const result = await verifyReadBatchItem(readBatch, record, request.signed_vp,
+        dependencies.verifier, nowMs);
+      verified = result.verified;
+      batchAudit = { read_batch_id: result.batch_id, batch_verification: result.batch_verification };
+    } else verified = await dependencies.verifier.verify({
       presenter: record.agent_role,
       audience: record.audience,
       challenge: record.challenge,
@@ -686,6 +705,7 @@ export async function executeAuthorization(
     disclosed_permission_count: verified.permissions.length,
     ...providerIdentifiers,
     ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
+    ...batchAudit,
     provider: execution.provider
   });
 
