@@ -1,251 +1,378 @@
 # Fase W — Scritture multiple atomiche: progetto, invarianti e semantica
 
-**Stato:** documento di progetto. Nessuna implementazione finché il progetto non viene approvato.
+**Stato:** progetto aggiornato dopo la revisione e risultati di W0 (§11). L'implementazione produttiva W1–W4 non è iniziata e attende l'approvazione.
 **Branch:** `feature/batch-write-design` (da `main` @ `b3222ee1`, dopo il merge della Fase R, PR #42).
 **Fuori ambito:**
 - parallelismo dei Task, sottodelega ricorsiva, Trusted Agent Registry on-chain;
 - modifiche al resolver DID, agli smart contract, al formato delle credenziali e al core crittografico Rust;
 - API a pagamento.
 
+**Terminologia.** Il meccanismo garantisce una **Atomic Write-Set Publication**: le W modifiche di un Task vengono pubblicate sul branch di lavoro tutte insieme o per niente. **Non** è una transazione distribuita atomica dell'intero workflow (§4.5).
+
+## 0. Decisioni approvate
+
+| # | Decisione |
+|---|---|
+| D1 | Al massimo **8 scritture** per Task |
+| D2 | Limite complessivo invariato: **16 permessi ed effetti** per Task |
+| D3 | **Modalità rigorosa come default**: seconda `verifyMultiple` della VP dopo la costruzione e la verifica del commit privato, immediatamente prima del HEAD-CAS. La modalità standard (una sola verifica) resta come variante sperimentale |
+| D4 | Un unico tool del modello: `write_files` |
+| D5 | Insiemi parziali rifiutati: l'agente presenta esattamente l'insieme firmato |
+
+D1 e D2 sono limiti implementativi del prototipo, non del meccanismo crittografico: `verifyMultiple` accetta fino a 128 permessi.
+
+Combinazioni ammesse, con R letture, U modifiche e C creazioni:
+
+| R | U | C | Ammesso | Motivo |
+|---|---|---|---|---|
+| 10 | 3 | 0 | sì | 13 ≤ 16, 3 ≤ 8 |
+| 8 | 8 | 0 | sì | 16 ≤ 16, 8 ≤ 8 |
+| 6 | 4 | 4 | sì | 14 ≤ 16, 8 ≤ 8 |
+| 15 | 2 | 0 | no | 17 > 16 |
+| 2 | 2 | 7 | no | 9 scritture > 8 |
+| 0 | 0 | 3 | sì | sole creazioni, nessuna lettura necessaria (§6) |
+
+Ogni modifica (U) riguarda un file letto nello stesso Task. Ogni creazione (C) riguarda un file non letto e assente alla HEAD fissata.
+
 ## 1. Obiettivo
 
-Un Task con R letture e W scritture (creazioni e/o modifiche di file) deve essere eseguito con:
-- **una VP per il batch di letture** (Fase R, già integrata);
-- **una VP per il batch di scritture**;
-- **OPA e binding applicativo per ogni operazione**;
+Un Task con R letture e W scritture va eseguito con:
+- **una VP per il batch di letture** (Fase R);
+- **una VP per il batch di scritture**, verificata due volte in modalità rigorosa;
+- **OPA e binding per ogni operazione**;
 - **una sola pubblicazione atomica** sul branch di lavoro, tramite un unico HEAD-CAS.
 
-Esempio, 10 letture e 3 modifiche:
+Confronto teorico per lo stesso Task con 8 letture e 5 scritture:
 
-| Percorso (stesso Task con 10 letture e 3 scritture) | Verifiche VP complete | Commit sul branch di lavoro |
+| Percorso | Verifiche VP complete | Commit sul branch |
 |---|---|---|
-| Verifica singola per ogni operazione | 13 | 3 |
-| Letture in batch (Fase R) + scritture singole | 1 + 3 = 4 | 3 |
-| **Fase W, modalità standard** | **2** | **1** |
-| Fase W, modalità rigorosa (§4.4, D3) | 3 | 1 |
+| Verifica singola per ogni operazione | 13 | 5 |
+| Letture in batch (Fase R) + scritture singole | 1 + 5 = 6 | 5 |
+| Fase W standard (variante sperimentale) | 2 | 1 |
+| **Fase W rigorosa (default)** | **3** (−76,9% rispetto a 13) | **1** |
 
-Questi numeri sono teorici e non ancora misurati. Oggi un Task ammette una sola scrittura, quindi le 3 modifiche richiedono 3 Task distinti, ciascuno con le proprie letture.
+Sono numeri teorici, non misure di latenza. Oggi un Task ammette una sola scrittura, quindi 5 modifiche richiedono 5 Task distinti (§9).
 
 ## 2. Percorso attuale (baseline, resta disponibile)
 
-- **Forma del grant:** `readWriteGrantShape` (`plan-contracts/src/gitea-permission-containment.mjs`) ammette 1–15 `read_file` più **esattamente una** scrittura, cioè un `update_file` di un file letto oppure un `create_file` di un file nuovo. Al massimo 16 permessi per Task (`adk-decision-proposer.mjs:377`, `stager` `total_effects ≤ 16`).
-- **Sequenza del proprietario:** `TrustedAuthorityOnlySequentialReadUpdateStager` esegue `read_ready → read_pending → … → read_verified → mutation_pending → finalized`. Ha un solo flight attivo per Task e un'evidenza concatenata (`previous_evidence_sha256`).
-- **Scrittura:**
-  1. Prepare `update_file`/`create_file`: il contenuto è nella richiesta, legato dalla `request_fingerprint`;
-  2. staging del proprietario: intent CAS durevole (`TrustedAuthorityOnlyGiteaMutationPreflight.stageUpdate` / `CreatePreflight.stageCreate`) e flight;
+- **Forma del grant:** `readWriteGrantShape` (`plan-contracts/src/gitea-permission-containment.mjs`) ammette 1–15 `read_file` più **esattamente una** scrittura. Esiste inoltre il Task di sola creazione con un solo `create_file`. Al massimo 16 permessi per Task (`adk-decision-proposer.mjs:377`; stager con `total_effects ≤ 16`).
+- **Sequenza del proprietario:** `TrustedAuthorityOnlySequentialReadUpdateStager` esegue `read_ready → read_pending → … → read_verified → mutation_pending → finalized`. Ha un solo flight attivo e un'evidenza concatenata (`previous_evidence_sha256`).
+- **Scrittura singola:**
+  1. Prepare con il contenuto nella richiesta, legato dalla `request_fingerprint`;
+  2. staging del proprietario: intent CAS durevole e flight;
   3. VP con un permesso;
-  4. Execute: Rust → OPA → binding (`assertTrustedCompletedMutationEvidenceBinding` / `assertTrustedCreateNativeAdmissionBinding`) → executor.
-- **Executor** (`TrustedAuthorityOnlyGiteaMutationExecutor`): `reserveAttempt` durevole, poi `GiteaClient.updateFileWithHeadCas`:
-  1. ref privato `feature/r302-internal-<hash>` creato alla HEAD fissata;
-  2. commit del file sul ref privato;
+  4. Execute: Rust → OPA → binding → executor.
+- **Executor:** `reserveAttempt` durevole, poi `GiteaClient.updateFileWithHeadCas` / `createFileWithHeadCas`:
+  1. ref privato creato alla HEAD fissata;
+  2. commit del file;
   3. verifica del parent e del contenuto;
-  4. `PUT /branches/{branch}` con `old_commit_id` (CAS);
+  4. `PUT /branches/{branch}` con `old_commit_id`;
   5. rilettura.
-  Seguono la ricevuta HMAC (`publisher`), l'osservazione indipendente (`observer`), `reserveCompletedEvidence` e l'attestazione del proprietario. Un tentativo solo: un esito ambiguo è terminale.
 
-## 3. Progetto della Fase W
+  Seguono la ricevuta HMAC, l'osservazione indipendente, `reserveCompletedEvidence` e l'attestazione. Un solo tentativo: un esito ambiguo è terminale.
+
+## 3. Progetto
 
 ### 3.1 Forma del grant: `readsWriteSetGrantShape`
 
-Una nuova forma, aggiuntiva alla baseline, che non la sostituisce:
-- 0–15 `read_file` di file distinti;
-- 1–W_MAX scritture su percorsi distinti. Ogni scrittura è:
-  - un `update_file` di un file **letto nello stesso Task**, invariato rispetto a oggi;
-  - oppure un `create_file` di un file **non letto e assente alla HEAD fissata**, invariato rispetto a oggi;
-- totale ≤ 16 permessi (limite attuale; vedi D2), nessun altro permesso;
-- vincoli di ruolo invariati: le applicazioni scrivono file applicativi, il Test Agent crea o ripara solo sorgenti di test del profilo del progetto (`isProjectTestSource`), OPA `forbidden_path` resta per operazione.
+È una forma nuova, aggiuntiva alla baseline:
+- 0–15 `read_file` distinti;
+- 1–8 scritture su percorsi distinti, in totale ≤ 16 permessi, nessun altro permesso;
+- `update_file` solo di file letti nel Task;
+- `create_file` solo di file non letti, la cui assenza alla HEAD viene provata al momento dello staging;
+- 0 letture ammesse solo se tutte le scritture sono creazioni;
+- vincoli di ruolo invariati: le applicazioni scrivono file applicativi, il Test Agent crea o ripara solo sorgenti di test del profilo; OPA `forbidden_path` resta per operazione.
 
-Con W = 1 la forma coincide con la baseline. Il percorso a scrittura singola resta il default e la baseline sperimentale (`DELEGATION_BATCH_WRITES=0`).
+Il percorso batch si attiva solo con W ≥ 2 e con l'opzione attiva (§6).
 
-### 3.2 Flusso
+### 3.2 Flusso (modalità rigorosa)
 
 ```
-letture (Fase R: 1 VP, N Execute)              ← invariato
+letture (Fase R)                                               ← invariato
   │
   ▼  l'agente produce TUTTE le W modifiche in un solo tool: write_files
-Prepare write-batch  ── N record ordinari update/create (prepareAuthorization invariato),
-  │                     stessa challenge, contenuti legati dalla fingerprint per file
+Prepare write-batch ── W record ordinari (prepareAuthorization invariato), stessa challenge
+  │                    write_set_digest calcolato dal Gateway (§3.3)
   ▼
-staging del proprietario: UN "write-set flight" durevole con W effetti
-  │   (intent CAS per file: blob atteso per gli update, prova di assenza per i create)
+staging del proprietario: UN write-set flight durevole (W effetti, sequenze contigue)
+  │                       intent per file: blob atteso (update) / prova di assenza (create)
   ▼
 1 VP con i W permessi divulgati
   │
-  ▼  per ogni elemento, in sequenza:
-Execute(i) ── consumo monouso → (i = primo) verifyMultiple su W permessi │ (i > primo) riuso VP identica
-          ── OPA(i) ── binding(i) con write-set flight e intent(i)
+  ▼  per ogni elemento, in ordine canonico:
+Execute(i) ── consumo monouso → (primo) verifyMultiple #1 │ (altri) riuso VP identica
+          ── OPA(i) ── binding(i) con write-set flight, intent(i) e write_set_digest
           ── NESSUNA scrittura sul provider: l'elemento è "convalidato"
   │
-  ▼  Execute(ultimo elemento) ⇒ PUBBLICAZIONE (dentro l'Execute, dopo OPA e binding dell'ultimo)
-  1. ricontrollo: batch non fallito, tutti i W elementi convalidati, finestra del batch,
-     Root attiva (#live), Child non scaduta, record non scaduti  [modalità rigorosa: nuova verifyMultiple]
-  2. reserveAttempt durevole dell'intero write-set (prima di qualunque chiamata Gitea)
-  3. ref privato da HEAD fissata → UN commit con le W modifiche (API ChangeFiles di Gitea;
-     sha del blob atteso per ogni update, create che fallisce se il file esiste)
-  4. verifica dell'ESATTO insieme: parent = HEAD fissata; file cambiati del commit = esattamente
-     i W percorsi autorizzati, con lo stato atteso (modified/added); contenuto di ognuno = sha256 dell'intent
-  5. ricontrollo immediato di Root, Child e HEAD del branch di lavoro = HEAD fissata
-  6. UNICO HEAD-CAS: PUT /branches/{work} {old_commit_id: HEAD fissata, new_commit_id: commit}
-  7. rilettura del branch e di ogni file al nuovo commit
-  8. per OGNI file: ricevuta HMAC + osservazione indipendente + evidenza durevole
+  ▼  Execute(ultimo) ⇒ PUBBLICAZIONE (monouso, §3.4)
+  P1  stato batch = "validated" (tutti i W convalidati) → passa a "publishing" in modo sincrono
+  P2  reserveAttempt durevole dell'intero write-set (prima di qualunque scrittura su Gitea)
+  P3  ref privato dalla HEAD fissata → UN commit ChangeFiles con le W modifiche
+      (sha del blob atteso sempre presente per gli update; create che fallisce se il file esiste)
+  P4  verifica dell'esatto insieme (§3.3, W0 S1/S7): parent, elenco e stato dei file, contenuti
+  P5  verifyMultiple #2 della STESSA VP sugli stessi W permessi        ← D3, modalità rigorosa
+  P6  dopo ogni await di P2–P5: stato batch ancora "publishing", Root attiva (#live),
+      Child non scaduta, record e finestra non scaduti, HEAD del branch = HEAD fissata
+  P7  UNICO HEAD-CAS: PUT /branches/{work} {old_commit_id: HEAD fissata, new_commit_id: commit}
+  P8  rilettura del branch e di ogni file al nuovo commit
+  P9  per OGNI file: ricevuta HMAC + osservazione indipendente + evidenza durevole
   │
   ▼
-attestazione del proprietario per ogni scrittura (sequenze reads+1 … reads+W) → finalizzazione del Task
+attestazione del proprietario per ogni scrittura (sequenze R+1 … R+W, in ordine) → finalizzazione
 ```
 
-### 3.3 Componenti coinvolti
+Nella modalità standard P5 viene omesso. Restano P6 e la finestra di 60 s dal Prepare, come per le letture.
+
+### 3.3 Binding dell'intero write-set
+
+Il Gateway, non il client, calcola un **`write_set_digest`**: lo SHA-256 della serializzazione canonica (JSON a chiavi ordinate) di:
+- **contesto:** `session_id`, `authority_digest`, `root_credential_id`, `task_id`, `runtime_task_id`, `epoch`, `child_credential_id`, `agent_did`, ruolo, branch di lavoro, `pinned_head_sha`, `batch_id`, `challenge`;
+- **elementi, in ordine canonico** (ordinati per percorso, con `sequence = R + 1 + indice`): `request_id`, `request_fingerprint`, `operation`, `path`, `required_permission`, `expected_blob_sha` (update) o `absent: true` (create), `next_content_sha256`, `next_content_bytes`.
+
+Il digest viene:
+1. registrato nel manifest e nel write-set flight durevoli (staging);
+2. ricalcolato e confrontato a ogni Execute, prima del commit privato (P3), prima del CAS (P7) e nelle evidenze per file (P9);
+3. scritto nel messaggio del commit, insieme a `batch_id`, per la riconciliazione.
+
+L'ordine canonico rende il digest indipendente dall'ordine in cui il modello elenca i file. L'insieme deve coincidere **esattamente** con le scritture firmate nella Child (D5). La `request_fingerprint` di ogni record lega già percorso, operazione e contenuto alla richiesta preparata.
+
+**Verifica dell'esatto insieme prima del CAS (P4):**
+1. il commit ha un solo parent, uguale a `pinned_head_sha`;
+2. l'elenco dei file di `GET /git/commits/{sha}?files=true` è esattamente l'insieme dei W percorsi, con `modified` per gli update e `added` per i create; nessun file in più, in meno o rinominato;
+3. controllo ridondante con `GET /compare/{head}...{commit}`, sul campo `commits[].files`;
+4. il contenuto di ogni file al commit ha sha256 e lunghezza dell'intent;
+5. per gli update, il blob alla HEAD era quello fissato; per i create, il file era assente;
+6. nessun contenuto è identico all'originale: questo controllo resta prima dello staging, perché Gitea crea commit vuoti (W0 S8).
+
+### 3.4 Transizioni terminali e pubblicazione monouso
+
+Stati del write-batch: `prepared → verifying → validating → validated → publishing → published`, più due stati terminali: `failed` e `ambiguous`.
+- **`failed` è terminale**, come R-F1. Qualsiasi errore di un Execute del batch porta a `failed`, come R-F3: verifica, OPA, binding, scadenza, replay, VP diversa, errore asincrono. In P1–P8 l'errore arriva prima del CAS, quindi nessun effetto sul branch.
+- **La pubblicazione è monouso.** Il passaggio a `publishing` avviene in modo sincrono, prima di qualunque `await`. Solo l'Execute che lo esegue può pubblicare: un secondo Execute (replay del `request_id` o richiesta concorrente) trova il record consumato o lo stato non `validated` e viene rifiutato. Il rifiuto porta il batch a `failed` solo se la pubblicazione non è ancora iniziata.
+- **Ripetizione impedita anche dopo un riavvio.** `reserveAttempt` del write-set è durevole prima di P3. Al riavvio il journal mostra il tentativo riservato e il Task resta terminale.
+- **`ambiguous`:** una risposta del CAS persa, oppure una rilettura P8 incoerente. È terminale: nessun retry, riconciliazione manuale tramite il `write_set_digest` nel messaggio del commit.
+- **Dopo ogni `await`** (P2–P5), il controllo P6 verifica che lo stato sia ancora `publishing` e che non sia cambiato nient'altro. Un cambiamento porta a `failed` prima del CAS.
+
+### 3.5 Limiti sulle dimensioni
+
+| Limite | Valore | Origine |
+|---|---|---|
+| Contenuto per file | 1–2.000.000 byte UTF-8, senza NUL | invariato (`gitea-client.ts`, preflight) |
+| Somma dei contenuti di un write-set | ≤ 4.000.000 byte | nuovo |
+| Scritture per write-set | 2–8 (D1) | nuovo |
+| Argomenti di `write_files` (JSON) | ≤ 6 MiB, solo `{branch, changes:[{path, operation, content}]}`, chiavi esatte | nuovo |
+| Richiesta di Prepare write-batch | stesso limite di `write_files` | nuovo |
+| Percorsi | regole attuali (nessun `..`, `%`, `\`, segmenti vuoti) | invariato |
+
+W0 mostra che Gitea accetta un ChangeFiles di 8 × 2 MB, circa 21 MB di richiesta, in 0,93 s. I limiti sono quindi nostri, scelti per contenere memoria, evidenze e output del modello; non sono vincoli del provider.
+
+### 3.6 Componenti coinvolti
 
 | Componente | Modifica |
 |---|---|
 | `plan-contracts/.../gitea-permission-containment.mjs` | `readsWriteSetGrantShape` (nuova); `readWriteGrantShape` invariata |
-| Proposer, adaptive loop, review host (`orchestrator-runtime`, `orchestrator`) | accettare Task con W > 1 solo con l'opzione attiva; limite di 16 permessi invariato |
-| `trusted-authority-only-admissions.ts` | manifest con `effect_plan` di R letture + W scritture; nuovo **write-set flight** (W effetti riservati insieme, sequenze contigue); binding per elemento; attestazione per file in ordine; finalizzazione |
-| `trusted-authority-only-sequential-read-update-stager.ts` | stati `writes_pending → writes_validated → published → finalized`; un solo write-set attivo |
-| Preflight update/create | riuso per file (`stageUpdate` / `stageCreate`) con lo stesso ref privato del write-set |
-| Nuovo `trusted-write-batch.ts` (Gateway) | `prepareWriteBatch`, `TrustedWriteBatchStore`, stato del batch, verifica/riuso VP (come Fase R), condizione di pubblicazione |
-| Nuovo executor write-set | `reserveAttempt` del write-set, `GiteaClient.commitFilesWithHeadCas` (ChangeFiles + verifica dell'insieme + CAS), publisher/observer per file |
-| `gitea-client.ts` | `commitFilesWithHeadCas`: ref privato, commit multi-file, verifica diff/parent/contenuti, CAS |
+| Proposer, adaptive loop, review host | Task con 2–8 scritture solo con l'opzione attiva; limite di 16 invariato |
+| `trusted-authority-only-admissions.ts` | manifest con R letture + W scritture; nuovo **write-set flight** (W effetti riservati insieme); binding per elemento con `write_set_digest`; attestazione per file in ordine; finalizzazione solo con tutte le evidenze |
+| Stager del proprietario | stati `writes_pending → writes_validated → published → finalized`; un solo write-set attivo |
+| Preflight update/create | riuso per file per l'intent (blob atteso / prova di assenza) |
+| Nuovo `trusted-write-batch.ts` | `prepareWriteBatch`, store, macchina a stati del §3.4, verifica e riuso VP, seconda verifica |
+| Nuovo executor write-set | `reserveAttempt` dell'insieme, P2–P9, evidenze per file |
+| `gitea-client.ts` | `commitFilesWithHeadCas` (ChangeFiles + verifica dell'insieme + CAS); prefisso del ref privato aggiunto alla lista dei ref vietati agli agenti |
 | Evidence publisher/observer | ricevuta e osservazione per file, legate al commit comune e al `write_set_digest` |
-| `execute.ts` | ramo write-batch analogo al read-batch; invalidazione del batch per qualunque errore (come R-F3) |
-| Client e strumento (`gateway-tool-client.ts`, `adk-specialized-agents.ts`) | `writeFiles(changes[])` e tool `write_files` (un turno del modello); `update_file`/`create_file` nascosti quando attivo |
-| Console e modelli scripted | opzione `enableBatchWrites`, `DELEGATION_BATCH_WRITES=0` per la baseline; piano scripted con Task multi-scrittura |
-| OPA | **invariata**: valutata per ogni operazione con l'input attuale |
+| `execute.ts` | ramo write-batch; invalidazione come R-F3 |
+| Client e strumento | `writeFiles(changes[])`, tool `write_files`; `update_file`/`create_file` nascosti quando attivo |
+| Console e modelli scripted | `enableBatchWrites`, `DELEGATION_BATCH_WRITES=0` per la baseline; piano scripted multi-scrittura; eventi `write_batch_id` e `batch_verification` (`performed` / `reused` / `reverified`) |
+| OPA | **invariata** |
 
 ## 4. Semantica di atomicità
 
 ### 4.1 Unità atomica
 
-L'unità atomica è **l'insieme delle W scritture di un Task**.
-- Sul branch di lavoro esistono soltanto due stati osservabili:
-  - la HEAD fissata, nessuna modifica applicata;
-  - il nuovo commit, tutte le W modifiche applicate.
-- Il passaggio avviene con una sola compare-and-swap del ref (`old_commit_id`), quindi un osservatore del branch non vede mai un sottoinsieme.
-- L'atomicità **non** si estende oltre il Task: Task diversi restano sequenziali e producono commit distinti.
+L'unità è l'insieme delle W scritture di un Task.
+- Sul branch di lavoro sono osservabili solo due stati: la HEAD fissata, senza modifiche, oppure il nuovo commit, con tutte le W modifiche.
+- Il passaggio avviene con una sola compare-and-swap del ref, sull'id del commit.
+- Task diversi restano sequenziali, con commit distinti.
 
 ### 4.2 Esiti
 
-| Momento del fallimento | Effetto sul branch di lavoro | Stato |
+| Evento | Stato del branch di lavoro | Stato del Task |
 |---|---|---|
-| Prepare, staging, VP, Execute(i): OPA, binding o verifica | nessuno | batch e Task falliti, nessuna chiamata di scrittura a Gitea |
-| Commit sul ref privato, verifica dell'insieme, ricontrollo prima del CAS | nessuno; può restare un ref privato | terminale, ref privato da riconciliare |
-| CAS rifiutato (HEAD avanzata) | nessuno | terminale (`provider_conflict`), nessun retry |
-| Risposta del CAS persa o ambigua; rilettura incoerente | sconosciuto: tutto o niente, mai parziale | **terminale**: nessun retry automatico, riconciliazione manuale (come oggi) |
-| Dopo un CAS riuscito: ricevuta o osservazione di un file fallita | tutte le W modifiche pubblicate | Task fallito, non concluso; le evidenze mancanti bloccano la finalizzazione |
+| Un elemento non supera OPA, binding o verifica | nessuna modifica del batch | fallito |
+| Lo staging o la verifica dell'insieme falliscono (P3–P4) | nessuna modifica; può restare il ref privato | fallito, ref da rimuovere |
+| La seconda verifica fallisce (P5: revoca o scadenza) | nessuna modifica | fallito |
+| Il CAS viene rifiutato (HEAD avanzata, W0 S3) | nessuna modifica | fallito, nessun retry |
+| Il CAS riesce | tutte le modifiche pubblicate | prosegue con le evidenze |
+| Il CAS riesce ma fallisce un'evidenza o un'attestazione | tutte le modifiche pubblicate | **non concluso** (§4.4) |
+| La risposta del CAS viene persa | tutto o niente, da riconciliare | `ambiguous`, nessun retry |
 
-L'ultimo caso è la differenza principale rispetto alla baseline, dove ogni file ha il proprio commit. Qui la pubblicazione è già avvenuta, ma il Task non viene attestato e non sblocca dipendenze né PR. È lo stesso comportamento di oggi per un singolo file la cui evidenza fallisce dopo il CAS.
+### 4.3 Revoca e scadenza prima della pubblicazione; TOCTOU residuo
 
-### 4.3 Esatto insieme autorizzato
+- **Per elemento:** consumo, scadenza del record, OPA, binding, Root attiva e Child non scaduta.
+- **Prima del CAS:**
+  - P5, seconda `verifyMultiple` (modalità rigorosa): stato di revoca on-chain, firma, catena e scadenze;
+  - P6, dopo l'ultima operazione asincrona: Root attiva (incluso il ritiro della sessione da parte dell'Engineer), Child non scaduta, finestra, stato del batch, HEAD invariata.
+- **TOCTOU residuo:** tra P5/P6 e P7 resta una finestra breve, nell'ordine di una o due chiamate HTTP (W0: CAS ≈ 0,3 s). Blockchain e Gitea sono sistemi distinti, quindi non esiste un'operazione atomica che leghi la lettura dello stato di revoca on-chain allo spostamento del ref Git. Una revoca registrata sulla catena dopo P5 e prima di P7 non impedisce la pubblicazione. Il rischio è dichiarato:
+  - la finestra è ridotta al minimo, con P5 subito prima di P7 e nessun lavoro intermedio oltre a P6;
+  - la modalità standard la estende fino alla finestra del batch, quindi viene usata solo come variante sperimentale.
 
-Prima del CAS il commit privato deve soddisfare **tutte** queste condizioni:
-1. ha come unico parent la HEAD fissata;
-2. il suo elenco di file modificati è **esattamente** l'insieme dei W percorsi firmati: nessun file in più, in meno o rinominato;
-3. lo stato di ogni file è quello atteso: `modified` per un update, `added` per un create;
-4. il contenuto di ogni file ha lo sha256 e la lunghezza in byte dell'intent, legati alla `request_fingerprint` del record;
-5. per un update, il blob alla HEAD era quello fissato al momento dello staging; per un create, il file era assente alla HEAD;
-6. nessun contenuto è identico all'originale (stessa regola di oggi: nessun effetto vuoto).
+### 4.4 Fallimento delle evidenze dopo un CAS riuscito
 
-### 4.4 Revoca e scadenza prima della pubblicazione
+Le modifiche sono pubblicate, ma il Task resta **non attestato**:
+- nessuna finalizzazione: il Task non entra in `completed` e le dipendenze (`depends_on`) restano bloccate, quindi i Task successivi non superano il preflight;
+- nessuna PR: la Draft PR richiede che il ciclo adattivo arrivi a `owner_adaptive_work_ready_for_pr`, con l'ultimo Test completato e attestato in modo indipendente (`trusted-authority-only-operational-launcher.mjs:169`). Un Task di scrittura non attestato interrompe il ciclo prima di quel punto;
+- la sessione termina in errore e la Root operativa viene revocata, come oggi;
+- nessun ripristino automatico, perché un revert sarebbe una nuova scrittura non autorizzata. La console riporta "modifiche pubblicate sul branch ma non attestate", con commit e `write_set_digest`;
+- test dedicato: con l'osservatore che fallisce dopo il CAS, nessuna dipendenza viene sbloccata e la PR non viene creata.
 
-- **Per elemento**, a ogni Execute (invariato): consumo monouso, scadenza del record, OPA, binding, Root attiva e Child non scaduta.
-- **Immediatamente prima del CAS** (punti 1 e 5 del §3.2): Root attiva (`#live`, include il ritiro della sessione da parte dell'Engineer), Child non scaduta, finestra del batch, HEAD del branch invariata.
-- **Revoca on-chain:**
-  - **modalità standard:** osservata dalla `verifyMultiple` del primo Execute. La pubblicazione deve avvenire entro la finestra del batch: al massimo 60 s dal Prepare, come in Fase R, e in pratica pochi secondi. È lo stesso compromesso dichiarato per le letture;
-  - **modalità rigorosa** (opzione D3): una seconda `verifyMultiple` della stessa VP subito prima del CAS. Costa circa 1,5 s per write-batch e rende la revoca on-chain osservata immediatamente prima dell'effetto.
+### 4.5 Atomicità della pubblicazione Git e atomicità del workflow
+
+| Proprietà | Garantita? |
+|---|---|
+| Le W modifiche compaiono sul branch tutte insieme o per niente | **sì** (un commit, un CAS) |
+| Nessun sottoinsieme del write-set è osservabile sul branch | **sì** |
+| Pubblicazione, evidenze, attestazioni e completamento formano un'unica transazione | **no**: le evidenze seguono il CAS (§4.4) |
+| Revoca on-chain e spostamento del ref sono atomici | **no**: TOCTOU residuo (§4.3) |
+| Atomicità tra Task diversi | **no**: Task sequenziali, commit distinti |
+| Esito certo dopo un errore di rete sul CAS | **no**: stato `ambiguous`, riconciliazione |
 
 ## 5. Invarianti da preservare
 
-| # | Invariante | Come è garantito |
+| # | Invariante | Garanzia |
 |---|---|---|
-| W1 | Prepare legato al ruolo | Nuovo endpoint nella stessa fetch in-process legata al ruolo; Execute solo sui record del ruolo |
-| W2 | Permesso derivato dal Gateway | Ogni elemento passa da `prepareAuthorization` invariato; la verifica usa i permessi del batch derivati dal Gateway |
-| W3 | Ogni scrittura appartiene al grant firmato del Task | `readsWriteSetGrantShape` nella Child e nelle admissions; il batch deve coprire **esattamente** l'insieme firmato |
-| W4 | Update solo di file letti nel Task; create solo di file non letti e assenti alla HEAD | Regole attuali dello stager e dei preflight, per file |
-| W5 | Una VP per il batch, verifica crittografica completa | `verifyMultiple` del core invariato; riuso solo per la VP identica byte per byte |
-| W6 | OPA e binding per ogni operazione | Ogni Execute valuta OPA e il binding con il write-set flight e l'intent del file |
-| W7 | Staging isolato | Le modifiche esistono solo sul ref privato finché il CAS non riesce; agenti e Gateway non possono scegliere quel ref |
-| W8 | Esatto insieme pubblicato | Verifiche del §4.3 prima del CAS; rilettura dopo |
-| W9 | Atomicità | Un commit e un `old_commit_id` CAS per l'insieme; nessuna pubblicazione parziale osservabile |
-| W10 | Evidenze per file | Ricevuta HMAC, osservazione indipendente ed evidenza durevole per ogni file; attestazione per file, in ordine |
-| W11 | Journal durevole prima di ogni effetto | Manifest, write-set flight e `reserveAttempt` dell'insieme fsync'd prima di qualunque chiamata di scrittura a Gitea |
-| W12 | Fail-closed e stato terminale | Batch e Task falliti per qualsiasi errore; `failed` terminale (come R-F1 e R-F3); nessun retry dopo il primo tentativo |
-| W13 | Anti-replay ed esiti ambigui | `request_id` monouso, batch e ref privato derivati dall'hash del write-set; un esito ambiguo del CAS è terminale |
-| W14 | Scadenza e revoca prima della pubblicazione | §4.4 |
-| W15 | Esecuzione sequenziale dei Task | Invariato; un solo write-set attivo per Task e un solo Task attivo |
-| W16 | Nessuna nuova autorità | Credenziali, OPA e core invariati; il batch raggruppa solo scritture già firmate nel Task |
-| W17 | Baseline disponibile | Con W = 1 o `DELEGATION_BATCH_WRITES=0` il percorso è quello attuale |
+| W1 | Prepare legato al ruolo | Fetch in-process legata al ruolo; Execute solo sui record del ruolo |
+| W2 | Permesso derivato dal Gateway | `prepareAuthorization` invariato per elemento |
+| W3 | Esatto insieme firmato | `readsWriteSetGrantShape`, `write_set_digest`, D5 |
+| W4 | Update solo di file letti; create solo di file assenti e non letti | Regole attuali per file; W0 S5 e S6 |
+| W5 | Una VP, verifica crittografica completa (due volte in modalità rigorosa) | `verifyMultiple` invariato; riuso solo per la VP identica byte per byte |
+| W6 | OPA e binding per ogni operazione | Ogni Execute |
+| W7 | Staging isolato | Ref privato da HEAD fissata, prefisso vietato agli agenti; branch di lavoro invariato fino al CAS (W0 S2) |
+| W8 | Esatto insieme pubblicato | §3.3, P4; W0 S1 e S7 |
+| W9 | Atomic Write-Set Publication | Un commit, un CAS sull'id del commit (W0 S2, S3, S10) |
+| W10 | Evidenze per file | Ricevuta, osservazione ed evidenza durevole per file; attestazioni in ordine |
+| W11 | Journal durevole prima di ogni effetto | Manifest, write-set flight e `reserveAttempt` prima di P3 |
+| W12 | Fail-closed, stati terminali | §3.4 |
+| W13 | Anti-replay, pubblicazione monouso, esiti ambigui | §3.4 |
+| W14 | Revoca e scadenza prima della pubblicazione | P5 e P6; TOCTOU dichiarato |
+| W15 | Esecuzione sequenziale | Un solo write-set attivo, un solo Task attivo |
+| W16 | Nessuna nuova autorità | Credenziali, OPA e core invariati |
+| W17 | Baseline disponibile | §6 |
 
-## 6. Rischi
+## 6. Compatibilità con il percorso a scrittura singola
+
+- **W = 1:** con o senza l'opzione, il percorso resta quello attuale, invariato (`readWriteGrantShape`, `update_file`/`create_file`, un commit e un CAS per Task).
+- **Creazione senza letture:**
+  - il Task di sola creazione con un `create_file` resta sul percorso attuale;
+  - un write-set di sole creazioni (W ≥ 2, R = 0) è ammesso nel batch;
+  - un write-set con almeno un update richiede la lettura di quel file nello stesso Task, come oggi.
+- **Interruttore della baseline:** `DELEGATION_BATCH_WRITES=0` disattiva il batch nella console, come `DELEGATION_BATCH_READS=0` per le letture. Con il batch disattivato il planner non propone Task con più scritture.
+- **Riparazioni dopo un FAIL del Runner:** restano Task a scrittura singola (baseline) nella Fase W.
+- **Fase R:** invariata. Letture e scritture batch convivono nello stesso Task (1 VP di lettura + 1 VP di scrittura).
+
+## 7. Rischi
 
 | Rischio | Mitigazione |
 |---|---|
-| Modifica di `trusted-authority-only-admissions.ts` (2.231 righe, critica): il write-set flight rompe l'invariante "un flight attivo" | Nuovo tipo di flight esplicito con W effetti, invece di più flight concorrenti; test dedicati; nessuna modifica ai percorsi esistenti |
-| Semantica dell'API multi-file di Gitea (ChangeFiles): stato `added`/`modified`, guardia sha, comportamento su file esistente | Spike W0 sul Gitea locale prima dell'implementazione. Se l'API non offre garanzie sufficienti: N commit sequenziali sul ref privato e un solo CAS finale (atomicità sul branch invariata; storia con N commit) |
-| Verifica del diff: l'elenco dei file del commit dipende dall'API | Doppio controllo: elenco del commit **e** confronto `compare` HEAD…commit; rilettura di ogni file |
-| Pubblicazione avvenuta ma evidenza fallita (§4.2, ultimo caso) | Task non finalizzato, PR non creata, riconciliazione documentata; test dedicato |
-| Il modello deve produrre W contenuti in un solo turno (dimensione dell'output) | W_MAX iniziale piccolo (D1); il limite di token per chiamata resta quello attuale |
-| Riparazioni dopo un FAIL del Runner con W > 1 | Il Task di riparazione resta a scrittura singola (baseline) finché non viene deciso altrimenti |
-| Finestra di revoca on-chain (modalità standard) | Dichiarata; modalità rigorosa disponibile (D3) |
-| Riavvio del processo a metà write-set | Come oggi: il journal durevole rende il Task terminale; nessuna ripresa automatica |
-
-## 7. Decisioni da prendere prima dell'implementazione
-
-- **D1, W_MAX per Task.** Proposta: 8, con il totale sempre ≤ 16 permessi.
-- **D2, limite di 16 permessi ed effetti per Task.** Proposta: invariato nella Fase W, così da non toccare proposer, review host e console oltre il necessario.
-- **D3, modalità di revoca prima del CAS.** Proposta: standard (1 verifica) come default, rigorosa (2 verifiche) come opzione misurata nell'E2E.
-- **D4, interfaccia del modello.** Proposta: un solo tool `write_files` con l'insieme completo. In alternativa, `update_file`/`create_file` che accumulano e un `commit_changes` finale (più turni, più flessibile).
-- **D5, insieme parziale.** Proposta: rifiutato. L'agente deve presentare esattamente l'insieme firmato, come oggi il manifest richiede tutti gli effetti pianificati. Il "no change" resta il percorso attuale (`reportNoChange`).
+| Modifica delle admissions (2.231 righe, critica): il write-set flight cambia l'invariante "un flight attivo" | Tipo di flight esplicito con W effetti, nessun flight concorrente; percorsi esistenti invariati; test dedicati |
+| Update senza `sha` accettato da Gitea (W0 S6b) | L'owner invia **sempre** il blob atteso; verifica P4 dei contenuti |
+| ChangeFiles con contenuto identico crea un commit vuoto (W0 S8) | Contenuto identico rifiutato prima dello staging; P4 richiede l'insieme esatto |
+| Ref privati residui (W0 S10) | Rimozione dopo il successo; conservazione per la riconciliazione dopo un fallimento |
+| Pubblicazione avvenuta ma evidenza fallita | §4.4 |
+| TOCTOU revoca–CAS | §4.3, dichiarato |
+| Output del modello con W contenuti in un turno | Limiti del §3.5; W_MAX = 8 |
+| Riavvio a metà write-set | Journal durevole, Task terminale, nessuna ripresa automatica |
 
 ## 8. Test necessari
 
-**Unit, plan-contracts:** `readsWriteSetGrantShape` con:
-- update di file letti, create di file nuovi, mix;
+**Unit, plan-contracts:** `readsWriteSetGrantShape`:
+- tabelle del §0, mix di update e create, sole creazioni;
 - duplicati, update di un file non letto, create di un file letto;
-- oltre W_MAX o 16 permessi, permessi estranei;
+- oltre 8 scritture o 16 permessi, permessi estranei;
 - vincoli del Test Agent.
 
-**Unit, Gateway (`trusted-write-batch`, `execute`):**
-- batch valido: 1 `performed` e W − 1 `reused`, nessuna scrittura prima dell'ultimo elemento;
-- per ognuno tra OPA, binding, scadenza, replay, VP diversa e verifica: il batch fallisce e **nessuna** chiamata di scrittura arriva al client Gitea;
-- prima verifica concorrente; stato `failed` terminale;
-- ricontrollo prima del CAS: Root revocata, Child scaduta, finestra scaduta → nessun CAS;
-- modalità rigorosa: VP revocata (verificatore simulato) → nessun CAS.
+**Unit, Gateway (write-batch, executor, `execute`):**
+- batch valido: `performed`, W − 1 `reused` e `reverified`; nessuna chiamata di scrittura a Gitea prima dell'ultimo elemento;
+- per ognuno tra OPA, binding, scadenza, replay, VP diversa e verifica: `failed` e **nessuna** chiamata di scrittura;
+- pubblicazione monouso: replay dell'ultimo Execute, Execute concorrente, errore durante P2–P5;
+- P5 rifiutata (revoca simulata), Root ritirata, Child scaduta, finestra scaduta, HEAD avanzata: nessun CAS;
+- `write_set_digest`: ordine dei file diverso → stesso digest; contenuto, percorso o operazione diversi → rifiuto;
+- limiti del §3.5.
 
-**Unit, `GiteaClient.commitFilesWithHeadCas`** (Gitea simulato):
+**Unit, `commitFilesWithHeadCas`** (Gitea simulato):
 - parent errato;
-- file in più, in meno o rinominato;
-- stato atteso errato;
-- contenuto diverso;
-- blob dell'update cambiato; file del create già esistente;
-- HEAD avanzata prima del CAS (`provider_conflict`);
-- risposta del CAS persa (ambigua, terminale);
+- file in più, in meno o con stato errato;
+- contenuto diverso; update senza sha (vietato lato owner);
+- CAS 422; risposta del CAS persa → `ambiguous`;
 - nessun retry.
 
-**Integrazione su Gitea locale reale (spike W0 + regressione):**
-- commit multi-file;
-- diff esatto;
-- CAS che fallisce se il branch avanza tra commit e CAS;
-- il branch di lavoro non mostra mai un sottoinsieme.
+**Integrazione su Gitea locale reale:** i casi di W0 trasformati in test di regressione (opt-in, con lo stack attivo).
 
 **Owner e IPC (stager reale + IPC Unix reale):**
-- ordine degli eventi;
-- write-set staging unico;
-- attestazioni per file in ordine;
-- chiamate non conformi (attestazione prima della pubblicazione, secondo write-set, scrittura dopo un fallimento) rifiutate.
+- ordine degli eventi; un solo write-set; attestazioni per file in ordine;
+- chiamate non conformi: attestazione prima della pubblicazione, secondo write-set, scrittura dopo un fallimento;
+- evidenza fallita dopo il CAS: nessuna dipendenza sbloccata.
 
-**E2E scripted comparativo**, senza API a pagamento: protocollo della Fase R (stack riavviato per esecuzione, riscaldamento scartato, ordine casuale con seme, n = 6 per cella):
-- varianti: baseline a scrittura singola (`DELEGATION_BATCH_WRITES=0`) contro batch;
-- workload: Task con W = 3 e W = 8 scritture, più letture;
-- metriche: verifiche complete, Σ `verification_ms`, numero di commit e di CAS sul branch, tempo della fase di scrittura, tempo complessivo dalla firma al completamento;
-- osservabilità: `write_batch_id` e `batch_verification` nelle decisioni, `write_set_digest` e commit nelle evidenze.
+**E2E scripted comparativo:** §9.
 
-**Regressione:** tutte le suite Node, OPA 52/52 e core Rust, nessuna regressione rispetto a `main`.
+**Regressione:** tutte le suite Node, OPA 52/52 e core Rust.
 
-## 9. Piano di lavoro proposto (dopo l'approvazione)
+## 9. Valutazione sperimentale e comparabilità
 
-1. **W0, spike:** API multi-file e diff su Gitea 28 locale; esito documentato prima di scrivere il codice di produzione.
-2. **W1, forma del grant e admissions:** write-set flight, manifest e attestazioni per file, con unit test.
-3. **W2, Gateway:** write-batch, `commitFilesWithHeadCas`, executor, evidenze per file, invalidazione e ricontrolli prima del CAS.
+Il confronto tra baseline e batch è valido a **livello di workflow**: con la baseline, W scritture richiedono W Task distinti. Misura quindi insieme quattro benefici, che vanno riportati separatamente:
+
+| Componente | Metrica | Fonte |
+|---|---|---|
+| Verifiche crittografiche | numero di verifiche complete; Σ `verification_ms` | decisioni Gateway (`batch_verification`) |
+| Deleghe e orchestrazione | numero di Task, di Child DC emesse, di turni dell'Orchestrator | log e journal della sessione |
+| Pubblicazioni | numero di commit e di CAS sul branch | Gitea (`compare` HEAD iniziale…finale) |
+| Chiamate agli strumenti | tool call e turni del modello dello specialista | `adk_tool_timing` |
+| Totale | tempo dalla firma al completamento | driver E2E |
+
+**Separazione del beneficio crittografico, senza nuovi percorsi operativi:**
+- **stima del contributo della verifica:** (verifiche evitate) × (mediana di `verification_ms` di una verifica Child nella stessa campagna). Il resto della differenza del tempo totale va attribuito a deleghe, pubblicazioni e turni;
+- **contrasto interno, rigorosa contro standard:** stesso workflow, stessi Task; differiscono per una sola verifica per write-set. Misura direttamente il costo marginale di una verifica e il prezzo della modalità rigorosa.
+
+**Protocollo:** quello della Fase R.
+- Stack riavviato per esecuzione, riscaldamento scartato, ordine casuale con seme registrato, n = 6 per cella, bootstrap con PRNG esatto (mulberry32).
+- Celle: baseline a scrittura singola, batch rigoroso, batch standard.
+- Workload: Task con W = 3 e W = 8 scritture, più letture.
+- Limiti: workload scripted, nessuna generalizzazione automatica ai workflow con Gemini.
+
+## 10. Piano di lavoro (dopo l'approvazione)
+
+1. ~~**W0, spike** su Gitea locale~~: completato (§11).
+2. **W1, forma del grant e admissions:** write-set flight, manifest, `write_set_digest`, attestazioni per file, unit test.
+3. **W2, Gateway:** write-batch, `commitFilesWithHeadCas`, executor, evidenze per file, P1–P9, stati del §3.4.
 4. **W3, client e strumento:** `write_files`, console, modelli scripted, opzione e baseline.
-5. **W4, test, suite ed E2E** comparativo; report dei risultati sul modello di `PHASE_R_RESULTS.md`.
+5. **W4, test, suite ed E2E** comparativo; report sul modello di `PHASE_R_RESULTS.md`.
 
-Il merge su `main` avverrà solo dopo la revisione dei risultati, come per la Fase R.
+Il merge su `main` avverrà solo dopo la revisione dei risultati.
+
+## 11. Risultati di W0 (Gitea 28.0.0 locale)
+
+- **Setup:** repository usa e getta `thesis/w0-spike` creato con l'account admin. Tutte le operazioni usano il **token del Gateway**, collaboratore in scrittura, come in produzione.
+- **Script e dati:** `docs/experiments/phase-w-w0/w0-spike.mjs`, `w0-size.mjs`, `w0-results.jsonl`, `w0-size.jsonl`.
+- **Esito:** 11 casi su 11 superati, dopo la correzione di due errori nello script, non di Gitea, nella prima esecuzione.
+
+| Caso | Risultato |
+|---|---|
+| S1, ChangeFiles misto (2 update con sha + 2 create) su ref privato | **1 commit**, unico parent = HEAD fissata; `git/commits?files=true` e `compare` riportano esattamente `{a: modified, b: modified, new1: added, new2: added}`; contenuti corretti; 0,40 s |
+| S2, isolamento e CAS | branch di lavoro invariato e file nuovi non visibili prima del CAS; un `PUT /branches` con `old_commit_id` pubblica tutto (204, 0,31–0,37 s) |
+| S3, CAS con HEAD avanzata | **422** "branch commit does not match"; branch invariato; commit privato non pubblicato |
+| S4, uno sha errato tra operazioni valide | **422**, intera richiesta rifiutata, nessun commit parziale |
+| S5, create di un file esistente tra operazioni valide | **422**, intera richiesta rifiutata, nessun commit parziale |
+| S6, update di un file inesistente | **404**, nessun commit |
+| S6b, update **senza** sha | **accettato**: nessuna guardia del blob. L'owner deve sempre inviare lo sha (§7) |
+| S7, commit con un file non autorizzato | rilevato sia da `git/commits?files=true` sia da `compare`: la verifica P4 lo rifiuterebbe |
+| S8, update con contenuto identico | **accettato**, con un commit vuoto (nessun file): il rifiuto dei byte identici resta prima dello staging |
+| S9, ripiego: 3 commit sequenziali sul ref privato + 1 CAS | funziona: `compare` riporta 3 commit e i 3 file; un solo CAS (0,38–0,41 s per commit) |
+| S10, CAS con `old_commit_id` errato | **422**, branch invariato; i ref privati restano finché non vengono rimossi (DELETE 204) |
+| Dimensione | ChangeFiles con 8 × 256 KiB (2,8 MB di richiesta): 201 in 0,55 s; con 8 × 2 MB (21,3 MB): 201 in 0,93 s |
+
+**Conclusioni di W0:**
+1. **ChangeFiles offre garanzie sufficienti** e diventa il meccanismo principale: un commit multi-file per write-set, con rifiuto dell'intera richiesta se un'operazione non è valida (S4–S6). Il ripiego a commit multipli (S9) funziona ma non serve; resta documentato.
+2. **La verifica dell'esatto insieme è affidabile** con due fonti indipendenti dell'API (`git/commits?files=true` e `compare` sul campo `commits[].files`).
+3. **Il CAS sull'id del commit** rifiuta qualunque avanzamento della HEAD e qualunque `old_commit_id` errato (422), senza effetti sul branch.
+4. **Regole lato owner emerse:** inviare sempre lo sha negli update (S6b); rifiutare i byte identici prima dello staging (S8); rimuovere i ref privati dopo il successo (S10); aggiungere il nuovo prefisso dei ref privati alla lista dei branch vietati agli agenti.
+5. I limiti di dimensione sono nostri (§3.5): Gitea accetta richieste ben oltre il limite proposto.
+
+**Limite di W0:** è una prova dell'API di Gitea, non del protocollo. Non coinvolge Gateway, VP, OPA, admissions o journal; quelli saranno coperti da W1–W4.
