@@ -173,6 +173,9 @@ services:
       # started explicitly by the Engineer and is bounded by call/token limits.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      # Phase W (atomic write-sets): on by default; set 0 in .env for the
+      # single-write baseline.
+      DELEGATION_BATCH_WRITES: ${DELEGATION_BATCH_WRITES:-1}
       # The ONLY import source: this GitHub account. The optional read-only
       # token (private repositories) stays in this service.
       GITHUB_OWNER: ${GITHUB_OWNER:-}

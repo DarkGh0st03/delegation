@@ -223,8 +223,9 @@ export class EngineerSessions {
     if (!approved.some(p => p.operation === "create_branch"))
       throw Error("Il permesso create_branch non è stato approvato: senza branch di lavoro non si può eseguire");
     const scripted = FREE_MODES.has(session.mode);
-    // Phase W: opt-in (DELEGATION_BATCH_WRITES=1); the single-write path stays the default baseline.
-    const batchWrites = process.env.DELEGATION_BATCH_WRITES === "1";
+    // Phase W: on by default; DELEGATION_BATCH_WRITES=0 restores the single-write
+    // baseline (as DELEGATION_BATCH_READS=0 does for the Phase R reads).
+    const batchWrites = process.env.DELEGATION_BATCH_WRITES !== "0";
     const plan = simulatedExecutionPlan(approved, session.id, testSourceProfileOf(session.project_profile),
       {batchWrites: batchWrites && scripted});
     if (scripted && !plan.tasks.length)
@@ -779,7 +780,7 @@ export class EngineerSessions {
         projectProfileSha256: session.project_profile_sha256},
       projectTestSourceProfile: testSourceProfileOf(session.project_profile),
       baseBranch: session.base_branch,
-      ...(process.env.DELEGATION_BATCH_WRITES === "1" ? {batchWritesEnabled: true} : {}),
+      ...(process.env.DELEGATION_BATCH_WRITES !== "0" ? {batchWritesEnabled: true} : {}),
       trustedAgentRegistry,
       credentials: this.#core.credentials,
       planningRevisions: revisions,

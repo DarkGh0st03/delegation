@@ -38,6 +38,16 @@ Altri comandi utili:
 | `docker compose down` | rimuove i container, mantiene i volumi (dati e configurazione) |
 | `docker compose down -v` | **cancella tutto**, compresi Gitea, chiavi e configurazione |
 
+### Scritture atomiche (Fase W)
+
+Sono **attive per default**: quando uno specialista deve modificare o creare più
+file nello stesso passo, l'Orchestrator può delegare un solo Task write-set
+(da 2 a 8 scritture): una sola VP, un controllo OPA per ogni file e un unico
+commit pubblicato in modo atomico (tutti i file o nessuno). Per tornare al
+percorso a scrittura singola aggiungi `DELEGATION_BATCH_WRITES=0` al file `.env`
+e riavvia (`docker compose down`, poi `docker compose up -d`). Dettagli:
+`docs/PHASE_W_BATCH_WRITE_DESIGN.md` e `docs/PHASE_W_RESULTS.md`.
+
 ## Architettura (tappa 1)
 
 ```
