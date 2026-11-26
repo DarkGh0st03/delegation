@@ -19,6 +19,8 @@
 
 > **Nota successiva al merge.** Dopo l'integrazione su `main` la Fase W è stata resa attiva per default (`DELEGATION_BATCH_WRITES=0` per la baseline; design §16). Le misure di questo report sono state eseguite con il valore esplicito `1` (ws) o `0` (base) e non cambiano.
 
+> **Osservazioni su sessioni reali con Gemini** (prima e dopo R + W, non controllate): `docs/experiments/phase-w-gemini-sessions/OSSERVAZIONI.md`.
+
 ## 1. Correzione preliminare del proposer
 
 - Con `batchWrites` attivo, la regola generale del workflow chiede **un Task per passo di uno specialista**. Tutte le scritture dello stesso passo vanno in un Task write-set (da 2 a 8); un singolo file resta un Task a una scrittura.
