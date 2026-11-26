@@ -1,0 +1,10 @@
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"557c650f3753c7f6","success":true,"error_kind":null,"duration_ms":2024}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"557c650f3753c7f6","success":true,"error_kind":null,"duration_ms":3331}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"e1598d9b19ebae13","success":true,"error_kind":null,"duration_ms":2114}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"e1598d9b19ebae13","success":true,"error_kind":null,"duration_ms":3456}
+{"event":"adk_tool_timing","role":"test","tool":"run_tests","task_ref":"d460b3e9984911f1","success":true,"error_kind":null,"duration_ms":3508}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"2920705e4698d32a","success":true,"error_kind":null,"duration_ms":1846}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"2920705e4698d32a","success":true,"error_kind":null,"duration_ms":3303}
+{"event":"adk_tool_timing","role":"backend","tool":"read_file","task_ref":"9b8bac44007d4df9","success":true,"error_kind":null,"duration_ms":1879}
+{"event":"adk_tool_timing","role":"backend","tool":"update_file","task_ref":"9b8bac44007d4df9","success":true,"error_kind":null,"duration_ms":3291}
+{"event":"adk_tool_timing","role":"test","tool":"run_tests","task_ref":"51dc336721935bdd","success":true,"error_kind":null,"duration_ms":3726}

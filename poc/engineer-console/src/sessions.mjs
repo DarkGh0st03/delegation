@@ -223,7 +223,10 @@ export class EngineerSessions {
     if (!approved.some(p => p.operation === "create_branch"))
       throw Error("Il permesso create_branch non è stato approvato: senza branch di lavoro non si può eseguire");
     const scripted = FREE_MODES.has(session.mode);
-    const plan = simulatedExecutionPlan(approved, session.id, testSourceProfileOf(session.project_profile));
+    // Phase W: opt-in (DELEGATION_BATCH_WRITES=1); the single-write path stays the default baseline.
+    const batchWrites = process.env.DELEGATION_BATCH_WRITES === "1";
+    const plan = simulatedExecutionPlan(approved, session.id, testSourceProfileOf(session.project_profile),
+      {batchWrites: batchWrites && scripted});
     if (scripted && !plan.tasks.length)
       throw Error("Nessun file approvato con lettura e modifica: niente da eseguire");
 
@@ -233,7 +236,8 @@ export class EngineerSessions {
     const sub = [...["gateway-tasks", "issuer-children", "gateway-children", "effect-fences",
       "sequences"].map(d => join("journals", d)), "status-reservations", "secrets",
       "mutationIntent", "giteaReceipts", "runnerIntent", "runnerFailureReceipts",
-      "runnerPassReceipts", "createIntent", "createReceipts"];
+      "runnerPassReceipts", "createIntent", "createReceipts",
+      ...(batchWrites ? ["writeSetIntent", "writeSetReceipts"] : [])];
     for (const d of ["", "journals", ...sub]) {
       mkdirSync(join(execDir, d), {recursive: true, mode: 0o700}); chmodSync(join(execDir, d), 0o700);
     }
@@ -257,7 +261,34 @@ export class EngineerSessions {
       "../../apps/orchestrator/src/canonical-owner-deployment.mjs");
     const {createProtectedCanonicalOperationalProvision} = await import(
       "../../apps/orchestrator/src/trusted-authority-only-owner-bootstrap.mjs");
+    // Phase W4 experiment only (opt-in, scripted sessions with batch writes):
+    // between the verified staging and the strict second verification the
+    // Engineer revokes the operational Root on-chain ("revoke"), or does not
+    // ("control"); both record what the agent's own Gateway routes do with
+    // the isolated staging ref. Never set in a normal session.
+    const probeMode = batchWrites && scripted ? process.env.DELEGATION_W4_PROBE : undefined;
+    let probed = false;
+    const experimentWriteSetProbe = probeMode === "revoke" || probeMode === "control"
+      ? async ctx => {
+        if (probed) return;
+        probed = true;
+        const record = {mode: probeMode, batch_id: ctx.batch_id, staging_ref: ctx.staging_ref,
+          staged_commit_sha: ctx.staged_commit_sha, agent_role: ctx.agent_role,
+          root_credential_id: ctx.root_credential_id, child_credential_id: ctx.credential_id,
+          paused_at: new Date().toISOString()};
+        record.agent_staging_access = await ctx.attemptAgentStagingAccess(ctx.agent_role);
+        if (probeMode === "revoke") {
+          const t0 = Date.now();
+          await this.#core.credentials.revokeRoot(ctx.root_credential_id);
+          record.revocation = {revoked_credential_id: ctx.root_credential_id, ms: Date.now() - t0,
+            confirmed_at: new Date().toISOString()};
+        }
+        record.released_at = new Date().toISOString();
+        session.w4_probe = record; this.#save(session);
+        this.#log(session, "W4 probe: " + JSON.stringify(record));
+      } : undefined;
     const operational = await assembleCanonicalOperationalDeployment({
+      ...(experimentWriteSetProbe ? {experimentWriteSetProbe} : {}),
       pins: {snapshot: live.snapshot, preliminaryRoot: live.preliminaryRoot,
         workBranch: session.work_branch, gateway: {gatewayBaseUrl: live.gatewayBaseUrl}},
       config: {
@@ -282,6 +313,7 @@ export class EngineerSessions {
         // Phase R: one VP for all signed reads of a Task (opt-out for the
         // single-read baseline with DELEGATION_BATCH_READS=0).
         ...(process.env.DELEGATION_BATCH_READS === "0" ? {} : {enableBatchReads: true}),
+        ...(batchWrites ? {enableBatchWrites: true} : {}),
         // The owner refuses a title with surrounding blanks: trim after cutting.
         draftTitle: ((scripted ? "[SIMULATA] " : "") +
           session.requirement.replace(/\s+/gu, " ").slice(0, 120)).trim(),
@@ -337,8 +369,9 @@ export class EngineerSessions {
     operational.rootReservation.validitySeconds = Math.min(validity, 7200);
 
     if (scripted) {
-      const files = role => plan.tasks.filter(t => t.agent_id === role && t.path)
-        .map(t => ({path: t.path, op: t.op, ...(t.reads ? {reads: t.reads} : {})}));
+      const files = role => plan.tasks.filter(t => t.agent_id === role && (t.path || t.op === "write_set"))
+        .map(t => t.op === "write_set" ? {path: t.writes[0].path, op: "write_set", writes: t.writes, reads: t.reads ?? []}
+          : {path: t.path, op: t.op, ...(t.reads ? {reads: t.reads} : {})});
       const w = operational.localWorkers.workers, branch = session.work_branch;
       const common = {branch, sessionId: session.id};
       for (const role of APPLICATION_ROLES)
@@ -434,7 +467,13 @@ export class EngineerSessions {
       // Phase R: which read batch an item belongs to and whether its VP was
       // verified ("performed") or the batch result reused ("reused").
       ...(typeof event.read_batch_id === "string"
-        ? {read_batch_id: event.read_batch_id, batch_verification: event.batch_verification ?? null} : {})});
+        ? {read_batch_id: event.read_batch_id, batch_verification: event.batch_verification ?? null} : {}),
+      // Phase W: write batch, its verification mode and the strict second verification time.
+      ...(typeof event.write_batch_id === "string"
+        ? {write_batch_id: event.write_batch_id, batch_verification: event.batch_verification ?? null,
+           ...(typeof event.write_set_reverification_ms === "number"
+             ? {reverification_ms: event.write_set_reverification_ms, provider_ms: event.provider_ms,
+                commit_sha: event.provider_commit_sha ?? null} : {})} : {})});
     // Tests that ran and failed are an outcome, not a Gateway error.
     if (event.reason === "tests_failed") session.log.push({at: new Date().toISOString(),
       text: `Gateway: ${event.tool} di ${event.agent_role} autorizzato, test non superati (FAIL verificato del Runner)`});
@@ -740,6 +779,7 @@ export class EngineerSessions {
         projectProfileSha256: session.project_profile_sha256},
       projectTestSourceProfile: testSourceProfileOf(session.project_profile),
       baseBranch: session.base_branch,
+      ...(process.env.DELEGATION_BATCH_WRITES === "1" ? {batchWritesEnabled: true} : {}),
       trustedAgentRegistry,
       credentials: this.#core.credentials,
       planningRevisions: revisions,

@@ -163,6 +163,12 @@ export interface ExecuteAuditEvent {
   runner_log_reference?: string;
   /** Phase R: operational read batch and whether this item ran or reused its VP verification. */
   read_batch_id?: string;
+  /** Phase W: write batch of the item and the published write-set. */
+  write_batch_id?: string;
+  write_set_digest?: string;
+  write_set_reverified?: boolean;
+  /** Duration of the strict second verification (excluded from provider_ms). */
+  write_set_reverification_ms?: number;
   batch_verification?: "performed" | "reused";
   provider: "mock" | "gitea" | "runner";
 }

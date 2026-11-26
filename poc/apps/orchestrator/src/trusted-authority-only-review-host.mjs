@@ -41,6 +41,13 @@ import {AuthenticatedGiteaCreateCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-create-evidence.ts';
 import {TrustedAuthorityOnlySequentialReadUpdateStager}
  from '../../gateway/src/trusted-authority-only-sequential-read-update-stager.ts';
+import {TrustedAuthorityOnlySequentialWriteSetStager}
+ from '../../gateway/src/trusted-authority-only-sequential-write-set-stager.ts';
+import {TrustedAuthorityOnlyWriteSetPreflight}
+ from '../../gateway/src/trusted-authority-only-write-set-preflight.ts';
+import {AuthenticatedWriteSetCompletionObserver}
+ from '../../gateway/src/trusted-authority-only-write-set-evidence.ts';
+import {TrustedWriteBatchStore} from '../../gateway/src/trusted-write-batch.ts';
 import {AuthenticatedGiteaMutationCompletionObserver}
  from '../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts';
 import {AuthenticatedGiteaReadCompletionObserver}
@@ -48,7 +55,7 @@ import {AuthenticatedGiteaReadCompletionObserver}
 import {canonicalFileUri} from '../../gateway/src/canonical.ts';
 import {isTestAgentReadGrant,readUpdateGrantShape,isProjectTestCreateGrant,isProjectTestSource,
  readCreateGrantShape,isProjectTestReadCreateGrant,
- isTrustedProjectTestSourceProfile,exactFilePath}
+ isTrustedProjectTestSourceProfile,exactFilePath,readsWriteSetGrantShape}
  from '../../../packages/plan-contracts/src/gitea-permission-containment.mjs';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
@@ -395,6 +402,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      taskJournal:deps.gatewayTaskJournal,childJournal:deps.gatewayChildJournal,
      projectTestSourceProfile,
      ...(options.baseBranch===undefined?{}:{baseBranch:options.baseBranch}),
+     // Phase W: owner-only opt-in, never from A2A, model or workflow JSON.
+     ...(options.batchWritesEnabled===true?{batchWritesEnabled:true}:{}),
      ...(deps.effectFenceJournal===undefined?{}:{effectFenceJournal:deps.effectFenceJournal}),
      ...(deps.sequentialEffectJournal===undefined?{}:{sequentialEffectJournal:deps.sequentialEffectJournal}),
      ...(deps.completionObserver===undefined?{}:{completionObserver:deps.completionObserver})
@@ -469,7 +478,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       stagedTaskCount++;
       stagedTaskIds.set(input.runtimeTaskId,Object.freeze({
        task_id:registered.task_id,agent_id:registered.agent_id,
-       operation:registered.permissions.find(p=>
+       // Phase W: an opt-in write-set Task is ONE owner-sequenced effect.
+       operation:gateway.batchWritesEnabled===true&&readsWriteSetGrantShape(registered.permissions)?'write_set':
+        registered.permissions.find(p=>
         p.operation==='update_file'||p.operation==='create_file'||p.operation==='run_tests'||
         p.operation==='create_pull_request')?.operation??
         (registered.permissions.length===1&&
@@ -569,7 +580,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
      if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor','branchExecutor','mutationObserver','readObserver',
-          'create','createObserver','ownerSourceGate'])||
+          'create','createObserver','ownerSourceGate','writeSet'])||
+        (deps.writeSet!==undefined&&
+         (gateway.batchWritesEnabled!==true||
+          !fields(deps.writeSet,['preflight','observer','batches'])||
+          !TrustedAuthorityOnlyWriteSetPreflight.isNativeForAdmissions(deps.writeSet.preflight,gateway)||
+          !AuthenticatedWriteSetCompletionObserver.isNative(deps.writeSet.observer)||
+          !(deps.writeSet.batches instanceof TrustedWriteBatchStore)))||
         (deps.ownerSourceGate!==undefined&&
          (!isIssuedDisposableOwnerSourceGate(deps.ownerSourceGate)||
           !(deps.mutationObserver instanceof
@@ -806,6 +823,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      adaptiveLoopFlight=runTrustedAuthorityOnlyAdaptiveWorkLoop({
       model:input.model,maxSteps:input.maxSteps,signal:input.signal,
       projectTestSourceProfile,
+      // Phase W: only the owner's Gateway decides whether write-sets exist.
+      batchWrites:gateway.batchWritesEnabled===true&&!!nativeEffectBinding?.writeSet,
       // Private original owner opt-in; scripted historical tests remain in
       // legacy mode, and the model cannot change this policy mid-flight.
       requireVerifiedRepairDiagnostic:input.requireVerifiedRepairDiagnostic===true,
@@ -878,7 +897,11 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         // journal (each granted read, then the CAS update or the create).
         const mixed=choice.permissions.some(p=>p.operation==='read_file')&&
          choice.permissions.some(p=>p.operation==='update_file'||p.operation==='create_file');
-        const stager=mixed
+        const writeSetTask=stagedTaskIds.get(runtimeTaskId)?.operation==='write_set';
+        const stager=writeSetTask
+         ?await executionHandle.createEnrolledNativeSequentialWriteSetStager({
+          runtimeTaskId,expectedHeadSha:context.executionProgress.current_head_sha})
+         :mixed
          ?await executionHandle.createEnrolledNativeSequentialReadUpdateStager({
           runtimeTaskId,expectedHeadSha:context.executionProgress.current_head_sha})
          :executionHandle.createEnrolledNativeEffectStager({runtimeTaskId,
@@ -1340,6 +1363,44 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        throw error;
       }
      },
+     /** Phase W: the original owner reserves the immutable write-set
+      * manifest (R reads, then the signed writes in canonical order) for an
+      * enrolled write-set Task. Not an A2A tool. */
+     async createEnrolledNativeSequentialWriteSetStager(input){
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         !nativeEffectBinding?.writeSet||taskStageFlight||dispatchFlight||
+         taskStageFailed||dispatchFailed||
+         !fields(input,['runtimeTaskId','expectedHeadSha'])||
+         typeof input?.runtimeTaskId!=='string'||!/^[a-f0-9]{40}$/u.test(input.expectedHeadSha))
+       deny('native write-set staging requires the original write-set components, live owner and HEAD');
+      const pin=stagedTaskIds.get(input.runtimeTaskId);
+      if(!pin||pin.operation!=='write_set'||issuedEffectStagers.has(input.runtimeTaskId)||
+         dispatchAttempts.has(input.runtimeTaskId))
+       deny('native write-set staging requires an enrolled unspent write-set Task');
+      const row=operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id);
+      if(row.agent_id!==pin.agent_id||!readsWriteSetGrantShape(row.permissions))
+       deny('native write-set staging requires the signed write-set grant');
+      const flight=TrustedAuthorityOnlySequentialWriteSetStager.begin({
+       store:nativeEffectBinding.store,admissions:gateway,
+       batches:nativeEffectBinding.writeSet.batches,preflight:nativeEffectBinding.writeSet.preflight,
+       observer:nativeEffectBinding.writeSet.observer,
+       planTaskId:pin.task_id,runtimeTaskId:input.runtimeTaskId,expectedHeadSha:input.expectedHeadSha});
+      issuedEffectStagers.set(input.runtimeTaskId,flight);
+      try{
+       const stager=await flight;
+       if(closed||session.phase!=='operational')deny('native write-set staging lost original operational root');
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       issuedEffectStagers.set(input.runtimeTaskId,stager);
+       return stager;
+      }catch(error){
+       taskStageFailed=true;
+       if(session.phase==='operational'){
+        try{await retire();}
+        catch{deny('native write-set staging failed and root retirement unconfirmed');}
+       }
+       throw error;
+      }
+     },
      /** Dispatch only the original enrolled Task with a genuine
       * owner-private stager created for this Gateway, runtime ID and effect.
       * A2A output is a report, never Gateway provider completion. */
@@ -1361,6 +1422,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         snapshot.repository.owner+'/'+snapshot.repository.repository,branch);
       const sequential=(pin?.operation==='update_file'||pin?.operation==='create_file')&&
        TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
+        input.effectStager,gateway,input.taskId,input.runtimeTaskId);
+      const writeSetStaged=pin?.operation==='write_set'&&!!nativeEffectBinding?.writeSet&&
+       TrustedAuthorityOnlySequentialWriteSetStager.isNativeForOwner(
         input.effectStager,gateway,input.taskId,input.runtimeTaskId);
       // A signed one-effect read can support initial investigation or
       // recovery. Keep dispatch inside the live adaptive loop and require
@@ -1385,9 +1449,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          operationalCoordinator.assertTrustedGatewayRegisteredTask(pin.task_id).permissions)))&&
        nativeEffectBinding?.readObserver instanceof AuthenticatedGiteaReadCompletionObserver;
       if(!pin||pin.task_id!==input.taskId||
-         (!['update_file','create_file','run_tests'].includes(pin.operation)&&!diagnosticRead)||
+         (!['update_file','create_file','run_tests','write_set'].includes(pin.operation)&&!diagnosticRead)||
          issuedEffectStagers.get(input.runtimeTaskId)!==input.effectStager||
-         !(ordinary||sequential||created))
+         !(ordinary||sequential||created||writeSetStaged))
        deny('protected A2A dispatch requires an original owner-bound effect stager');
       if(input.d1Candidate!==undefined&&
          (pin.operation!=='run_tests'||pin.agent_id!=='test'||

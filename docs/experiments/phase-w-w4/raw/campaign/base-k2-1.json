@@ -1,0 +1,195 @@
+{
+ "label": "base-k2-1",
+ "sid": "s-4f60d5c6ff91",
+ "phase": "completed",
+ "error": null,
+ "permissions": 7,
+ "planning_ms": 8033,
+ "execution_ms": 30252,
+ "total_ms": 38285,
+ "pull_request": {
+  "number": 129,
+  "title": "WIP: [SIMULATA] Stock items: record each change",
+  "url": "http://gitea:3000/thesis/batch-bench/pulls/129",
+  "draft": true,
+  "merged": false
+ },
+ "gateway_decisions": [
+  {
+   "at": "2026-11-25T20:08:53.850Z",
+   "agent": "orchestrator",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/main/files/src/inventory/items.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "verification_ms": 1086.346314000024,
+   "opa_ms": 5.855874000000767,
+   "vp_size_bytes": 1472
+  },
+  {
+   "at": "2026-11-25T20:09:02.850Z",
+   "agent": "orchestrator",
+   "tool": "create_branch",
+   "resource": "gitea://gitea.local/thesis/batch-bench",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1224.3931339999835,
+   "opa_ms": 4.166300999990199
+  },
+  {
+   "at": "2026-11-25T20:09:05.218Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-4f60d5c6ff91/files/src/inventory/items.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1611.0582850000064,
+   "opa_ms": 2.59651699999813
+  },
+  {
+   "at": "2026-11-25T20:09:07.232Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-4f60d5c6ff91/files/src/inventory/items.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1627.1625319999876,
+   "opa_ms": 4.634154999977909
+  },
+  {
+   "at": "2026-11-25T20:09:12.130Z",
+   "agent": "backend",
+   "tool": "read_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-4f60d5c6ff91/files/src/inventory/stock.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1596.303127000021,
+   "opa_ms": 4.051826000009896
+  },
+  {
+   "at": "2026-11-25T20:09:14.136Z",
+   "agent": "backend",
+   "tool": "update_file",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-4f60d5c6ff91/files/src/inventory/stock.js",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1728.262637000007,
+   "opa_ms": 2.625655000010738
+  },
+  {
+   "at": "2026-11-25T20:09:19.072Z",
+   "agent": "test",
+   "tool": "run_tests",
+   "resource": "gitea://gitea.local/thesis/batch-bench/branches/feature%2Fs-4f60d5c6ff91",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_runner_execution",
+   "detail": null,
+   "verification_ms": 1670.3684939999948,
+   "opa_ms": 4.986727999988943
+  },
+  {
+   "at": "2026-11-25T20:09:23.086Z",
+   "agent": "orchestrator",
+   "tool": "create_pull_request",
+   "resource": "gitea://gitea.local/thesis/batch-bench",
+   "decision": "allow",
+   "reason": "verified_policy_allowed_gitea_execution",
+   "detail": null,
+   "verification_ms": 1134.3752780000214,
+   "opa_ms": 2.7788739999814425
+  }
+ ],
+ "log": [
+  {
+   "at": "2026-11-25T20:08:47.597Z",
+   "text": "Policy della repository applicata da OPA"
+  },
+  {
+   "at": "2026-11-25T20:08:47.597Z",
+   "text": "Profilo di test della repository: 2 fasi (dependency_install, tests), impronta f24c22d1fa77"
+  },
+  {
+   "at": "2026-11-25T20:08:47.626Z",
+   "text": "Snapshot di 23 file e 5 cartelle alla commit c7a8718bffa7"
+  },
+  {
+   "at": "2026-11-25T20:08:47.628Z",
+   "text": "Gateway avviato (verifica Rust + OPA + Gitea)"
+  },
+  {
+   "at": "2026-11-25T20:08:47.630Z",
+   "text": "Planner: SIMULATO (nessuna IA, nessun costo)"
+  },
+  {
+   "at": "2026-11-25T20:08:47.631Z",
+   "text": "Emissione della Root preliminare di sola lettura..."
+  },
+  {
+   "at": "2026-11-25T20:08:54.975Z",
+   "text": "Proposta pronta: 7 permessi da rivedere"
+  },
+  {
+   "at": "2026-11-25T20:08:55.697Z",
+   "text": "Firma Ed25519 dell'Engineer registrata su 7 permessi di 7"
+  },
+  {
+   "at": "2026-11-25T20:08:55.698Z",
+   "text": "Avvio dell'esecuzione: la Root operativa sarà emessa con i soli permessi firmati"
+  },
+  {
+   "at": "2026-11-25T20:08:55.718Z",
+   "text": "Agenti SIMULATI (nessuna IA): 3 Task pianificati"
+  },
+  {
+   "at": "2026-11-25T20:09:04.607Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/inventory/items.js (sessione s-4f60d5c6ff91)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t01-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T20:09:11.615Z",
+   "text": "Orchestrator → backend: Leggi e aggiorna src/inventory/stock.js (sessione s-4f60d5c6ff91)",
+   "assignment": {
+    "agent": "backend",
+    "task_id": "t02-backend",
+    "operations": "read_file, update_file"
+   }
+  },
+  {
+   "at": "2026-11-25T20:09:18.523Z",
+   "text": "Orchestrator → test: Esegui i test del progetto sul commit attuale del branch",
+   "assignment": {
+    "agent": "test",
+    "task_id": "t99-test",
+    "operations": "run_tests"
+   }
+  },
+  {
+   "at": "2026-11-25T20:09:20.763Z",
+   "text": "Test avviati nel Runner sul commit 6a58efc3a547"
+  },
+  {
+   "at": "2026-11-25T20:09:22.327Z",
+   "text": "Esito del Runner: PASS"
+  },
+  {
+   "at": "2026-11-25T20:09:25.009Z",
+   "text": "Anteprima della Draft PR richiesta allo staging"
+  },
+  {
+   "at": "2026-11-25T20:09:25.009Z",
+   "text": "Completata: Draft PR creata. Il merge resta una decisione umana."
+  }
+ ],
+ "w4_probe": null,
+ "base_sha": "c7a8718bffa75b3054f1b0aabb9132dbd8fce048",
+ "work_branch": "feature/s-4f60d5c6ff91"
+}

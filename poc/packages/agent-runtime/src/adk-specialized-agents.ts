@@ -102,6 +102,8 @@ export interface AdkSpecializedAgentConfig {
   trustedRunTestsAllowed?: boolean;
   /** Phase R (trusted host option): read all signed files with ONE VP via read_files. */
   batchReads?: boolean;
+  /** Phase W (trusted host option): write all signed files with ONE VP via write_files. */
+  batchWrites?: boolean;
 }
 
 export interface AdkSpecializedAgent {
@@ -185,6 +187,12 @@ export function createAdkSpecializedAgent(
   // read_file. The paths are the signed Task grants, never model arguments.
   const batchReads=config.batchReads===true&&readablePaths.length>=2&&
     config.gatewayClient.supportsBatchReads;
+  // Phase W: in an owner-staged write-set Task (2..8 signed writes), the model
+  // gets ONE write_files call with every signed write instead of update/create.
+  const signedWrites=[...writable.map(path=>({path,operation:"update_file" as const})),
+    ...creatable.map(path=>({path,operation:"create_file" as const}))];
+  const batchWrites=config.batchWrites===true&&signedWrites.length>=2&&signedWrites.length<=8&&
+    config.gatewayClient.supportsBatchWrites;
   const skill=`Implement the approved ${config.role} software-engineering Task within its exact signed permissions.`;
   // Never carry the demo-specific feature narrative, file lists or
   // performance instructions into a general Engineer-approved Task.
@@ -200,7 +208,11 @@ export function createAdkSpecializedAgent(
     "Approved writable existing files:",...list(writable),"",
     "Approved creatable files:",...list(creatable),"",
     "Read and write are independent permissions: never assume either from the other.",
-    ...(batchReads?[
+    ...(batchWrites?[
+      (batchReads?"Call read_files exactly ONCE, first: it returns EVERY approved readable file. ":
+       readablePaths.length?"Read EVERY approved readable file once with read_file, first. ":"")+
+      "Then call write_files exactly ONCE with ALL the approved writes together: every approved writable file (operation update_file, its complete new content) and every approved creatable file (operation create_file, its complete content). They are published together in one commit, or none is. A partial set is refused. After write_files, call no more tools and reply only with a short report."
+    ]:batchReads?[
       "Call read_files exactly ONCE, first: in one authorized step it returns EVERY approved readable file (the file to edit and the files it depends on). Then make the single write (update_file or create_file). After the write, call no more tools and reply only with a short report: repeated, extra or out-of-order tool calls are refused and make the Task fail."
     ]:[
       "Each granted operation may be used exactly ONCE in this Task: read EVERY approved readable file once (in any order; they are the file to edit and the files it depends on), then make the single write (update_file or create_file) or the single run_tests. After the write or the test run, call no more tools and reply only with a short report: repeated, extra or out-of-order tool calls are refused and make the Task fail."
@@ -292,8 +304,8 @@ export function createAdkSpecializedAgent(
       // Absent is NOT a Runner grant.
       (definition.name==="run_tests"&&config.trustedRunTestsAllowed===true) ||
       (definition.name==="read_file"&&readablePaths.length>0&&!batchReads) ||
-      (definition.name==="update_file"&&writable.length>0) ||
-      (definition.name==="create_file"&&creatable.length>0))
+      (definition.name==="update_file"&&writable.length>0&&!batchWrites) ||
+      (definition.name==="create_file"&&creatable.length>0&&!batchWrites))
     // All declared model tools run through the signed Gateway FunctionTools.
     .map((definition) => {
     const name = definition.name as SpecializedToolName;
@@ -375,6 +387,64 @@ export function createAdkSpecializedAgent(
       }
     });
   });
+  if(batchWrites){
+    const name="write_files";
+    let used=false;
+    const writePaths=signedWrites.map(w=>w.path) as [string,...string[]];
+    tools.push(new FunctionTool({
+      name,
+      description:"Write ALL approved files of this Task together (one signed presentation, one commit): every approved writable file with operation update_file and every approved creatable file with operation create_file, each with its complete content. Call it once, after reading.",
+      parameters:z.object({branch:z.literal(branch),changes:z.array(z.object({
+        path:z.enum(writePaths),operation:z.enum(["update_file","create_file"]),
+        content:z.string()})).min(2).max(8)}),
+      execute:async(args)=>{
+        const started=performance.now();
+        let success=false;
+        let errorKind:ControlledToolErrorKind|null=null;
+        let failureReason:string|undefined;
+        const a=args as {branch?:unknown;changes?:{path:string;operation:"update_file"|"create_file";content:string}[]};
+        const changes=Array.isArray(a.changes)?a.changes:[];
+        try{
+          config.signal?.throwIfAborted();
+          if(used)throw new ControlledToolError("invalid_tool_call","write_files was already used in this Task");
+          used=true;
+          if(a.branch!==branch)throw new ControlledToolError("invalid_tool_call","Branch differs from the signed Task branch");
+          // D5: exactly the signed write-set, each file once with its signed operation.
+          const want=new Map(signedWrites.map(w=>[w.path,w.operation]));
+          if(changes.length!==signedWrites.length||new Set(changes.map(c=>c.path)).size!==changes.length||
+             changes.some(c=>want.get(c.path)!==c.operation||typeof c.content!=="string"))
+            throw new ControlledToolError("invalid_tool_call",
+              "write_files must contain exactly every approved write, each once with its approved operation");
+          const result=await config.gatewayClient.writeFiles(branch,changes);
+          config.signal?.throwIfAborted();
+          success=true;
+          // One outcome per file, as the single-write path reports it (path + commit).
+          for(const f of result.files)
+            config.onToolOutcome?.({name:f.operation as "update_file"|"create_file",
+              arguments:{branch,path:f.path},payload:{ok:true as const,result:{provider:"gitea",performed:true,
+               tool:f.operation,branch,path:f.path,commit_sha:result.commit_sha}}});
+          return {ok:true as const,result};
+        }catch(error){
+          const e=error instanceof ControlledToolError?error:
+            new ControlledToolError("tool_unavailable","Controlled tool failed");
+          errorKind=e.kind;failureReason=e.reason;
+          const payload=controlledToolErrorPayload(e);
+          for(const w of signedWrites)
+            config.onToolOutcome?.({name:w.operation,arguments:{branch,path:w.path},payload});
+          return payload;
+        }finally{
+          process.stdout.write(JSON.stringify({
+            event:"adk_tool_timing",role:config.role,tool:name,
+            ...(taskRef?{task_ref:taskRef}:{}),
+            success,error_kind:errorKind,
+            ...(failureReason?{reason:failureReason}:{}),
+            batch_size:signedWrites.length,
+            duration_ms:Math.round(performance.now()-started)
+          })+"\n");
+        }
+      }
+    }));
+  }
   if(batchReads){
     const name="read_files";
     let used=false;

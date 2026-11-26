@@ -90,19 +90,26 @@ async function privateText(file,maxBytes=32768){
 async function prepareCanonicalNativeEffects(authority,options){
  const fields=["store","giteaClient","independentGiteaClient","runnerClient",
   "runnerPassObserver","directories","evidenceKey","installAuthorization"];
- if(!exact(options,fields)&&!exact(options,[...fields,"readObserver"]))deny();
+ const optional=["readObserver","verifier","writeSetProbe"].filter(k=>Object.hasOwn(options??{},k));
+ if(!exact(options,[...fields,...optional]))deny();
  const {installAuthorization,directories,evidenceKey,...clients}=options;
  const repository=authority.snapshot?.repository;
  const baseDirs=["mutationIntent","giteaReceipts","runnerIntent",
   "runnerFailureReceipts","runnerPassReceipts"];
- const nativeCreateDirs=[...baseDirs,"createIntent","createReceipts"];
  const hasCreate=Object.hasOwn(directories??{},"createIntent")||
   Object.hasOwn(directories??{},"createReceipts");
+ // Phase W: optional write-set intent/receipt folders (both or neither).
+ const hasWriteSet=Object.hasOwn(directories??{},"writeSetIntent")||
+  Object.hasOwn(directories??{},"writeSetReceipts");
+ const expectedDirs=[...baseDirs,...(hasCreate?["createIntent","createReceipts"]:[]),
+  ...(hasWriteSet?["writeSetIntent","writeSetReceipts"]:[])];
  if(typeof installAuthorization!=="function"||
     typeof repository?.owner!=="string"||typeof repository.repository!=="string"||
     !Buffer.isBuffer(evidenceKey)||evidenceKey.length!==32||
-    !(hasCreate?exact(directories,nativeCreateDirs):exact(directories,baseDirs))||
-    new Set(Object.values(directories)).size!==(hasCreate?7:5))
+    !exact(directories,expectedDirs)||
+    (hasWriteSet&&typeof clients.verifier?.verifyMultiple!=="function")||
+    (Object.hasOwn(clients,"writeSetProbe")&&(!hasWriteSet||typeof clients.writeSetProbe!=="function"))||
+    new Set(Object.values(directories)).size!==expectedDirs.length)
   deny();
  const pins={...directories},key=Buffer.from(evidenceKey);
  await Promise.all(Object.values(pins).map(dirOwned));

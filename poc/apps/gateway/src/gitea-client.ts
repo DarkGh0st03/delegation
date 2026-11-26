@@ -78,6 +78,19 @@ export interface GiteaFileMutation {
 }
 
 /** A commit moved onto the signed feature branch via an atomic old-HEAD CAS. */
+/** Phase W: prefix of the isolated write-set staging refs (readable by repository readers; never a work branch). */
+export const WRITE_SET_STAGING_PREFIX="feature/w2-write-set-";
+function isWorkBranch(branch:unknown,base:string):branch is string{
+  return typeof branch==="string"&&branch!==base&&
+    /^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)&&
+    !branch.includes("..")&&!branch.includes("//")&&
+    !branch.startsWith("feature/r302-internal-")&&!branch.startsWith("feature/r3832-create-")&&
+    !branch.startsWith(WRITE_SET_STAGING_PREFIX);
+}
+function safePath(path:unknown):path is string{
+  return typeof path==="string"&&!!path&&path.length<=512&&!path.startsWith("/")&&
+    !path.split("/").some(x=>!x||x==="."||x===".."||x.includes("%")||x.includes("\\"));
+}
 export interface GiteaHeadCasFileMutation extends GiteaFileMutation {
   previous_head_sha:string;
   previous_blob_sha:string;
@@ -658,6 +671,8 @@ export class GiteaClient {
        !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
        branch.includes("..")||branch.includes("//")||
        branch.startsWith("feature/r302-internal-")||
+       branch.startsWith("feature/r3832-create-")||
+       branch.startsWith(WRITE_SET_STAGING_PREFIX)||
        typeof path!=="string"||!path||path.length>512||
        path.startsWith("/")||path.split("/").some(x=>
         !x||x==="."||x===".."||x.includes("%")||x.includes("\\"))||
@@ -779,6 +794,7 @@ export class GiteaClient {
        branch.includes("..")||branch.includes("//")||
        branch.startsWith("feature/r302-internal-")||
        branch.startsWith("feature/r3832-create-")||
+       branch.startsWith(WRITE_SET_STAGING_PREFIX)||
        typeof path!=="string"||!path||path.length>512||
        path.startsWith("/")||path.split("/").some(x=>
         !x||x==="."||x===".."||x.includes("%")||x.includes("\\"))||
@@ -906,6 +922,7 @@ export class GiteaClient {
        branch.includes("..")||branch.includes("//")||
        branch.startsWith("feature/r302-internal-")||
        branch.startsWith("feature/r3832-create-")||
+       branch.startsWith(WRITE_SET_STAGING_PREFIX)||
        typeof path!=="string"||!path||path.length>512||
        path.startsWith("/")||
        path.split("/").some(p=>!p||p==="."||p===".."||
@@ -984,6 +1001,139 @@ export class GiteaClient {
     const parentSha=requiredString(parent.sha,"commit parent.sha");
     this.#validatePinnedRevision(parentSha);
     return parentSha;
+  }
+
+  /**
+   * Phase W (W2), owner-only transport: build ONE commit with the whole
+   * write-set on a disposable ISOLATED staging ref (isolated from the work branch and forbidden to agents, NOT confidential) created at the exact
+   * pinned HEAD (Gitea ChangeFiles). Updates always carry the owner-pinned
+   * blob SHA (W0 S6b: without it Gitea applies no guard); creates fail if the
+   * file exists. Gitea rejects the WHOLE request if any operation is invalid
+   * (W0 S4-S6). The work branch is NOT touched here.
+   */
+  async stageWriteSetCommit(input:Readonly<{
+    branch:string;expectedHeadSha:string;stagingBranch:string;message:string;
+    files:readonly Readonly<{operation:"update_file"|"create_file";path:string;
+      content:string;expectedBlobSha:string|null}>[];
+  }>):Promise<{commit_sha:string;staging_branch:string}>{
+    const {branch,expectedHeadSha,stagingBranch,message,files}=input??({} as never);
+    if(!isWorkBranch(branch,this.#baseBranch)||!/^[a-f0-9]{40}$/u.test(expectedHeadSha??"")||
+       typeof stagingBranch!=="string"||
+       !/^feature\/w2-write-set-[a-f0-9]{28}$/u.test(stagingBranch)||
+       typeof message!=="string"||!message.trim()||message.length>300||
+       !Array.isArray(files)||files.length<2||files.length>8||
+       new Set(files.map(f=>f?.path)).size!==files.length||
+       files.some(f=>!f||!safePath(f.path)||typeof f.content!=="string"||
+        Buffer.byteLength(f.content,"utf8")<1||Buffer.byteLength(f.content,"utf8")>2_000_000||
+        f.content.includes("\0")||
+        (f.operation==="update_file"?!/^[a-f0-9]{40}$/u.test(f.expectedBlobSha??""):
+         f.operation==="create_file"?f.expectedBlobSha!==null:true)))
+      throw new ProviderConflictError("Untrusted owner-pinned write-set commit");
+    if((await this.getBranchMetadata(branch)).commit_sha!==expectedHeadSha)
+      throw new ProviderConflictError("Signed feature branch advanced before write-set staging");
+    const stage=object(await this.#requestJson(this.#repoApi("/branches"),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({new_branch_name:stagingBranch,old_ref_name:expectedHeadSha})
+    }),"Gitea write-set staging ref");
+    if(stage.name!==stagingBranch||
+       requiredString(object(stage.commit,"staging commit").id,"staging commit id")!==expectedHeadSha||
+       (await this.getBranchMetadata(stagingBranch)).commit_sha!==expectedHeadSha)
+      throw new ProviderUnavailableError("Gitea write-set staging ref did not start at pinned HEAD");
+    const body=object(await this.#requestJson(this.#repoApi("/contents"),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({branch:stagingBranch,message,files:files.map(f=>({
+        operation:f.operation==="update_file"?"update":"create",path:f.path,
+        content:Buffer.from(f.content,"utf8").toString("base64"),
+        ...(f.operation==="update_file"?{sha:f.expectedBlobSha}:{})}))})
+    }),"Gitea ChangeFiles response");
+    const commit=requiredString(object(body.commit,"ChangeFiles commit").sha,"ChangeFiles commit sha");
+    if(!/^[a-f0-9]{40}$/u.test(commit)||commit===expectedHeadSha||
+       (await this.getBranchMetadata(stagingBranch)).commit_sha!==commit)
+      throw new ProviderUnavailableError("Gitea write-set commit is not the staging ref tip");
+    return {commit_sha:commit,staging_branch:stagingBranch};
+  }
+
+  /** Parents and changed files (name + status) of one immutable commit. */
+  async getCommitChanges(commitSha:string):Promise<{parents:string[];
+    files:{filename:string;status:string}[]}>{
+    if(!/^[a-f0-9]{40}$/u.test(commitSha))throw new ProviderConflictError("Untrusted commit id");
+    const c=object(await this.#json(this.#repoApi("/git/commits/"+commitSha+
+      "?stat=true&files=true&verification=false")),"Gitea commit");
+    if(c.sha!==commitSha||!Array.isArray(c.parents)||!Array.isArray(c.files))
+      throw new ProviderUnavailableError("Gitea commit response lacks parents or files");
+    return {parents:c.parents.map(p=>requiredString(object(p,"parent").sha,"parent sha")),
+      files:c.files.map(f=>{const o=object(f,"commit file");
+        return {filename:requiredString(o.filename,"filename"),status:requiredString(o.status,"status")};})};
+  }
+
+  /** Files changed between two commits (Gitea compare, commits[].files). */
+  async compareCommitFiles(baseSha:string,headSha:string):Promise<{total_commits:number;
+    files:{filename:string;status:string}[]}>{
+    if(!/^[a-f0-9]{40}$/u.test(baseSha)||!/^[a-f0-9]{40}$/u.test(headSha))
+      throw new ProviderConflictError("Untrusted compare range");
+    const c=object(await this.#json(this.#repoApi("/compare/"+baseSha+"..."+headSha)),"Gitea compare");
+    const commits=Array.isArray(c.commits)?c.commits:[];
+    const files=Array.isArray(c.files)&&c.files.length?c.files:
+      commits.flatMap(x=>{const o=object(x,"compare commit");return Array.isArray(o.files)?o.files:[];});
+    return {total_commits:typeof c.total_commits==="number"?c.total_commits:commits.length,
+      files:files.map(f=>{const o=object(f,"compare file");
+        return {filename:requiredString(o.filename,"filename"),status:requiredString(o.status,"status")};})};
+  }
+
+  /** Git mode and type of exact paths in a commit tree (recursive, untruncated). */
+  async getTreeModes(commitSha:string,paths:readonly string[]):Promise<Map<string,{mode:string;type:string}>>{
+    if(!/^[a-f0-9]{40}$/u.test(commitSha)||!paths.every(safePath))
+      throw new ProviderConflictError("Untrusted tree request");
+    const t=object(await this.#json(this.#repoApi("/git/trees/"+commitSha+
+      "?recursive=true&per_page=10000")),"Gitea tree");
+    if(t.truncated===true||!Array.isArray(t.tree))
+      throw new ProviderUnavailableError("Gitea tree is truncated or malformed");
+    const wanted=new Set(paths),out=new Map<string,{mode:string;type:string}>();
+    for(const e of t.tree){
+      const o=object(e,"tree entry");
+      const path=requiredString(o.path,"tree path");
+      if(wanted.has(path))out.set(path,{mode:requiredString(o.mode,"tree mode"),type:requiredString(o.type,"tree type")});
+    }
+    return out;
+  }
+
+  /**
+   * The single authorized movement of the work branch: Gitea old_commit_id
+   * compare-and-swap. Classifies the outcome WITHOUT retrying:
+   *  - "updated": request accepted and the branch now points to the commit;
+   *  - "rejected": Gitea refused (409/422) and the branch is NOT the commit;
+   *  - throws ProviderUnavailableError for everything else (ambiguous).
+   */
+  async casBranchToCommit(branch:string,oldSha:string,newSha:string):Promise<"updated"|"rejected">{
+    if(!isWorkBranch(branch,this.#baseBranch)||!/^[a-f0-9]{40}$/u.test(oldSha)||
+       !/^[a-f0-9]{40}$/u.test(newSha)||oldSha===newSha)
+      throw new ProviderConflictError("Untrusted write-set CAS");
+    let rejected=false;
+    try{
+      await this.#requestJson(this.#repoApi("/branches/"+encodeURIComponent(branch)),{
+        method:"PUT",headers:{"content-type":"application/json"},
+        body:JSON.stringify({new_commit_id:newSha,old_commit_id:oldSha,force:false})});
+    }catch(error){
+      if(!(error instanceof ProviderConflictError))
+        throw new ProviderUnavailableError("Gitea write-set CAS outcome ambiguous");
+      rejected=true;
+    }
+    let head:string;
+    try{head=(await this.getBranchMetadata(branch)).commit_sha;}
+    catch{throw new ProviderUnavailableError("Gitea write-set CAS outcome ambiguous");}
+    if(rejected){
+      if(head===newSha)throw new ProviderUnavailableError("Gitea write-set CAS outcome ambiguous");
+      return "rejected";
+    }
+    if(head!==newSha)throw new ProviderUnavailableError("Gitea write-set CAS outcome ambiguous");
+    return "updated";
+  }
+
+  /** Best-effort removal of an isolated write-set staging ref (never the work branch). */
+  async deleteWriteSetStagingRef(stagingBranch:string):Promise<void>{
+    if(!/^feature\/w2-write-set-[a-f0-9]{28}$/u.test(stagingBranch))
+      throw new ProviderConflictError("Only private write-set refs can be deleted");
+    await this.#requestJson(this.#repoApi("/branches/"+encodeURIComponent(stagingBranch)),{method:"DELETE"});
   }
 
   async readTextFile(

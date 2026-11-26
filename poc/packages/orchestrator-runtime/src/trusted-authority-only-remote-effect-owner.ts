@@ -27,9 +27,11 @@ import type {TrustedOwnerEffectStagingRegistry,
 
 type AgentBinder=Awaited<ReturnType<typeof connectTrustedEffectAgentBindingClient>>;
 import {isProjectTestRepairGrant,readUpdateGrantShape,isProjectTestCreateGrant,
- readCreateGrantShape,isProjectTestReadCreateGrant}
+ readCreateGrantShape,isProjectTestReadCreateGrant,readsWriteSetGrantShape,isProjectTestWriteSetGrant}
  from "../../plan-contracts/src/gitea-permission-containment.mjs";
 import {SPECIALIST_ROLES,APPLICATION_ROLES,REQUIRED_SPECIALISTS} from "../../plan-contracts/src/agent-roles.mjs";
+import {TrustedAuthorityOnlySequentialWriteSetStager}
+ from "../../../apps/gateway/src/trusted-authority-only-sequential-write-set-stager.ts";
 import type {SpecialistRole} from "../../plan-contracts/src/agent-roles.mjs";
 type Role=SpecialistRole;
 const ROLES=SPECIALIST_ROLES;
@@ -149,21 +151,36 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
     deny("owner root, Coordinator, native Child and Gateway disagree");
   const writes=row.permissions.filter(p=>
    p.operation==="update_file"||p.operation==="create_file"||p.operation==="run_tests");
+  // Phase W (opt-in on the Gateway): ONE write-set Task with 2..8 signed writes.
+  const typedWriteSet=this.#gateway.batchWritesEnabled===true&&
+    !!readsWriteSetGrantShape(row.permissions)&&
+    (APPLICATION_ROLES.includes(row.agent_id)||(row.agent_id==="test"&&
+     isProjectTestWriteSetGrant(row.permissions,this.#gateway.projectTestSourceProfile)));
+  if(typedWriteSet&&!TrustedAuthorityOnlySequentialWriteSetStager.isNativeForOwner(
+      effectStager,this.#gateway,taskId,runtimeTaskId))
+   deny("write-set Task requires the original native owner write-set stager");
+  if(!typedWriteSet&&effectStager.stagedTool==="read_then_write_set")
+   deny("write-set staging cannot replace an ordinary Task grant");
+  const branch=root.branch;
+  let path:string|undefined;
+  let typedMixed=false,typedMixedCreate=false;
+  let effect:{resource:string;operation:string}={resource:"",operation:"read_then_write_set"};
+  if(!typedWriteSet){
   const effects=writes.length? writes :
    row.permissions.length===1&&row.permissions[0]?.operation==="read_file"
     ?[row.permissions[0]]:[];
   if(effects.length!==1||row.permissions.some(p=>
      !["read_file","update_file","create_file","run_tests"].includes(p.operation)))
    deny("one supported Task provider-effect grant required");
-  const effect=effects[0]!;
+  effect=effects[0]!;
   const reads=row.permissions.filter(p=>p.operation==="read_file");
   // One edited file plus its signed context reads (shared shape rule).
   const shape=readUpdateGrantShape(row.permissions);
-  const typedMixed=!!shape&&reads.length>=1&&writes.length===1&&
+  typedMixed=!!shape&&reads.length>=1&&writes.length===1&&
     effect.operation==="update_file"&&shape.edit===effect.resource;
   // Reads of existing signed files, then the create of ONE new file.
   const createShape=readCreateGrantShape(row.permissions);
-  const typedMixedCreate=!!createShape&&reads.length>=1&&writes.length===1&&
+  typedMixedCreate=!!createShape&&reads.length>=1&&writes.length===1&&
     effect.operation==="create_file"&&createShape.create===effect.resource;
   if(row.agent_id==="test"&&effect.operation==="update_file"&&
      !isProjectTestRepairGrant(row.permissions,this.#gateway.projectTestSourceProfile))
@@ -194,9 +211,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
      effectStager.stagedTool==="read_then_create")){
    deny("mixed owner stager cannot replace ordinary signed Task");
   }
-  const branch=root.branch;
   const branchUri=canonicalBranchUri(root.repository,branch);
-  let path:string|undefined;
   if(effect.operation==="read_file"||effect.operation==="update_file"||
      effect.operation==="create_file"){
    const prefix=branchUri+"/files/";
@@ -213,6 +228,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    if(row.agent_id!=="test"||effect.resource!==branchUri)
     deny("Test Runner must be branch-bound to exact signed Test Task");
   }
+  }
   if(!ROLE.test(row.agent_id)||
      (this.#agents?!Object.hasOwn(this.#agents,row.agent_id):
       !ROLES.includes(row.agent_id as Role)))
@@ -222,7 +238,8 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    runtimeTaskId,planTaskId:taskId,
    role:row.agent_id,
    childCredentialId:issued.credential_id,presenterId:row.agent_did,
-   branch,operation:typedMixed?"read_then_update" as const:
+   branch,operation:typedWriteSet?"read_then_write_set" as const:
+    typedMixed?"read_then_update" as const:
     typedMixedCreate?"read_then_create" as const:
     effect.operation as "read_file"|"update_file"|"create_file"|"run_tests",
    ...(path!==undefined?{path}:{})
