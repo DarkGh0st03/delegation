@@ -5,7 +5,7 @@ Report: `docs/PHASE_W_RESULTS.md`. Image `delegation-app:phase-w4` = `delegation
 - `scripts/compose.phase-w4.yaml`: override (batch reads/writes, plan size, `DELEGATION_W4_PROBE`).
 - `scripts/run-e2e.mjs`, `scripts/console.mjs`: session driver (derived from Phase R; `APPROVE=creates`).
 - `scripts/one-run.sh`: one fresh stack + one session (security checks).
-- `scripts/make-plan.py`, `scripts/campaign.sh`: seeded random order, fresh stack + discarded warm-up per run.
+- `scripts/make-plan.py`, `scripts/campaign.sh`: seeded random order; per run the containers are recreated (`down`/`up`, Docker volumes persist) and one discarded warm-up (always the 2-write workload, same variant) precedes the measured session.
 - `scripts/analyze.py`: counts, medians, seeded bootstrap (`python3 -I analyze.py raw/campaign 20261125`).
 - `raw/security/`: `revoke-mixed`, `control-mixed`, `creates-only` (session JSON, tool timing), `gitea-evidence.txt`,
   `revoke-mixed.status-list-updated.json` (Anvil `StatusListUpdated` logs), `anvil-blocks.txt`.

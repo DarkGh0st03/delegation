@@ -46,9 +46,11 @@
 | Staging eseguito | ref `feature/w2-write-set-ef24f181…`, commit `730fee67…` |
 | Revoca registrata on-chain | `StatusListUpdated` al blocco 31 (18:06:52Z), versione 3 della Status List della Root. La versione 2, al blocco 29, è la revoca della Root preliminare all'approvazione. La console ha avuto conferma dopo 7.024 ms |
 | Seconda verifica rifiutata | 18:07:00.8Z, `VerificationRejectedError: Rust Core rejected the signed VP or trust context` |
-| Nessun HEAD-CAS | HEAD del branch di lavoro ancora uguale al commit base `c7a8718b…` (`gitea-evidence.txt`) |
+| Nessun HEAD-CAS | Supportato da due elementi: il percorso di controllo del codice (la seconda verifica precede `markTrustedWriteSetCasSent` e il CAS, e un suo rifiuto termina il write-set prima dell'invio) e la HEAD del branch di lavoro, ancora uguale al commit base `c7a8718b…` (`gitea-evidence.txt`). **Non** c'è un contatore indipendente delle richieste HTTP a Gitea |
 | Task non completato, nessuna Draft PR | Sessione `failed`, `pull_request: null`; l'ultima PR prima di questa prova è la #55 |
 | Ref di staging | Conservato per la riconciliazione, come previsto dal §4 del progetto |
+
+**Esito della policy ed esito dell'esecuzione.** Nel log della sessione l'ultima decisione riporta `decision: allow`: è l'esito di OPA, che aveva autorizzato l'operazione. L'**esecuzione** di quella stessa decisione è invece fallita, perché la seconda verifica crittografica, eseguita dopo OPA, ha rifiutato la VP; la pubblicazione è stata quindi bloccata. Le due cose vanno lette separatamente: `allow` non significa che l'operazione sia stata eseguita.
 
 **Osservazione da riportare.** L'audit classifica il rifiuto dell'ultimo elemento come `provider_unavailable`. È la classe con cui l'executor riporta gli errori che avvengono prima del CAS, e la causa crittografica si vede solo nel log. Inoltre la console chiude la sessione con "Root retirement unconfirmed": il ritiro finale trova la Root già revocata. In entrambi i casi l'esito è sicuro (fail-closed), ma la diagnostica è meno precisa di quanto potrebbe essere.
 
@@ -83,9 +85,10 @@ I test negativi di W1–W3 non sono stati ripetuti dal vivo.
 - Dimensioni: k = 2, 4 e 8 scritture del Backend.
 - 6 ripetizioni per cella, cioè 36 sessioni misurate.
 - Ordine casuale con seed `20261125` (Mersenne Twister, `make-plan.py`).
-- Uno stack nuovo per ogni sessione, con un warm-up della stessa variante escluso dalle misure.
+- Per ogni sessione misurata i container dello stack vengono ricreati (`docker compose down` / `up`). I **volumi Docker persistono** (dati di Gitea, stato della console, configurazione), quindi l'ambiente non è completamente vergine: per esempio il repository `batch-bench` accumula branch e Draft PR delle sessioni precedenti.
+- Prima di ogni sessione misurata c'è un warm-up escluso dalle misure. Il warm-up usa **sempre lo stesso workload da 2 scritture** ("Stock items: record each change"), nella stessa variante della sessione misurata, qualunque sia il k misurato.
 
-**Requisiti** (`campaign.sh`): ogni requisito seleziona esattamente k moduli applicativi e nessun file di test, quindi lo scope e il risultato funzionale sono identici tra le due varianti.
+**Requisiti** (`campaign.sh`): ogni requisito seleziona esattamente k moduli applicativi e nessun file di test. Tra le due varianti sono quindi uguali lo scope approvato (stessi permessi), il workload scripted (gli stessi file ricevono la stessa modifica marcata) e il superamento dei test del Runner. L'equivalenza è limitata a questo: non è stata verificata l'identità byte per byte dei contenuti (il marcatore contiene l'ID della sessione) né un'equivalenza nella generazione di codice con modelli reali.
 
 | k | Requisito | Permessi approvati |
 |---|---|---|
@@ -133,7 +136,7 @@ Le valutazioni OPA e le decisioni del Gateway restano **una per operazione** in 
 
 **Metodo statistico:** bootstrap con 10.000 ricampionamenti della mediana, gruppi indipendenti, PRNG con seed `20261125` (`analyze.py`).
 
-**Risoluzione delle misure.** I tempi sono raggruppati a passi di circa 1 s, perché il driver legge lo stato della sessione ogni secondo e i cicli interni di polling A2A seguono la stessa cadenza. Le differenze inferiori a circa 1 s non sono risolvibili. Per questo il tempo della variante ws appare costante in k: l'aumento dovuto al numero di file resta al di sotto della risoluzione.
+**Risoluzione delle misure.** I tempi sono raggruppati a passi di circa 1 s, perché il driver legge lo stato della sessione ogni secondo e i cicli interni di polling A2A seguono la stessa cadenza. Le differenze inferiori a circa 1 s non sono risolvibili. Per questo il tempo della variante ws appare costante in k: l'aumento dovuto al numero di file resta al di sotto della risoluzione. Non è una dimostrazione di costo costante: nell'intervallo k = 2–8 il costo aggiuntivo delle scritture in un write-set è molto inferiore a quello di un Task in più.
 
 ### 3.3 Beneficio crittografico e miglioramento del workflow
 
@@ -143,13 +146,13 @@ Le valutazioni OPA e le decisioni del Gateway restano **una per operazione** in 
 | 4 | −7.920 ms | 45% | 1.646 ms |
 | 8 | −20.953 ms | 45% | 1.649 ms |
 
-- **Componente crittografica:** è la somma dei `verification_ms` e della seconda verifica. Spiega il 36–45% del miglioramento.
-- **Il resto (55–64%)** dipende dalla riduzione dei Task:
+- **Rapporto descrittivo:** il tempo di verifica è la somma dei `verification_ms` e della seconda verifica. La riduzione mediana del tempo di verifica vale il 36–45% della riduzione mediana del tempo di esecuzione. È un **rapporto tra differenze di mediane**, non una scomposizione causale: le componenti non sono state misurate isolandole, possono sovrapporsi nel tempo e non sono additive in senso stretto.
+- **La parte restante** è compatibile con la riduzione dei Task, che però non è stata attribuita voce per voce:
   - meno Child da emettere;
   - meno dispatch A2A e meno cicli di polling;
   - meno staging e attestazioni del proprietario;
   - un solo commit e un solo CAS al posto di k.
-- Il guadagno complessivo **non** va quindi attribuito alla sola verifica crittografica.
+- Il guadagno complessivo **non** va quindi attribuito alla sola verifica crittografica, né diviso con precisione tra le singole cause.
 - La modalità rigorosa costa una verifica completa in più per ogni write-set, già inclusa in queste misure.
 
 ### 3.4 Modalità standard
@@ -159,7 +162,11 @@ La modalità standard (senza seconda verifica) **non è stata misurata end-to-en
 ## 4. Limiti
 
 - Modelli **scripted**: le modifiche sono commenti marcati e gli agenti non ragionano. I tempi dei modelli reali si sommerebbero in entrambe le varianti e, per una sessione LLM, ridurrebbero la quota relativa del guadagno.
-- Una sola macchina virtuale condivisa con Anvil locale; il rumore è mitigato da stack nuovi per ogni sessione, warm-up e ordine casuale.
+- Una sola macchina virtuale condivisa con Anvil locale; il rumore è mitigato dalla ricreazione dei container per ogni sessione (con volumi persistenti), dal warm-up fisso da 2 scritture e dall'ordine casuale.
+- Sei ripetizioni per cella: gli intervalli bootstrap sono indicativi, con un campione piccolo.
+- La modalità standard non è stata misurata end-to-end (§3.4).
+- Il TOCTOU residuo tra la seconda verifica e il CAS (§4.3 del progetto) resta: la prova di revoca non lo elimina.
+- Equivalenza funzionale limitata a scope, workload scripted e test superati (§3).
 - Risoluzione di circa 1 s sul tempo di esecuzione (§3.2).
 - La revoca è stata provata sull'**antenata** (la Root operativa), non direttamente sulla Child.
 - Le chiamate API interne a Gitea non sono strumentate.
