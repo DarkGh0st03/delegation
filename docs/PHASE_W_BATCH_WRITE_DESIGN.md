@@ -566,3 +566,7 @@ Risultati: `docs/experiments/phase-w-w4/` (`raw/security/`) e `docs/PHASE_W_RESU
 - write-set misto (4 update + 1 create) e write-set di sole creazioni pubblicati sullo stack reale;
 - route del Gateway dell'agente sul ref di staging: 3/3 rifiutate in entrambe le sessioni;
 - campagna 36/36 (k = 2, 4, 8; 6 ripetizioni; seed 20261125): VP 6 contro 2k + 4, Task 2 contro k + 1, commit 1 contro k, OPA invariato; tempo di esecuzione 0,849 / 0,594 / 0,353 della baseline; la riduzione mediana del tempo di verifica vale il 36–45% della riduzione mediana del tempo di esecuzione (rapporto descrittivo, non causale); container ricreati con volumi persistenti, warm-up fisso da 2 scritture.
+
+## 16. Attivazione per default (dopo il merge della Fase W)
+
+Su richiesta dell'Engineer la Fase W è **attiva per default**: la console tratta ogni valore di `DELEGATION_BATCH_WRITES` diverso da `0` come attivo, e `compose.yaml` passa all'app `DELEGATION_BATCH_WRITES` con default `1`. `DELEGATION_BATCH_WRITES=0` (nel file `.env`) ripristina il percorso a scrittura singola, come `DELEGATION_BATCH_READS=0` per le letture. Il codice dei percorsi non cambia: le misure di W3/W4, eseguite con il valore esplicito `1` o `0`, restano valide. Le sezioni precedenti che parlano di opt-in descrivono lo stato al momento delle misure.
